@@ -129,11 +129,26 @@ public final class PlaybookInstaller {
      * @return what happened; only {@link Status#INSTALLED} wrote anything
      */
     public Result install(Path dir, Playbook playbook, String shownHash, boolean withHooks) {
+        return install(dir, playbook, shownHash, withHooks, null);
+    }
+
+    /**
+     * Installs the contents of a playbook folder for a workspace: a hook command's {@code {project}}
+     * becomes that folder in the user settings.
+     *
+     * @param dir       the playbook folder, already checked to be registered
+     * @param playbook  the playbook read from its {@code playbook.json}
+     * @param shownHash the contents hash of the list the owner saw, for the same workspace
+     * @param withHooks true when the owner ticked the hooks
+     * @param workspace the folder {@code {project}} stands for, or null when none is known
+     * @return what happened; only {@link Status#INSTALLED} wrote anything
+     */
+    public Result install(Path dir, Playbook playbook, String shownHash, boolean withHooks, Path workspace) {
         Path root;
         PlaybookContents.Preview preview;
         try {
             root = dir.toRealPath();
-            preview = PlaybookContents.preview(root, playbook, spectroHome, projectSkills, ledger, null);
+            preview = PlaybookContents.preview(root, playbook, spectroHome, projectSkills, ledger, null, workspace);
         } catch (IOException | RuntimeException unreadable) {
             return result(Status.FAILED, "The contents could not be read: " + unreadable.getMessage(), List.of());
         }

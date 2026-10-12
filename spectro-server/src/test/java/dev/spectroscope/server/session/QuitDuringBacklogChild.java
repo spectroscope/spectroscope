@@ -30,6 +30,13 @@ import java.util.concurrent.atomic.AtomicInteger;
  * <p>Spring is not in this JVM. At a real quit Spring also closes the socket and
  * runs {@code onClose}; the flush that card 395 adds must not depend on either,
  * so neither happens here.</p>
+ *
+ * <p>Card 540: the quit hook gets {@link #HOOK_BOUND} instead of
+ * {@link QuitFlush#BOUND}, and a second hook writes what the flush counted,
+ * {@code flushed <drained> <sealed> <millis>}, to {@link #FLUSHED_FILE}. The test reads that line instead
+ * of its own clock, so a loaded machine cannot seal the drain or slow the exit
+ * into a red run. A drain the quit does not end is still sealed, at this bound,
+ * and the line says so.</p>
  */
 public final class QuitDuringBacklogChild {
 
@@ -39,6 +46,19 @@ public final class QuitDuringBacklogChild {
     static final int LINES_PER_TURN = 2_000;
     /** Tool calls per completed turn; each adds a tool_call and a tool_result, which never merge. */
     static final int CALLS_PER_TURN = 30;
+    /**
+     * The quit hook's bound in this JVM, derived from measurement. The flush took
+     * 790 to 974 ms over ten runs at loads 2.9 to 10.7 on 2026-10-11 (the
+     * {@code flushed} line of each run, kanban/evidence/540/measure-quit), and the
+     * whole quit, exit included, took 3439 ms at a load near 100 on 2026-10-10
+     * (card 498). 20 s is more than five times the slowest whole quit seen. A drain
+     * the quit does not end is sealed here, after 20 s, and the line says so.
+     */
+    static final java.time.Duration HOOK_BOUND = java.time.Duration.ofSeconds(20);
+    /** The file in the workspace the reporting hook writes its line to. */
+    static final String FLUSHED_FILE = "card-540-flushed.txt";
+    /** How long the reporting hook waits for the quit hook: the bound plus room to seal. */
+    static final java.time.Duration REPORT_WAIT = HOOK_BOUND.plusSeconds(5);
 
     private QuitDuringBacklogChild() {
     }
@@ -50,6 +70,9 @@ public final class QuitDuringBacklogChild {
      */
     public static void main(String[] args) throws Exception {
         Path workspace = Path.of(args[0]);
+        QuitFlush.hookBoundForTest(HOOK_BOUND);
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> reportFlush(workspace),
+                "card-540-report"));
         AtomicInteger requests = new AtomicInteger();
         CountDownLatch held = new CountDownLatch(1);
         HttpServer backend = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
@@ -82,6 +105,29 @@ public final class QuitDuringBacklogChild {
         System.out.println("ready " + connection.sessionId() + " " + requests.get());
         System.out.flush();
         Thread.currentThread().join(); // until SIGTERM
+    }
+
+    /**
+     * Waits for the quit hook's flush and writes what it counted to {@link #FLUSHED_FILE}.
+     *
+     * @param workspace the folder the file goes into
+     */
+    private static void reportFlush(Path workspace) {
+        String line;
+        try {
+            QuitFlush.Flushed flushed = QuitFlush.awaitHookFlush(REPORT_WAIT);
+            line = flushed == null
+                    ? "flushed none"
+                    : "flushed " + flushed.drained() + " " + flushed.sealed() + " "
+                            + java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(flushed.nanos());
+        } catch (InterruptedException interrupted) {
+            line = "flushed interrupted";
+        }
+        try {
+            Files.writeString(workspace.resolve(FLUSHED_FILE), line);
+        } catch (IOException unwritable) {
+            System.out.println("flushed line not written: " + unwritable);
+        }
     }
 
     private static void answer(HttpExchange exchange, int request, CountDownLatch held)

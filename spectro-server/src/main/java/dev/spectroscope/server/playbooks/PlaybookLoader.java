@@ -37,7 +37,11 @@ public final class PlaybookLoader {
     static final long MAX_BYTES = 1024L * 1024;
     /** The most files a playbook folder may hold, counted to {@link #WALK_DEPTH}. */
     static final int MAX_FILES = 200;
-    static final int WALK_DEPTH = 4;
+    /**
+     * The deepest level of a playbook folder that the loader, the tree and the file routes reach; the
+     * folder's children are level 1. The shipped spectro pack has files at level 5.
+     */
+    static final int WALK_DEPTH = 6;
 
     public record Loaded(Playbook playbook, Topology topology, List<Finding> findings,
                          List<StepResolution> steps, String dir) {}

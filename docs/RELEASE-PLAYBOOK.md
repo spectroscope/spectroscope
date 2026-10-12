@@ -147,6 +147,14 @@ Move together:
   and it sat at 0.3.0 through two cuts before anyone clicked that box (found
   on 0.6.0 release day). tag.yml bumps both fields, and the stray grep below
   covers `*.cff`.
+- **The Local Setup page:** `docs/local-setup/index.html` prints `page.version` from
+  `docs/local-setup/steps.json` in its footer. tag.yml does not rewrite that
+  value and cannot rebuild the page (the build needs cwebp). So the release
+  preparation sets `page.version` to the new version and rebuilds the page
+  with `python3 docs/local-setup/build_local_setup.py`, in the same commit as
+  README.md and the guide cover. If it is missed, the stray grep below stops
+  the cut, because `*.html` is on its list. `LocalSetupDriftTest` fails when
+  the page prints a version behind `spectro-server/build.gradle.kts`.
 - **Then grep the tree for the OLD version string** (`grep -rn "0\.2\.0" --include='*.ts' --include='*.kts' --include='*.json' .`
   minus lockfiles and `*.test.ts` — test fixtures legitimately quote
   historical version strings): 0.2.0 shipped with `spectro-desktop/main.ts` still
@@ -467,6 +475,19 @@ head -c 8 /tmp/head.bin        # !<arch> — a real deb, fetched through the red
 ```
 
 ### 9. Flip install snippets (only after step 6 resolves)
+- **Local Setup page** (`docs/local-setup/index.html`, scripts in `docs/local-setup/scripts/` beside it): rebuild it with
+  `python3 docs/local-setup/build_local_setup.py` on `main` before the website
+  sync. `tools/sync_website_repo.py` copies it to `/local-setup/` with its
+  scripts. It reads the build stamp in the page and refuses a page that is
+  missing, hand-edited, or built from other inputs than the current
+  `steps.json`, `page.css`, `page.js`, shots and product scripts. It also
+  refuses a scripts folder that differs from the build and an en or em dash in
+  any of these files. The rebuild on `main` fixes each of these; for a dash,
+  fix the source first. The sync also refuses a page that cites a source (S1
+  and so on) without a verified row in the source register. Add the row and
+  keep the page as built. After the push, check
+  `https://spectroscope.ai/local-setup/` and one script under
+  `/local-setup/scripts/` the same way as the landing page.
 - **Landing** (`design/website/index.html`): "on Maven Central", enable the
   GitHub + Maven Central footer links → `python3 tools/sync_website_repo.py`,
   commit + push `spectroscope-website` (Cloudflare auto-deploys).

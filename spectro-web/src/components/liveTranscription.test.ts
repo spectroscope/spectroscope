@@ -14,7 +14,7 @@ describe("the live toggle reads the route it is actually on", () => {
     expect(reading.blocked).toBeNull();
   });
 
-  it("greys the control out on the local route instead of hiding it", () => {
+  it("greys the control out on a local route that cannot stream instead of hiding it", () => {
     // The owner's rule for this control, verbatim: greyed out whenever the
     // route being taken cannot stream, active when it can, never hidden.
     const reading = liveReading(local, true);
@@ -81,5 +81,36 @@ describe("the capture rate is a function of the route", () => {
     // The refusal this pins is a 400 from the far side after the user has
     // already spoken, which is the worst moment to learn about a constant.
     expect(captureRate("hosted", true)).toBeGreaterThanOrEqual(24000);
+  });
+});
+
+describe("the local route writes along live (card 527)", () => {
+  const ready: LiveStatus = { route: "local", speechWorks: true, localStreams: true };
+
+  it("streams on the local route when speech works and the server offers local live", () => {
+    const reading = liveReading(ready, true);
+    expect(reading.streams).toBe(true);
+    expect(reading.active).toBe(true);
+    expect(reading.blocked).toBeNull();
+    expect(reading.route).toBe("local");
+  });
+
+  it("stays off on the local route when nobody asked for live text", () => {
+    expect(liveReading(ready, false).active).toBe(false);
+  });
+
+  it("does not stream locally while whisper or the model is missing", () => {
+    const reading = liveReading({ route: "local", speechWorks: false, localStreams: true }, true);
+    expect(reading.active).toBe(false);
+    expect(reading.blocked).toBe("localRoute");
+  });
+
+  it("does not stream locally against a server that does not offer it", () => {
+    expect(liveReading({ route: "local", speechWorks: true }, true).active).toBe(false);
+  });
+
+  it("captures at whisper's 16 kHz for local live", () => {
+    expect(captureRate("local", true)).toBe(WHISPER_RATE);
+    expect(WHISPER_RATE).toBe(16000);
   });
 });

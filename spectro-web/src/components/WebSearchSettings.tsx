@@ -23,9 +23,15 @@ import { useCallback, useEffect, useState } from "react";
 import { t, type Lang } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { CopyButton } from "./CopyButton";
-import { commitSearxngUrl, searxngOffer, tierReading } from "./webSearchSetup";
+import { commitSearxngUrl, searxngOffer, tierHintKey, tierReading } from "./webSearchSetup";
 import type { DockerStatus } from "./dockerOffer";
 import { ReachBlock } from "./settingsReach";
+
+/** The port this page was served from: the app's own server. Never read from
+ *  the query, so no link can put another port into the offer (card 531). */
+function pagePort(): string {
+  return typeof window === "undefined" ? "" : window.location.port;
+}
 
 /** The `webSearch` block of /api/config — mirrors SessionsController#config. */
 export interface WebSearchStatus {
@@ -121,11 +127,24 @@ function SearchKeyField({
   );
 }
 
-/** The Docker offer under the instance field — one sentence for one state, and
+/** The Docker offer under the instance field: one sentence for one state, and
  *  nothing at all until the probe answers. Same shape as the Observability
- *  block's, and deliberately the same decision underneath it. */
-function SearxngOfferBlock({ status, lang }: { status: DockerStatus | null; lang: Lang }) {
-  const offer = searxngOffer(status);
+ *  block's, and deliberately the same decision underneath it. With Docker
+ *  ready it shows two blocks, each with a copy button: the lines that make a
+ *  folder and download the installer the app serves, with a download button
+ *  for the same URL and a note on where that saves the file, then a sentence
+ *  on reading the script and the line that runs it (card 531, fix round 2). `port` is the page's own, `window.location.port`. Exported for the
+ *  render test, since the status arrives in an effect. */
+export function SearxngOfferBlock({
+  status,
+  lang,
+  port,
+}: {
+  status: DockerStatus | null;
+  lang: Lang;
+  port: string;
+}) {
+  const offer = searxngOffer(status, port);
   if (offer.kind === "unknown") return null;
   return (
     <div className="settings-docker">
@@ -142,7 +161,31 @@ function SearxngOfferBlock({ status, lang }: { status: DockerStatus | null; lang
           <pre className="settings-docker-cmd">
             <code>{offer.command}</code>
           </pre>
-          <CopyButton text={() => offer.command ?? ""} label={t(lang, "set.langfuseCommand")} />
+          <div className="settings-docker-actions">
+            <CopyButton text={() => offer.command ?? ""} label={t(lang, "set.langfuseCommand")} />
+            {offer.download ? (
+              <a
+                className="settings-docker-download"
+                href={offer.download}
+                target="_blank"
+                rel="noreferrer noopener"
+              >
+                {t(lang, "set.searxngDownload")}
+              </a>
+            ) : null}
+          </div>
+          {offer.download ? <p className="settings-note">{t(lang, "set.searxngDownloadMove")}</p> : null}
+          {offer.run ? (
+            <>
+              <p className="settings-note">{t(lang, "set.searxngRead")}</p>
+              <pre className="settings-docker-cmd">
+                <code>{offer.run}</code>
+              </pre>
+              <div className="settings-docker-actions">
+                <CopyButton text={() => offer.run ?? ""} label={t(lang, "set.langfuseCommand")} />
+              </div>
+            </>
+          ) : null}
           <p className="settings-note">{t(lang, "set.searxngCost")}</p>
         </>
       ) : null}
@@ -209,6 +252,8 @@ export function WebSearchSettings({
   useEffect(() => setDraft(searxngUrl), [searxngUrl]);
 
   const reading = tierReading(status?.tier ?? "", status?.searxngUrl ?? "");
+  // The scrape's pointer to the script, only while the block below offers it.
+  const hint = tierHintKey(reading, docker);
 
   // The tier moves the moment the address is saved, so the line above the field
   // is re-read — AFTER the write has landed, because the server resolves the
@@ -235,6 +280,7 @@ export function WebSearchSettings({
             {reading.labelKey ? ` · ${t(lang, reading.labelKey)}` : ""}
           </span>{" "}
           {reading.detailKey ? t(lang, reading.detailKey, { addr: reading.addr }) : ""}
+          {hint ? ` ${t(lang, hint)}` : ""}
         </p>
       )}
 
@@ -271,7 +317,7 @@ export function WebSearchSettings({
         {/* Card 448: a stock instance answers too, and the remedy is the same
             sentence the transcript shows when one refuses JSON. */}
         <p className="settings-note">{t(lang, "set.searxngHtmlOnly")}</p>
-        <SearxngOfferBlock status={docker} lang={lang} />
+        <SearxngOfferBlock status={docker} lang={lang} port={pagePort()} />
 
         {/* ---- 2. The two keyed providers ---- */}
         <p className="settings-note">{t(lang, "set.searchKeyedHint")}</p>

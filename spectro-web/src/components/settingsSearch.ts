@@ -133,7 +133,7 @@ export const SECTION_SETTING_KEYS = {
     "imageProvider",
     "imageModel",
   ],
-  stt: ["sttProvider", "sttLanguage"],
+  stt: ["sttProvider", "sttLanguage", "sttRunner"],
   websearch: ["searxngUrl"],
   machine: ["chromeBinary", "sttModel"],
   mcp: ["skills", "mcpServers", "headlessMcp"],
@@ -208,6 +208,8 @@ export const OFF_PAGE_SETTING_KEYS = {
   rtkFilter: "RtkFilterSection.tsx",
   // Card 466, reach note since card 491: the composer gear's tool groups.
   toolGroupsOff: "ToolGroupsSection.tsx",
+  // Card 503: agent messaging, after the rtk switch in the same menu.
+  agentMessaging: "AgentMessagingSection.tsx",
 } as const satisfies Partial<Record<SettingKey, string>>;
 
 /** Card 493: the saveable keys the settings page draws no field for and no

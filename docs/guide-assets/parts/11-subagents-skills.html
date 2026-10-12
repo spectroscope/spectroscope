@@ -59,6 +59,29 @@ tab draws split/join blocks per wave (chapter 6); the Lab gives every child its 
 card with its own packet (chapter 7); the Agents panel keeps the roster with token costs
 (chapter 6); the CLI renders <code>[worker-1]</code>-prefixed lines (chapter 4).</p>
 
+<h3 id="ch-subagents-background">Background fan-out</h3>
+
+<p>A parent that passes <code>background: true</code> to <code>spawn_agents</code> gets the children's
+names back at once and keeps working (card 505). The children run on the same slots as a blocking batch
+and under the same clocks: the queue grace, the run budget and the token budget. Each
+<code>report_status</code> line and each <code>send_message</code> to <code>parent</code> lands in the
+parent's inbox and is read at its next step, and a child's result arrives there as a message too. The
+parent can ask a child how far it is with <code>send_message</code>, list the children with
+<code>list_agents</code> without a model call, and collect the results with <code>wait_agents</code>.
+Children never message each other. A child's <code>send_message</code> reaches only its parent, and
+every message shows in your chat.</p>
+
+<p>When the parent ends its turn while children still run, the harness waits for them and hands their
+results in as the next text. Each result is one message block from its child, with the same tag and the
+same closing note as any message from another agent, so a result cannot pass itself off as the operator.
+The results count as messages the run took in, however they reach it: through the inbox, through
+<code>wait_agents</code> or handed in at the end of a turn, and the rule that guards the auto modes reads
+them. A status line is cut at 500 characters. With a goal set the harness waits 30 minutes at most,
+then 60, then 120 and every 120 after that (card 504), and each time appends a check in that lists each
+child still running with its role and its last status line, one line per child. Stopping the parent stops every
+child. A run that reaches its turn cap cancels the children still running and waits up to 30 seconds for
+them before it ends; a child that ignores the cancel longer than that is logged and left behind.</p>
+
 <h2 id="ch-subagents-dev">The development tools</h2>
 <p>Four role tools wrap a worker spawn with a persona and a skill — no new agent types;
 specialization is prompt + skill:</p>

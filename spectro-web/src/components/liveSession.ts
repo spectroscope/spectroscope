@@ -25,8 +25,17 @@ export type LiveFailure =
 export interface LiveText {
   /** The far side is configured; audio is flowing rather than being held. */
   readonly ready: boolean;
-  /** What has been heard so far. Shown faded, never committed. */
+  /** What has been heard so far. Shown faded, never committed. On the local
+   *  route this is the open window only; closed windows are in `settled`. */
   readonly provisional: string;
+  /** The text of the windows that closed during this recording (card 527, the
+   *  local route). Final for each window, still faded, and committed together
+   *  with the last window when the recording ends. Always empty on the hosted
+   *  route, which has one window. */
+  readonly settled: string;
+  /** The wall time of the last local whisper run, in milliseconds, or null.
+   *  The send gesture waits one chunk step plus this for the last window. */
+  readonly runMs: number | null;
   /** The transcript. Null until the model says it is finished. */
   readonly committed: string | null;
   /** Why it failed, or null. */
@@ -37,9 +46,38 @@ export interface LiveText {
 export const LIVE_START: LiveText = {
   ready: false,
   provisional: "",
+  settled: "",
+  runMs: null,
   committed: null,
   failed: null,
 };
+
+/** Two pieces of heard text with one space between, either side may be empty. */
+function joined(a: string, b: string): string {
+  const left = a.trim();
+  const right = b.trim();
+  if (left === "") return right;
+  if (right === "") return left;
+  return `${left} ${right}`;
+}
+
+/**
+ * Everything heard in this recording so far: the closed windows, then the
+ * open one. What the ghost layer shows, and what the send gesture takes when
+ * the last final does not arrive in time.
+ *
+ * @param state where the session stands
+ * @return the heard text, possibly empty
+ */
+export function heardText(state: LiveText): string {
+  return joined(state.settled, state.provisional);
+}
+
+/** A run's wall time off a local frame, or the previous one. */
+function runMsOf(frame: unknown, before: number | null): number | null {
+  const ms = (frame as { durationMs?: unknown }).durationMs;
+  return typeof ms === "number" && Number.isFinite(ms) ? ms : before;
+}
 
 const FAILURES: readonly string[] = ["localRoute", "noKey", "upstream", "closed"];
 
@@ -71,6 +109,12 @@ export function liveStep(state: LiveText, frame: unknown): LiveText {
     case "ready":
       return { ...state, ready: true };
     case "partial": {
+      // Card 527: a local run answers with the open window's whole text, so it
+      // replaces what the window showed. An empty answer is real here: the
+      // window has nothing in it yet.
+      if ((frame as { replace?: unknown }).replace === true && typeof text === "string") {
+        return { ...state, provisional: text.trim(), runMs: runMsOf(frame, state.runMs) };
+      }
       if (typeof text !== "string" || text === "") return state;
       // Every delta is space-prefixed because it is a word inside a sentence.
       // The first one is not inside anything yet.
@@ -79,10 +123,28 @@ export function liveStep(state: LiveText, frame: unknown): LiveText {
     }
     case "final": {
       if (typeof text !== "string") return state;
+      // Card 527: a window closed and the recording goes on. Its text is final
+      // for that window and joins the closed ones; the transcript of the whole
+      // recording comes with the last final.
+      if ((frame as { more?: unknown }).more === true) {
+        return {
+          ...state,
+          provisional: "",
+          settled: joined(state.settled, text),
+          runMs: runMsOf(frame, state.runMs),
+        };
+      }
       // REPLACES, never appends. The model is free to correct punctuation,
       // casing or a whole word once it has heard the end, and the concatenated
       // guesses are not the answer even when they happen to match it.
-      return { ...state, provisional: "", committed: text };
+      // On the local route the closed windows come first.
+      return {
+        ...state,
+        provisional: "",
+        settled: "",
+        committed: state.settled === "" ? text : joined(state.settled, text),
+        runMs: runMsOf(frame, state.runMs),
+      };
     }
     case "error":
       // The heard text stays visible — it is what the microphone picked up and

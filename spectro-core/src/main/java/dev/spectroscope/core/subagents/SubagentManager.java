@@ -82,6 +82,9 @@ public final class SubagentManager {
      *  gets width {@link #MAX_PARALLEL_CHILDREN}, which is the v0.14.4 schema. */
     private static final Map<Integer, JsonNode> SPAWN_AGENTS_SCHEMAS =
             new java.util.concurrent.ConcurrentHashMap<>();
+    /** Card 505: the same schemas with the {@code background} field, by batch width. */
+    private static final Map<Integer, JsonNode> SPAWN_AGENTS_BACKGROUND_SCHEMAS =
+            new java.util.concurrent.ConcurrentHashMap<>();
 
     private static JsonNode spawnAgentsSchema(int width) {
         return SPAWN_AGENTS_SCHEMAS.computeIfAbsent(width, w -> parseSchema("""
@@ -94,6 +97,28 @@ public final class SubagentManager {
                           "task": { "type": "string" } } } } } }
                 """.formatted(w)));
     }
+
+    /** Card 505: the schema with {@code background}, offered only where a
+     *  background fan-out can run. */
+    private static JsonNode spawnAgentsBackgroundSchema(int width) {
+        return SPAWN_AGENTS_BACKGROUND_SCHEMAS.computeIfAbsent(width, w -> parseSchema("""
+                { "type": "object", "required": ["agents"],
+                  "properties": {
+                    "agents": { "type": "array", "minItems": 1, "maxItems": %d,
+                      "items": { "type": "object", "required": ["type", "task"],
+                        "properties": {
+                          "type": { "type": "string", "enum": ["explore", "worker"] },
+                          "task": { "type": "string" } } } },
+                    "background": { "type": "boolean",
+                      "description": "true: return at once with the children's names; collect their results with wait_agents" } } }
+                """.formatted(w)));
+    }
+
+    /** Card 505: what the spawn_agents description adds where background is offered. */
+    public static final String BACKGROUND_SENTENCE = " With background true the call returns at once with the children's"
+            + " names while they run on the same slots: their status lines and results reach you as messages,"
+            + " send_message asks one of them how far it is, list_agents shows them, and wait_agents collects"
+            + " their results. If your turn ends while they still run, the run waits for them.";
 
     private final SubagentConfig config;
     private final ChildBudget budget;
@@ -116,6 +141,400 @@ public final class SubagentManager {
                 thread.setDaemon(true);
                 return thread;
             });
+
+    /** Card 502: what became of one message inside a run. */
+    public enum InRunDelivery {
+        /** In the recipient's inbox; read at its next safe point. */
+        QUEUED,
+        /** The recipient is in the run but takes no message now. */
+        REFUSED,
+        /** The recipient's queue is at its cap. */
+        FULL,
+        /** The name is not the parent or a running child of this run. */
+        UNKNOWN,
+        /**
+         * A child named another child. Hub and spoke (owner, 2026-10-12): a
+         * child messages only its parent, where the person watching sees it.
+         */
+        NOT_PARENT
+    }
+
+    /** Card 502: the inbox of every running child, by child id. */
+    private final java.util.concurrent.ConcurrentHashMap<String, dev.spectroscope.core.peer.PeerInbox> childInboxes =
+            new java.util.concurrent.ConcurrentHashMap<>();
+    /** Card 502: the task of every running child, by child id, in spawn order. */
+    private final Map<String, String> childTasks = java.util.Collections.synchronizedMap(new java.util.LinkedHashMap<>());
+    /** Card 502: the parent's own inbox, set by the face that hosts it; null when none. */
+    private volatile dev.spectroscope.core.peer.PeerInbox parentInbox;
+    /**
+     * Card 506 fix round 1: the msg ids a child of this run put into the
+     * parent's inbox through {@link #deliverInRun}, until the parent took them.
+     * An envelope's {@code from} is the sender's claim; this set is what the
+     * run itself submitted.
+     */
+    private final java.util.Set<String> inRunToParent = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    /** @return how many in-run messages to the parent are still marked as the run's own (tests) */
+    int inRunToParentPending() {
+        return inRunToParent.size();
+    }
+
+    /**
+     * Card 502: delivers one message inside this run. The address space is the
+     * run: the parent reaches its running children, a child reaches its parent
+     * ({@code parent} or the parent's id) and nobody else. Hub and spoke
+     * (owner, 2026-10-12): a child that names another child is refused with
+     * {@link InRunDelivery#NOT_PARENT}, so what one child says to another
+     * passes through the parent, where the person watching the run sees it. A
+     * peer session is outside the run, in both directions.
+     *
+     * @param from    the sending agent's id
+     * @param to      the receiving agent's id, or {@code parent}
+     * @param message the message
+     * @return what became of it
+     */
+    public InRunDelivery deliverInRun(String from, String to, dev.spectroscope.core.peer.PeerEnvelope message) {
+        String parentId = config.parentAgentId();
+        boolean fromParent = parentId != null && parentId.equals(from);
+        boolean fromChild = from != null && childInboxes.containsKey(from);
+        if (!fromParent && !fromChild) {
+            return InRunDelivery.UNKNOWN;
+        }
+        dev.spectroscope.core.peer.PeerInbox target;
+        if ("parent".equals(to) || (parentId != null && parentId.equals(to))) {
+            if (!fromChild) {
+                return InRunDelivery.UNKNOWN;
+            }
+            target = parentInbox;
+        } else {
+            if (to == null || to.equals(from)) {
+                return InRunDelivery.UNKNOWN;
+            }
+            if (fromChild) {
+                return InRunDelivery.NOT_PARENT;
+            }
+            target = childInboxes.get(to);
+            if (target == null) {
+                return InRunDelivery.UNKNOWN;
+            }
+        }
+        if (target == null) {
+            return InRunDelivery.REFUSED;
+        }
+        boolean toParent = target == parentInbox && message.msgId() != null;
+        if (toParent) {
+            inRunToParent.add(message.msgId());
+        }
+        InRunDelivery delivery = switch (target.submit(message)) {
+            case WAITING -> InRunDelivery.QUEUED;
+            case FULL -> InRunDelivery.FULL;
+            case NO_RUN -> InRunDelivery.REFUSED;
+        };
+        if (toParent && delivery != InRunDelivery.QUEUED) {
+            inRunToParent.remove(message.msgId());
+        }
+        return delivery;
+    }
+
+    /** Card 502: the running children with their tasks, in spawn order.
+     *  @return child id to task, a snapshot */
+    public Map<String, String> runningChildren() {
+        synchronized (childTasks) {
+            return Map.copyOf(new java.util.LinkedHashMap<>(childTasks));
+        }
+    }
+
+    /** Card 502: whether a name is a running child of this run, which a peer
+     *  session may never address.
+     *  @param name the name
+     *  @return true for a running child */
+    public boolean isChild(String name) {
+        return name != null && childInboxes.containsKey(name);
+    }
+
+    /**
+     * Card 503: the {@code agentMessaging} setting a child spawned now starts
+     * from: the one the parent run read at its start while a run is in flight,
+     * else the session's value.
+     *
+     * @return false when messaging is off; null for the shipped on
+     */
+    public Boolean childAgentMessaging() {
+        Agent parent = currentParent;
+        if (parent != null) {
+            return parent.agentMessagingThisRun();
+        }
+        return config.agentMessaging();
+    }
+
+    /** Card 503: the role of every running child, by child id. */
+    private final java.util.concurrent.ConcurrentHashMap<String, String> childRoles =
+            new java.util.concurrent.ConcurrentHashMap<>();
+    /** Card 503: the last report_status line of every running child, by child id. */
+    private final java.util.concurrent.ConcurrentHashMap<String, String> childStatus =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * Card 503: the running children as the parent's {@code list_agents} shows
+     * them, in spawn order, with role and last status line.
+     *
+     * @return one row per running child
+     */
+    public List<dev.spectroscope.core.messaging.AgentRow> childRows() {
+        List<dev.spectroscope.core.messaging.AgentRow> rows = new ArrayList<>();
+        // Card 505: the background children first, in spawn order, whatever
+        // their state: waiting for a slot, working, or ended with the result
+        // collected or not.
+        BackgroundRun run = background;
+        java.util.Set<String> listed = new java.util.HashSet<>();
+        if (run != null) {
+            for (String id : run.names()) {
+                listed.add(id);
+                rows.add(dev.spectroscope.core.messaging.AgentRow.inRun(
+                        dev.spectroscope.core.messaging.AgentRow.Kind.CHILD, id, id, run.role(id),
+                        backgroundStatus(run, id), run.lastStatus(id)));
+            }
+        }
+        for (String id : runningChildren().keySet()) {
+            if (listed.contains(id)) {
+                continue;
+            }
+            rows.add(dev.spectroscope.core.messaging.AgentRow.inRun(
+                    dev.spectroscope.core.messaging.AgentRow.Kind.CHILD, id, id,
+                    childRoles.getOrDefault(id, "agent"), "working", childStatus.get(id)));
+        }
+        return rows;
+    }
+
+    /** Card 505: the status word of a background child in a listing. */
+    private String backgroundStatus(BackgroundRun run, String id) {
+        if (run.ended(id)) {
+            String verdict = run.failed(id) ? "failed" : "finished";
+            return run.collected(id) ? verdict : verdict + " in the background, result not collected";
+        }
+        return childTasks.containsKey(id) ? "working in the background" : "waiting for a slot";
+    }
+
+    /**
+     * Card 503: the parent's message to one of its running children, or the
+     * operator's reply to one, which reaches the child as from {@code parent}.
+     *
+     * @param row     the child
+     * @param text    the body
+     * @param summary the preview line
+     * @return what happened
+     */
+    public dev.spectroscope.core.messaging.MessagingSeat.Sent sendFromParent(
+            dev.spectroscope.core.messaging.AgentRow row, String text, String summary) {
+        return inRun(config.parentAgentId(), "parent", config.parentAgentId(), row.id(), text, summary);
+    }
+
+    /**
+     * Card 503: the operator's message to a running child, from the page. It
+     * reaches the child from {@code parent}, named {@code operator}.
+     *
+     * @param childId the child
+     * @param text    the body
+     * @param unused  reserved
+     * @return what happened
+     */
+    public dev.spectroscope.core.messaging.MessagingSeat.Sent sendFromOperator(String childId, String text,
+                                                                               String unused) {
+        String summary = text == null ? "" : text.strip().lines().findFirst().orElse("");
+        return inRun(config.parentAgentId(), "parent", "operator", childId, text, summary);
+    }
+
+    /**
+     * Card 503: a running child's inbox, which the auto modes read before
+     * they approve one of its gated calls.
+     *
+     * @param childId the child
+     * @return its inbox, or null when it is not running
+     */
+    public dev.spectroscope.core.peer.PeerInbox inboxOf(String childId) {
+        return childId == null ? null : childInboxes.get(childId);
+    }
+
+    /** Card 503: one message inside the run, as the messaging tools send it. */
+    private dev.spectroscope.core.messaging.MessagingSeat.Sent inRun(String from, String replyAddress,
+                                                                      String fromName, String to, String text,
+                                                                      String summary) {
+        String msgId = dev.spectroscope.core.peer.PeerFrames.newMsgId();
+        dev.spectroscope.core.peer.PeerEnvelope envelope = dev.spectroscope.core.peer.PeerEnvelope.builder()
+                .msgId(msgId).from(replyAddress).fromName(fromName).priority("next").text(text)
+                .summary(summary).build();
+        return switch (deliverInRun(from, to, envelope)) {
+            case QUEUED -> dev.spectroscope.core.messaging.MessagingSeat.Sent.ok(msgId);
+            case FULL -> dev.spectroscope.core.messaging.MessagingSeat.Sent.failed("Not sent: " + to + " has too"
+                    + " many undelivered messages queued; fold this into one later message.");
+            case REFUSED -> dev.spectroscope.core.messaging.MessagingSeat.Sent.failed("Not sent: " + to + " takes"
+                    + " no message right now; it may have just finished. Call list_agents to see who is running.");
+            case UNKNOWN -> dev.spectroscope.core.messaging.MessagingSeat.Sent.failed(unknownInRun(to));
+            case NOT_PARENT -> dev.spectroscope.core.messaging.MessagingSeat.Sent.failed(
+                    dev.spectroscope.core.messaging.SendMessageTool.childRefusal(to, isSibling(from, to)
+                            ? dev.spectroscope.core.messaging.SendMessageTool.ChildMiss.SIBLING
+                            : dev.spectroscope.core.messaging.SendMessageTool.ChildMiss.OTHER));
+        };
+    }
+
+    /** Card 505: why a name of this run takes no message, in words a model can act on. */
+    private String unknownInRun(String to) {
+        BackgroundRun run = background;
+        if (run != null && run.holds(to)) {
+            return run.ended(to)
+                    ? "Not sent: " + to + " has ended; collect its result with wait_agents."
+                    : "Not sent: " + to + " is waiting for a free slot and reads no message yet; send it again"
+                    + " once list_agents shows it working.";
+        }
+        return dev.spectroscope.core.peer.PeerClient.unknownName(to);
+    }
+
+    /** Visible for tests: the seat a running child's messaging tools sit on.
+     *  @param childId the child @return its seat */
+    dev.spectroscope.core.messaging.MessagingSeat childSeat(String childId) {
+        return new ChildSeat(childId);
+    }
+
+    /**
+     * Hub and spoke: every child id this manager started, kept after the child
+     * ends, so a child that names a finished one hears that it named another
+     * child agent. It only picks the words of a refusal.
+     */
+    private final java.util.Set<String> startedChildIds = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    /**
+     * Hub and spoke: whether {@code name} is a child of this manager other
+     * than {@code self}. Matched as names are matched (review round 1): in
+     * any case, so {@code EXPLORE-2} is the child {@code explore-2}.
+     */
+    private boolean isSibling(String self, String name) {
+        if (name == null || dev.spectroscope.core.peer.PeerNames.same(name, self)) {
+            return false;
+        }
+        if (startedChildIds.stream().anyMatch(id -> dev.spectroscope.core.peer.PeerNames.same(id, name))) {
+            return true;
+        }
+        BackgroundRun run = background;
+        return run != null && run.names().stream().anyMatch(id -> dev.spectroscope.core.peer.PeerNames.same(id, name));
+    }
+
+    /**
+     * Card 503: the seat a child's two messaging tools sit on. Hub and spoke
+     * (owner, 2026-10-12): its address space is its parent, never another
+     * child and never a session.
+     */
+    private final class ChildSeat implements dev.spectroscope.core.messaging.MessagingSeat {
+        private final String childId;
+
+        private ChildSeat(String childId) {
+            this.childId = childId;
+        }
+
+        @Override
+        public String selfName() {
+            return childId;
+        }
+
+        @Override
+        public String selfRef() {
+            return dev.spectroscope.core.peer.PeerNames.ref("agent", childId);
+        }
+
+        @Override
+        public boolean child() {
+            return true;
+        }
+
+        @Override
+        public String agentId() {
+            return childId;
+        }
+
+        @Override
+        public boolean on() {
+            return !Boolean.FALSE.equals(childAgentMessaging());
+        }
+
+        @Override
+        public List<dev.spectroscope.core.messaging.AgentRow> sessions() {
+            return List.of();
+        }
+
+        @Override
+        public List<dev.spectroscope.core.messaging.AgentRow> runAgents() {
+            return List.of(dev.spectroscope.core.messaging.AgentRow.inRun(
+                    dev.spectroscope.core.messaging.AgentRow.Kind.PARENT, "parent", config.parentAgentId(),
+                    "main", "working", null));
+        }
+
+        @Override
+        public boolean sibling(String name) {
+            return isSibling(childId, name);
+        }
+
+        @Override
+        public Sent sendToSession(dev.spectroscope.core.messaging.AgentRow row, String text, String summary) {
+            return Sent.failed(dev.spectroscope.core.messaging.SendMessageTool.childRefusal(row.name(),
+                    dev.spectroscope.core.messaging.SendMessageTool.ChildMiss.OTHER));
+        }
+
+        @Override
+        public Sent sendInRun(dev.spectroscope.core.messaging.AgentRow row, String text, String summary) {
+            String to = row.kind() == dev.spectroscope.core.messaging.AgentRow.Kind.PARENT ? "parent" : row.id();
+            return inRun(childId, childId, childId, to, text, summary);
+        }
+
+        @Override
+        public Sent notifyWhenIdle(dev.spectroscope.core.messaging.AgentRow row) {
+            return Sent.failed("notify_when_idle is only available to the main agent of a session.");
+        }
+    }
+
+    /** Card 502: the parent's inbox, so a child's message to {@code parent} lands.
+     *  @param inbox the inbox the parent agent drains; null for none */
+    public void parentInbox(dev.spectroscope.core.peer.PeerInbox inbox) {
+        this.parentInbox = inbox;
+        // Card 505: a result the parent's loop took in is collected. One
+        // listener per inbox, forwarding to the run in flight.
+        if (inbox != null && listenedInbox != inbox) {
+            listenedInbox = inbox;
+            inbox.addAbsorbedListener(taken -> {
+                for (dev.spectroscope.core.peer.PeerEnvelope envelope : taken) {
+                    inRunToParent.remove(envelope.msgId());
+                }
+                BackgroundRun run = background;
+                if (run != null) {
+                    run.absorbed(taken);
+                }
+            });
+        }
+    }
+
+    /** Card 505: the inbox this manager listens on, so it listens once. */
+    private volatile dev.spectroscope.core.peer.PeerInbox listenedInbox;
+    /** Card 505: the background children of the run in flight, null between runs. */
+    private volatile BackgroundRun background;
+    /** Card 505: how long a goal run waits before it checks in. */
+    private volatile long checkInMs = BackgroundRun.CHECK_IN_FIRST_MS;
+
+    /**
+     * Card 505: whether {@code spawn_agents} offers {@code background}. It
+     * needs the parent's inbox, where the children's lines and results land,
+     * and agent messaging on for the run, since wait_agents and the children's
+     * messages belong to that family.
+     *
+     * @return true where a background fan-out can run
+     */
+    boolean backgroundOffered() {
+        if (parentInbox == null) {
+            return false;
+        }
+        Agent parent = currentParent;
+        if (parent == null && Boolean.FALSE.equals(config.agentMessaging())) {
+            return false;
+        }
+        return !childToolGroupsOff().contains(dev.spectroscope.core.ToolGroup.MESSAGING);
+    }
 
     /** Set per run (run()); volatile because children read them from their own threads. */
     private volatile MergedEventStream currentStream;
@@ -167,6 +586,29 @@ public final class SubagentManager {
      */
     public List<Tool> tools() {
         return List.of(new SpawnAgentTool(), new SpawnAgentsTool());
+    }
+
+    /**
+     * Card 505: the tools only the parent of a background fan-out holds.
+     *
+     * @return wait_agents, ready to register after the messaging tools
+     */
+    public List<Tool> backgroundTools() {
+        return List.of(new WaitAgentsTool());
+    }
+
+    /** Test seam: how long a run with a goal waits before it checks in.
+     *  @param ms the interval */
+    void checkInMs(long ms) {
+        this.checkInMs = ms;
+    }
+
+    /** Test seam: the background children of the run in flight, one
+     *  {@code id=state[:last status]} per child, joined by semicolons.
+     *  @return the snapshot, empty when none */
+    String backgroundSnapshotForTests() {
+        BackgroundRun run = background;
+        return run == null ? "" : run.snapshot(childTasks::containsKey);
     }
 
     /**
@@ -315,6 +757,11 @@ public final class SubagentManager {
         currentStream = merged;
         currentParentSignal = parentSignal;
         currentParent = parent;
+        // Card 505: the children this run may start in the background. Handed
+        // to the parent before its run starts, so the loop meets them at its exits.
+        BackgroundRun backgroundRun = new BackgroundRun(parentSignal, parentInbox, checkInMs);
+        background = backgroundRun;
+        parent.backgroundChildren(backgroundRun);
 
         // Parent pump: ONE forwarder virtual thread drains the parent's own
         // EventStream into the shared queue. The children add themselves as
@@ -333,6 +780,7 @@ public final class SubagentManager {
                 currentStream = null;
                 currentParentSignal = null;
                 currentParent = null;
+                background = null;
                 merged.end();
             }
         });
@@ -412,6 +860,11 @@ public final class SubagentManager {
                 .forEach(registry::register);
         // Every child (all types) may report progress — the A2A status channel.
         registry.register(new ReportStatusTool(childId, out));
+        // Card 503: and message its parent, and list it. Hub and spoke (owner,
+        // 2026-10-12): never another child, never a session.
+        ChildSeat seat = new ChildSeat(childId);
+        registry.register(new dev.spectroscope.core.messaging.SendMessageTool(seat));
+        registry.register(new dev.spectroscope.core.messaging.ListAgentsTool(seat));
         return registry;
     }
 
@@ -483,8 +936,7 @@ public final class SubagentManager {
         }
         parentSignal.onCancel(slots::wake);
         if (!slots.acquire(ticket, this::liveCount, parentSignal)) {
-            return "ERROR: [" + childId + "] ended by cancellation of the parent run while it"
-                    + " waited for a free slot.";
+            return "ERROR: [" + childId + "] " + endedBy(parentSignal) + " while it waited for a free slot.";
         }
         try {
             return runAdmittedChild(type, task, childId, out, parentSignal, stepProvider);
@@ -553,6 +1005,13 @@ public final class SubagentManager {
         // Card 482: a threshold and a window the operator typed describe the chat
         // model; a step child on another provider derives both from its own.
         boolean chatModel = provider == config.provider();
+        // Card 502: the child's own inbox, opened by its loop for its run. It is
+        // registered before the run starts so the parent can reach it from turn one.
+        dev.spectroscope.core.peer.PeerInbox inbox = new dev.spectroscope.core.peer.PeerInbox();
+        inbox.open();
+        childRoles.put(childId, type.id()); // card 503: the role a listing shows
+        childInboxes.put(childId, inbox);
+        startedChildIds.add(childId); // hub and spoke: the refusal's words
         // A subagent is simply another Agent instance from our own core.
         Agent child = new Agent(AgentOptions.builder()
                 .provider(provider)                   // the model lives in the provider
@@ -611,11 +1070,14 @@ public final class SubagentManager {
                 // Card 493: the read share of the parent run that spawns this
                 // child, so the child's read_file says and checks the same.
                 .readSharePercent(childReadSharePercent())
+                .peerInbox(inbox)                     // card 502: its own, never the parent's
+                .agentMessaging(childAgentMessaging()) // card 503: the parent run's switch
                 .build());
 
         StringBuilder lastTurnText = new StringBuilder();
         long inputTokens = 0;
         long outputTokens = 0;
+        childTasks.put(childId, task);
         try (EventStream childEvents = child.run(task, new RunOptions(childSignal, List.of()))) {
             // Forwarder loop — THE merge: drain the child's EventStream and put
             // every event into the PARENT queue. The for-each blocks between
@@ -664,6 +1126,10 @@ public final class SubagentManager {
         } catch (RuntimeException failure) {
             return "ERROR: [" + childId + "] unexpected failure: " + describe(failure);
         } finally {
+            childInboxes.remove(childId); // card 502: the address leaves with the child
+            childTasks.remove(childId);
+            childRoles.remove(childId);   // card 503
+            childStatus.remove(childId);
             graceTimer.cancel(false); // child finished: disarm both clocks
             ScheduledFuture<?> armed = budgetTimer.get();
             if (armed != null) {
@@ -700,7 +1166,7 @@ public final class SubagentManager {
                     + ") — the backend did not begin on this child.";
         }
         if (parentSignal.isCancelled()) {
-            return "ERROR: [" + childId + "] ended by cancellation of the parent run.";
+            return "ERROR: [" + childId + "] " + endedBy(parentSignal) + ".";
         }
         if (lastTurnText.toString().isBlank()) {
             return "ERROR: [" + childId + "] returned no final text.";
@@ -708,6 +1174,19 @@ public final class SubagentManager {
         // Report the usage sum per child: delegation should visibly cost something.
         return "[" + childId + "] result (tokens: " + inputTokens + " in / " + outputTokens + " out):\n"
                 + lastTurnText.toString().strip();
+    }
+
+    /**
+     * Card 505: what ended a child from above: a cancel of the parent run, or
+     * the parent run ending while a background child still ran.
+     *
+     * @param parentSignal the signal the child ran under
+     * @return the words for the child's error line
+     */
+    private static String endedBy(CancelSignal parentSignal) {
+        return BackgroundRun.STOP_PARENT_ENDED.equals(parentSignal.reason())
+                ? "ended because its parent run ended before it finished"
+                : "ended by cancellation of the parent run";
     }
 
     /**
@@ -914,6 +1393,368 @@ public final class SubagentManager {
         }
     }
 
+    /** Card 506: the agent id the children's parent has, which a workflow's records name as the receiver.
+     *  @return the parent agent's id */
+    public String parentAgentId() {
+        return config.parentAgentId();
+    }
+
+    /**
+     * Card 506: one child of a workflow's fan-out step.
+     *
+     * @param role explore or worker
+     * @param task the task
+     */
+    public record Spawn(String role, String task) {
+    }
+
+    /**
+     * Card 506: a workflow's fan-out step while no model turn is open. The
+     * step is the orchestrator: it starts its children through the real
+     * {@code spawn_agents} with {@code background: true}, takes their status
+     * lines and their messages to {@code parent} out of the session's inbox
+     * and records each as a message the run received, and collects their
+     * results through the real {@code wait_agents}. While it is open the
+     * manager holds a background run and a merged stream as a parent run
+     * would, so {@code list_agents} lists the children and a child reaches
+     * its parent, never another child (hub and spoke, owner 2026-10-12).
+     * Messages from other sessions stay in line
+     * for the next model turn.
+     */
+    public final class Orchestration implements AutoCloseable {
+        private final CancelSignal signal;
+        private final BackgroundRun run;
+        private final MergedEventStream merged;
+        private final Thread pump;
+        private final boolean openedInbox;
+        private final java.util.concurrent.BlockingQueue<Boolean> wake = new java.util.concurrent.LinkedBlockingQueue<>();
+        private final Runnable unhookSubmit;
+        private final Runnable unhookCancel;
+        private boolean closed;
+
+        private Orchestration(java.util.function.Consumer<RunEvent> out, CancelSignal signal) {
+            this.signal = signal;
+            this.merged = new MergedEventStream(signal::cancel);
+            this.run = new BackgroundRun(signal, parentInbox, checkInMs);
+            dev.spectroscope.core.peer.PeerInbox inbox = parentInbox;
+            this.openedInbox = inbox != null && !inbox.isOpen();
+            if (openedInbox) {
+                inbox.open();
+            }
+            this.unhookSubmit = inbox == null ? () -> { } : inbox.addSubmitListener(() -> wake.offer(Boolean.TRUE));
+            run.addEndListener(() -> wake.offer(Boolean.TRUE));
+            this.unhookCancel = signal.onCancel(() -> wake.offer(Boolean.TRUE));
+            this.pump = Thread.ofVirtual().name("spectroscope-workflow-pump").start(() -> {
+                for (RunEvent event : merged) {
+                    out.accept(event);
+                }
+            });
+        }
+
+        /**
+         * Starts the children through {@code spawn_agents} with {@code background: true}.
+         *
+         * @param children the children, in order
+         * @return what the tool answered
+         */
+        public String spawn(List<Spawn> children) {
+            com.fasterxml.jackson.databind.node.ObjectNode input = JSON.createObjectNode();
+            com.fasterxml.jackson.databind.node.ArrayNode agents = input.putArray("agents");
+            for (Spawn child : children) {
+                agents.addObject().put("type", child.role()).put("task", child.task());
+            }
+            input.put("background", true);
+            return new SpawnAgentsTool().execute(input, context());
+        }
+
+        /** @return the ids of the children this step started, in spawn order */
+        public List<String> children() {
+            return run.names();
+        }
+
+        /**
+         * Blocks without polling until every child has ended or the step's
+         * signal is cancelled. Each status line and each message a child sent
+         * to {@code parent} is taken out of the inbox meanwhile and recorded as
+         * an {@code agent_message} the run received; results stay for
+         * {@link #collect()}.
+         */
+        public void awaitChildren() {
+            while (true) {
+                takeChildMessages();
+                if (signal.isCancelled() || run.runningCount() == 0) {
+                    takeChildMessages();
+                    return;
+                }
+                try {
+                    wake.take();
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+            }
+        }
+
+        private void takeChildMessages() {
+            dev.spectroscope.core.peer.PeerInbox inbox = parentInbox;
+            if (inbox == null) {
+                return;
+            }
+            // A snapshot first: the run submits to the inbox under its own lock.
+            java.util.Set<String> statuses = run.statusIds();
+            // Only what the run itself submitted: a status line of a child, or a
+            // child's send_message to parent. A peer may claim a child's name, and
+            // a result stays for wait_agents: neither id is in these two sets.
+            List<dev.spectroscope.core.peer.PeerEnvelope> taken =
+                    inbox.take(e -> e.msgId() != null
+                            && (statuses.contains(e.msgId()) || inRunToParent.contains(e.msgId())));
+            if (taken.isEmpty()) {
+                return;
+            }
+            for (dev.spectroscope.core.peer.PeerEnvelope message : taken) {
+                merged.put(new RunEvent.AgentMessage(message.fromName() != null ? message.fromName() : message.from(),
+                        config.parentAgentId(), "peer", "received", message.text(), message.msgId(), now()));
+            }
+            inbox.absorbed(taken);
+        }
+
+        /** @return what {@code wait_agents} answers for every child of this step */
+        public String collect() {
+            return new WaitAgentsTool().execute(JSON.createObjectNode(), context());
+        }
+
+        /**
+         * @param event an event of the step, written to the same stream as the children's
+         */
+        public void emit(RunEvent event) {
+            merged.put(event);
+        }
+
+        private Tool.ToolContext context() {
+            return new Tool.ToolContext(config.cwd(), signal, config.parentAgentId(), "workflow-" + now(),
+                    merged::put, attachment -> { }, change -> { }, ms -> { }, false);
+        }
+
+        /** Settles what still runs, ends the stream and gives the manager back. */
+        @Override
+        public void close() {
+            synchronized (SubagentManager.this) {
+                if (closed) {
+                    return;
+                }
+                closed = true;
+            }
+            try {
+                run.settle();
+            } finally {
+                takeChildMessages();
+                merged.end();
+                try {
+                    pump.join();
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                }
+                unhookSubmit.run();
+                unhookCancel.run();
+                dev.spectroscope.core.peer.PeerInbox inbox = parentInbox;
+                if (openedInbox && inbox != null) {
+                    inbox.close();
+                }
+                synchronized (SubagentManager.this) {
+                    background = null;
+                    currentStream = null;
+                    currentParentSignal = null;
+                }
+            }
+        }
+    }
+
+    /**
+     * Card 506: opens a workflow's fan-out step. One at a time, and never
+     * while a parent run is in flight.
+     *
+     * @param out    where every event of the step and its children goes, in order
+     * @param signal the step's signal; its cancel reaches every child
+     * @return the open step; close it to settle the children and end the stream
+     * @throws IllegalStateException when a run or another step holds the manager
+     */
+    public synchronized Orchestration orchestrate(java.util.function.Consumer<RunEvent> out, CancelSignal signal) {
+        if (currentStream != null) {
+            throw new IllegalStateException("SubagentManager.orchestrate: a run is already active (one at a time).");
+        }
+        Orchestration o = new Orchestration(out, signal);
+        currentStream = o.merged;
+        currentParentSignal = signal;
+        background = o.run;
+        return o;
+    }
+
+    /**
+     * Card 505: starts the children of one {@code spawn_agents} call in the
+     * background and returns at once. Each child takes a slot of the chat's
+     * pool like a blocking one, runs under the background run's signal, and
+     * on its way out records its result on the stream and hands it to the run.
+     *
+     * @param requests the children, in the order asked
+     * @return the names, or an ERROR: string when nothing was started
+     */
+    private String startInBackground(List<ChildRequest> requests) {
+        if (!backgroundOffered()) {
+            return "ERROR: background is not available in this session (agent messaging is off or nothing"
+                    + " here can receive the children's messages); call spawn_agents without background.";
+        }
+        BackgroundRun run = background;
+        MergedEventStream queue = currentStream;
+        if (run == null || queue == null) {
+            return "ERROR: spawn_agents only works inside SubagentManager.run.";
+        }
+        for (ChildRequest request : requests) {
+            if (request.task() == null || request.task().isBlank()) {
+                return "ERROR: task must be a non-empty string.";
+            }
+        }
+        // Tickets in request order on this thread, as for a blocking batch.
+        List<SessionSlots.Ticket> tickets = requests.stream().map(request -> slots.enqueue()).toList();
+        List<String> started = new ArrayList<>();
+        for (int i = 0; i < requests.size(); i++) {
+            ChildRequest request = requests.get(i);
+            SessionSlots.Ticket ticket = tickets.get(i);
+            String childId = nextChildId(request.type());
+            run.add(childId, request.type().id());
+            queue.put(new RunEvent.AgentSpawn(childId, config.parentAgentId(), request.task(), now()));
+            queue.put(new RunEvent.AgentMessage(config.parentAgentId(), childId,
+                    "task", "submitted", request.ownerTask(), request.label(), now()));
+            Thread.ofVirtual().name("spectroscope-background-" + childId).start(() -> {
+                String outcome;
+                try {
+                    outcome = executeChild(request.type(), request.task(), childId, queue::put, run.signal(),
+                            ticket, null);
+                } catch (RuntimeException failure) {
+                    outcome = "ERROR: [" + childId + "] unexpected failure: " + describe(failure);
+                } finally {
+                    slots.forget(ticket);
+                }
+                queue.put(new RunEvent.AgentMessage(childId, config.parentAgentId(), "result",
+                        outcome.startsWith("ERROR:") ? "failed" : "completed", outcome, request.label(), now()));
+                run.finished(childId, outcome);
+            });
+            started.add(childId + " (" + request.type().id() + ")");
+        }
+        SessionCount count = liveCount();
+        return "Started " + started.size() + " children in the background: " + String.join(", ", started)
+                + ". They run on this chat's slots" + (count.sessions() == null ? "" : ", at most "
+                + count.helpersAtOnce() + " at once") + "; their status lines and results reach you as"
+                + " messages at your next step. Ask one how far it is with send_message, list them with"
+                + " list_agents, and collect their results with wait_agents. If your turn ends while they"
+                + " still run, the run waits for them.";
+    }
+
+    /**
+     * {@code wait_agents} (card 505): the join of a background fan-out. Only
+     * the parent holds it; no child registry gets it, so depth stays one.
+     */
+    private final class WaitAgentsTool implements Tool {
+
+        /** Wire name: {@code wait_agents}. */
+        @Override
+        public String name() {
+            return "wait_agents";
+        }
+
+        /** A collected result is not handed over a second time (card 467).
+         *  @return false */
+        @Override
+        public boolean resultRepeatable() {
+            return false;
+        }
+
+        /** Names the children of the run in flight. */
+        @Override
+        public String description() {
+            BackgroundRun run = background;
+            List<String> names = run == null ? List.of() : run.names();
+            return "Waits for children you started with spawn_agents and background true, and returns their"
+                    + " results and the last status line of each one still running. It blocks without polling"
+                    + " until they have ended or the timeout has passed. "
+                    + (names.isEmpty() ? "No child of this run was started in the background yet."
+                    : "Children of this run: " + String.join(", ", names) + ".");
+        }
+
+        @Override
+        public JsonNode inputSchema() {
+            return WAIT_AGENTS_SCHEMA;
+        }
+
+        /** Permission-free: it reads what the children already did. */
+        @Override
+        public boolean needsPermission() {
+            return false;
+        }
+
+        @Override
+        public String execute(JsonNode input, ToolContext context) {
+            BackgroundRun run = background;
+            List<String> known = run == null ? List.of() : run.names();
+            if (known.isEmpty()) {
+                return "ERROR: no child of this run was started in the background; spawn_agents with background"
+                        + " true starts some.";
+            }
+            List<String> ids = new ArrayList<>();
+            JsonNode asked = input.path("ids");
+            if (!asked.isMissingNode() && !asked.isNull()) {
+                if (!asked.isArray()) {
+                    return "ERROR: ids must be an array of child names.";
+                }
+                for (JsonNode id : asked) {
+                    String name = id.asText("");
+                    if (!known.contains(name)) {
+                        return "ERROR: no background child named \"" + name + "\" in this run. Children of"
+                                + " this run: " + String.join(", ", known) + ".";
+                    }
+                    if (!ids.contains(name)) {
+                        ids.add(name);
+                    }
+                }
+            }
+            if (ids.isEmpty()) {
+                ids.addAll(known);
+            }
+            Long timeoutMs = waitAgentsTimeoutMs(input.path("timeoutSeconds"));
+            if (timeoutMs == null) {
+                return "ERROR: timeoutSeconds must be a number of seconds.";
+            }
+            return run.waitFor(ids, timeoutMs, context.signal());
+        }
+    }
+
+    /**
+     * The wait {@code wait_agents} asks of the run.
+     *
+     * @param timeout the {@code timeoutSeconds} field
+     * @return -1 when it is left out or null (no limit), otherwise the seconds
+     *         asked cut to 0 to {@link BackgroundRun#WAIT_MAX_SECONDS}, in
+     *         milliseconds; null when it is not a number
+     */
+    static Long waitAgentsTimeoutMs(JsonNode timeout) {
+        if (timeout == null || timeout.isMissingNode() || timeout.isNull()) {
+            return -1L;
+        }
+        if (!timeout.isNumber()) {
+            return null;
+        }
+        long seconds = Math.max(0, Math.min(BackgroundRun.WAIT_MAX_SECONDS, timeout.asLong()));
+        return seconds * 1000L;
+    }
+
+    private static final JsonNode WAIT_AGENTS_SCHEMA = parseSchema("""
+            { "type": "object",
+              "properties": {
+                "ids": { "type": "array", "items": { "type": "string" },
+                  "description": "Child names from spawn_agents; every background child of this run when left out" },
+                "timeoutSeconds": { "type": "integer", "minimum": 0, "maximum": %d,
+                  "description": "Return after at most this many seconds; 0 returns at once with the status lines. Left out, it waits until they have ended." } } }
+            """.formatted(BackgroundRun.WAIT_MAX_SECONDS));
+
     /**
      * The child's side of the A2A status channel: a permission-free tool every
      * child gets. One call = one visible {@code agent_message} (role status,
@@ -974,9 +1815,18 @@ public final class SubagentManager {
             if (message.isBlank()) {
                 return "ERROR: message must be a non-empty string.";
             }
+            String line = BackgroundRun.capped(message.strip()); // card 505, fix round two
+            childStatus.put(childId, line); // card 503: the line list_agents shows
             parentQueue.accept(new RunEvent.AgentMessage(childId, config.parentAgentId(),
-                    "status", "working", message.strip(), null, now()));
-            return "ok";
+                    "status", "working", line, null, now()));
+            // Card 505: a background child's line also reaches the parent's
+            // inbox, since the parent is not blocked waiting for it.
+            BackgroundRun run = background;
+            if (run != null && run.holds(childId)) {
+                run.status(childId, line);
+            }
+            return line.equals(message.strip()) ? "ok"
+                    : "ok, cut to its first " + BackgroundRun.STATUS_LINE_CAP + " characters";
         }
     }
 
@@ -1116,13 +1966,16 @@ public final class SubagentManager {
         /** The catalog description for the parallel variant, naming the chat's count. */
         @Override
         public String description() {
-            return RoleCatalog.spawnAgentsDescription(describedCount());
+            String base = RoleCatalog.spawnAgentsDescription(describedCount());
+            return backgroundOffered() ? base + BACKGROUND_SENTENCE : base;
         }
 
-        /** Requires an {@code agents} array of {type, task}, 1 to the batch width. */
+        /** Requires an {@code agents} array of {type, task}, 1 to the batch width;
+         *  card 505 adds {@code background} where it is offered. */
         @Override
         public JsonNode inputSchema() {
-            return spawnAgentsSchema(describedCount().batchWidth());
+            int width = describedCount().batchWidth();
+            return backgroundOffered() ? spawnAgentsBackgroundSchema(width) : spawnAgentsSchema(width);
         }
 
         /** Permission-free — the children's tools ask for permission themselves. */
@@ -1152,6 +2005,9 @@ public final class SubagentManager {
                     return "ERROR: unknown agent type \"" + entry.path("type").asText() + "\".";
                 }
                 requests.add(new ChildRequest(type.get(), entry.path("task").asText("")));
+            }
+            if (input.path("background").asBoolean(false)) {
+                return startInBackground(requests);
             }
             List<String> results = runChildrenInParallel(requests);
             String combined = IntStream.range(0, results.size())

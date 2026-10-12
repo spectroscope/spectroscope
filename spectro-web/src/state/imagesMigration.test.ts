@@ -68,8 +68,10 @@ describe("a layout stored by 0.14.1 (card 443, criterion 3)", () => {
 
   it("from now on the open images panel is stored and comes back with the dock", () => {
     openDockPanel("images");
+    // 0.14.1 came before card 444, so its blob carries no dockTabs key.
+    const { dockTabs: _notYet, ...before444 } = DEFAULT_LAYOUT;
     const stored = JSON.stringify({
-      ...DEFAULT_LAYOUT,
+      ...before444,
       dockImages: "open",
       dockColumns: "agents~1~0.5|images~1~0.5",
     });

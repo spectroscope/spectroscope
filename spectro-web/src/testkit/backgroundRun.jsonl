@@ -1,0 +1,40 @@
+{"type":"run_start","runId":"eba5683a-c67c-4513-8760-4220c159209c","agentId":"main","prompt":"go","workspace":".","ts":1791742032897}
+{"type":"turn_start","agentId":"main","turn":1,"ts":1791742032898}
+{"type":"tool_call","agentId":"main","callId":"p1","name":"spawn_agents","input":{"background":true,"agents":[{"type":"explore","task":"task A"},{"type":"explore","task":"task B"}]},"ts":1791742032921}
+{"type":"agent_spawn","agentId":"explore-1","parentId":"main","task":"task A","ts":1791742032926}
+{"type":"agent_message","from":"main","to":"explore-1","role":"task","state":"submitted","text":"task A","ts":1791742032926}
+{"type":"agent_spawn","agentId":"explore-2","parentId":"main","task":"task B","ts":1791742032926}
+{"type":"agent_message","from":"main","to":"explore-2","role":"task","state":"submitted","text":"task B","ts":1791742032926}
+{"type":"tool_result","agentId":"main","callId":"p1","output":"Started 2 children in the background: explore-1 (explore), explore-2 (explore). They run on this chat's slots; their status lines and results reach you as messages at your next step. Ask one how far it is with send_message, list them with list_agents, and collect their results with wait_agents. If your turn ends while they still run, the run waits for them.","isError":false,"durationMs":5,"ts":1791742032927}
+{"type":"turn_start","agentId":"main","turn":2,"ts":1791742032927}
+{"type":"run_start","runId":"8f8e5534-ebb6-42e1-9975-266f5778e30d","agentId":"explore-2","parentId":"main","prompt":"task B","workspace":".","ts":1791742032928}
+{"type":"run_start","runId":"27e4f1a6-6688-46b1-94be-4caf5cbb6fe3","agentId":"explore-1","parentId":"main","prompt":"task A","workspace":".","ts":1791742032928}
+{"type":"turn_start","agentId":"explore-2","turn":1,"ts":1791742032928}
+{"type":"turn_start","agentId":"explore-1","turn":1,"ts":1791742032928}
+{"type":"tool_call","agentId":"main","callId":"p2","name":"send_message","input":{"to":"explore-2","message":"status?"},"ts":1791742032930}
+{"type":"agent_message","from":"main","to":"explore-2","role":"peer","state":"sent","text":"status?","label":"bb6b73ee-c4f9-4fa6-8d3c-a2d23f5c8106","ts":1791742032936}
+{"type":"tool_result","agentId":"main","callId":"p2","output":"Sent \"status?\" to explore-2 (in its inbox; it reads it at its next step). msg_id: bb6b73ee-c4f9-4fa6-8d3c-a2d23f5c8106","isError":false,"durationMs":6,"ts":1791742032936}
+{"type":"turn_start","agentId":"main","turn":3,"ts":1791742032936}
+{"type":"tool_call","agentId":"main","callId":"p3","name":"wait_agents","input":{"ids":["explore-2"]},"ts":1791742032937}
+{"type":"tool_call","agentId":"explore-2","callId":"b1","name":"list_dir","input":{},"ts":1791742032937}
+{"type":"tool_result","agentId":"explore-2","callId":"b1","output":"ok","isError":false,"durationMs":0,"ts":1791742032937}
+{"type":"turn_start","agentId":"explore-2","turn":2,"ts":1791742032937}
+{"type":"agent_message","from":"main","to":"explore-2","role":"peer","state":"received","text":"status?","label":"bb6b73ee-c4f9-4fa6-8d3c-a2d23f5c8106","ts":1791742032937}
+{"type":"tool_call","agentId":"explore-2","callId":"b2","name":"send_message","input":{"to":"parent","message":"two of five files read"},"ts":1791742032938}
+{"type":"agent_message","from":"explore-2","to":"parent","role":"peer","state":"sent","text":"two of five files read","label":"c4bb1a36-d80b-4695-ad67-f5787e616bd8","ts":1791742032938}
+{"type":"tool_result","agentId":"explore-2","callId":"b2","output":"Sent \"two of five files read\" to parent (in its inbox; it reads it at its next step). msg_id: c4bb1a36-d80b-4695-ad67-f5787e616bd8","isError":false,"durationMs":0,"ts":1791742032938}
+{"type":"turn_start","agentId":"explore-2","turn":3,"ts":1791742032938}
+{"type":"text_delta","agentId":"explore-2","text":"B done","ts":1791742032938}
+{"type":"run_end","runId":"8f8e5534-ebb6-42e1-9975-266f5778e30d","stopReason":"end_turn","ts":1791742032939}
+{"type":"agent_message","from":"explore-2","to":"main","role":"result","state":"completed","text":"[explore-2] result (tokens: 0 in / 0 out):\nB done","ts":1791742032940}
+{"type":"tool_result","agentId":"main","callId":"p3","output":"--- explore-2 (completed) ---\n[explore-2] result (tokens: 0 in / 0 out):\nB done","isError":false,"durationMs":4,"ts":1791742032941}
+{"type":"turn_start","agentId":"main","turn":4,"ts":1791742032941}
+{"type":"agent_message","from":"explore-2","to":"main","role":"peer","state":"received","text":"two of five files read","label":"c4bb1a36-d80b-4695-ad67-f5787e616bd8","ts":1791742032941}
+{"type":"text_delta","agentId":"explore-1","text":"A done","ts":1791742032941}
+{"type":"tool_call","agentId":"main","callId":"p4","name":"wait_agents","input":{},"ts":1791742032941}
+{"type":"run_end","runId":"27e4f1a6-6688-46b1-94be-4caf5cbb6fe3","stopReason":"end_turn","ts":1791742032941}
+{"type":"agent_message","from":"explore-1","to":"main","role":"result","state":"completed","text":"[explore-1] result (tokens: 0 in / 0 out):\nA done","ts":1791742032941}
+{"type":"tool_result","agentId":"main","callId":"p4","output":"--- explore-1 (completed) ---\n[explore-1] result (tokens: 0 in / 0 out):\nA done\n\n--- explore-2 (completed) ---\nIts result reached you earlier as a message.","isError":false,"durationMs":1,"ts":1791742032942}
+{"type":"turn_start","agentId":"main","turn":5,"ts":1791742032942}
+{"type":"text_delta","agentId":"main","text":"done","ts":1791742032942}
+{"type":"run_end","runId":"eba5683a-c67c-4513-8760-4220c159209c","stopReason":"end_turn","ts":1791742032942}

@@ -121,6 +121,9 @@ import java.util.List;
  *                      While a parent run is in flight a child takes the share
  *                      that run read at its start, not this value (nullable:
  *                      the shipped 25)
+ * @param agentMessaging the session's {@code agentMessaging} (card 503). While a
+ *                      parent run is in flight a child takes the value that run
+ *                      read at its start (nullable: the shipped on)
  */
 public record SubagentConfig(
         LlmProvider provider,
@@ -143,7 +146,8 @@ public record SubagentConfig(
         java.util.function.Supplier<java.util.Set<dev.spectroscope.core.ToolGroup>> toolGroupsOff,
         Integer sessionsPerChat,
         String careParagraph,
-        Integer readSharePercent) {
+        Integer readSharePercent,
+        Boolean agentMessaging) {
 
     /** Null-tolerant canonical: an absent web grant normalizes to an empty list,
      *  and an absent budget to the derived one over an unfed window. The
@@ -171,6 +175,55 @@ public record SubagentConfig(
         }
         // Card 490: the same refusal, by name, for a count below its floor.
         SessionCount.of(sessionsPerChat);
+    }
+
+    /** Compat: the arity before card 503, which knew no agent messaging
+     *  switch. Its children carry the shipped on.
+     *
+     * @param provider the component of the same name
+     * @param cwd the component of the same name
+     * @param parentAgentId the component of the same name
+     * @param onPermission the component of the same name
+     * @param baseTools the component of the same name
+     * @param hooks the component of the same name
+     * @param llmWire the component of the same name
+     * @param webTools the component of the same name
+     * @param budget the component of the same name
+     * @param compactionThreshold the component of the same name
+     * @param maxTurns the component of the same name
+     * @param maxTokens the component of the same name
+     * @param thinking the component of the same name
+     * @param subagentBudgetSeconds the component of the same name
+     * @param sessionWindow the component of the same name
+     * @param subagentBudgetTokens the component of the same name
+     * @param toolResultElision the component of the same name
+     * @param toolGroupsOff the component of the same name
+     * @param sessionsPerChat the component of the same name
+     * @param careParagraph the component of the same name
+     * @param readSharePercent the component of the same name
+     */
+    public SubagentConfig(LlmProvider provider,
+                          Path cwd,
+                          String parentAgentId,
+                          PermissionBroker onPermission,
+                          List<Tool> baseTools,
+                          HookRunner hooks,
+                          LlmWireRecorder llmWire,
+                          List<Tool> webTools,
+                          ChildBudget budget,
+                          Integer compactionThreshold,
+                          Integer maxTurns,
+                          Integer maxTokens,
+                          Boolean thinking,
+                          Integer subagentBudgetSeconds,
+                          dev.spectroscope.core.session.SessionWindow sessionWindow,
+                          Integer subagentBudgetTokens,
+                          String toolResultElision,
+                          java.util.function.Supplier<java.util.Set<dev.spectroscope.core.ToolGroup>> toolGroupsOff,
+                          Integer sessionsPerChat,
+                          String careParagraph,
+                          Integer readSharePercent) {
+        this(provider, cwd, parentAgentId, onPermission, baseTools, hooks, llmWire, webTools, budget, compactionThreshold, maxTurns, maxTokens, thinking, subagentBudgetSeconds, sessionWindow, subagentBudgetTokens, toolResultElision, toolGroupsOff, sessionsPerChat, careParagraph, readSharePercent, null);
     }
 
     /** Compat: the arity of v0.14.4, which knew no session count (card 490).
@@ -206,7 +259,7 @@ public record SubagentConfig(
         this(provider, cwd, parentAgentId, onPermission, baseTools, hooks, llmWire,
                 webTools, budget, compactionThreshold, maxTurns, maxTokens, thinking,
                 subagentBudgetSeconds, sessionWindow, subagentBudgetTokens, toolResultElision,
-                toolGroupsOff, null, null, null);
+                toolGroupsOff, null, null, null, null);
     }
 
     /** Compat: the arity before cards 467 and 466, which knew no elision
@@ -403,6 +456,7 @@ public record SubagentConfig(
         private java.util.function.Supplier<java.util.Set<dev.spectroscope.core.ToolGroup>> toolGroupsOff; // nullable -> none off
         private Integer sessionsPerChat;         // nullable -> no count per chat
         private String careParagraph;            // nullable -> the shipped "off"
+        private Boolean agentMessaging;          // nullable -> the shipped on
         private Integer readSharePercent;        // nullable -> the shipped 25
 
         private Builder() {
@@ -561,12 +615,23 @@ public record SubagentConfig(
         }
 
         /** @return the finished config, normalized by the canonical constructor */
+        /**
+         * Card 503: the session's agent messaging switch, for every child.
+         *
+         * @param value false leaves send_message and list_agents out; null is the shipped on
+         * @return this builder
+         */
+        public Builder agentMessaging(Boolean value) {
+            this.agentMessaging = value;
+            return this;
+        }
+
         public SubagentConfig build() {
             return new SubagentConfig(provider, cwd, parentAgentId, onPermission,
                     baseTools, hooks, llmWire, webTools, budget, compactionThreshold,
                     maxTurns, maxTokens, thinking, subagentBudgetSeconds, sessionWindow,
                     subagentBudgetTokens, toolResultElision, toolGroupsOff, sessionsPerChat, careParagraph,
-                    readSharePercent);
+                    readSharePercent, agentMessaging);
         }
     }
 }

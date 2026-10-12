@@ -1,0 +1,704 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "steps.schema.json",
+  "title": "Local Setup steps",
+  "description": "The data file build_local_setup.py turns into docs/local-setup/index.html. The builder checks this schema with its own small validator (type, required, properties, additionalProperties, items, enum, pattern, minItems) and then checks every source id.",
+  "type": "object",
+  "required": [
+    "page",
+    "paths",
+    "platformNames",
+    "sources",
+    "levels",
+    "steps",
+    "plates"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "page": {
+      "type": "object",
+      "required": [
+        "title",
+        "lead",
+        "version",
+        "needs"
+      ],
+      "properties": {
+        "title": {
+          "type": "string"
+        },
+        "lead": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "description": "The product version the footer prints. The release preparation sets it, like the versions in README.md; tag.yml does not rewrite it."
+        },
+        "scriptsNote": {
+          "type": "string"
+        },
+        "scope": {
+          "type": "object",
+          "required": [
+            "text",
+            "source"
+          ],
+          "properties": {
+            "text": {
+              "type": "string"
+            },
+            "source": {
+              "$ref": "#/$defs/source"
+            }
+          },
+          "additionalProperties": false
+        },
+        "needs": {
+          "type": "object",
+          "propertyNames": {
+            "pattern": "^(homebrew|git|docker-repo|build-tools|ollama)$"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "required": [
+              "name",
+              "platforms"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "platforms": {
+                "type": "object",
+                "propertyNames": {
+                  "pattern": "^(mac|linux)$"
+                },
+                "additionalProperties": {
+                  "type": "object",
+                  "required": [
+                    "text",
+                    "url",
+                    "linkLabel",
+                    "source"
+                  ],
+                  "properties": {
+                    "text": {
+                      "type": "string"
+                    },
+                    "url": {
+                      "type": "string",
+                      "pattern": "^https://"
+                    },
+                    "linkLabel": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "$ref": "#/$defs/source"
+                    },
+                    "more": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "url",
+                          "linkLabel"
+                        ],
+                        "properties": {
+                          "url": {
+                            "type": "string",
+                            "pattern": "^https://"
+                          },
+                          "linkLabel": {
+                            "type": "string"
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "paths": {
+      "type": "object",
+      "properties": {
+        "dmg": {
+          "type": "string"
+        },
+        "cask": {
+          "type": "string"
+        },
+        "apt": {
+          "type": "string"
+        },
+        "appimage": {
+          "type": "string"
+        },
+        "jar": {
+          "type": "string"
+        },
+        "zip": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "platformNames": {
+      "type": "object",
+      "required": [
+        "mac",
+        "linux"
+      ],
+      "properties": {
+        "mac": {
+          "type": "string"
+        },
+        "linux": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "sources": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "url",
+          "says",
+          "fetched"
+        ],
+        "properties": {
+          "url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^https://"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "null for a local run, which has no web page"
+          },
+          "says": {
+            "type": "string"
+          },
+          "fetched": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+          }
+        },
+        "additionalProperties": false
+      },
+      "propertyNames": {
+        "pattern": "^S[0-9]+$"
+      }
+    },
+    "levels": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "goal"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "title": {
+            "type": "string"
+          },
+          "goal": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/step"
+      }
+    },
+    "plates": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[a-z0-9-]+$"
+      },
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "Caption per plate name; every name in a step's shots needs one."
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "source": {
+      "description": "An S row of sources, or P:<product path>, optionally ::<a text of at most 48 characters that the file holds>.",
+      "anyOf": [
+        {
+          "type": "string",
+          "pattern": "^(S[0-9]+|P:[^:]+(::.{1,48})?)$"
+        },
+        {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "^(S[0-9]+|P:[^:]+(::.{1,48})?)$"
+          }
+        }
+      ]
+    },
+    "command": {
+      "type": "object",
+      "required": [
+        "text",
+        "source"
+      ],
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        },
+        "label": {
+          "type": "string"
+        },
+        "script": {
+          "type": "boolean"
+        },
+        "needs": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "homebrew",
+              "git",
+              "docker-repo",
+              "build-tools",
+              "ollama"
+            ]
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "commands": {
+      "type": "object",
+      "properties": {
+        "mac": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/command"
+          }
+        },
+        "linux": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/command"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "vendorLine": {
+      "type": "object",
+      "required": [
+        "text",
+        "source",
+        "url",
+        "says"
+      ],
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        },
+        "url": {
+          "type": "string",
+          "pattern": "^https://"
+        },
+        "says": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "note": {
+      "type": "object",
+      "required": [
+        "text",
+        "source"
+      ],
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        }
+      },
+      "additionalProperties": false
+    },
+    "link": {
+      "type": "object",
+      "required": [
+        "label",
+        "url",
+        "source"
+      ],
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string",
+          "pattern": "^https://"
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        }
+      },
+      "additionalProperties": false
+    },
+    "check": {
+      "type": "object",
+      "required": [
+        "kind",
+        "text"
+      ],
+      "properties": {
+        "kind": {
+          "enum": [
+            "command",
+            "sentence",
+            "none"
+          ]
+        },
+        "text": {
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        },
+        "expect": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "step": {
+      "type": "object",
+      "required": [
+        "id",
+        "level",
+        "title",
+        "enables",
+        "applies",
+        "platforms",
+        "commands",
+        "check",
+        "probe",
+        "script",
+        "shots",
+        "size"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[1-7]\\.[0-9]+$"
+        },
+        "level": {
+          "type": "integer"
+        },
+        "title": {
+          "type": "string"
+        },
+        "enables": {
+          "type": "string"
+        },
+        "page": {
+          "type": "boolean"
+        },
+        "pageWhy": {
+          "type": "string"
+        },
+        "address": {
+          "type": "object",
+          "required": [
+            "provider",
+            "url",
+            "source"
+          ],
+          "properties": {
+            "provider": {
+              "enum": [
+                "ollama",
+                "lmstudio",
+                "llamacpp"
+              ]
+            },
+            "url": {
+              "type": "string",
+              "pattern": "^http://localhost:[0-9]+$"
+            },
+            "source": {
+              "$ref": "#/$defs/source"
+            }
+          },
+          "additionalProperties": false
+        },
+        "applies": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "enum": [
+              "dmg",
+              "cask",
+              "apt",
+              "appimage",
+              "jar",
+              "zip",
+              "source"
+            ]
+          }
+        },
+        "notNeeded": {
+          "$ref": "#/$defs/note"
+        },
+        "platforms": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "enum": [
+              "mac",
+              "linux"
+            ]
+          }
+        },
+        "commands": {
+          "$ref": "#/$defs/commands"
+        },
+        "vendor": {
+          "type": "object",
+          "properties": {
+            "mac": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/vendorLine"
+              }
+            },
+            "linux": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/vendorLine"
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "links": {
+          "type": "object",
+          "properties": {
+            "all": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/link"
+              }
+            },
+            "mac": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/link"
+              }
+            },
+            "linux": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/link"
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "notes": {
+          "type": "object",
+          "properties": {
+            "all": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/note"
+              }
+            },
+            "mac": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/note"
+              }
+            },
+            "linux": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/note"
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "check": {
+          "type": "object",
+          "properties": {
+            "all": {
+              "$ref": "#/$defs/check"
+            },
+            "mac": {
+              "$ref": "#/$defs/check"
+            },
+            "linux": {
+              "$ref": "#/$defs/check"
+            }
+          },
+          "additionalProperties": false
+        },
+        "probe": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "required": [
+                "route",
+                "field"
+              ],
+              "properties": {
+                "route": {
+                  "type": "string",
+                  "pattern": "^/api/"
+                },
+                "field": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "script": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "enum": [
+                "generate"
+              ]
+            },
+            {
+              "type": "object",
+              "required": [
+                "copy"
+              ],
+              "properties": {
+                "copy": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "from",
+                      "to"
+                    ],
+                    "properties": {
+                      "from": {
+                        "type": "string"
+                      },
+                      "to": {
+                        "type": "string",
+                        "pattern": "^[a-z0-9./-]+$"
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "shots": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z0-9-]+$"
+          }
+        },
+        "size": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "text",
+              "date",
+              "method",
+              "source",
+              "platforms"
+            ],
+            "properties": {
+              "text": {
+                "type": "string"
+              },
+              "date": {
+                "type": "string",
+                "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+              },
+              "method": {
+                "type": "string"
+              },
+              "source": {
+                "$ref": "#/$defs/source"
+              },
+              "platforms": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "enum": [
+                    "mac",
+                    "linux"
+                  ]
+                },
+                "description": "The platforms the measured file is for. A size shows only under these; the builder refuses one the step does not cover."
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

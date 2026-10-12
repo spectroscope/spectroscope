@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { LIVE_START, liveStep, type LiveText } from "./liveSession";
+import { LIVE_START, heardText, liveStep, type LiveText } from "./liveSession";
 
 /** Run a whole conversation through the reducer. */
 function play(...frames: unknown[]): LiveText {
@@ -95,5 +95,58 @@ describe("what the live frames mean for the composer", () => {
     const before = play({ type: "partial", text: " steady" });
     expect(liveStep(before, { type: "partial" })).toEqual(before);
     expect(liveStep(before, { type: "partial", text: "" })).toEqual(before);
+  });
+});
+
+describe("the local route's frames (card 527)", () => {
+  it("REPLACES the provisional text on a partial that says replace", () => {
+    // A local run covers the whole open window, so its answer is the window's
+    // text so far. Appending would print the window twice.
+    const state = play(
+      { type: "partial", text: "hello", replace: true },
+      { type: "partial", text: "hello there", replace: true },
+    );
+    expect(state.provisional).toBe("hello there");
+  });
+
+  it("still appends a partial without replace, as the hosted route sends them", () => {
+    const state = play({ type: "partial", text: " hello" }, { type: "partial", text: " there" });
+    expect(state.provisional).toBe("hello there");
+  });
+
+  it("keeps a closed window's text and carries on with the next window", () => {
+    const state = play(
+      { type: "partial", text: "Good morning", replace: true },
+      { type: "final", text: "Good morning.", more: true },
+      { type: "partial", text: "Please open", replace: true },
+    );
+    expect(state.committed).toBeNull();
+    expect(state.settled).toBe("Good morning.");
+    expect(state.provisional).toBe("Please open");
+    expect(heardText(state)).toBe("Good morning. Please open");
+  });
+
+  it("commits every window together on the last final", () => {
+    const state = play(
+      { type: "final", text: "Good morning.", more: true },
+      { type: "partial", text: "Please open", replace: true },
+      { type: "final", text: "Please open the settings." },
+    );
+    expect(state.committed).toBe("Good morning. Please open the settings.");
+    expect(state.provisional).toBe("");
+    expect(state.settled).toBe("");
+  });
+
+  it("remembers how long the last whisper run took", () => {
+    const state = play({ type: "partial", text: "hello", replace: true, durationMs: 812 });
+    expect(state.runMs).toBe(812);
+  });
+
+  it("an empty replacing partial clears what the window showed", () => {
+    const state = play(
+      { type: "partial", text: "uh", replace: true },
+      { type: "partial", text: "", replace: true },
+    );
+    expect(state.provisional).toBe("");
   });
 });

@@ -3,7 +3,9 @@
 // Each cycle is one root run with a child agent under it, and together the
 // cycles carry every event type the reducer folds: the wire frames of the
 // RunEvent union, the socket-only frames (provider_info, workspace_info,
-// permission_mode_info, tool_groups_info, local_mode_info, otlp_export) and the import-only ones (user_message,
+// permission_mode_info, tool_groups_info, local_mode_info, otlp_export, and
+// card 502's peer_message, peer_roster and peer_message_decision, card 503's send_peer_message, and card
+// 504's goal_info, loop_info and set_loop) and the import-only ones (user_message,
 // tool_result_detail, workflow_state, attachment_image, agent_detail). Which
 // types those are is read off reducer.ts by the test that uses this, so a type
 // the reducer learns later turns that test red until it is added here.
@@ -51,6 +53,61 @@ function cycle(c: number, ts: number): Array<Record<string, unknown>> {
       type: "local_mode_info",
       on: c % 20 !== 0,
       rows: [{ key: "sessionsPerChat", value: 3, preset: 3, changed: false, floor: 2 }],
+    });
+    // Card 502: the three socket-only frames of agent messaging.
+    push({
+      type: "peer_message",
+      kind: c % 20 === 0 ? "held" : "status",
+      direction: c % 20 === 0 ? "received" : "sent",
+      msgId: `00000000-0000-4000-8000-${String(c).padStart(12, "0")}`,
+      name: "ForgeDemo-7f",
+      status: c % 20 === 0 ? "held" : "delivered",
+    });
+    push({
+      type: "peer_roster",
+      sessions: [
+        { id: `peer-${c}`, running: c % 20 !== 0, since: 1, folder: "/tmp/work", face: "repl", pid: 4711 },
+      ],
+    });
+    push({
+      type: "peer_message_decision",
+      msgId: `00000000-0000-4000-8000-${String(c).padStart(12, "0")}`,
+      deliver: true,
+    });
+    // Card 504: the goal in force, the loop, and the page's /loop.
+    push({
+      type: "goal_info",
+      sessionId: "20260101-000000-abcdef12",
+      stated: c % 20 === 0,
+      outcome: "the tests are green",
+      check: "npm test",
+      file: "/tmp/home/.spectro/goals/x.goal.md",
+    });
+    push({ type: "set_loop", action: "start", prompt: "check the build", intervalSeconds: 120 });
+    push({
+      type: "loop_info",
+      sessionId: "20260101-000000-abcdef12",
+      active: c % 20 !== 0,
+      loopId: `loop${c}`,
+      pacing: "fixed",
+      prompt: "check the build",
+      intervalSeconds: 120,
+      nextAt: BASE_TS + c * 60_000,
+      reason: "every 120 s",
+      keepalive: false,
+      held: false,
+      fires: c,
+      startedAt: BASE_TS,
+      endedReason: c % 20 === 0 ? "user_abort" : null,
+      endUnseen: false,
+      maxTurns: 150,
+    });
+    // Card 503: the operator's Reply from the chat.
+    push({
+      type: "send_peer_message",
+      to: "ForgeDemo-7f",
+      toSession: `peer-${c}`,
+      text: "thanks",
     });
   }
   push({ type: "user_message", text: `question ${c}` });

@@ -108,6 +108,47 @@ class PlaybookInstallerTest {
     // ---- install -----------------------------------------------------------------------------
 
     @Test
+    void aHookWithACredentialInItsCommandIsRefusedBeforeItReachesTheSettings() throws IOException {
+        String value = HookTokenVectors.BY_RULE.get("bearer");
+        write("hooks/hooks.json", "[ { \"event\": \"pre_tool_use\", \"command\": \"curl -H '" + value + "' x\" } ]\n");
+        Files.createDirectories(home);
+        Files.writeString(settings, "{ \"model\": \"x\" }\n");
+
+        Result result = install(true);
+
+        assertEquals(Status.FINDINGS, result.status(), result.message());
+        assertTrue(String.join(" ", result.names()).contains("bearer"), String.valueOf(result.names()));
+        assertFalse(String.join(" ", result.names()).contains("abcdefghij0123456789"), String.valueOf(result.names()));
+        assertEquals("{ \"model\": \"x\" }\n", Files.readString(settings), "the settings are not touched");
+        assertTrue(ledger.find("p").isEmpty(), "nothing is recorded");
+        assertFalse(Files.exists(home.resolve("skills")), "nothing is installed");
+    }
+
+    @Test
+    void anInstallPutsTheWorkspaceInPlaceOfTheProjectPlaceholder() throws IOException {
+        write("hooks/hooks.json", PlaybookContentsTest.HOOKS.replace("sh {hooks}/guard.sh", "sh {project}/check.sh"));
+        Path workspace = Files.createDirectories(tmp.resolve("work"));
+        String hash = PlaybookContents.preview(dir, playbook(), home, project, ledger, null, workspace).contentsHash();
+
+        Result result = installer().install(dir, playbook(), hash, true, workspace);
+
+        assertEquals(Status.INSTALLED, result.status(), result.message());
+        assertEquals(List.of("sh " + workspace + "/check.sh"), settingsCommands());
+    }
+
+    @Test
+    void anInstallPutsAWorkspaceWithASpaceInAsOneQuotedWord() throws IOException {
+        write("hooks/hooks.json", PlaybookContentsTest.HOOKS.replace("sh {hooks}/guard.sh", "sh {project}/check.sh"));
+        Path workspace = Files.createDirectories(tmp.resolve("My Project"));
+        String hash = PlaybookContents.preview(dir, playbook(), home, project, ledger, null, workspace).contentsHash();
+
+        Result result = installer().install(dir, playbook(), hash, true, workspace);
+
+        assertEquals(Status.INSTALLED, result.status(), result.message());
+        assertEquals(List.of("sh '" + workspace + "'/check.sh"), settingsCommands());
+    }
+
+    @Test
     void anInstallWithTheShownHashAndHooksWritesEveryPackTheHookAndTheLedger() throws IOException {
         Result result = install(true);
 

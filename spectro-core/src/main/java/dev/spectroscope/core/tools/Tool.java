@@ -50,6 +50,32 @@ public interface Tool {
     }
 
     /**
+     * Card 547: whether this tool is offered to the model in a run on this
+     * folder. A tool that needs something the folder or the machine may lack
+     * (graphify and a built code graph, for {@code code_graph}) answers false
+     * until it is there. The loop asks once when a run starts and leaves a
+     * tool that answers false out of every request of that run; a call that
+     * arrives anyway still reaches {@link #execute}, which says what is missing.
+     *
+     * @param cwd the run's folder, may be null
+     * @return true unless the tool cannot work in this folder
+     */
+    default boolean offeredIn(Path cwd) {
+        return true;
+    }
+
+    /**
+     * Card 547: one sentence the loop adds to the system prompt of a run that
+     * offers this tool, after the base prompt. A tool that is not offered adds
+     * nothing, so a run without it sends the prompt it sent before.
+     *
+     * @return the sentence, or null for none
+     */
+    default String systemPromptLine() {
+        return null;
+    }
+
+    /**
      * Card 493: what a run read when it started that a tool may put into its
      * own description. The loop builds it once per run, so a description that
      * depends on it stays the same for every request of the run and the

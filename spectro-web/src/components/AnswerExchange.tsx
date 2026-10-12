@@ -3,18 +3,60 @@
 // exchange index (an import's held wire, or the server's sidecar), picks the
 // answer's exchange (wire/answerExchange.ts) and shows its bodies in the same
 // pane the trace uses.
+//
+// Card 519: the open pane carries the trace's face strip, so the owner can
+// switch from the structured parts to the insight tree or the wire bytes. The
+// faces come from the pane's own list, withdrawn per origin as the trace
+// withdraws them. The choice lives in the open pane and nowhere else: it is not
+// stored, it does not move the trace's master face, and a reopened exchange
+// starts on Structured again.
 
 import { useEffect, useState } from "react";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
+import type { TraceOrigin } from "../state/traceFace";
 import { findAnswerExchange } from "../wire/answerExchange";
 import type { LlmExchangeMeta } from "../wire/llmWire";
-import { LlmExchangeDetail } from "./LlmExchangeDetail";
+import { LlmExchangeDetail, exchangeFacesOf, type ExchangeFace } from "./LlmExchangeDetail";
+
+/**
+ * One opened exchange with its face strip. Mounted only while the exchange is
+ * open, so closing it drops the chosen face.
+ */
+export function ExchangeFacePane({
+  meta,
+  sessionId,
+  origin,
+}: {
+  meta: LlmExchangeMeta;
+  sessionId: string;
+  /** Where the session came from; it decides which faces are on offer. */
+  origin: TraceOrigin;
+}) {
+  const lang = useLang();
+  const [face, setFace] = useState<ExchangeFace>("structured");
+  const faces = exchangeFacesOf(origin);
+  // Structured is on every list, so a withdrawn face lands there.
+  const shown: ExchangeFace = faces.includes(face) ? face : "structured";
+  return (
+    <>
+      <div className="trace-detail-modes" role="group" aria-label={t(lang, "trace.modeAria")}>
+        {faces.map((f) => (
+          <button key={f} type="button" aria-pressed={shown === f} onClick={() => setFace(f)}>
+            {t(lang, `trace.mode.${f}`)}
+          </button>
+        ))}
+      </div>
+      <LlmExchangeDetail payload={meta} sessionId={sessionId} face={shown} />
+    </>
+  );
+}
 
 export function AnswerExchange({
   sessionId,
   agentId,
   endTs,
+  origin = "native",
   defaultOpen = false,
 }: {
   /** The session the exchange fetch asks under (state/wireSession.ts). */
@@ -22,6 +64,8 @@ export function AnswerExchange({
   agentId: string;
   /** When the answer's usage line closed it. */
   endTs: number;
+  /** Where the session came from (state/traceFace.ts traceOriginOf). */
+  origin?: TraceOrigin;
   defaultOpen?: boolean;
 }) {
   const lang = useLang();
@@ -60,7 +104,7 @@ export function AnswerExchange({
           ) : found.kind === "none" ? (
             <p className="trace-source-note">{t(lang, "chat.exchangeNone")}</p>
           ) : (
-            <LlmExchangeDetail payload={found.meta} sessionId={sessionId} face="structured" />
+            <ExchangeFacePane meta={found.meta} sessionId={sessionId} origin={origin} />
           )}
         </div>
       )}

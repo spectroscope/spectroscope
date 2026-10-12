@@ -17,6 +17,7 @@ import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -24,6 +25,7 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -262,9 +264,444 @@ public class PlaybookController {
     }
 
     /**
+     * The largest body {@code PUT /api/playbooks/write} reads: a text of 1 MB in JSON, where an escaped
+     * control character takes six bytes.
+     */
+    public static final int MAX_WRITE_BODY_BYTES = 6 * 1024 * 1024 + 64 * 1024;
+
+    /**
+     * {@code GET /api/playbooks/tree?dir=} : the files of a registered folder in the shape the Files
+     * panel reads, to the loader's depth and file count (card 522). A link or a file that is not
+     * regular is a finding, never an entry.
+     *
+     * @return 200 with the tree; 404 with no body for a foreign caller or a folder that is not registered
+     */
+    @GetMapping("/api/playbooks/tree")
+    public ResponseEntity<?> tree(@RequestParam("dir") String dir, HttpServletRequest request) {
+        if (!fenced(request)) {
+            return ResponseEntity.notFound().build();
+        }
+        Path real = registered(dir);
+        if (real == null) {
+            return ResponseEntity.notFound().build();
+        }
+        try {
+            return ResponseEntity.ok(PlaybookFiles.tree(real));
+        } catch (IOException failure) {
+            return ResponseEntity.status(500).body(Map.of("message", "The folder could not be listed."));
+        }
+    }
+
+    /**
+     * {@code GET /api/playbooks/read?dir=&path=} : one text file of a registered folder with its sha256.
+     *
+     * @return 200 {@code {path, text, sha256, size}}; 413 above 1 MB; 415 not UTF-8 text; 404 with no
+     *         body for a foreign caller, a folder that is not registered, or a path that is absolute,
+     *         holds {@code ..}, meets a link or names no file inside the folder
+     */
+    @GetMapping("/api/playbooks/read")
+    public ResponseEntity<?> readFile(@RequestParam("dir") String dir, @RequestParam("path") String path,
+                                      HttpServletRequest request) {
+        if (!fenced(request)) {
+            return ResponseEntity.notFound().build();
+        }
+        Path real = registered(dir);
+        if (real == null) {
+            return ResponseEntity.notFound().build();
+        }
+        try {
+            return answer(PlaybookFiles.read(real, path));
+        } catch (IOException failure) {
+            return ResponseEntity.status(500).body(Map.of("message", "The file could not be read."));
+        }
+    }
+
+    /**
+     * {@code PUT /api/playbooks/write {dir, path, text, baseHash}} : writes one text file of a
+     * registered folder through a temp file and an atomic move. {@code baseHash} is the sha256 the
+     * text was made from, or {@code ""} for a new file.
+     *
+     * @return 200 {@code {path, sha256, size}}; 400 a missing field, {@code playbook.json}, a folder,
+     *         a path deeper than the loader reads or a name outside the segment rule; 409 with
+     *         {@code diskHash} when the file is not the one the text was made from; 413 a text above
+     *         1 MB or a folder that would pass 200 files or 24 MB; 415 a text with a NUL; 404 with no
+     *         body as for the read
+     */
+    @PutMapping(value = "/api/playbooks/write", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<?> writeFile(@RequestBody String body, HttpServletRequest request) {
+        if (!fenced(request)) {
+            return ResponseEntity.notFound().build();
+        }
+        if (body.getBytes(StandardCharsets.UTF_8).length > MAX_WRITE_BODY_BYTES) {
+            return ResponseEntity.status(413).body(Map.of("reason", "too-large",
+                    "message", "The file is larger than 1 MB. The editor writes text files up to 1 MB."));
+        }
+        JsonNode parsed;
+        try {
+            parsed = new ObjectMapper().readTree(body);
+        } catch (IOException notJson) {
+            return ResponseEntity.badRequest().body(Map.of("reason", "bad-request", "message", "The body is not JSON."));
+        }
+        if (parsed == null || !parsed.path("dir").isTextual() || !parsed.path("path").isTextual()
+                || !parsed.path("text").isTextual() || !parsed.path("baseHash").isTextual()) {
+            return ResponseEntity.badRequest().body(Map.of("reason", "bad-request",
+                    "message", "A 'dir', a 'path', a 'text' and a 'baseHash' are required."));
+        }
+        Path real = registered(parsed.get("dir").asText());
+        if (real == null) {
+            return ResponseEntity.notFound().build();
+        }
+        try {
+            return answer(PlaybookFiles.write(real, parsed.get("path").asText(), parsed.get("text").asText(),
+                    parsed.get("baseHash").asText()));
+        } catch (IOException failure) {
+            return ResponseEntity.status(500).body(Map.of("message", "The file could not be written."));
+        }
+    }
+
+    /**
+     * {@code DELETE /api/playbooks/file-at?dir=&path=} : removes one text file of a registered folder,
+     * never a folder and never {@code playbook.json}, {@code LICENSE} or {@code PROVENANCE.md} at the root.
+     *
+     * @return 200 {@code {path, deleted}}; 400 a folder or a protected file; 413 or 415 a file that is
+     *         not a text file the editor opens; 404 with no body as for the read
+     */
+    @DeleteMapping("/api/playbooks/file-at")
+    public ResponseEntity<?> deleteFile(@RequestParam("dir") String dir, @RequestParam("path") String path,
+                                        HttpServletRequest request) {
+        if (!fenced(request)) {
+            return ResponseEntity.notFound().build();
+        }
+        Path real = registered(dir);
+        if (real == null) {
+            return ResponseEntity.notFound().build();
+        }
+        try {
+            return answer(PlaybookFiles.delete(real, path));
+        } catch (IOException failure) {
+            return ResponseEntity.status(500).body(Map.of("message", "The file could not be removed."));
+        }
+    }
+
+    /**
+     * The largest body {@code POST /api/playbooks/import} reads: a bundle of 24 MB in JSON, twice over,
+     * for base64 and escaped text. The handler counts the decoded bytes against 24 MB.
+     */
+    public static final int MAX_IMPORT_BODY_BYTES = 48 * 1024 * 1024 + 64 * 1024;
+
+    /**
+     * {@code GET /api/playbooks/export?dir=} : the registered folder as one ZIP named
+     * {@code <id>.playbook.zip} (card 524). Every file the walk lists sits under one folder named
+     * after the id, in the walk's order and with one fixed entry time, so the same folder gives the
+     * same bytes. Finder's {@code .DS_Store} is left out.
+     *
+     * @return 200 with the ZIP; 409 with {@code findings} for a link, a file that is not regular, a
+     *         name or a binary file the import refuses, the caps, or a playbook that does not load
+     *         cleanly; 422 {@code token} with {@code findings} when a hook command of
+     *         {@code hooks/hooks.json} carries a credential shape of the wire redaction, naming the
+     *         line and the rule and never the value (card 538); 404 with no body for a foreign caller
+     *         or a folder that is not registered
+     */
+    @GetMapping("/api/playbooks/export")
+    public ResponseEntity<StreamingResponseBody> exportBundle(@RequestParam("dir") String dir,
+                                                              HttpServletRequest request) {
+        if (!fenced(request)) {
+            return ResponseEntity.notFound().build();
+        }
+        Path real = registered(dir);
+        if (real == null) {
+            return ResponseEntity.notFound().build();
+        }
+        PlaybookBundle.Export export;
+        try {
+            export = PlaybookBundle.prepare(real);
+        } catch (IOException failure) {
+            return json(500, Map.of("reason", "failed", "message", "The folder could not be read."));
+        }
+        if (export instanceof PlaybookBundle.NotReady notReady) {
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("reason", "refused");
+            out.put("message", "This folder cannot be exported: the import would refuse it.");
+            out.put("findings", notReady.findings());
+            return json(409, out);
+        }
+        if (export instanceof PlaybookBundle.Credential credential) {
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("reason", "token");
+            out.put("message", PlaybookBundle.credentialSentence(credential.findings(), "Nothing was exported."));
+            out.put("findings", credential.findings());
+            return json(422, out);
+        }
+        PlaybookBundle.Ready ready = (PlaybookBundle.Ready) export;
+        // A zip is never rendered, and nosniff keeps a legacy sniffer from promoting it. The id in
+        // the filename passed the id shape, which carries no quote, CR or LF.
+        return ResponseEntity.ok()
+                .contentType(new MediaType("application", "zip"))
+                .header("X-Content-Type-Options", "nosniff")
+                .header("Content-Disposition", "attachment; filename=\"" + ready.id() + ".playbook.zip\"")
+                .body(out -> PlaybookBundle.write(ready, out));
+    }
+
+    /**
+     * A JSON answer on a route whose body is a stream: Spring writes a {@link StreamingResponseBody}
+     * whatever the status, so a refusal is serialized here.
+     */
+    private static ResponseEntity<StreamingResponseBody> json(int status, Map<String, ?> body) {
+        byte[] bytes;
+        try {
+            bytes = new ObjectMapper().writeValueAsBytes(body);
+        } catch (IOException unwritable) {
+            bytes = "{}".getBytes(StandardCharsets.UTF_8);
+        }
+        byte[] payload = bytes;
+        return ResponseEntity.status(status).contentType(MediaType.APPLICATION_JSON).body(out -> out.write(payload));
+    }
+
+    /**
+     * {@code POST /api/playbooks/import {dir, workspace?, entries:[{path, text}|{path, base64}]}} :
+     * writes a bundle the browser read into the empty folder {@code dir}, registers it and answers
+     * the loaded view (card 524). Every path and size is checked before a byte is written; the files
+     * go to a staged folder beside the target, which is checked as the loader checks a folder and
+     * then moved onto the target in one move. Nothing is installed.
+     *
+     * @return 200 with the loaded view; 400 a body, path or entry that is not the shape, two entries
+     *         for one file, a binary file outside {@code docs/}, no {@code playbook.json}; 409 a target
+     *         that is not empty; 413 more than 200 files, more than 24 MB, a binary file over 2 MB;
+     *         415 a text entry with a NUL; 422 with {@code findings} for a playbook that does not load
+     *         cleanly, or {@code token} for a hook command with a credential shape (card 538); 404 with
+     *         no body for a foreign caller
+     */
+    @PostMapping(value = "/api/playbooks/import", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<?> importBundle(@RequestBody String body, HttpServletRequest request) {
+        if (!fenced(request)) {
+            return ResponseEntity.notFound().build();
+        }
+        if (body.length() > MAX_IMPORT_BODY_BYTES) {
+            return ResponseEntity.status(413).body(Map.of("reason", "too-large",
+                    "message", "The bundle holds more than 24 MB."));
+        }
+        JsonNode parsed;
+        try {
+            parsed = new ObjectMapper().readTree(body);
+        } catch (IOException notJson) {
+            return ResponseEntity.badRequest().body(Map.of("reason", "bad-request", "message", "The body is not JSON."));
+        }
+        if (parsed == null || !parsed.isObject()) {
+            return ResponseEntity.badRequest().body(Map.of("reason", "bad-request", "message", "The body is not JSON."));
+        }
+        PlaybookBundle.Outcome outcome;
+        try {
+            outcome = PlaybookBundle.importInto(folders, text(parsed, "dir"), parsed.get("entries"));
+        } catch (IOException | RuntimeException failure) {
+            return ResponseEntity.status(500).body(Map.of("reason", "failed",
+                    "message", "The bundle could not be written: " + failure.getClass().getSimpleName()));
+        }
+        if (outcome.written() == null) {
+            return ResponseEntity.status(outcome.status()).body(outcome.body());
+        }
+        return ResponseEntity.ok(PlaybookLoader.load(outcome.written(),
+                workspaceOf(text(parsed, "workspace"), outcome.written()), config()));
+    }
+
+    /**
+     * {@code GET /api/playbooks/import-sources?dir=&workspace=} : what can be put into a registered
+     * folder (card 523): the installed skills by root label and pack, the catalogue skills by id and
+     * the hooks of the user settings, each hook with {@code left} set when the import leaves it out.
+     * No path of the machine is echoed: a root is a label, and the home folder and the project folder
+     * (the workspace, else the launch folder) in a hook command are written as {@code ~} and
+     * {@code {project}}.
+     *
+     * @return 200 with the sources; 404 with no body for a foreign caller or a folder that is not registered
+     */
+    @GetMapping("/api/playbooks/import-sources")
+    public ResponseEntity<?> importSources(@RequestParam("dir") String dir,
+                                           @RequestParam(value = "workspace", required = false) String workspace,
+                                           HttpServletRequest request) {
+        if (!fenced(request)) {
+            return ResponseEntity.notFound().build();
+        }
+        Path real = registered(dir);
+        if (real == null) {
+            return ResponseEntity.notFound().build();
+        }
+        try {
+            return ResponseEntity.ok(imports(workspace).sources(real));
+        } catch (IOException failure) {
+            return ResponseEntity.status(500).body(Map.of("message", "The sources could not be listed."));
+        }
+    }
+
+    /**
+     * {@code POST /api/playbooks/import-skills {dir, baseHash?, items:[{source, root?, pack?, name?}]}} :
+     * copies installed or catalogue skills into the folder's {@code skills/<pack>/<name>} and lists the
+     * pack in {@code contents.skills}. Sources are looked up by label, pack and name, never resolved
+     * from the request.
+     *
+     * @return 200 {@code {imported, already, sha256, contents}}; 400 an unknown source, a link in a
+     *         source, a pack named like the playbook id, a playbook that does not read cleanly; 409 a
+     *         target with other content or a stale {@code baseHash}; 413 the caps; 404 with no body
+     *         for a foreign caller or a folder that is not registered
+     */
+    @PostMapping(value = "/api/playbooks/import-skills", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<?> importSkills(@RequestBody JsonNode body, HttpServletRequest request) {
+        return imported(body, request, PlaybookImports::importSkills);
+    }
+
+    /**
+     * {@code POST /api/playbooks/import-hooks {dir, replace?, baseHash?, workspace?}} : writes the hooks
+     * of the user settings into {@code hooks/hooks.json}, copies the scripts their commands name from
+     * the home into {@code hooks/}, writes the project folder (the workspace, else the launch folder)
+     * as {@code {project}}, leaves out a hook that names a dot folder of the home (card 538), and lists
+     * the file in {@code contents.hooks}. The settings are only read.
+     *
+     * @return 200 {@code {hooks, scripts, left, sha256, contents}}; 400 no hooks, or
+     *         {@code all-left-out} with {@code left}; 409 an existing {@code hooks/hooks.json} without
+     *         {@code replace}; 404 as for the other routes
+     */
+    @PostMapping(value = "/api/playbooks/import-hooks", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<?> importHooks(@RequestBody JsonNode body, HttpServletRequest request) {
+        return imported(body, request, PlaybookImports::importHooks);
+    }
+
+    /**
+     * {@code POST /api/playbooks/new-agent {dir, name, type, skill?, description?}} : writes
+     * {@code agents/<name>.md} from the template and lists it in {@code contents.agents}.
+     *
+     * @return 200 {@code {path, sha256, contents}}; 409 a name outside the segment rule or one that
+     *         exists; 400 an unknown type or a skill name that is not one token; 404 as for the other routes
+     */
+    @PostMapping(value = "/api/playbooks/new-agent", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<?> newAgent(@RequestBody JsonNode body, HttpServletRequest request) {
+        return imported(body, request, PlaybookImports::newAgent);
+    }
+
+    /**
+     * {@code POST /api/playbooks/new-command {dir, name}} : writes {@code commands/<name>.md} from the
+     * template and lists it in {@code contents.commands}.
+     *
+     * @return 200 {@code {path, sha256, contents}}; 409 a name outside the segment rule or one that
+     *         exists; 404 as for the other routes
+     */
+    @PostMapping(value = "/api/playbooks/new-command", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<?> newCommand(@RequestBody JsonNode body, HttpServletRequest request) {
+        return imported(body, request, PlaybookImports::newCommand);
+    }
+
+    /**
+     * {@code POST /api/playbooks/remove-content {dir, kind, path}} : takes the entry out of
+     * {@code contents} and removes the files under its path, never a file outside the kind's folder
+     * and never {@code playbook.json}.
+     *
+     * @return 200 {@code {removed, sha256, contents}}; 400 a kind, a path or a link this route does
+     *         not remove; 404 as for the other routes
+     */
+    @PostMapping(value = "/api/playbooks/remove-content", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<?> removeContent(@RequestBody JsonNode body, HttpServletRequest request) {
+        return imported(body, request, PlaybookImports::removeContent);
+    }
+
+    /**
+     * {@code GET /api/playbooks/plugin-sources?dir=} : the Claude Code plugins of this home (card 526),
+     * from the plugin cache and the local plugins of each marketplace under {@code ~/.claude/plugins},
+     * each by its root label, marketplace, name and version, with the count of each kind it carries,
+     * whether it carries MCP servers and whether it has a licence. No path of the machine is echoed. A
+     * home without those folders answers an empty list.
+     *
+     * @return 200 {@code {plugins:[...]}}; 404 with no body for a foreign caller or a folder that is
+     *         not registered
+     */
+    @GetMapping("/api/playbooks/plugin-sources")
+    public ResponseEntity<?> pluginSources(@RequestParam("dir") String dir, HttpServletRequest request) {
+        if (!fenced(request)) {
+            return ResponseEntity.notFound().build();
+        }
+        Path real = registered(dir);
+        if (real == null) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(imports(null).pluginSources());
+    }
+
+    /**
+     * {@code POST /api/playbooks/import-plugin {dir, baseHash?, plugin:{root?, marketplace, name, version},
+     * kinds:[skills|agents|commands|hooks]}} : copies the chosen kinds of a listed plugin into the
+     * folder (card 526). Skills land in {@code skills/<plugin>/} as one pack, agents in
+     * {@code agents/<name>.md} with the four fields a playbook agent has, commands in
+     * {@code commands/<name>.md}, PreToolUse and PostToolUse hooks in {@code hooks/hooks.json} with
+     * the scripts they run. MCP servers and {@code .mcp.json} are never copied. Nothing is installed:
+     * hooks and agents reach the harness only through the install confirmation.
+     *
+     * @return 200 {@code {imported, already, dropped, droppedHooks, notCopied, sha256, contents}}; 400
+     *         a request without plugin or kinds, an unknown kind, an unlicensed plugin, a link, a name
+     *         or a depth the folder does not take; 409 a target with other content; 413 the caps; 404
+     *         with no body for a plugin that is not listed, a foreign caller or a folder that is not
+     *         registered
+     */
+    @PostMapping(value = "/api/playbooks/import-plugin", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<?> importPlugin(@RequestBody JsonNode body, HttpServletRequest request) {
+        return imported(body, request, PlaybookImports::importPlugin);
+    }
+
+    /** One of the card 523 routes: the fence, the registered folder, then the work. */
+    private ResponseEntity<?> imported(JsonNode body, HttpServletRequest request, ImportRoute route) {
+        if (!fenced(request)) {
+            return ResponseEntity.notFound().build();
+        }
+        Path real = registered(text(body, "dir"));
+        if (real == null) {
+            return ResponseEntity.notFound().build();
+        }
+        try {
+            return answer(route.run(imports(text(body, "workspace")), real, body));
+        } catch (IOException | RuntimeException failure) {
+            return ResponseEntity.status(500).body(Map.of("reason", "failed",
+                    "message", "The playbook folder could not be changed: " + failure.getClass().getSimpleName()));
+        }
+    }
+
+    @FunctionalInterface
+    private interface ImportRoute {
+        PlaybookFiles.Answer run(PlaybookImports imports, Path root, JsonNode body) throws IOException;
+    }
+
+    private PlaybookImports imports(String workspace) {
+        return new PlaybookImports(spectroHome, SkillLibrary.defaultRoots(launchDir).get(1), projectOf(workspace),
+                userSettings);
+    }
+
+    /**
+     * The folder a hook's {@code {project}} stands for (card 538): the workspace the request names when
+     * it is an absolute folder that exists, else the launch folder.
+     */
+    private Path projectOf(String workspace) {
+        if (workspace != null && !workspace.isBlank()) {
+            try {
+                Path named = Path.of(workspace);
+                if (named.isAbsolute() && Files.isDirectory(named)) {
+                    return named.normalize();
+                }
+            } catch (InvalidPathException unusable) {
+                // the launch folder answers instead
+            }
+        }
+        return launchDir.toAbsolutePath().normalize();
+    }
+
+    private static ResponseEntity<?> answer(PlaybookFiles.Answer answer) {
+        if (answer instanceof PlaybookFiles.Done done) {
+            return ResponseEntity.ok(done.body());
+        }
+        if (answer instanceof PlaybookFiles.Refused refused) {
+            return ResponseEntity.status(refused.status()).body(refused.body());
+        }
+        return ResponseEntity.notFound().build();
+    }
+
+    /**
      * {@code GET /api/playbooks/contents?dir=&workspace=} : what a registered folder brings (skills,
      * commands, hooks, agents, workflows) with source, hash, state and reach, before anything is
-     * installed. Behind the same fence as the writes, because the answer carries the full text of
+     * installed. A hook's {@code {project}} becomes the workspace, else the launch folder, and the
+     * install takes the same folder from its {@code workspace}. Behind the same fence as the writes, because the answer carries the full text of
      * the hook scripts. A playbook that does not read answers 200 with its findings and no items.
      */
     @GetMapping("/api/playbooks/contents")
@@ -301,14 +738,14 @@ public class PlaybookController {
         try {
             Path projectSkills = SkillLibrary.defaultRoots(launchDir).get(1);
             return ResponseEntity.ok(PlaybookContents.preview(real, read.playbook(), spectroHome, projectSkills,
-                    ledger, hooksOrigin));
+                    ledger, hooksOrigin, projectOf(workspace)));
         } catch (IOException | IllegalStateException failed) {
             return ResponseEntity.status(500).body(Map.of("message", "The contents could not be read: " + failed.getMessage()));
         }
     }
 
     /**
-     * {@code POST /api/playbooks/contents/install {dir, contentsHash, hooks}} : installs what a
+     * {@code POST /api/playbooks/contents/install {dir, contentsHash, hooks, workspace?}} : installs what a
      * registered folder brings, bound to the contents hash of the list the owner saw. The hooks go
      * into the user settings only when {@code hooks} is true. Every refusal carries {@code reason},
      * the name of the installer's status, beside {@code message}.
@@ -333,7 +770,8 @@ public class PlaybookController {
                     Map.of("findings", read.findings().stream().map(f -> f.path() + ": " + f.message()).toList()));
         }
         boolean hooks = body != null && body.path("hooks").asBoolean(false);
-        PlaybookInstaller.Result result = installer().install(real, read.playbook(), text(body, "contentsHash"), hooks);
+        PlaybookInstaller.Result result = installer().install(real, read.playbook(), text(body, "contentsHash"), hooks,
+                projectOf(text(body, "workspace")));
         return switch (result.status()) {
             case INSTALLED -> ResponseEntity.ok(Map.of("installed", result.names()));
             case FINDINGS -> refusal(400, result.status(), result.message(), Map.of("findings", result.names()));

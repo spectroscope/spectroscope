@@ -7,6 +7,12 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Chat } from "./Chat";
+import { ComposerGear } from "./ComposerGear";
+import { GoalSection } from "./GoalSection";
+import { LocalModeSection } from "./LocalModeSection";
+import { ToolGroupsSection } from "./ToolGroupsSection";
+import type { ClientMessage } from "../events";
+import { t } from "../i18n/i18n";
 import { initialState } from "../state/reducer";
 import type { ChatCommandName } from "../state/chatCommands";
 import { drive, type El, type Step } from "../testkit/driveComponent";
@@ -172,5 +178,250 @@ describe("the send button while the history is being compacted", () => {
 
   it("says Queue, since there is no run to steer", () => {
     expect(sendLabel(drive(during(true), [Chat], [type("and also this")]))).toBe("Queue");
+  });
+});
+
+describe("/loop in the composer (card 504, fix round 2)", () => {
+  // Found in the live check: on a stored session the page's sendClient goes
+  // to the socket in view, not to the session's own, so /loop stop on a
+  // reopened session reached nobody. The loop frames leave through the host's
+  // onSessionFrame (onLoopFrame until the hub and spoke fix round), which
+  // continues a stored session first, as /clear does.
+  const frames: { type: string; action?: string }[] = [];
+  const direct: { type: string }[] = [];
+  const host = (
+    <Chat
+      state={initialState}
+      liveView={true}
+      onSend={(text) => void sent.push(text)}
+      onCommand={() => true}
+      onSessionFrame={(frame) => {
+        frames.push(frame as { type: string; action?: string });
+        return true;
+      }}
+      onReturnToLive={() => {}}
+      sendClient={(msg) => {
+        direct.push(msg);
+        return true;
+      }}
+    />
+  );
+
+  it("sends /loop stop through onSessionFrame and not through sendClient", () => {
+    frames.length = 0;
+    direct.length = 0;
+    const tree = drive(host, [Chat], [type("/loop stop"), clickSend]);
+    expect(frames).toEqual([{ type: "set_loop", action: "stop" }]);
+    expect(direct).toEqual([]);
+    expect(sent).toEqual([]);
+    expect(field(tree).props.value).toBe("");
+  });
+
+  it("sends a /loop start through onSessionFrame too", () => {
+    frames.length = 0;
+    direct.length = 0;
+    drive(host, [Chat], [type("/loop 5m check the build"), clickSend]);
+    expect(frames.map((f) => [f.type, f.action])).toEqual([["set_loop", "start"]]);
+    expect(direct).toEqual([]);
+  });
+});
+
+describe("the goal in the composer gear (card 504, hub and spoke fix round)", () => {
+  // The review found Set goal and Clear goal on sendClient: on a stored
+  // session that is the socket in view, another session's. They leave through
+  // the host's onSessionFrame, as /loop does. The gear's popover mounts the
+  // section only when open, so the probe opens the gear and reads the
+  // section's sender off its element; the section's own buttons are driven
+  // on their own below.
+  const GOAL = { stated: true, outcome: "the tests are green", check: "npm test", file: "/h/g.goal.md" };
+  const frames: ClientMessage[] = [];
+  const direct: ClientMessage[] = [];
+  const toFrames = (frame: ClientMessage): boolean => {
+    frames.push(frame);
+    return true;
+  };
+  const toDirect = (msg: ClientMessage): boolean => {
+    direct.push(msg);
+    return true;
+  };
+  const openGear: Step = (tree) => {
+    const gear = tree.find(
+      (el) =>
+        el.type === "button" &&
+        el.props["aria-haspopup"] === "dialog" &&
+        el.props.title === t("en", "wsg.title"),
+    );
+    if (gear === undefined) throw new Error("the gear is not in this pass");
+    gear.props.onClick?.();
+  };
+  const section = (tree: El[]): El => {
+    const found = tree.find((el) => el.type === GoalSection);
+    if (found === undefined) throw new Error("the goal section is not in this pass");
+    return found;
+  };
+  const press =
+    (key: "goal.set" | "goal.clear"): Step =>
+    (tree) => {
+      const button = tree.find((el) => el.type === "button" && el.props.children === t("en", key));
+      if (button === undefined) throw new Error(`${key} is not in this pass`);
+      button.props.onClick?.();
+    };
+
+  it("the gear hands the goal section the host's onSessionFrame, not sendClient", () => {
+    frames.length = 0;
+    direct.length = 0;
+    const host = (
+      <Chat
+        state={{ ...initialState, goal: GOAL }}
+        liveView={true}
+        onSend={() => {}}
+        onSessionFrame={toFrames}
+        onReturnToLive={() => {}}
+        sendClient={toDirect}
+      />
+    );
+    const tree = drive(host, [Chat, ComposerGear], [openGear]);
+    const send = section(tree).props.sendSession as (msg: ClientMessage) => boolean;
+    expect(send({ type: "set_goal", outcome: "o", check: "c" })).toBe(true);
+    expect(frames).toEqual([{ type: "set_goal", outcome: "o", check: "c" }]);
+    expect(direct, "never on the socket in view").toEqual([]);
+  });
+
+  it("without a host frame the section falls back to sendClient, as /loop does", () => {
+    frames.length = 0;
+    direct.length = 0;
+    const bare = (
+      <Chat
+        state={{ ...initialState, goal: GOAL }}
+        liveView={true}
+        onSend={() => {}}
+        onReturnToLive={() => {}}
+        sendClient={toDirect}
+      />
+    );
+    const tree = drive(bare, [Chat, ComposerGear], [openGear]);
+    (section(tree).props.sendSession as (msg: ClientMessage) => boolean)({
+      type: "set_goal",
+      outcome: "",
+      check: "",
+    });
+    expect(direct).toEqual([{ type: "set_goal", outcome: "", check: "" }]);
+  });
+
+  it("Set goal and Clear goal leave through the section's sendSession", () => {
+    frames.length = 0;
+    const goal = <GoalSection lang="en" goal={GOAL} sendSession={toFrames} />;
+    drive(goal, [GoalSection], [press("goal.set")]);
+    drive(goal, [GoalSection], [press("goal.clear")]);
+    expect(frames).toEqual([
+      { type: "set_goal", outcome: "the tests are green", check: "npm test" },
+      { type: "set_goal", outcome: "", check: "" },
+    ]);
+  });
+});
+
+describe("the gear's other session frames (card 504, hub and spoke review, round 1)", () => {
+  // The review found the permission mode, the tool groups and Local mode on
+  // sendClient. On a stored session that is the socket in view, another
+  // session's, so a mode chosen in a reopened session could switch a different
+  // live one. Every frame the gear sends belongs to the session on screen and
+  // leaves through sendSession, which App continues a stored session for first.
+  const frames: ClientMessage[] = [];
+  const direct: ClientMessage[] = [];
+  const toFrames = (frame: ClientMessage): boolean => {
+    frames.push(frame);
+    return true;
+  };
+  const toDirect = (msg: ClientMessage): boolean => {
+    direct.push(msg);
+    return true;
+  };
+  const openGear: Step = (tree) => {
+    const gear = tree.find(
+      (el) =>
+        el.type === "button" &&
+        el.props["aria-haspopup"] === "dialog" &&
+        el.props.title === t("en", "wsg.title"),
+    );
+    if (gear === undefined) throw new Error("the gear is not in this pass");
+    gear.props.onClick?.();
+  };
+  const one = (tree: El[], type: unknown, what: string): El => {
+    const found = tree.find((el) => el.type === type);
+    if (found === undefined) throw new Error(`${what} is not in this pass`);
+    return found;
+  };
+  /** Presses every control of the gear that sends a frame of the session. */
+  const pressAll = (tree: El[]): void => {
+    const modes = tree.filter((el) => el.type === "div" && el.props.role === "option");
+    expect(modes.length, "positive: the four permission modes are drawn").toBe(4);
+    modes[1]?.props.onClick?.();
+    (one(tree, ToolGroupsSection, "the tool groups").props.onChange as unknown as (off: string[]) => void)([
+      "web",
+    ]);
+    const local = one(tree, LocalModeSection, "Local mode").props;
+    (local.onSwitch as (on: boolean) => void)(true);
+    (local.onEdit as (key: string, value: unknown) => void)("maxTurns", 40);
+    (local.onReset as (key: string) => void)("maxTurns");
+  };
+  const EXPECTED: ClientMessage[] = [
+    { type: "set_permission_mode", mode: "auto" },
+    { type: "set_tool_groups_off", groups: ["web"], save: false },
+    { type: "set_local_mode", on: true },
+    { type: "set_local_mode", values: { maxTurns: 40 } },
+    { type: "set_local_mode", reset: ["maxTurns"] },
+  ];
+
+  it("the permission mode, the tool groups and Local mode leave through sendSession, never sendClient", () => {
+    frames.length = 0;
+    direct.length = 0;
+    const gear = (
+      <ComposerGear
+        workspaceInfo={null}
+        permissionMode="ask"
+        toolGroups={null}
+        localMode={null}
+        sendClient={toDirect}
+        sendSession={toFrames}
+      />
+    );
+    pressAll(drive(gear, [ComposerGear], [openGear]));
+    expect(frames).toEqual(EXPECTED);
+    expect(direct, "never on the socket in view").toEqual([]);
+  });
+
+  it("through Chat they reach the host's onSessionFrame", () => {
+    frames.length = 0;
+    direct.length = 0;
+    const host = (
+      <Chat
+        state={initialState}
+        liveView={false}
+        continuable={true}
+        onSend={() => {}}
+        onSessionFrame={toFrames}
+        onReturnToLive={() => {}}
+        sendClient={toDirect}
+      />
+    );
+    pressAll(drive(host, [Chat, ComposerGear], [openGear]));
+    expect(frames).toEqual(EXPECTED);
+    expect(direct, "a stored session's gear never sends on the socket in view").toEqual([]);
+  });
+
+  it("without sendSession they fall back to sendClient, as the goal does", () => {
+    frames.length = 0;
+    direct.length = 0;
+    const gear = (
+      <ComposerGear
+        workspaceInfo={null}
+        permissionMode="ask"
+        toolGroups={null}
+        localMode={null}
+        sendClient={toDirect}
+      />
+    );
+    pressAll(drive(gear, [ComposerGear], [openGear]));
+    expect(direct).toEqual(EXPECTED);
   });
 });

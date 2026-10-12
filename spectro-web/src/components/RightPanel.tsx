@@ -391,7 +391,7 @@ export function RightPanel({
           />
         );
       case "terminal":
-        return <TerminalPanel sessionId={workspace?.sessionId} />;
+        return <TerminalPanel workspace={workspace} />;
       case "browser":
         // THE ONLY DOOR since 2026-08-30. It used to be the second of two: the
         // session's `browser` tab mounted the same surface, and because the

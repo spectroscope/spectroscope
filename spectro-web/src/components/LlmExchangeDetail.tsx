@@ -39,8 +39,29 @@ import {
   fidelityKey,
   readExchange,
   type LlmExchangeDetail as ExchangeBodies,
+  type LlmExchangeMeta,
   type LlmExchangeSide,
 } from "../wire/llmWire";
+import { facesFor, type TraceFace, type TraceOrigin } from "../state/traceFace";
+
+/** The faces this pane can render, in the trace's order. Source is not one of
+ *  them: the endpoint hands over parsed nodes, not the line (header above). */
+export const EXCHANGE_FACES = ["structured", "insight", "wire"] as const satisfies readonly TraceFace[];
+
+export type ExchangeFace = (typeof EXCHANGE_FACES)[number];
+
+/**
+ * The faces an exchange of a session from this origin offers (card 519): the
+ * pane's own list, minus what the trace withdraws for a recorded exchange of
+ * that origin (state/traceFace.ts). A foreign import keeps Structured alone.
+ *
+ * @param origin where the session's frames came from
+ * @return the faces to offer, in the trace's order
+ */
+export function exchangeFacesOf(origin: TraceOrigin): ExchangeFace[] {
+  const offered = facesFor("llm_exchange", origin);
+  return EXCHANGE_FACES.filter((f) => offered.includes(f));
+}
 
 /** How many response lines the pane paints before it stops and says so. A
  *  streamed answer is thousands of SSE lines; the cap names itself and the
@@ -102,7 +123,7 @@ const LW_RESERVE_MAX_PX = 2400;
  */
 export function llmReservePx(
   lines: number,
-  face: "structured" | "insight" | "wire",
+  face: ExchangeFace,
   half: "request" | "response" | "both",
 ): number {
   // Which panes print the received lines at all. The structured face shows them
@@ -188,8 +209,8 @@ export function emptySideKey(side: LlmExchangeSide, isResponse: boolean): string
 
 /** A collapsible part. The head carries its own count, so a reader decides
  *  whether to open it BEFORE paying for it — which is the difference between
- *  parts and the wall of JSON they replace. */
-function Fold({
+ *  parts and the wall of JSON they replace. Exported for the test seam. */
+export function Fold({
   label,
   note,
   open: initial,
@@ -219,8 +240,9 @@ function Fold({
  *  than a toggle: "default" has to mean the pane as it OPENED — folds a reader
  *  clicked open since included — and a toggle that left those standing would
  *  not be a way back. The epoch is what makes that true: it remounts the panes,
- *  so every fold and every tree node returns to the state it is born in. */
-function ExpandStrip({
+ *  so every fold and every tree node returns to the state it is born in.
+ *  Exported for the test seam (card 519). */
+export function ExpandStrip({
   all,
   onChange,
   lang,
@@ -264,8 +286,9 @@ function Block({ block, lang }: { block: LlmBlock; lang: Lang }) {
 
 /** The request as its parts. The one rule that keeps this honest: a body in a
  *  shape this reader does not know says so and hands over to the tree, because
- *  an empty pane would read as "the request was empty". */
-function RequestParts({
+ *  an empty pane would read as "the request was empty". Exported for the test
+ *  seam. */
+export function RequestParts({
   parts,
   body,
   lang,
@@ -542,7 +565,7 @@ export function LlmExchangeDetail({
    *  to ask: an import, a scenario, an entered fleet. Null means NO fetch. */
   sessionId: string | null;
   /** Which face this row is showing. Every face reads the SAME fetch. */
-  face: "structured" | "insight" | "wire";
+  face: ExchangeFace;
   /** Which half of the exchange this row IS. A request row shows the request
    *  and says nothing about an answer it cannot have seen yet; a response row
    *  shows what came back; the summary row shows both, as it always did. */
@@ -567,18 +590,6 @@ export function LlmExchangeDetail({
       alive = false;
     };
   }, [sessionId, xid]);
-
-  // How far the two rendered faces are unfolded. The epoch remounts them, so
-  // "default" is the pane as it opened rather than whatever was clicked since.
-  const [expandAll, setExpandAll] = useState(false);
-  const [expandEpoch, setExpandEpoch] = useState(0);
-  const setExpand = (all: boolean): void => {
-    setExpandAll(all);
-    setExpandEpoch((e) => e + 1);
-  };
-
-  const bodies = state.kind === "loaded" ? state.bodies : null;
-  const parts = useMemo(() => (bodies === null ? null : readRequestParts(bodies.request.body)), [bodies]);
 
   // A frame this cannot read has no xid to fetch by; the frame itself is the
   // only honest thing to show, and the wire face's bytes are one click away.
@@ -613,9 +624,36 @@ export function LlmExchangeDetail({
     // forever" the card rules out. The step here is downwards, once, and rare.
     return <p className="trace-source-note">{t(lang, "trace.llm.failed")}</p>;
   }
-  if (bodies === null || parts === null) {
-    return <p className="trace-source-note">{t(lang, "trace.llm.failed")}</p>;
-  }
+  return <ExchangeBodiesPane meta={meta} bodies={state.bodies} face={face} half={half} />;
+}
+
+/**
+ * The loaded exchange on one face. Split from the fetch (card 519) so the
+ * faces and the expand strip can be driven in a test with recorded bodies,
+ * without a network. It holds how far the pane is unfolded; switching faces
+ * keeps it, because the component stays mounted across a switch.
+ */
+export function ExchangeBodiesPane({
+  meta,
+  bodies,
+  face,
+  half = "both",
+}: {
+  meta: LlmExchangeMeta;
+  bodies: ExchangeBodies;
+  face: ExchangeFace;
+  half?: "request" | "response" | "both";
+}) {
+  const lang = useLang();
+  // How far the two rendered faces are unfolded. The epoch remounts them, so
+  // "default" is the pane as it opened rather than whatever was clicked since.
+  const [expandAll, setExpandAll] = useState(false);
+  const [expandEpoch, setExpandEpoch] = useState(0);
+  const setExpand = (all: boolean): void => {
+    setExpandAll(all);
+    setExpandEpoch((e) => e + 1);
+  };
+  const parts = useMemo(() => readRequestParts(bodies.request.body), [bodies]);
 
   if (face === "wire") {
     return <WireFace bodies={bodies} lang={lang} half={half} />;

@@ -36,6 +36,15 @@ import java.util.function.Supplier;
  * greyed control can say which of the two things is wrong instead of being
  * mysteriously grey.</p>
  *
+ * <p><b>The local route streams on this machine</b> (card 527). Where a
+ * {@link LocalWhisperUpstream} is bound and whisper-cli and the model are both
+ * present, a local route opens that upstream instead: whisper runs over the
+ * open window every chunk step, the browser gets a partial with
+ * {@code replace: true}, a closed window arrives as a {@code final} with
+ * {@code more: true}, and the last {@code final} ends the session as on the
+ * hosted route. Without whisper or the model the local route is still refused
+ * by name, and it is never rerouted to the provider.</p>
+ *
  * <p><b>Audio is held until the session is configured.</b> Appending before
  * {@code session.updated} arrives means the samples are graded against whatever
  * the session defaulted to rather than the format we asked for. Holding costs a
@@ -76,7 +85,44 @@ public final class LiveSttSocketHandler extends TextWebSocketHandler {
      * @param key the hosted provider's key, possibly blank
      * @param model the transcription model to configure
      */
-    public record Setup(SttRoute route, String key, String model) {}
+    public record Setup(SttRoute route, String key, String model, LocalSetup local) {
+
+        /**
+         * A setup with no local route to stream on, as before card 527.
+         *
+         * @param route where a recording would go right now
+         * @param key the hosted provider's key, possibly blank
+         * @param model the transcription model to configure
+         */
+        public Setup(SttRoute route, String key, String model) {
+            this(route, key, model, null);
+        }
+    }
+
+    /**
+     * What the local route needs to stream (card 527), read per connection.
+     *
+     * @param ready whether the runner's program and the model are both there
+     * @param modelFile the model's file name, named on the record
+     * @param language the {@code sttLanguage} setting
+     * @param chunkMs the step between two whisper runs
+     * @param engine the program that runs whisper (card 528):
+     *               {@code whisper-cli} or {@code whisper-server}
+     */
+    public record LocalSetup(boolean ready, String modelFile, String language, long chunkMs, String engine) {
+
+        /**
+         * A setup without a named engine, as card 527 built it: whisper-cli.
+         *
+         * @param ready whether whisper-cli and the model are both there
+         * @param modelFile the model's file name
+         * @param language the {@code sttLanguage} setting
+         * @param chunkMs the step between two whisper runs
+         */
+        public LocalSetup(boolean ready, String modelFile, String language, long chunkMs) {
+            this(ready, modelFile, language, chunkMs, "whisper-cli");
+        }
+    }
 
     /** One open browser socket and the upstream behind it. */
     private static final class Live implements LiveSttUpstream.Listener {
@@ -93,9 +139,28 @@ public final class LiveSttSocketHandler extends TextWebSocketHandler {
         /** Once ended, never again: a second end would append a second response
          *  line to the same request and the file would claim two answers. */
         private boolean ended;
+        /** True on the local route: the record and the wire frame then speak
+         *  of whisper runs (card 527). */
+        private boolean local;
+        /** The chunk step this session runs with, for the wire frame. */
+        private long chunkMs;
+        /** Every whisper run's wall time, in the order the runs ended. */
+        private final List<Long> chunkDurations = new ArrayList<>();
+        /** Steps skipped because a run was still in flight, as the upstream counts them. */
+        private int chunksSkipped;
+        /** The local warm up's wall time, or -1 before ready. */
+        private long warmupMs = -1;
 
         Live(WebSocketSession browser) {
             this.browser = browser;
+        }
+
+        /** Keep a local run's numbers for the wire frame. */
+        private void noteRun(JsonNode frame) {
+            if (local && frame.has("durationMs")) {
+                chunkDurations.add(frame.path("durationMs").asLong());
+                chunksSkipped = frame.path("skipped").asInt(chunksSkipped);
+            }
         }
 
         @Override
@@ -122,10 +187,43 @@ public final class LiveSttSocketHandler extends TextWebSocketHandler {
                         link.send(LiveSttProtocol.append(audio));
                     }
                     held.clear();
-                    tell("ready", null, null);
+                    if (frame.has("warmupMs")) {
+                        // Card 527: the local route says how long loading the
+                        // model took, so the browser and the record can tell.
+                        warmupMs = frame.path("warmupMs").asLong();
+                        ObjectNode out = JSON.createObjectNode();
+                        out.put("type", "ready");
+                        out.put("warmupMs", warmupMs);
+                        send(out);
+                    } else {
+                        tell("ready", null, null);
+                    }
                 }
                 case PARTIAL -> tell("partial", read.text(), null);
+                case REPLACE -> {
+                    // The local route answers with the open window's whole text
+                    // every step, so the browser replaces rather than appends.
+                    noteRun(frame);
+                    ObjectNode out = JSON.createObjectNode();
+                    out.put("type", "partial");
+                    out.put("text", read.text());
+                    out.put("replace", true);
+                    out.put("durationMs", frame.path("durationMs").asLong());
+                    send(out);
+                }
+                case WINDOW -> {
+                    // A window closed and the speaker goes on: final for that
+                    // window, and the session and its record stay open.
+                    noteRun(frame);
+                    ObjectNode out = JSON.createObjectNode();
+                    out.put("type", "final");
+                    out.put("text", read.text());
+                    out.put("more", true);
+                    out.put("durationMs", frame.path("durationMs").asLong());
+                    send(out);
+                }
                 case FINAL -> {
+                    noteRun(frame);
                     tell("final", read.text(), null);
                     // The transcript IS the end of this exchange, so the record
                     // closes here rather than at disconnect — the `wire` frame
@@ -141,6 +239,14 @@ public final class LiveSttSocketHandler extends TextWebSocketHandler {
                     } catch (IOException alreadyGone) {
                         // The page hung up first. Nothing left to end.
                     }
+                }
+                case LOADING -> {
+                    // Card 528: the warm up loads the speech model, so the
+                    // browser shows its loading card until ready.
+                    ObjectNode out = JSON.createObjectNode();
+                    out.put("type", "loading");
+                    out.put("engine", read.text());
+                    send(out);
                 }
                 case ERROR -> {
                     // Kept for the outcome: a session that ends after a refusal
@@ -172,7 +278,7 @@ public final class LiveSttSocketHandler extends TextWebSocketHandler {
             }
             ended = true;
             exchange.end(new LlmWireTap.WireOutcome(
-                    failure == null ? 200 : null, "bytes", null,
+                    failure == null ? 200 : null, local ? "process-output" : "bytes", null,
                     false, failure, System.currentTimeMillis()));
         }
 
@@ -226,6 +332,16 @@ public final class LiveSttSocketHandler extends TextWebSocketHandler {
             out.put("fidelity", meta.fidelity());
             out.put("durationMs", meta.durationMs());
             out.put("ts", meta.ts());
+            if (local) {
+                // Card 527: the latency of the local route is the wall time of
+                // its whisper runs, so every run's number rides along.
+                out.put("chunkMs", chunkMs);
+                out.put("chunks", chunkDurations.size());
+                out.put("chunksSkipped", chunksSkipped);
+                out.put("warmupMs", warmupMs);
+                com.fasterxml.jackson.databind.node.ArrayNode each = out.putArray("chunkDurationsMs");
+                chunkDurations.forEach(each::add);
+            }
             send(out);
         }
 
@@ -255,6 +371,8 @@ public final class LiveSttSocketHandler extends TextWebSocketHandler {
 
     private final Supplier<Setup> setup;
     private final LiveSttUpstream upstream;
+    /** The local route's upstream (card 527), or null where only the hosted route streams. */
+    private final LiveSttUpstream localUpstream;
     private final Supplier<LlmWireRecorder> recorders;
     private final Map<String, Live> live = new ConcurrentHashMap<>();
 
@@ -280,9 +398,41 @@ public final class LiveSttSocketHandler extends TextWebSocketHandler {
      */
     LiveSttSocketHandler(Supplier<Setup> setup, LiveSttUpstream upstream,
             Supplier<LlmWireRecorder> recorders) {
+        this(setup, upstream, null, recorders);
+    }
+
+    /**
+     * The full constructor (card 527): a hosted and a local upstream.
+     *
+     * @param setup what the server decides about a live session, per connection
+     * @param upstream the hosted provider connection
+     * @param localUpstream the local route's upstream, or null when the local
+     *                      route does not stream
+     * @param recorders one recorder per connection
+     */
+    LiveSttSocketHandler(Supplier<Setup> setup, LiveSttUpstream upstream, LiveSttUpstream localUpstream,
+            Supplier<LlmWireRecorder> recorders) {
         this.setup = setup;
         this.upstream = upstream;
+        this.localUpstream = localUpstream;
         this.recorders = recorders;
+    }
+
+    /**
+     * Production wiring with the local route streaming too (card 527). A
+     * factory rather than a third three-argument constructor: two upstreams and
+     * a recorder supplier at the same position are where a lambda becomes
+     * ambiguous.
+     *
+     * @param setup what the server decides about a live session, per connection
+     * @param hosted the hosted provider connection
+     * @param local the local route's upstream
+     * @return the handler
+     */
+    public static LiveSttSocketHandler withLocalRoute(Supplier<Setup> setup, LiveSttUpstream hosted,
+            LiveSttUpstream local) {
+        return new LiveSttSocketHandler(setup, hosted, local,
+                () -> LlmWireRecorder.forSession(WIRE_SESSION_PREFIX + LocalDate.now()));
     }
 
     /** Voice happens before any session exists, so its records share a day file —
@@ -297,7 +447,7 @@ public final class LiveSttSocketHandler extends TextWebSocketHandler {
         // called no model and sent no audio, so a record would be a claim about
         // a call that never happened.
         if (now.route() != SttRoute.HOSTED) {
-            refuse(session, browser, "localRoute");
+            openLocal(now, session, browser);
             return;
         }
         if (now.key() == null || now.key().isBlank()) {
@@ -356,6 +506,33 @@ public final class LiveSttSocketHandler extends TextWebSocketHandler {
         if (session.link != null) {
             session.link.close();
         }
+    }
+
+    /**
+     * The local route (card 527): whisper over the open window, behind the same
+     * socket. Refused by name, as before, when nothing local can stream: no
+     * local upstream bound, or whisper-cli or the model missing. Never rerouted
+     * to the provider.
+     */
+    private void openLocal(Setup now, Live session, WebSocketSession browser) throws IOException {
+        LocalSetup local = now.local();
+        if (localUpstream == null || local == null || !local.ready()) {
+            refuse(session, browser, "localRoute");
+            return;
+        }
+        session.local = true;
+        session.chunkMs = local.chunkMs();
+        session.link = localUpstream.open(session);
+        live.put(browser.getId(), session);
+        String handshake = LiveSttProtocol.localSessionUpdate(local.modelFile(), local.language(), local.chunkMs(),
+                local.engine());
+        LlmWireRecorder recorder = recorders.get();
+        recorder.onExchange(meta -> session.tellWire(recorder.file().getFileName().toString(), meta));
+        session.exchange = recorder.bound("composer", null, "stt").begin(
+                new LlmWireTap.WireRequest("whisper-cpp", local.modelFile(), "process", null,
+                        LiveSttProtocol.localUrl(local.engine()), null, "bytes", handshake,
+                        System.currentTimeMillis()));
+        session.link.send(handshake);
     }
 
     /** Say why, then end it. A socket that cannot work must not look open. */

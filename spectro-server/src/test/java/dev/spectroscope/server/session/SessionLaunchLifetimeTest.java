@@ -11,6 +11,8 @@ import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -89,9 +91,44 @@ class SessionLaunchLifetimeTest {
         return false;
     }
 
+    /**
+     * A free port, taken and released, by the rule of spectro-core's test class
+     * {@code ClaimablePorts} (card 540): the kernel can hand {@code new ServerSocket(0)}
+     * a port another process holds at localhost, and the http.server started on it
+     * is then hidden from the supervisor's probe.
+     *
+     * <p>A copy, because this module cannot see spectro-core's test classes, and
+     * the {@code java-test-fixtures} plugin that would share them adds a test
+     * fixtures variant to the spectro-core component published to Maven Central.
+     * {@link ClaimablePortsTwinTest} keeps {@link #claimable} the same text as the
+     * original.</p>
+     */
     private static int freePort() throws IOException {
-        try (ServerSocket socket = new ServerSocket(0)) {
-            return socket.getLocalPort();
+        for (int attempt = 0; attempt < 1_000; attempt++) {
+            int candidate;
+            try (ServerSocket socket = new ServerSocket(0)) {
+                candidate = socket.getLocalPort();
+            }
+            if (claimable(candidate)) {
+                return candidate;
+            }
+        }
+        throw new IOException("no claimable port in 1000 candidates");
+    }
+
+    /**
+     * Whether a launch test can hand this port to a command that binds every address.
+     *
+     * @param port the port to check
+     * @return false when a bind at localhost with SO_REUSEADDR off is refused
+     */
+    static boolean claimable(int port) {
+        try (ServerSocket socket = new ServerSocket()) {
+            socket.setReuseAddress(false);
+            socket.bind(new InetSocketAddress(InetAddress.getByName("localhost"), port));
+            return true;
+        } catch (IOException held) {
+            return false;
         }
     }
 

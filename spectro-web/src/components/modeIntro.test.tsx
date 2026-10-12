@@ -154,3 +154,95 @@ describe("the third mode", () => {
     }
   });
 });
+
+// Card 518: the developer choice explains how the mode is built, for a reader
+// who is not technical. The learn and light texts stay as they were.
+describe("the developer explanation (card 518)", () => {
+  /** The sentences of a text: a stop, a question or an exclamation mark ends one. */
+  const sentences = (text: string): string[] =>
+    text
+      .split(/(?<=[.!?])\s+/)
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+
+  const CONCEPTS: Record<"en" | "de", Record<string, RegExp>> = {
+    en: {
+      "project folder": /\bproject\b[^.]*\bfolder\b|\bfolder\b[^.]*\bproject\b/i,
+      workspace: /\bworkspace\b/i,
+      playbook: /\bplaybook\b/i,
+      phases: /\bphases?\b/i,
+      gates: /\bgates?\b/i,
+      "model per phase": /\bmodel\b[^.]*\bphase\b|\bphase\b[^.]*\bmodel\b/i,
+      Spectrolyzr: /\bSpectrolyzr\b/,
+      "new project or playbook": /\bnew project\b[^.]*\bplaybook\b/i,
+    },
+    de: {
+      "project folder": /\bProjekt\w*\b[^.]*\bOrdner\b|\bOrdner\b[^.]*\bProjekt/,
+      workspace: /\bArbeitsbereich\b/,
+      playbook: /\bPlaybook\b/,
+      phases: /\bPhasen?\b/,
+      gates: /\bGates?\b/,
+      "model per phase": /\bModell\b[^.]*\bPhase\b|\bPhase\b[^.]*\bModell\b/,
+      Spectrolyzr: /\bSpectrolyzr\b/,
+      "new project or playbook": /\bneues Projekt\b[^.]*\bPlaybook\b/,
+    },
+  };
+
+  it("names the project folder, the playbook with phases and gates, a model per phase and Spectrolyzr", () => {
+    for (const lang of ["en", "de"] as const) {
+      const body = dict["mode.intro.developer.body"][lang];
+      for (const [concept, pattern] of Object.entries(CONCEPTS[lang])) {
+        expect(body, `${lang}: ${concept}`).toMatch(pattern);
+      }
+    }
+  });
+
+  it("says it in at most five sentences, in plain words, with no dash", () => {
+    for (const lang of ["en", "de"] as const) {
+      const body = dict["mode.intro.developer.body"][lang];
+      const count = sentences(body).length;
+      expect(count, `${lang}: ${body}`).toBeLessThanOrEqual(5);
+      expect(count, lang).toBeGreaterThanOrEqual(3);
+      expect(body, lang).not.toMatch(/[\u2013\u2014]|--/);
+    }
+  });
+
+  it("is on screen in the developer choice", () => {
+    expect(choiceMarkup(markup(), "developer")).toContain(dict["mode.intro.developer.body"].en);
+  });
+
+  it("leaves the learn and light texts as they were", () => {
+    expect(dict["mode.intro.learn.body"]).toEqual({
+      de: "Alle Teile der App sind offen: Chat, Arbeitsbereich, Sessions und Skills, dazu die Tabs spectrum, trace, graph, text und lab, der State-Graph und die Flotten. Danach kannst du ein Tutorial wählen, das sie nach und nach öffnet.",
+      en: "Every part of the app is open: the chat, the workspace, sessions and skills, and also the spectrum, trace, graph, text and lab tabs, the state graph and the fleets. After this you can choose a tutorial that opens them one at a time.",
+    });
+    expect(dict["mode.intro.light.body"]).toEqual({
+      de: "Du bekommst Chat, Arbeitsbereich, Sessions und Skills. Die übrigen Tabs, den State-Graph und die Flotten lädt die App nicht, und sie arbeiten auch nicht im Hintergrund. Light hat kein Tutorial.",
+      en: "You get the chat, the workspace, sessions and skills. The app does not load the other tabs, the state graph or the fleets, and they do no work in the background. Light has no tutorial.",
+    });
+  });
+});
+
+describe("the developer picture follows the table (card 518 criterion 4)", () => {
+  const saved = { ...SURFACES.playbook.modes };
+  afterEach(() => {
+    SURFACES.playbook.modes = { ...saved };
+  });
+
+  it("a surface that leaves developer leaves developer's picture", () => {
+    expect(picture(markup(), "developer").playbook).toBe("true");
+    SURFACES.playbook.modes = { ...saved, developer: "gone" };
+    expect(picture(markup(), "developer").playbook).toBe("false");
+  });
+
+  it("a surface that moves into developer's table row moves into developer's picture", () => {
+    const savedRow = { ...SURFACES.tabRow.modes };
+    try {
+      expect(picture(markup(), "developer").tabRow).toBe("false");
+      SURFACES.tabRow.modes = { ...savedRow, developer: "open" };
+      expect(picture(markup(), "developer").tabRow).toBe("true");
+    } finally {
+      SURFACES.tabRow.modes = savedRow;
+    }
+  });
+});

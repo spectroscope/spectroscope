@@ -110,6 +110,8 @@ tasks.test {
     // so it cannot be left on in a green build. Same reason as the two above —
     // a Test JVM inherits none of Gradle's own -D flags.
     System.getProperty("governing.rewrite")?.let { systemProperty("governing.rewrite", it) }
+    // Card 502: where the registry timing test writes its measured number.
+    System.getProperty("peer.timing.out")?.let { systemProperty("peer.timing.out", it) }
     // Card 467: ToolResultElisionCensus reads the operator's session store and
     // writes its table only when both are named on the command line.
     System.getProperty("elision.census.home")?.let { systemProperty("elision.census.home", it) }

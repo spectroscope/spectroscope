@@ -303,12 +303,18 @@ class SessionToolGroupsTest {
         expected.put("agents", 2L);
         expected.put("roles", 5L);
         expected.put("mcp", 0L);
+        // Card 503: send_message and list_agents; card 505: wait_agents.
+        expected.put("messaging", 3L);
         assertThat(sizes).containsExactlyEntriesOf(expected);
-        assertThat(belt).as("34 tools without MCP and skills").hasSize(34);
+        // Card 504: schedule_wakeup is on the belt and in no group; the agent
+        // offers it only while the session runs a loop (AgentLoopToolTest).
+        // Card 547 added code_graph, offered only where the folder has a graph.
+        assertThat(belt).as("39 tools without MCP and skills").hasSize(39);
         assertThat(belt.stream().filter(name -> ToolGroup.of(name).isEmpty()).toList())
                 .as("the tools that can never be switched off")
                 .containsExactlyInAnyOrder("list_dir", "read_file", "write_file", "run_command",
-                        "edit_file", "glob", "grep", "view_file", "update_plan", "ask_user_question");
+                        "edit_file", "glob", "grep", "view_file", "code_graph", "update_plan",
+                        "ask_user_question", "schedule_wakeup");
     }
 
     /** Plays one empty turn and keeps the context_info it saw. */

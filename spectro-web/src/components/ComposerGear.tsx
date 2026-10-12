@@ -27,6 +27,7 @@ import type { KeyboardEventHandler } from "react";
 import type { ClientMessage } from "../events";
 import type { WorkspaceInfo } from "../state/reducer";
 import { fetchSettings, originLabel, putSettings, type SettingsView } from "../state/serverSettings";
+import { sentWrites } from "../state/sentWrites";
 import {
   buildGearModel,
   formatOverrideValue,
@@ -55,6 +56,8 @@ import {
   type ToolUseAnswer,
 } from "../state/localMode";
 import { LocalModeSection } from "./LocalModeSection";
+import { GoalSection } from "./GoalSection";
+import type { GoalInfo } from "../state/goalLoop";
 
 /** The value a key would carry into the editor: what it resolves to today,
  *  as text. An unset field (imageModel/sttModel default to null) starts
@@ -98,20 +101,38 @@ function nowLine(support: OverrideSupport, lang: Lang): string {
 }
 
 export function ComposerGear({
+  goal = null,
   workspaceInfo,
   permissionMode,
+  recordedMode = null,
+  storedSessionId = null,
+  onModeChosen,
   toolGroups,
   localMode = null,
   provider = "",
   model: modelName = "",
   sendClient,
+  sendSession,
 }: {
+  /** Card 504: the goal in force (state.goal, from goal_info), or null before the first frame. */
+  goal?: GoalInfo | null;
   /** This session's workspace announcement (the socket-only workspace_info
    *  frame) — null before it arrives. */
   workspaceInfo: WorkspaceInfo | null;
   /** The LIVE mode (state.permissionMode) — wire truth, always wins over
    *  whatever the settings file says. */
   permissionMode: string;
+  /** Card 504, last fix round: for a stored session, the mode it runs with
+   *  when continued (state/recordedMode.ts). A stored session has no socket,
+   *  so permissionMode is only the fold's default there. Null or absent for a
+   *  live session. */
+  recordedMode?: string | null;
+  /** Card 504, final round of 2026-10-12: the stored session this gear shows,
+   *  or null for a live one. Its mark waits for the frame to reach a socket. */
+  storedSessionId?: string | null;
+  /** Last fix round 2026-10-12: called with a mode whose frame was taken, so
+   *  a stored session's gear marks it before the session turns live. */
+  onModeChosen?: (mode: string) => void;
   /** Card 466: the server's last tool_groups_info (state.toolGroups), or null
    *  before the first one. Wire truth, like the mode above. */
   toolGroups: ToolGroupsInfo | null;
@@ -123,8 +144,16 @@ export function ComposerGear({
   provider?: string;
   model?: string;
   sendClient: (msg: ClientMessage) => boolean;
+  /** Card 504, hub and spoke fix round: every frame the gear sends (the goal,
+   *  the permission mode, the tool groups, Local mode), on the session's own
+   *  socket (Chat's onSessionFrame). Absent, sendClient. */
+  sendSession?: (msg: ClientMessage) => boolean;
 }) {
   const lang = useLang();
+  // Card 504, hub and spoke review round 1: the gear's one path for frames.
+  // On a stored session sendClient reaches the socket in view, another
+  // session's; sendSession continues the stored session first.
+  const sendFrame = sendSession ?? sendClient;
   const [open, setOpen] = useState(false);
   const [view, setView] = useState<SettingsView | null>(null);
   const [draft, setDraft] = useState("");
@@ -183,7 +212,11 @@ export function ComposerGear({
   // Only a RESOLVED workspace reaches the gear. The connect-time frame names
   // where a run would work, which is not the same as a folder that exists with
   // a .spectro to persist rules into.
-  const model = buildGearModel(view, workspaceInfo?.resolved === true ? workspaceInfo : null, permissionMode);
+  const model = buildGearModel(
+    view,
+    workspaceInfo?.resolved === true ? workspaceInfo : null,
+    recordedMode ?? permissionMode,
+  );
   // Card 466: the tool groups do not wait for a run. A folder the connect-time
   // frame names is pinned already, and the server saves into it on request.
   const savesHere = savesToolGroups(workspaceInfo);
@@ -265,13 +298,30 @@ export function ComposerGear({
   // Mode selection is ALWAYS live (works even for an unpinned session that
   // cannot persist it); it's only written to the project file when pinned,
   // and never for extended, which a workspace file may not hold (card 453).
+  // Card 504, last fix round: and only once the frame reached a socket, so the
+  // file never says a mode the session did not take. The write waits in
+  // sentWrites and App's onSent releases it; a stored session answers true
+  // when the frame joined a resume, and a failed fetch drops that frame.
   const chooseMode = (mode: string): void => {
-    sendClient({ type: "set_permission_mode", mode });
-    if (model.pinned && sessionId !== undefined && persistsToProject(mode)) {
-      putSettings("project", { permissionMode: mode }, sessionId)
-        .then(setView)
-        .catch(() => {});
+    const frame: ClientMessage = { type: "set_permission_mode", mode };
+    const persists = model.pinned && sessionId !== undefined && persistsToProject(mode);
+    if (persists) {
+      sentWrites.hold(sessionId, frame, () => {
+        putSettings("project", { permissionMode: mode }, sessionId)
+          .then(setView)
+          .catch(() => {});
+      });
     }
+    // A stored session's answer is true once the frame joined a resume, so
+    // its mark waits for the socket like the write, and a failed resume drops
+    // both.
+    if (storedSessionId !== null) sentWrites.hold(storedSessionId, frame, () => onModeChosen?.(mode));
+    if (!sendFrame(frame)) {
+      if (persists) sentWrites.drop(sessionId, frame);
+      if (storedSessionId !== null) sentWrites.drop(storedSessionId, frame);
+      return;
+    }
+    if (storedSessionId === null) onModeChosen?.(mode);
   };
 
   // Card 466: the tool groups switch the open session at once (its next run)
@@ -279,7 +329,7 @@ export function ComposerGear({
   // file so the next session starts with them. The server's echo redraws the
   // checkboxes and carries the reason when the save did not happen.
   const chooseToolGroups = (off: string[]): void => {
-    switchToolGroups(off, { sendClient, save: savesHere });
+    switchToolGroups(off, { sendClient: sendFrame, save: savesHere });
   };
 
   const onListKeyDown: KeyboardEventHandler<HTMLDivElement> = (e) => {
@@ -442,14 +492,17 @@ export function ComposerGear({
 
           {!model.pinned && <p className="wsg-hint">{t(lang, "wsg.unpinned")}</p>}
 
+          {/* Card 504: the goal, stated by the operator here and by no tool. */}
+          <GoalSection lang={lang} goal={goal} sendSession={sendFrame} />
+
           <LocalModeSection
             lang={lang}
             info={localMode}
             toolUse={toolUse}
             model={modelName}
-            onSwitch={(on) => switchLocalMode(on, sendClient)}
-            onEdit={(key, value) => editLocalModeValue(key, value, sendClient)}
-            onReset={(key) => resetLocalModeValue(key, sendClient)}
+            onSwitch={(on) => switchLocalMode(on, sendFrame)}
+            onEdit={(key, value) => editLocalModeValue(key, value, sendFrame)}
+            onReset={(key) => resetLocalModeValue(key, sendFrame)}
           />
 
           <div className="wsg-section">

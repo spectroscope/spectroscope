@@ -58,7 +58,7 @@ await ctx.addInitScript(([design]) => {
     // else, once per origin. These plates show the full app, so the question
     // counts as answered with learn. The question itself is a leveling plate.
     localStorage.setItem("spectroscope:mode", "learn");
-    localStorage.setItem("spectroscope:mode-chosen", "1");
+    localStorage.setItem("spectroscope:mode-chosen", "2");
   } catch {}
 }, [DESIGN]);
 const page = await ctx.newPage();

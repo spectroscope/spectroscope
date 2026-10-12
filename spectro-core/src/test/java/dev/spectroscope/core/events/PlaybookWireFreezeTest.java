@@ -29,7 +29,8 @@ class PlaybookWireFreezeTest {
     @Test
     void theRecordsAPlaybookRunEmitsKeepTheirComponents() {
         assertEquals(List.of("runId", "agentId", "parentId", "prompt", "provider", "model", "trigger", "attachments",
-                "workspace", "llmWire", "browserWire", "children", "ts"), components(RunEvent.RunStart.class));
+                "workspace", "llmWire", "browserWire", "children", "contextWindow", "windowSource", "ts"),
+                components(RunEvent.RunStart.class));
         assertEquals(List.of("agentId", "steps", "ts"), components(RunEvent.Plan.class));
         assertEquals(List.of("text", "status"), components(RunEvent.PlanStep.class));
         assertEquals(List.of("from", "to", "role", "state", "text", "label", "ts"), components(RunEvent.AgentMessage.class));

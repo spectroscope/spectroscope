@@ -21,6 +21,7 @@
 // a listener set, useSyncExternalStore over an immutable snapshot.
 
 import { useSyncExternalStore } from "react";
+import { pairSafeCut } from "../pairSafeCut";
 
 export type BrowserLogLevel = "info" | "warn" | "error";
 
@@ -161,7 +162,7 @@ function redactHome(text: string): string {
 
 function cap(text: string): string {
   const clean = redactHome(text);
-  return clean.length > MAX_MESSAGE_CHARS ? `${clean.slice(0, MAX_MESSAGE_CHARS)}…` : clean;
+  return clean.length > MAX_MESSAGE_CHARS ? `${pairSafeCut(clean, MAX_MESSAGE_CHARS)}…` : clean;
 }
 
 function stackFrames(err: Error): string | undefined {
@@ -172,7 +173,7 @@ function stackFrames(err: Error): string | undefined {
     .map((l) => l.trim())
     .filter((l) => l.startsWith("at ") || l.includes("@"));
   if (frames.length === 0) return undefined;
-  return redactHome(frames.slice(0, MAX_STACK_FRAMES).join("\n")).slice(0, MAX_DETAIL_CHARS);
+  return pairSafeCut(redactHome(frames.slice(0, MAX_STACK_FRAMES).join("\n")), MAX_DETAIL_CHARS);
 }
 
 /**

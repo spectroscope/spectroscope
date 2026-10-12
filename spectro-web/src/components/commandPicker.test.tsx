@@ -158,9 +158,33 @@ describe("running a command", () => {
   });
 
   it("ArrowDown past the commands reaches the first skill, which still completes", () => {
-    drive(<Picker draft="/" />, [Picker], [press("ArrowDown"), press("ArrowDown"), press("Enter")]);
+    // Card 504: three commands now, /loop the third.
+    drive(
+      <Picker draft="/" />,
+      [Picker],
+      [press("ArrowDown"), press("ArrowDown"), press("ArrowDown"), press("Enter")],
+    );
     expect(ran).toEqual([]);
     expect(picked).toEqual([{ text: "/clean-code ", caret: 12 }]);
+  });
+
+  it("picking /loop writes it into the draft with a space instead of running it", () => {
+    drive(<Picker draft="/lo" />, [Picker], [press("Enter")]);
+    expect(ran).toEqual([]);
+    expect(picked).toEqual([{ text: "/loop ", caret: 6 }]);
+  });
+
+  it("a click on /loop writes it into the draft as well", () => {
+    const click = (tree: El[]): void => {
+      const row = tree.find(
+        (el) => el.props.role === "option" && JSON.stringify(el.props.children).includes("/loop"),
+      );
+      expect(row, "the loop row is drawn").toBeDefined();
+      row?.props.onClick?.();
+    };
+    drive(<Picker draft="/" />, [Picker], [click]);
+    expect(ran).toEqual([]);
+    expect(picked).toEqual([{ text: "/loop ", caret: 6 }]);
   });
 
   it("typing the whole command and pressing Enter runs it", () => {

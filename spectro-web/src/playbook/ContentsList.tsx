@@ -34,6 +34,7 @@ const STATE_KEY: Record<ContentState, string> = {
   "copy-changed": "pc.state.copyChanged",
   taken: "pc.state.taken",
   "not-run": "pc.state.notRun",
+  runnable: "pc.state.runnable",
 };
 
 /** The characters of a hash the list shows; the title carries the rest. */
@@ -73,7 +74,14 @@ export function ContentsList({
                     </code>
                   </div>
                   <code className="pc-source">{item.source}</code>
-                  <p className="pc-scope">{t(lang, SCOPE_KEY[item.scope])}</p>
+                  <p className="pc-scope">
+                    {t(
+                      lang,
+                      item.kind === "workflow" && item.state === "runnable"
+                        ? "pc.scope.workflow"
+                        : SCOPE_KEY[item.scope],
+                    )}
+                  </p>
                   {item.kind === "hook" && item.command !== null && (
                     <p className="pc-command">
                       <code>{item.command}</code>

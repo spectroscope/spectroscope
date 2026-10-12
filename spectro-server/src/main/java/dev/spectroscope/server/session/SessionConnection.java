@@ -386,6 +386,27 @@ public final class SessionConnection {
             new ArrayBlockingQueue<>(1);
     private volatile Thread liveDrain;
 
+    /** Card 502: what other agents send this session; the agent's loop drains it. */
+    private final dev.spectroscope.core.peer.PeerInbox peerInbox = new dev.spectroscope.core.peer.PeerInbox();
+    /** Card 502: what the harness knows this session is doing, without a model call. */
+    private volatile String statusLine = "idle";
+    /** Card 502: the main agent's running turn, or null between runs. */
+    private volatile Integer peerTurn;
+    /** Card 502: this session as the process's peer node reads and drives it. */
+    private final PeerPort peerPort = new PeerPort();
+    /** Card 502: the sessions of other processes, latest wins, drained on this connection's thread. */
+    private final ArrayBlockingQueue<List<LiveSessions.LiveSession>> rosterQueue = new ArrayBlockingQueue<>(1);
+    private LiveSessions.RosterListener rosterListener;
+    private volatile Thread rosterDrain;
+    /** Card 503: the main agent's text of its latest turn, which an idle notice quotes in part. */
+    private final StringBuffer lastText = new StringBuffer();
+    /** Card 503: how much of that text is kept; the notice quotes at most 100 characters of it. */
+    private static final int LAST_TEXT_KEPT = 1_000;
+    /** Card 503: when this connection opened, what a peer's listing counts the age from. */
+    private final long connectedAt = System.currentTimeMillis();
+    /** Card 502: one check-and-set for "may a run start", shared by a prompt and a peer message. */
+    private final Object runGate = new Object();
+
     /** The server-hosted fleet hub, or null/disabled — then no fleet frames ever. */
     private FleetAggregator fleet;
 
@@ -664,6 +685,9 @@ public final class SessionConnection {
         // on the pair its own record names, not the window's last saved default.
         if (resumeId != null) {
             restoreSessionBackend(resumeId);
+            // Card 390, moved here by card 521: the window comes back before
+            // the connect frame, which names it to the ring.
+            restoreSessionWindow(resumeId);
         }
         // Every fresh socket learns the ACTIVE backend up front — the header
         // chip and the trace host column start from wire truth, not a guess.
@@ -700,7 +724,12 @@ public final class SessionConnection {
         if (liveSessions != null) {
             liveDrain = Thread.ofVirtual().name("spectro-live-drain").start(this::drainLive);
             liveListener = this::offerLive;
+            // Card 502: the port first, so the first snapshot already reads it.
+            liveSessions.port(socket.getId(), peerPort);
             liveSessions.addListener(liveListener);
+            rosterDrain = Thread.ofVirtual().name("spectro-roster-drain").start(this::drainRoster);
+            rosterListener = this::offerRoster;
+            liveSessions.addRosterListener(rosterListener);
         }
         if (resumeId == null) {
             sendProspectiveWorkspace();
@@ -715,7 +744,6 @@ public final class SessionConnection {
         }
         try {
             initial = SessionStore.loadSession(resumeId); // reconstructs the provider messages
-            restoreSessionWindow(resumeId);               // card 390: before the agent is built
             store = new SessionStore(resumeId);           // appends to the existing JSONL file
             // Resume appends to an existing file, so the ladder counts from its
             // end — a receipt that names an event must name the right one.
@@ -731,6 +759,7 @@ public final class SessionConnection {
             seedLocalModeFrom(savedToolGroupsFolder()); // card 493
             sendToolGroupsInfo();
             sendLocalModeInfo();
+            attachLoop(); // card 504: last, so a held wakeup fires into a session that is ready
         } catch (Exception missing) {
             // The claim was taken before the load; a session that cannot be
             // loaded must not stay held by a socket that is about to close.
@@ -802,14 +831,14 @@ public final class SessionConnection {
             sendError("Session not found.");
             return;
         }
-        SpectroConfig before = activeConfig.get();
         restoreSessionBackend(sessionId);
-        if (activeConfig.get() != before) {
-            sendProviderInfo();
-        }
+        // Card 521: always, not only when the backend changed: the frame names
+        // the window the session's record restored, which the ring divides by.
+        sendProviderInfo();
         announceWokenWorkspace();
         seedToolGroupsFrom(savedToolGroupsFolder()); // card 466, as a resume does
         sendToolGroupsInfo();
+        attachLoop(); // card 504, as a resume does
     }
 
     /**
@@ -890,6 +919,12 @@ public final class SessionConnection {
 
     /** Card 482: the answer to a start whose folder changed since the confirmation showed its hash. */
     static final String PLAYBOOK_CHANGED = "The playbook changed since the confirmation. Open it again.";
+    static final String WORKFLOW_CHANGED = "The workflow file changed since the playbook module listed it. Open the playbook again.";
+
+    /** @return the session's status line now, as the registry row carries it (card 506, for tests) */
+    String statusLine() {
+        return statusLine;
+    }
 
     /**
      * The web chat's {@code /compact} (card 471): summarizes the history now,
@@ -937,6 +972,7 @@ public final class SessionConnection {
                 outcome = compactionOutcome(result, stop.isCancelled());
                 if ("compacted".equals(outcome)) {
                     recordAndMirror(result.get());
+                    loopCompacted(); // card 504
                 } else if (result.isPresent() && result.get() instanceof RunEvent.ErrorEvent failed) {
                     // The page words the failure itself; the reason rides along.
                     message = failed.message().replaceFirst("^Compaction failed: ", "");
@@ -948,6 +984,10 @@ public final class SessionConnection {
                 running = false;
                 reportRunning(false);
                 sendCompactionState(false, outcome, message);
+                dev.spectroscope.core.loop.LoopDriver loop = loopIfAny();
+                if (loop != null) {
+                    loop.poke(); // card 504: a wakeup held during the compaction fires now
+                }
             }
         });
     }
@@ -991,6 +1031,14 @@ public final class SessionConnection {
         sendFrame(frame);
     }
 
+    /** Card 504: the history was compacted; the loop's sentinel expands in full at its next fire. */
+    private void loopCompacted() {
+        dev.spectroscope.core.loop.LoopDriver loop = loopIfAny();
+        if (loop != null) {
+            loop.compacted();
+        }
+    }
+
     /**
      * The web chat's {@code /clear} (card 471): a fresh context in the SAME
      * session.
@@ -1021,6 +1069,7 @@ public final class SessionConnection {
             initial = List.of();
         }
         recordAndMirror(cleared);
+        loopCompacted(); // card 504 fix round 2: the loop's instructions went with the history
     }
 
     /**
@@ -1031,9 +1080,11 @@ public final class SessionConnection {
      *                        ({@code {mediaType, dataBase64}} items), may be absent
      */
     public void onUserMessage(String text, JsonNode wireAttachments) {
-        if (running) {
-            sendError(RUN_ACTIVE);
-            return;
+        synchronized (runGate) {
+            if (running) {
+                sendError(RUN_ACTIVE);
+                return;
+            }
         }
 
         // decode + store the blobs BEFORE the run starts — a rejected
@@ -1050,7 +1101,13 @@ public final class SessionConnection {
             }
         }
 
-        running = true;
+        synchronized (runGate) {
+            if (running) {
+                sendError(RUN_ACTIVE);
+                return;
+            }
+            running = true;
+        }
         List<Attachment> runAttachments = attachments;
         Thread.ofVirtual().name("spectroscope-run").start(() -> runPrompt(text, runAttachments));
     }
@@ -1849,6 +1906,100 @@ public final class SessionConnection {
         if (recorded != null && WindowOverrideRequest.inRange(recorded)) {
             sessionWindow.set(recorded);
         }
+        recordedWindow = lastMainWindow(sessionId);
+    }
+
+    /**
+     * The window a stored session's main agent last ran with, and the model
+     * it belongs to (card 521).
+     *
+     * @param provider the provider label the run recorded
+     * @param model    the model id the run recorded
+     * @param window   the window in tokens, always positive
+     * @param source   the wire name of the fact behind it, or null
+     */
+    record RecordedWindow(String provider, String model, int window, String source) {}
+
+    /** Card 521: the window the restored session's record names, or null. */
+    private volatile RecordedWindow recordedWindow;
+
+    /** Card 521: the window the last switch learned from the backend, or null,
+     *  so a later announcement without a probe does not unsay it. */
+    private volatile RecordedWindow probedWindow;
+
+    /**
+     * The last window the main agent of a stored session ran with (card 521):
+     * from its {@code run_start}, or from a later {@code context_info} of the
+     * same agent, which is how a session recorded before card 521 names it.
+     * A child's lines never decide.
+     *
+     * @param sessionId the session to read
+     * @return the window with its model, or null when the record names none
+     */
+    private static RecordedWindow lastMainWindow(String sessionId) {
+        List<RunEvent> events;
+        try {
+            events = SessionStore.readSessionEvents(sessionId);
+        } catch (IOException | RuntimeException unreadable) {
+            return null;
+        }
+        RunEvent.RunStart main = null;
+        RecordedWindow last = null;
+        for (RunEvent event : events) {
+            if (event instanceof RunEvent.RunStart start && start.parentId() == null) {
+                main = start;
+                if (start.contextWindow() != null && start.provider() != null && start.model() != null) {
+                    last = new RecordedWindow(start.provider(), start.model(), start.contextWindow(),
+                            start.windowSource());
+                }
+            } else if (event instanceof RunEvent.ContextInfo info && main != null
+                    && main.agentId().equals(info.agentId())
+                    && info.contextWindow() != null && info.contextWindow() > 0
+                    && main.provider() != null && main.model() != null) {
+                last = new RecordedWindow(main.provider(), main.model(), info.contextWindow(),
+                        info.thresholdSource());
+            }
+        }
+        return last;
+    }
+
+    /**
+     * The window the page's ring divides by until the next {@code context_info}
+     * (card 521), derived the way a run derives it: the window the operator
+     * set for this session, an explicit threshold, the window the backend
+     * states, the published one. When none of those names a window, two
+     * remembered ones are read, each only for the active provider and model:
+     * the window the last switch learned, then the window the session's own
+     * record names.
+     *
+     * @param probe the backend to ask, or null to ask nobody. Only a switch
+     *              passes one: it has just built the provider, and asking it
+     *              costs at most the two-second probes of card 263
+     * @return the window (0 when none is known) and the wire name of its source
+     */
+    private Map.Entry<Integer, String> announcedWindow(LlmProvider probe) {
+        SpectroConfig active = activeConfig.get();
+        dev.spectroscope.core.session.CompactionThreshold.Derived derived =
+                dev.spectroscope.core.session.CompactionThreshold.derive(
+                        active.compactionThreshold(),
+                        probe == null ? () -> 0 : probe::contextWindow,
+                        probe == null ? () -> 0 : probe::publishedWindow,
+                        active.model(), sessionWindow.tokens());
+        if (derived.window() > 0) {
+            if (probe != null) {
+                probedWindow = new RecordedWindow(active.provider(), active.model(), derived.window(),
+                        derived.source().wireName());
+            }
+            return Map.entry(derived.window(), derived.source().wireName());
+        }
+        for (RecordedWindow known : new RecordedWindow[] {probedWindow, recordedWindow}) {
+            if (known != null && known.provider().equals(active.provider())
+                    && known.model().equals(active.model())) {
+                return Map.entry(known.window(),
+                        known.source() == null ? derived.source().wireName() : known.source());
+            }
+        }
+        return Map.entry(derived.window(), derived.source().wireName());
     }
 
     /**
@@ -1993,7 +2144,7 @@ public final class SessionConnection {
         // The switch is not silent: the client sees the new backend as a frame
         // (trace row, header chip, map locality) instead of trusting its own
         // optimistic state.
-        sendProviderInfo();
+        sendProviderInfo(next); // card 521: the new model's window rides along
         return null;
     }
 
@@ -2069,10 +2220,197 @@ public final class SessionConnection {
         }
     }
 
+    /** Card 504: the loops this connection uses; null until first asked, then the process's. */
+    private volatile SessionLoops loops;
+
+    /** Card 504: this connection as the loop sees it. */
+    private final LoopHost loopHost = new LoopHost();
+
+    /** @param loops card 504: the loops this connection uses, for tests */
+    void useLoops(SessionLoops loops) {
+        this.loops = loops;
+    }
+
+    /** @return card 504: the loops of this connection's process */
+    private SessionLoops loops() {
+        SessionLoops held = loops;
+        if (held == null) {
+            held = liveSessions != null ? liveSessions.loops() : SessionLoops.shared();
+            loops = held;
+        }
+        return held;
+    }
+
+    /** @return card 504: this session's loop, or null when it never ran one */
+    private dev.spectroscope.core.loop.LoopDriver loopIfAny() {
+        SessionStore current = this.store;
+        return current == null ? null : loops().existing(current.id());
+    }
+
+    /**
+     * Card 504: the session as its loop sees it. A wakeup fires only while
+     * this socket is open and no run is in flight; it starts the run the way
+     * a prompt does, with the loop's text for the model.
+     */
+    private final class LoopHost implements dev.spectroscope.core.loop.LoopDriver.Host {
+        @Override
+        public boolean attached() {
+            return socket.isOpen();
+        }
+
+        @Override
+        public boolean idle() {
+            return !running;
+        }
+
+        @Override
+        public boolean startRun(String record, String model) {
+            synchronized (runGate) {
+                if (running) {
+                    return false;
+                }
+                running = true;
+            }
+            Thread.ofVirtual().name("spectroscope-run").start(() -> runPrompt(record, List.of(), false, model));
+            return true;
+        }
+
+        @Override
+        public void info(dev.spectroscope.core.loop.LoopState state) {
+            sendLoopInfo(state);
+        }
+    }
+
+    /**
+     * Card 504: the attached client meets its session's loop: a held wakeup
+     * fires now. Both callers (a resume and a wake) build the agent from the
+     * session file, which holds the loop's task and not the instructions the
+     * model read, so the sentinel expands in full at its next fire (fix round 2).
+     */
+    private void attachLoop() {
+        dev.spectroscope.core.loop.LoopDriver loop = loopIfAny();
+        if (loop != null) {
+            loop.compacted();
+            loop.host(loopHost);
+        }
+    }
+
+    /**
+     * Card 504: the page's {@code set_loop}. {@code start} with a prompt and
+     * an optional {@code intervalSeconds} runs the prompt now and starts the
+     * loop; {@code stop} ends it as {@code user_abort}. From a person at a
+     * browser, never from the model.
+     *
+     * @param frame the frame, untrusted
+     */
+    public void onSetLoop(com.fasterxml.jackson.databind.JsonNode frame) {
+        String action = frame.path("action").asText("");
+        if ("stop".equals(action)) {
+            dev.spectroscope.core.loop.LoopDriver loop = loopIfAny();
+            if (loop != null) {
+                loop.userAbort();
+            }
+            return;
+        }
+        if (!"start".equals(action)) {
+            sendError("Unknown loop action: \"" + action + "\" (start | stop).");
+            return;
+        }
+        String prompt = frame.path("prompt").asText("").strip();
+        if (prompt.isEmpty()) {
+            sendError(dev.spectroscope.core.loop.LoopCommand.USAGE);
+            return;
+        }
+        com.fasterxml.jackson.databind.JsonNode interval = frame.path("intervalSeconds");
+        if (!interval.isMissingNode() && !interval.isNull() && !interval.isNumber()) {
+            sendError("intervalSeconds must be a number of seconds.");
+            return;
+        }
+        synchronized (runGate) {
+            if (running) {
+                sendError(RUN_ACTIVE);
+                return;
+            }
+            running = true;
+        }
+        try {
+            ensureStore();
+            dev.spectroscope.core.loop.LoopDriver loop = loops().driver(store.id());
+            loop.host(loopHost);
+            dev.spectroscope.core.loop.LoopDriver.Start started =
+                    loop.start(prompt, interval.isNumber() ? toIntSeconds(interval.asLong()) : null);
+            Thread.ofVirtual().name("spectroscope-run")
+                    .start(() -> runPrompt(prompt, List.of(), false, started.modelText()));
+        } catch (RuntimeException failure) {
+            running = false;
+            sendError("The loop did not start: " + failure.getMessage());
+        }
+    }
+
+    /**
+     * Fix round 1: a page's interval as an int without wrapping; the loop's
+     * own clamp then holds it to 60 to 3600 s.
+     *
+     * @param seconds the interval the page sent
+     * @return it, held to the int range
+     */
+    static int toIntSeconds(long seconds) {
+        return (int) Math.max(Integer.MIN_VALUE, Math.min(Integer.MAX_VALUE, seconds));
+    }
+
+    /**
+     * Card 504: the stop button. Stops the run, and ends the session's loop
+     * as {@code user_abort}. A closing socket stops the run and keeps the loop.
+     */
+    public void onStopFrame() {
+        dev.spectroscope.core.loop.LoopDriver loop = loopIfAny();
+        if (loop != null) {
+            loop.userAbort();
+        }
+        onAbort();
+    }
+
+    /**
+     * Card 504: the loop for the page, a socket-only frame like
+     * {@code goal_info}. The record of the loop is {@code .loop.jsonl}.
+     *
+     * @param state the loop as it stands
+     */
+    private synchronized void sendLoopInfo(dev.spectroscope.core.loop.LoopState state) {
+        SessionStore current = this.store;
+        if (current == null || !socket.isOpen()) {
+            return;
+        }
+        Map<String, Object> frame = new java.util.LinkedHashMap<>();
+        frame.put("type", "loop_info");
+        frame.put("sessionId", current.id());
+        frame.put("active", state.active());
+        frame.put("loopId", state.loopId());
+        frame.put("pacing", state.pacing());
+        frame.put("prompt", state.prompt());
+        frame.put("intervalSeconds", state.intervalSeconds());
+        frame.put("nextAt", state.nextAt());
+        frame.put("reason", state.reason());
+        frame.put("keepalive", state.keepalive());
+        frame.put("held", state.held());
+        frame.put("fires", state.fires());
+        frame.put("startedAt", state.startedAt());
+        frame.put("endedReason", state.endedReason());
+        frame.put("endUnseen", state.endUnseen()); // fix round 1: an end no client heard yet
+        Agent built = this.agent;
+        frame.put("maxTurns", built != null ? built.maxTurns() : Agent.DEFAULT_MAX_TURNS);
+        sendFrame(frame);
+    }
+
     /** Socket closed: cancel the run, release orphaned questions, close MCP. The file stays. */
     public void onClose() {
         onAbort();
         releasePending();
+        // Card 504: the loop stays with the process; this client leaves it.
+        dev.spectroscope.core.loop.LoopDriver loop = loopIfAny();
+        if (loop != null) {
+            loop.detach(loopHost);
+        }
         // Card 218: the session is closed, so its browser is closed. "Closed"
         // here is exactly this event — the socket that held the session went
         // away, which is the same thing that cancels its run and releases its
@@ -2098,9 +2436,15 @@ public final class SessionConnection {
             if (liveListener != null) {
                 liveSessions.removeListener(liveListener);
             }
+            if (rosterListener != null) {
+                liveSessions.removeRosterListener(rosterListener);
+            }
             liveSessions.release(socket.getId());
             if (liveDrain != null) {
                 liveDrain.interrupt();
+            }
+            if (rosterDrain != null) {
+                rosterDrain.interrupt();
             }
         }
         if (fleet != null && fleetListener != null) {
@@ -2235,6 +2579,31 @@ public final class SessionConnection {
      * @param attachments already-stored blobs riding along with the prompt
      */
     private void runPrompt(String text, List<Attachment> attachments) {
+        runPrompt(text, attachments, false);
+    }
+
+    /**
+     * One full run, as {@link #runPrompt(String, List)}, with card 502's flag.
+     *
+     * @param text        the prompt
+     * @param attachments already-stored blobs riding along with the prompt
+     * @param peerStarted true when another agent's message started the run
+     */
+    private void runPrompt(String text, List<Attachment> attachments, boolean peerStarted) {
+        runPrompt(text, attachments, peerStarted, null);
+    }
+
+    /**
+     * One full run, as {@link #runPrompt(String, List, boolean)}, with card
+     * 504's text for the model: a loop's run records its task and hands the
+     * model the loop's words.
+     *
+     * @param text        the prompt as the record shows it
+     * @param attachments already-stored blobs riding along with the prompt
+     * @param peerStarted true when another agent's message started the run
+     * @param modelText   what the model reads instead of the expanded text, or null
+     */
+    private void runPrompt(String text, List<Attachment> attachments, boolean peerStarted, String modelText) {
         CancelSignal runSignal = new CancelSignal();
         this.signal = runSignal;
         // Card 265, release path 1: the stop button cancels this signal while the
@@ -2244,6 +2613,7 @@ public final class SessionConnection {
         // its constructor, and the reason the asker re-checks after publishing.
         runSignal.onCancel(asker::releaseAllPending);
         ensureStore();
+        statusLine = "working"; // card 502: read by the record and the rows reportRunning publishes
         reportRunning(true);   // every rail on this machine, not just this page
         // Card 395: a quit while this run's events are still queued must not
         // lose them. The drain registers before the run can queue anything, and
@@ -2259,6 +2629,7 @@ public final class SessionConnection {
             refreshContinuationBudget(); // card 266: the operator's number, per prompt
             refreshSessionsPerChat(); // card 490: the chat's session count, per prompt
             refreshCareParagraph(); // card 492: the settings as they are now, per prompt
+            refreshAgentMessaging(); // card 503: the same, for the two messaging tools
             refreshReadShare(); // card 493: the read share, per prompt
             sendWorkspaceInfo();
             sendGoalInfo(); // card 267: what this run is for, where it is watched
@@ -2270,7 +2641,11 @@ public final class SessionConnection {
             // Card 247: /skill tokens expand into the skill bodies — for the
             // MODEL only. The record (run_start.prompt, the user's bubble)
             // keeps the literal text; the llm-wire proves what was sent.
-            String expanded = skillLibrary == null
+            // Card 502: a run a peer message started expands nothing. The
+            // block is another agent's words, and a slash in them is not the
+            // operator naming a skill.
+            String expanded = modelText != null ? modelText
+                    : skillLibrary == null || peerStarted
                     ? text
                     : SkillInvocations.expand(text, skillLibrary::find);
             try (EventStream events = subagents.run(agent, text,
@@ -2287,10 +2662,18 @@ public final class SessionConnection {
             runDrain.finished();
             QuitFlush.unregister(runDrain);
             running = false;
+            statusLine = "idle";       // card 502
+            peerTurn = null;
             reportRunning(false);      // a run that died still stopped running
             this.signal = null;
             this.drain = null;
             releasePending();          // orphaned questions: deny them
+            // Card 504: the loop's tick ends with the run, and a wakeup held
+            // while it ran fires now.
+            dev.spectroscope.core.loop.LoopDriver loop = loopIfAny();
+            if (loop != null) {
+                loop.runEnded();
+            }
         }
     }
 
@@ -2304,6 +2687,10 @@ public final class SessionConnection {
      */
     private boolean drainOne(RunEvent rawEvent, RunDrain runDrain) {
         RunEvent event = wireReference.stamp(rawEvent);
+        if (event instanceof RunEvent.Compaction compaction && MAIN_AGENT_ID.equals(compaction.agentId())) {
+            loopCompacted(); // card 504: the sentinel expands in full at the next fire
+        }
+        followStatus(event);
         if (!runDrain.record(event)) {
             return false;
         }
@@ -2357,6 +2744,122 @@ public final class SessionConnection {
         running = true;
         Thread.ofVirtual().name("spectroscope-run").start(() -> runPlaybook(pinned));
     }
+
+    /**
+     * Card 506: Run on a workflow of the playbook module. Starts only when the
+     * folder is registered, its playbook loads, the file is one of its
+     * {@code contents.workflows}, the file's bytes still hash to what the
+     * module showed and the file reads as a step list that starts no worker
+     * child. Holds the run slot like a playbook run.
+     *
+     * @param dir   the playbook folder
+     * @param file  the workflow's path below it, as {@code contents.workflows} lists it
+     * @param hash  the content hash the module showed
+     * @param input the text typed beside Run; may be empty
+     * @param lang  the page language, {@code de} or {@code en}
+     */
+    public void onStartWorkflow(String dir, String file, String hash, String input, String lang) {
+        if (running) {
+            sendError(RUN_ACTIVE);
+            return;
+        }
+        dev.spectroscope.core.playbook.Workflow workflow;
+        try {
+            Path folder = dir == null || dir.isBlank() ? null : Path.of(dir).toRealPath();
+            if (folder == null || !PlaybookFolders.inHome().read().folders().contains(folder.toString())) {
+                sendError("This folder is not a registered playbook folder.");
+                return;
+            }
+            PlaybookLoader.Loaded loaded = PlaybookLoader.load(folder, workspace != null ? workspace : projectDir,
+                    activeConfig.get());
+            if (loaded.playbook() == null) {
+                sendError("The playbook does not load: " + loaded.findings());
+                return;
+            }
+            List<String> listed = loaded.playbook().contents() == null ? List.of()
+                    : loaded.playbook().contents().workflows();
+            Path target = file == null ? null : folder.resolve(file).normalize();
+            if (file == null || !listed.contains(file) || !target.startsWith(folder)
+                    || !Files.isRegularFile(target, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                sendError(file + " is not a workflow this playbook lists.");
+                return;
+            }
+            // Card 506 fix round 1: the hash and the parse see the bytes of one read.
+            dev.spectroscope.core.playbook.WorkflowPin.Pinned pinned =
+                    dev.spectroscope.core.playbook.WorkflowPin.pin(folder, target, hash);
+            if (pinned.changed()) {
+                sendError(WORKFLOW_CHANGED);
+                return;
+            }
+            dev.spectroscope.core.playbook.WorkflowReader.Read read =
+                    dev.spectroscope.core.playbook.WorkflowReader.read(pinned.bytes());
+            if (read.workflow() == null) {
+                sendError("The workflow does not load: " + read.findings());
+                return;
+            }
+            // Fix round 2: a worker child can write, and a workflow starts without a sheet.
+            List<String> workers = read.workflow().workerRoles();
+            if (!workers.isEmpty()) {
+                sendError(file + " starts a worker child, which can write (" + String.join(", ", workers)
+                        + "); a workflow from the playbook module runs explore children only.");
+                return;
+            }
+            workflow = read.workflow();
+        } catch (IOException | RuntimeException unreadable) {
+            sendError("The workflow could not be read: " + unreadable.getMessage());
+            return;
+        }
+        running = true;
+        String language = "de".equals(lang) ? "de" : "en";
+        dev.spectroscope.core.playbook.Workflow chosen = workflow;
+        Thread.ofVirtual().name("spectroscope-run").start(() -> runWorkflow(chosen, file, hash,
+                input == null ? "" : input, language));
+    }
+
+    /**
+     * Card 506: one workflow run on the virtual thread, holding the run slot,
+     * the signal and the drain as {@link #runPlaybook} does. While it runs the
+     * session's status line follows the fan-out children's status lines.
+     */
+    private void runWorkflow(dev.spectroscope.core.playbook.Workflow workflow, String file, String hash,
+                             String input, String lang) {
+        CancelSignal runSignal = new CancelSignal();
+        this.signal = runSignal;
+        runSignal.onCancel(asker::releaseAllPending);
+        ensureStore();
+        reportRunning(true);
+        RunDrain runDrain = new RunDrain(runSignal);
+        this.drain = runDrain;
+        QuitFlush.register(runDrain);
+        String runId = PlaybookRunner.newRunId();
+        String sessionId = store.id();
+        workflowRunning = true;
+        try (PlaybookRecorder recorder = new PlaybookRecorder(PlaybookRecorder.fileFor(sessionId),
+                PlaybookRecorder.DEFAULT_CEILING_BYTES)) {
+            buildAgentOnce();
+            SessionPlaybookHost host = new SessionPlaybookHost(workspace, event -> drainOne(event, runDrain),
+                    subagents, agent, activeConfig::get, this::switchProvider, providerBuilder, providerCheck,
+                    this::providerKind, this::permissionFloor, broker, asker);
+            new dev.spectroscope.core.playbook.run.WorkflowRunner(new dev.spectroscope.core.playbook.run.WorkflowRunner
+                    .Setup(workflow, file, hash, runId, input, lang, recorder, runSignal), host, subagents).run();
+        } catch (RuntimeException failure) {
+            sendError("Workflow run ended with an error: " + failure.getMessage());
+        } finally {
+            workflowRunning = false;
+            permissionFloor = null;
+            runDrain.finished();
+            QuitFlush.unregister(runDrain);
+            running = false;
+            statusLine = "idle";
+            reportRunning(false);
+            this.signal = null;
+            this.drain = null;
+            releasePending();
+        }
+    }
+
+    /** Card 506: true while a workflow runs; the status line then follows its children. */
+    private volatile boolean workflowRunning;
 
     /**
      * @param name a skill name
@@ -2468,6 +2971,16 @@ public final class SessionConnection {
      */
     QuitFlush.Drain drain() {
         return drain;
+    }
+
+    /**
+     * Card 540: the running run's cancel signal, for the test that reads when a
+     * quit's cancel arrives. Only tests call this.
+     *
+     * @return the signal of the run in flight, or null between runs
+     */
+    CancelSignal runSignalForTest() {
+        return signal;
     }
 
     /**
@@ -2624,6 +3137,11 @@ public final class SessionConnection {
 
         ToolRegistry registry = new ToolRegistry();
         StandardTools.all(active.commandTimeoutSeconds()).forEach(registry::register);
+        // Card 547: the code graph reader rides right behind the standard set,
+        // on the parent and (below) in the child belt, as ONE instance. The
+        // loop offers it only in a run whose folder has a built graph.
+        Tool codeGraph = new dev.spectroscope.core.tools.CodeGraphTool();
+        registry.register(codeGraph);
         // ONE supplier step, two consumers (card 270, criterion 3): the settings
         // belt is assembled once and its tools go on the parent registry AND into
         // the belt the children inherit. The returned trio inside it is the
@@ -2684,6 +3202,7 @@ public final class SessionConnection {
         // Neither are the spawn and dev verbs, registered below — depth stays 1
         // by construction.
         List<Tool> childBase = new ArrayList<>(StandardTools.all(active.commandTimeoutSeconds()));
+        childBase.add(codeGraph); // card 547, the parent's instance
         childBase.addAll(settingsBelt.tools());
         childBase.addAll(mcp.tools());
         if (!skills.skills().isEmpty()) {
@@ -2739,6 +3258,9 @@ public final class SessionConnection {
                 // run takes the value that run started with
                 // (SubagentManager.childCareParagraph)
                 .careParagraph(active.careParagraph())
+                // Card 503: agent messaging on or off; refreshAgentMessaging
+                // re-reads it before every prompt
+                .agentMessaging(active.agentMessaging())
                 // Card 493: the read share; refreshReadShare re-reads it before
                 // every prompt, and the Local mode switch may hold it
                 .readSharePercent(active.readSharePercent())
@@ -2756,6 +3278,20 @@ public final class SessionConnection {
         // could never emit agent_spawn events, which the graph tab needs live.
         subagents.tools().forEach(registry::register);
         subagents.devTools().forEach(registry::register);
+        // Card 503: send_message and list_agents, last, on this session's seat:
+        // the registry of card 502 for the sessions on this machine, and the
+        // run's children. The key and the gear's messaging group take both
+        // out of a run's request; the agent reads both when a run starts.
+        dev.spectroscope.core.messaging.MessagingTools.forSeat(new dev.spectroscope.core.messaging.SessionSeat(
+                this::peerNode, () -> store == null ? null : store.id(), () -> subagents,
+                () -> agent == null || !Boolean.FALSE.equals(agent.agentMessagingThisRun()), MAIN_AGENT_ID))
+                .forEach(registry::register);
+        // Card 505: wait_agents, the join of a background fan-out, after the two
+        // messaging tools and in their group; the parent's registry only.
+        subagents.backgroundTools().forEach(registry::register);
+        // Card 504: schedule_wakeup, offered by the agent only while this
+        // session runs a loop (Agent.loopActive below).
+        registry.register(new dev.spectroscope.core.loop.ScheduleWakeupTool(this::loopIfAny));
         this.belt = registry;   // card 222 F4: what this session actually carries
         // Card 466: the gear's hint now names the tools this session really
         // carries, MCP tools included, instead of the describe-time stand-ins.
@@ -2834,10 +3370,23 @@ public final class SessionConnection {
                 // Card 492: the care paragraph. The build value is the session
                 // moment's; refreshCareParagraph re-reads it before every prompt
                 .careParagraph(active.careParagraph())
+                // Card 503: agent messaging on or off; refreshAgentMessaging
+                // re-reads it before every prompt
+                .agentMessaging(active.agentMessaging())
                 // Card 493: the read share; refreshReadShare re-reads it before
                 // every prompt, and the Local mode switch may hold it
                 .readSharePercent(active.readSharePercent())
+                // Card 502: what other agents send this session, read at the
+                // two safe points steering uses
+                .peerInbox(peerInbox)
                 .build());
+        // Card 502: a child's message to `parent` lands where this agent reads.
+        subagents.parentInbox(peerInbox);
+        // Card 504: read once per run, so a run offers schedule_wakeup only in a loop.
+        agent.loopActive(() -> {
+            dev.spectroscope.core.loop.LoopDriver loop = loopIfAny();
+            return loop != null && loop.active();
+        });
         // A picker reasoning choice made before the first prompt must survive
         // the build — the boolean seed above cannot carry mode "off" or an
         // effort level.
@@ -3476,6 +4025,11 @@ public final class SessionConnection {
      */
     private String answeredWithoutAsking(PermissionRequest request, Allowlist.Verdict verdict) {
         String mode = effectiveMode();
+        // Card 503: in the auto modes a call that relays an action a peer says
+        // it was denied is refused before the mode can approve it.
+        if (PermissionModes.relayBlocked(mode, peerBodiesOf(request.agentId()), request)) {
+            return dev.spectroscope.core.peer.PeerRelayRule.DECIDED_BY;
+        }
         if (PermissionModes.decide(mode, request) != null) {
             return "mode:" + mode;
         }
@@ -3773,6 +4327,26 @@ public final class SessionConnection {
                 new dev.spectroscope.core.goal.CommandGoalCheck());
         goal.state(dev.spectroscope.core.goal.GoalStore.read(
                 dev.spectroscope.core.goal.GoalStore.fileFor(store.id())));
+        String goalSession = store.id();
+        goal.listen(new dev.spectroscope.core.goal.SessionGoal.Listener() {
+            @Override
+            public void checkedIn(int count, long deferredMin, int children) {
+                loops().sidecar().checkIn(goalSession, count, deferredMin, children); // card 504, criterion 3
+            }
+
+            @Override
+            public void cleared(String reason) {
+                // Card 504, criterion 4: the file goes too, so a later session
+                // does not read back a goal that cleared itself.
+                try {
+                    dev.spectroscope.core.goal.GoalStore.write(
+                            dev.spectroscope.core.goal.GoalStore.fileFor(goalSession), null);
+                } catch (java.io.IOException unwritable) {
+                    log.warn("could not remove the goal file: {}", unwritable.getMessage());
+                }
+                sendGoalInfo();
+            }
+        });
     }
 
     synchronized void sendGoalInfo() {
@@ -3823,17 +4397,35 @@ public final class SessionConnection {
      * reflect wire truth. The trace tab shows the frame itself — a provider
      * switch is a visible event, not a silent client-side swap.
      */
-    private synchronized void sendProviderInfo() {
+    private void sendProviderInfo() {
+        sendProviderInfo(null);
+    }
+
+    /**
+     * {@link #sendProviderInfo()} with the window the ring divides by (card
+     * 521): {@code contextWindow} when one is known (left out otherwise, as
+     * {@code context_info} leaves it out) and {@code windowSource} always.
+     *
+     * @param probe the backend a switch just built, to ask for its window; null
+     *              asks nobody
+     */
+    private synchronized void sendProviderInfo(LlmProvider probe) {
         if (!socket.isOpen()) {
             return;
         }
         SpectroConfig active = activeConfig.get();
+        Map.Entry<Integer, String> window = announcedWindow(probe);
+        Map<String, Object> frame = new java.util.LinkedHashMap<>();
+        frame.put("type", "provider_info");
+        frame.put("provider", active.provider());
+        frame.put("model", active.model());
+        frame.put("host", active.providerHost());
+        if (window.getKey() > 0) {
+            frame.put("contextWindow", window.getKey());
+        }
+        frame.put("windowSource", window.getValue());
         // A dead socket just misses the hint — the next frame retries nothing.
-        sendFrame(Map.of(
-                "type", "provider_info",
-                "provider", active.provider(),
-                "model", active.model(),
-                "host", active.providerHost()));
+        sendFrame(frame);
     }
 
     /**
@@ -3891,6 +4483,303 @@ public final class SessionConnection {
         sendFrame(Map.of(
                 "type", "permission_mode_info",
                 "mode", permissionMode == null ? "ask" : permissionMode));
+    }
+
+    // ── card 502: agent messaging ────────────────────────────────────────
+
+    /**
+     * Follows the main agent's run for the status line peers read: the tool it
+     * runs, else "working". Only a change is published.
+     *
+     * @param event one event of the run's merged stream
+     */
+    private void followStatus(RunEvent event) {
+        String next = statusLine;
+        if (event instanceof RunEvent.TurnStart turn && MAIN_AGENT_ID.equals(turn.agentId())) {
+            peerTurn = turn.turn();
+            next = "working";
+            lastText.setLength(0); // card 503: the idle notice quotes the last turn's words
+        } else if (event instanceof RunEvent.TextDelta delta && MAIN_AGENT_ID.equals(delta.agentId())) {
+            if (lastText.length() < LAST_TEXT_KEPT) {
+                lastText.append(delta.text());
+            }
+        } else if (event instanceof RunEvent.ToolCall call && MAIN_AGENT_ID.equals(call.agentId())) {
+            next = "running " + call.name();
+        } else if (event instanceof RunEvent.ToolResult result && MAIN_AGENT_ID.equals(result.agentId())) {
+            next = "working";
+        } else if (workflowRunning && event instanceof RunEvent.AgentMessage m && "status".equals(m.role())
+                && !MAIN_AGENT_ID.equals(m.from()) && m.text() != null) {
+            // Card 506: a workflow's fan-out holds no model turn, so the
+            // registry row answers "how far" with the child's own line.
+            next = dev.spectroscope.core.peer.PeerNotices.field(m.from() + ": " + m.text(),
+                    dev.spectroscope.core.peer.PeerLimits.LISTING_LINE_CAP);
+        }
+        if (!next.equals(statusLine)) {
+            statusLine = next;
+            SessionStore current = this.store;
+            if (liveSessions != null && current != null) {
+                liveSessions.touch(socket.getId(), current.id());
+            }
+        }
+    }
+
+    /**
+     * Card 503: hands the agent the {@code agentMessaging} value the settings
+     * hold now, so a saved change reaches the next run (reach next-run).
+     */
+    void refreshAgentMessaging() {
+        if (agent == null) {
+            return;
+        }
+        agent.setAgentMessaging(liveConfig().agentMessaging());
+    }
+
+    /** @return the process's peer node, or null when this server takes no part in messaging */
+    private dev.spectroscope.core.peer.PeerNode peerNode() {
+        LiveSessions.PeerBridge bridge = liveSessions == null ? null : liveSessions.bridge();
+        return bridge == null ? null : bridge.node();
+    }
+
+    /**
+     * Card 503: the operator's own message from the page (the inbound frame
+     * {@code send_peer_message}), most often a Reply to a message in the
+     * chat. To a running child of this session's run it goes in from
+     * {@code parent} with the name {@code operator}; anything else goes to a
+     * session on this machine, by its id when the page knows it, else by name.
+     * The page hears what became of it as a {@code peer_message} frame.
+     *
+     * @param to        the name to send to, or null
+     * @param toSession the session id to send to, or null
+     * @param text      the body
+     */
+    public void onSendPeerMessage(String to, String toSession, String text) {
+        SessionStore current = this.store;
+        if (text == null || text.isBlank()) {
+            return;
+        }
+        String target = toSession != null && !toSession.isBlank() ? toSession : to;
+        if (target == null || target.isBlank()) {
+            peerSendFailed(to, "Not sent: the reply names nobody.");
+            return;
+        }
+        SubagentManager manager = subagents;
+        if (manager != null && manager.isChild(target)) {
+            dev.spectroscope.core.messaging.MessagingSeat.Sent sent = manager.sendFromOperator(target, text,
+                    dev.spectroscope.core.peer.PeerFrames.newMsgId());
+            if (!sent.ok()) {
+                peerSendFailed(target, sent.error());
+                return;
+            }
+            dev.spectroscope.core.peer.PeerEnvelope envelope = dev.spectroscope.core.peer.PeerEnvelope.builder()
+                    .msgId(sent.msgId()).from("parent").fromName("operator").toSession(target).text(text)
+                    .summary(text.strip().lines().findFirst().orElse("")).build();
+            sendPeerMessage(new dev.spectroscope.core.peer.PeerEvent("message", "sent", envelope, sent.msgId(),
+                    null, null, null, target));
+            return;
+        }
+        dev.spectroscope.core.peer.PeerNode node = peerNode();
+        if (node == null || current == null) {
+            peerSendFailed(target, "Not sent: agent messaging is not running in this server.");
+            return;
+        }
+        dev.spectroscope.core.peer.PeerNode.SendResult result = node.send(current.id(), target, text, null);
+        if (!result.sent()) {
+            peerSendFailed(target, result.text());
+        }
+    }
+
+    /** Card 503: tells the page that the operator's message did not leave. */
+    private void peerSendFailed(String to, String reason) {
+        sendPeerMessage(new dev.spectroscope.core.peer.PeerEvent("send_failed", "sent", null, null, null,
+                reason, null, to));
+    }
+
+    /**
+     * Card 503: the bodies of the peer messages the calling agent's run took
+     * in, which the auto modes read before they approve a gated call.
+     *
+     * @param agentId the calling agent
+     * @return the bodies, possibly empty
+     */
+    private List<String> peerBodiesOf(String agentId) {
+        if (agentId == null || MAIN_AGENT_ID.equals(agentId)) {
+            return peerInbox.absorbedThisRun();
+        }
+        SubagentManager manager = subagents;
+        dev.spectroscope.core.peer.PeerInbox inbox = manager == null ? null : manager.inboxOf(agentId);
+        return inbox == null ? List.of() : inbox.absorbedThisRun();
+    }
+
+    /**
+     * The operator's Deliver or Decline on a held message (the inbound frame
+     * {@code peer_message_decision}).
+     *
+     * @param msgId   the held message
+     * @param deliver true for Deliver, false for Decline
+     */
+    public void onPeerMessageDecision(String msgId, boolean deliver) {
+        SessionStore current = this.store;
+        LiveSessions.PeerBridge bridge = liveSessions == null ? null : liveSessions.bridge();
+        if (current == null || bridge == null || msgId == null || msgId.isBlank()) {
+            return;
+        }
+        bridge.decide(current.id(), msgId, deliver);
+    }
+
+    /**
+     * Tells the page about agent messaging: a message sent or received, a held
+     * message with its Deliver and Decline, a status, a rename, an idle notice.
+     * A socket-only UI frame, never appended to the JSONL; the record of a
+     * message is the {@code agent_message} line the loop writes and the
+     * {@code .messages.jsonl} sidecar.
+     *
+     * @param event what happened
+     */
+    synchronized void sendPeerMessage(dev.spectroscope.core.peer.PeerEvent event) {
+        if (!socket.isOpen()) {
+            return;
+        }
+        java.util.Map<String, Object> frame = new java.util.LinkedHashMap<>();
+        frame.put("type", "peer_message");
+        frame.put("kind", event.kind());
+        frame.put("direction", event.direction());
+        frame.put("msgId", event.msgId());
+        frame.put("name", event.name());
+        if (event.status() != null) {
+            frame.put("status", event.status().wireName());
+        }
+        frame.put("reason", event.reason());
+        frame.put("notice", event.notice());
+        dev.spectroscope.core.peer.PeerEnvelope envelope = event.envelope();
+        if (envelope != null) {
+            frame.put("from", envelope.fromName());
+            frame.put("fromSession", envelope.fromSession());
+            frame.put("fromMode", envelope.fromMode());
+            frame.put("toSession", envelope.toSession());
+            frame.put("summary", envelope.summary());
+            frame.put("text", envelope.text());
+            frame.put("verifiedPid", envelope.verifiedPeerPid());
+        }
+        frame.put("ts", System.currentTimeMillis());
+        sendFrame(frame);
+    }
+
+    /**
+     * Tells the page which sessions OTHER processes of this home host right
+     * now, from the registry. A socket-only UI frame, never appended to the
+     * JSONL, sent on connect and on every listing.
+     *
+     * @param rows one row per foreign session
+     */
+    synchronized void sendPeerRoster(List<LiveSessions.LiveSession> rows) {
+        if (!socket.isOpen()) {
+            return;
+        }
+        sendFrame(Map.of(
+                "type", "peer_roster",
+                "sessions", rows,
+                "ts", System.currentTimeMillis()));
+    }
+
+    private void offerRoster(List<LiveSessions.LiveSession> rows) {
+        while (!rosterQueue.offer(rows)) {
+            rosterQueue.poll();
+        }
+    }
+
+    private void drainRoster() {
+        try {
+            while (true) {
+                sendPeerRoster(rosterQueue.take());
+            }
+        } catch (InterruptedException stopped) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    /** This session as the process's peer node reads and drives it (card 502). */
+    private final class PeerPort implements dev.spectroscope.core.peer.PeerSession {
+
+        @Override
+        public String id() {
+            SessionStore current = store;
+            return current == null ? null : current.id();
+        }
+
+        @Override
+        public String cwd() {
+            Path folder = workspace;
+            return folder == null ? null : folder.toString();
+        }
+
+        @Override
+        public String title() {
+            String id = id();
+            if (id == null) {
+                return null;
+            }
+            return SessionMetaStore.shared().get(id)
+                    .map(entry -> entry.title() != null && !entry.title().isBlank() ? entry.title() : entry.suggestion())
+                    .orElse(null);
+        }
+
+        @Override
+        public String mode() {
+            return permissionMode == null ? "ask" : permissionMode;
+        }
+
+        @Override
+        public boolean running() {
+            return running;
+        }
+
+        @Override
+        public String statusLine() {
+            return statusLine;
+        }
+
+        @Override
+        public Integer turn() {
+            return peerTurn;
+        }
+
+        @Override
+        public long since() {
+            return connectedAt; // card 503: the time this page took the session
+        }
+
+        @Override
+        public String lastText() {
+            return lastText.toString();
+        }
+
+        @Override
+        public dev.spectroscope.core.peer.PeerInbox inbox() {
+            return peerInbox;
+        }
+
+        @Override
+        public boolean startRun(String prompt) {
+            synchronized (runGate) {
+                if (running) {
+                    return false;
+                }
+                running = true;
+            }
+            Thread.ofVirtual().name("spectroscope-run").start(() -> runPrompt(prompt, List.of(), true));
+            return true;
+        }
+
+        @Override
+        public boolean isChild(String name) {
+            SubagentManager manager = subagents;
+            return manager != null && manager.isChild(name);
+        }
+
+        @Override
+        public void onPeerEvent(dev.spectroscope.core.peer.PeerEvent event) {
+            sendPeerMessage(event);
+        }
     }
 
     /**

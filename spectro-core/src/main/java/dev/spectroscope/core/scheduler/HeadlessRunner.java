@@ -542,6 +542,9 @@ public final class HeadlessRunner {
                 // Card 492: the headless faces register no spawn tool, so the
                 // paragraph leaves the sentence about subagents out
                 .careParagraph(config.careParagraph())
+                // Card 503: the headless faces register no messaging tool, and
+                // their process refuses every inbound message (concept decision 5)
+                .agentMessaging(config.agentMessaging())
                 // Card 493: the read share, from the config the run is built with.
                 .readSharePercent(config.readSharePercent())
                 .build());
@@ -570,6 +573,9 @@ public final class HeadlessRunner {
                         ? new RunEvent.RunStart(start.runId(), start.agentId(), start.parentId(),
                                 start.prompt(), start.provider(), start.model(), trigger,
                                 start.attachments(), start.ts())
+                                // Card 521: the window is a fact of the run and survives the stamp.
+                                .withWindow(start.contextWindow() == null ? 0 : start.contextWindow(),
+                                        start.windowSource())
                         : rawEvent;
                 event = wireReference.stamp(event);
                 tracing.onEvent(event); // headless runs are normal sessions too

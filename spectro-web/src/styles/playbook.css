@@ -526,3 +526,458 @@
   color: var(--accent);
   border-color: var(--accent);
 }
+
+/* ---------- bundle (card 524) ---------- */
+.pb-bundle {
+  margin-top: var(--sp-3);
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  min-width: 0;
+}
+.pb-bundle-summary {
+  margin: 0 0 var(--sp-1);
+  font-size: var(--fs-13);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.pb-bundle-hint {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+}
+.pb-bundle-h {
+  margin: var(--sp-2) 0 var(--sp-1);
+  font-size: var(--fs-12);
+  font-weight: 500;
+  color: var(--text);
+}
+.pb-bundle-contents,
+.pb-bundle-files {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-12);
+  color: var(--text);
+}
+.pb-bundle-contents li,
+.pb-bundle-files li {
+  overflow-wrap: anywhere;
+  padding: 1px 0;
+}
+.pb-bundle-kind {
+  color: var(--sand);
+}
+.pb-bundle-files {
+  max-height: 14rem;
+  overflow: auto;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  padding: var(--sp-1) 0;
+}
+.pb-bundle-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+}
+.pb-pane .pb-bundle-pick {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* ---------- card 525: the toolbar every tab ends with Export and Import ZIP ---------- */
+.pb-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 0 0 var(--sp-3);
+}
+/* Export and Import ZIP sit at the end of the row, after the tab's own buttons. */
+.pb-pane .pb-toolbar .pb-export {
+  margin-left: auto;
+}
+.pbb-locked {
+  margin: 0 0 var(--sp-3);
+}
+
+/* ---------- card 525: a kind tab and Files ---------- */
+.pbb-tab {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+.pbb-note {
+  margin: 0;
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+.pbb-refusal {
+  margin: 0;
+  font-size: var(--fs-12);
+  color: var(--text);
+  border-left: 2px solid var(--error);
+  padding-left: var(--sp-2);
+  overflow-wrap: anywhere;
+}
+.pbb-refusal p {
+  margin: 0 0 var(--sp-1);
+}
+.pbb-done {
+  margin: 0;
+  border-left-color: var(--ok);
+}
+.pbb-folder-line {
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+/* The browser on the left, the open file on the right; one column on a phone. */
+.pbb-split {
+  display: grid;
+  grid-template-columns: minmax(220px, 320px) minmax(0, 1fr);
+  gap: var(--sp-4);
+  align-items: start;
+  min-width: 0;
+}
+@media (max-width: 760px) {
+  .pbb-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.pbb-left,
+.pbb-right {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+
+.pbb-entry-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pbb-entry {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1) var(--sp-2);
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--border);
+  border-left-width: 2px;
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  min-width: 0;
+}
+.pbb-entry[data-state="listed"] {
+  border-left-color: var(--ok);
+}
+.pbb-entry[data-state="disk-only"] {
+  border-left-color: var(--warn);
+}
+.pbb-entry[data-state="missing"] {
+  border-left-color: var(--error);
+}
+.pbb-entry-path {
+  font-size: var(--fs-12);
+  color: var(--text);
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.pbb-state {
+  font-size: var(--fs-11);
+  color: var(--text-dim);
+}
+.pbb-entry-finding {
+  flex-basis: 100%;
+  font-size: var(--fs-11);
+  color: var(--text-dim);
+}
+.pb-pane .pbb-entry button {
+  margin-left: auto;
+  padding: 2px 8px;
+  font-size: var(--fs-11);
+}
+
+/* The shared rows of the Files panel, inside the pane whose button rule would
+   otherwise draw each row as a chip. */
+.pbb-tree {
+  max-height: 60vh;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--shade);
+  padding: var(--sp-1) 0;
+}
+.pbb-tree:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+.pb-pane .pbb-tree .ws-row {
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--text);
+  padding-top: 2px;
+  padding-bottom: 2px;
+  padding-right: var(--sp-2);
+}
+.pb-pane .pbb-tree .ws-row:hover {
+  background: var(--surface-2);
+}
+.pb-pane .pbb-tree .ws-row--active {
+  background: var(--accent-soft);
+}
+
+.pbb-file {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.pbb-file-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.pbb-file-path {
+  margin: 0;
+  flex: 1 1 200px;
+  min-width: 0;
+  font-size: var(--fs-12);
+  overflow-wrap: anywhere;
+}
+.pbb-file-actions,
+.pbb-panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+.pb-pane .pbb-save:not(:disabled) {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.pbb-edit {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sp-3);
+  min-width: 0;
+}
+.pbb-edit--split {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+@media (max-width: 1100px) {
+  .pbb-edit--split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.pbb-text {
+  width: 100%;
+  min-height: 360px;
+  resize: vertical;
+  box-sizing: border-box;
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  padding: var(--sp-2);
+  tab-size: 2;
+}
+.pbb-text:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.pbb-preview {
+  min-width: 0;
+  max-height: 70vh;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-13);
+}
+
+/* The panels the toolbar opens and the confirmations. */
+.pbb-picker,
+.pbb-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  min-width: 0;
+}
+.pbb-confirm {
+  border-left: 2px solid var(--warn);
+}
+.pbb-pick-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--sp-3);
+}
+.pbb-group {
+  margin: 0 0 var(--sp-1);
+  font-size: var(--fs-12);
+  font-weight: 500;
+  color: var(--text);
+}
+.pbb-pick-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  max-height: 40vh;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pbb-pick-row label {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  font-size: var(--fs-12);
+  color: var(--text);
+}
+.pbb-pick-name {
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  color: var(--text);
+}
+.pbb-pick-note {
+  font-size: var(--fs-11);
+  color: var(--text-dim);
+}
+.pbb-pick-description {
+  margin: 0 0 0 22px;
+  font-size: var(--fs-11);
+  color: var(--text-dim);
+}
+.pbb-hook-command {
+  display: block;
+  font-size: var(--fs-11);
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+.pbb-new-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+}
+.pbb-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  font-size: var(--fs-11);
+  color: var(--text-dim);
+}
+.pbb-new-name,
+.pbb-new-type {
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
+  padding: 5px 8px;
+  min-width: 0;
+}
+
+/* Card 526: the Plugin tab and the report of the last plugin import. */
+.pbp-tab {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+.pbp-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr));
+  gap: var(--sp-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pbp-row,
+.pbp-report {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  min-width: 0;
+}
+.pbp-head,
+.pbp-report-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.pbp-report-head {
+  justify-content: space-between;
+}
+.pbp-report {
+  margin-bottom: var(--sp-3);
+}
+.pbp-name {
+  font-family: var(--font-mono);
+  font-size: var(--fs-13);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.pbp-version,
+.pbp-where {
+  font-size: var(--fs-11);
+  color: var(--text-dim);
+}
+.pbp-row .pbb-pick-description {
+  margin: 0;
+}
+.pbp-kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-3);
+}
+.pbp-kind {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-1);
+  font-size: var(--fs-12);
+  color: var(--text);
+}
+.pbp-report-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-12);
+  overflow-wrap: anywhere;
+}
+.pbp-why {
+  color: var(--text-dim);
+}
+.pbp-report .pbb-hook-command {
+  display: inline;
+}

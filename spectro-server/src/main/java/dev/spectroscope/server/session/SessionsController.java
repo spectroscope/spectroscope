@@ -268,6 +268,26 @@ public class SessionsController {
     }
 
     /**
+     * Card 503: the agent messages of one stored session, as the
+     * {@code peer_message} frames the page folds into its message blocks,
+     * read from its {@code .messages.jsonl} under {@code ~/.spectro/messages}.
+     * An id of the wrong shape answers 404; a session without messages
+     * answers an empty list.
+     *
+     * @param id the session
+     * @return the frames in file order, or 404 for an id of the wrong shape
+     */
+    @GetMapping("/api/sessions/{id}/messages")
+    public ResponseEntity<List<java.util.Map<String, Object>>> messages(@PathVariable String id) {
+        if (!SESSION_ID.matcher(id).matches()) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(PeerMessagesReplay.frames(
+                new dev.spectroscope.core.peer.MessagesSidecar(dev.spectroscope.core.peer.MessagesSidecar.defaultDir()),
+                id));
+    }
+
+    /**
      * Export one stored session as its RAW JSONL — the mirror of the existing
      * import, so a session can leave the machine and come back byte-identical.
      * The file is served verbatim (no re-serialization), as a download.

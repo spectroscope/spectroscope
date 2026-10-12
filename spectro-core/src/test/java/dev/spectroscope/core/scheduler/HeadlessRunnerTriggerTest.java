@@ -37,7 +37,7 @@ class HeadlessRunnerTriggerTest {
             java.util.List.of(), null, "info", null, null, "auto", "auto", null, null, null, null, null,
             null, false, false);
 
-    private static final class ScriptedProvider implements LlmProvider {
+    private static class ScriptedProvider implements LlmProvider {
         final Queue<List<ProviderEvent>> turns = new ArrayDeque<>();
 
         @Override
@@ -70,6 +70,33 @@ class HeadlessRunnerTriggerTest {
         RunEvent.RunStart start = (RunEvent.RunStart) seen.get(0);
         assertEquals("fs #1 watch:/drop", start.trigger(),
                 "the run_start every consumer sees carries the stamp");
+    }
+
+    @Test
+    void theTriggerStampKeepsTheWindowTheRunRecorded(@TempDir Path cwd) {
+        // Card 521: the window rides on the run_start, so the runner's re-stamp
+        // must carry it, or a triggered node's session forgets its window.
+        // CONFIG states an explicit threshold, so the run's source is
+        // "override" and the window is the one published for the model id.
+        ScriptedProvider loaded = new ScriptedProvider() {
+            @Override
+            public String modelName() {
+                return "claude-opus-4-8";
+            }
+        };
+        loaded.turns.add(List.of(
+                new LlmProvider.PTextDelta("done"),
+                new LlmProvider.PUsage(10, 4),
+                new LlmProvider.PStop(LlmProvider.PStop.StopReason.END_TURN)));
+        List<RunEvent> seen = new ArrayList<>();
+        new HeadlessRunner(JSON, CONFIG, loaded)
+                .withTrigger("fs #2 watch:/drop")
+                .runOnce("scan", cwd, false, null, seen::add, line -> { });
+
+        RunEvent.RunStart start = (RunEvent.RunStart) seen.get(0);
+        assertEquals("fs #2 watch:/drop", start.trigger());
+        assertEquals(1_000_000, start.contextWindow(), "the stamped line keeps the window");
+        assertEquals("override", start.windowSource());
     }
 
     @Test

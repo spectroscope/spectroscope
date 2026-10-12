@@ -27,6 +27,36 @@ public final class SessionGoal {
 
     private volatile RunGoal stated;
 
+    /** Card 504: what the host does when the loop checks in or clears the goal. */
+    private volatile Listener listener = new Listener() { };
+
+    /**
+     * Card 504: the two things the loop tells the session's host about its
+     * goal. Both default to nothing, so a face that listens to neither stays
+     * as card 267 left it.
+     */
+    public interface Listener {
+
+        /**
+         * A check in was appended while background children ran.
+         *
+         * @param count       the check ins of this deferral, 1-based
+         * @param deferredMin how long the check has been deferred, in minutes
+         * @param children    how many children were still running
+         */
+        default void checkedIn(int count, long deferredMin, int children) {
+        }
+
+        /**
+         * The goal cleared itself after an unrecoverable error.
+         *
+         * @param reason {@code context_limit}, {@code authentication}, {@code billing}
+         *               or {@code model_unavailable}
+         */
+        default void cleared(String reason) {
+        }
+    }
+
     /**
      * @param check what decides this session's goals — {@link CommandGoalCheck}
      *              everywhere it is wired today. Null is not allowed: a goal
@@ -49,6 +79,31 @@ public final class SessionGoal {
      *  @param goal the operator's statement; a goal with a blank outcome clears */
     public void state(RunGoal goal) {
         this.stated = goal != null && goal.stated() ? goal : null;
+    }
+
+    /**
+     * Card 504: the host's listener.
+     *
+     * @param listener the listener, or null for none
+     */
+    public void listen(Listener listener) {
+        this.listener = listener == null ? new Listener() { } : listener;
+    }
+
+    /** @return the host's listener, never null */
+    public Listener listener() {
+        return listener;
+    }
+
+    /**
+     * Card 504, criterion 4: clears the goal after an unrecoverable error and
+     * tells the host, which removes the file and says so.
+     *
+     * @param reason the error class
+     */
+    public void clear(String reason) {
+        this.stated = null;
+        listener.cleared(reason);
     }
 
     /** What decides it.

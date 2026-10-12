@@ -53,13 +53,60 @@ import java.util.concurrent.CopyOnWriteArrayList;
 public final class LiveSessions {
 
     /**
-     * One live session, as a client reads it.
+     * One live session, as a client reads it. Card 502 added the last five
+     * fields, additively: a row of this server carries this process's pid and
+     * the face {@code server}; a row of another process comes from the
+     * registry under {@code ~/.spectro/live}.
      *
-     * @param id      the session id (the JSONL file's base name)
-     * @param running true while a run is in flight on the holding socket
-     * @param since   when the socket claimed this session, epoch millis
+     * @param id         the session id (the JSONL file's base name)
+     * @param running    true while a run is in flight on the holding socket
+     * @param since      when the socket claimed this session, epoch millis
+     * @param folder     the session's folder, or null before it has one
+     * @param name       the name peers address it by, or null
+     * @param statusLine what the harness knows the session is doing, or null
+     * @param face       {@code server}, {@code repl}, {@code headless}, {@code cron} or {@code node}
+     * @param pid        the process that hosts it
      */
-    public record LiveSession(String id, boolean running, long since) {}
+    public record LiveSession(String id, boolean running, long since, String folder, String name,
+                              String statusLine, String face, Long pid) {
+
+        /** The card 212 row: this process, the face {@code server}, nothing else known.
+         *  @param id the session id @param running the run flag @param since the claim time */
+        public LiveSession(String id, boolean running, long since) {
+            this(id, running, since, null, null, null, "server", ProcessHandle.current().pid());
+        }
+    }
+
+    /**
+     * Card 502: what the live set reads from the process's peer node.
+     */
+    public interface PeerBridge {
+        /** @param sessionId a session of this process @return its name */
+        String nameOf(String sessionId);
+
+        /** @return the live records of every OTHER process, from the last listing */
+        List<dev.spectroscope.core.peer.LiveRecord> others();
+
+        /**
+         * The operator's Deliver or Decline on a held message.
+         *
+         * @param sessionId the session holding it
+         * @param msgId     the message
+         * @param deliver   true to deliver
+         */
+        void decide(String sessionId, String msgId, boolean deliver);
+
+        /** @return card 503: the process's peer node the messaging tools send through, or null */
+        default dev.spectroscope.core.peer.PeerNode node() {
+            return null;
+        }
+    }
+
+    /** Card 502: a viewer of the sessions of other processes. Must not block. */
+    public interface RosterListener {
+        /** @param rows one row per session of another live process */
+        void onPeerRoster(List<LiveSession> rows);
+    }
 
     /** A viewer that wants every change. Implementations must not block. */
     public interface Listener {
@@ -79,6 +126,23 @@ public final class LiveSessions {
 
     /** The connected viewers. Copy-on-write: pushes iterate, registration is rare. */
     private final List<Listener> listeners = new CopyOnWriteArrayList<>();
+
+    /** Card 502: socketId -> the session port that socket drives. */
+    private final Map<String, dev.spectroscope.core.peer.PeerSession> ports = new java.util.concurrent.ConcurrentHashMap<>();
+    /** Card 502: the peer node's view, or null when messaging is not wired. */
+    private volatile PeerBridge bridge;
+    /** Card 502: who wants the other processes' sessions. */
+    private final List<RosterListener> rosterListeners = new CopyOnWriteArrayList<>();
+    /** Card 504: the loops of this process's sessions, held beside the live set. */
+    private final SessionLoops loops = SessionLoops.shared();
+
+    /** @return card 504: the loops of this process's sessions */
+    public SessionLoops loops() {
+        return loops;
+    }
+
+    /** Card 502: the last roster, handed to a new roster listener at once. */
+    private volatile List<LiveSession> roster = List.of();
 
     /**
      * Claims a session id for a socket.
@@ -130,6 +194,7 @@ public final class LiveSessions {
      * @param socketId the socket that went away
      */
     public void release(String socketId) {
+        ports.remove(socketId);
         synchronized (this) {
             boolean removed = false;
             for (Iterator<Map.Entry<String, Held>> it = held.entrySet().iterator(); it.hasNext();) {
@@ -191,6 +256,118 @@ public final class LiveSessions {
         listeners.remove(listener);
     }
 
+    /**
+     * Card 502: the session port a socket drives, so the record and the rows
+     * can read its folder and status line and a message can reach it.
+     *
+     * @param socketId the socket
+     * @param port     the port; null removes it
+     */
+    public void port(String socketId, dev.spectroscope.core.peer.PeerSession port) {
+        if (port == null) {
+            ports.remove(socketId);
+        } else {
+            ports.put(socketId, port);
+        }
+    }
+
+    /**
+     * Card 502: the ports of the sessions held right now.
+     *
+     * @return one port per held session whose socket registered one
+     */
+    public List<dev.spectroscope.core.peer.PeerSession> ports() {
+        synchronized (this) {
+            List<dev.spectroscope.core.peer.PeerSession> out = new ArrayList<>();
+            for (Map.Entry<String, Held> entry : held.entrySet()) {
+                dev.spectroscope.core.peer.PeerSession port = ports.get(entry.getValue().socketId());
+                if (port != null && entry.getKey().equals(port.id())) {
+                    out.add(port);
+                }
+            }
+            return List.copyOf(out);
+        }
+    }
+
+    /**
+     * Card 502: the session's status line or folder moved; every viewer and
+     * the record learn it. Ignored unless the socket holds the session.
+     *
+     * @param socketId  the reporting socket
+     * @param sessionId the session
+     */
+    public void touch(String socketId, String sessionId) {
+        synchronized (this) {
+            Held owner = held.get(sessionId);
+            if (owner == null || !owner.socketId().equals(socketId)) {
+                return;
+            }
+            publish();
+        }
+    }
+
+    /** @param bridge the peer node's view; null unwires it */
+    public void bridge(PeerBridge bridge) {
+        this.bridge = bridge;
+    }
+
+    /** @return the peer node's view, or null */
+    public PeerBridge bridge() {
+        return bridge;
+    }
+
+    /**
+     * Card 502: registers a viewer of other processes' sessions and hands it
+     * the last roster at once, when there is anyone in it.
+     *
+     * @param listener the viewer; it must not block
+     */
+    public void addRosterListener(RosterListener listener) {
+        rosterListeners.add(listener);
+        List<LiveSession> now = roster;
+        if (!now.isEmpty()) {
+            listener.onPeerRoster(now);
+        }
+    }
+
+    /** @param listener the viewer to drop */
+    public void removeRosterListener(RosterListener listener) {
+        rosterListeners.remove(listener);
+    }
+
+    /**
+     * Card 502: the sessions of other live processes, pushed to every roster viewer.
+     *
+     * @param rows one row per foreign session
+     */
+    public void publishRoster(List<LiveSession> rows) {
+        roster = List.copyOf(rows);
+        for (RosterListener listener : rosterListeners) {
+            listener.onPeerRoster(roster);
+        }
+    }
+
+    /** @return the last roster of other processes */
+    public List<LiveSession> roster() {
+        return roster;
+    }
+
+    /**
+     * Card 502: the rows of one foreign record.
+     *
+     * @param record a live record of another process
+     * @return one row per session it hosts
+     */
+    public static List<LiveSession> rowsOf(dev.spectroscope.core.peer.LiveRecord record) {
+        List<LiveSession> rows = new ArrayList<>();
+        for (dev.spectroscope.core.peer.LiveRecord.Session session : record.sessions()) {
+            rows.add(new LiveSession(session.id(), "busy".equals(session.status()),
+                    session.since() == null ? record.startedAt() : session.since(), session.cwd(), session.name(),
+                    session.statusLine(), record.face(), record.pid()));
+        }
+        return rows;
+    }
+
     /** Pushes the current snapshot at everyone. Call under the monitor only. */
     private void publish() {
         List<LiveSession> live = snapshotHere();
@@ -202,9 +379,15 @@ public final class LiveSessions {
     /** The snapshot without taking the monitor — callers already hold it. */
     private List<LiveSession> snapshotHere() {
         List<LiveSession> live = new ArrayList<>(held.size());
+        long pid = ProcessHandle.current().pid();
+        PeerBridge names = bridge;
         for (Map.Entry<String, Held> entry : held.entrySet()) {
-            live.add(new LiveSession(entry.getKey(), entry.getValue().running(),
-                    entry.getValue().since()));
+            dev.spectroscope.core.peer.PeerSession port = ports.get(entry.getValue().socketId());
+            boolean known = port != null && entry.getKey().equals(port.id());
+            live.add(new LiveSession(entry.getKey(), entry.getValue().running(), entry.getValue().since(),
+                    known ? port.cwd() : null,
+                    known && names != null ? names.nameOf(entry.getKey()) : null,
+                    known ? port.statusLine() : null, "server", pid));
         }
         return List.copyOf(live);
     }

@@ -218,3 +218,27 @@ export function recallReadout(state: WalkState): RecallReadout {
   if (state.index < 0 || state.entries.length === 0) return { kind: "idle" };
   return { kind: "at", position: state.index + 1, total: state.entries.length };
 }
+
+/** What a submit means while the microphone is in a given phase (card 527). */
+export type VoiceSubmit = "send" | "finish-then-send" | "wait";
+
+/**
+ * What Enter or Send means while the microphone is on.
+ *
+ * <p>While recording, and while the last words are still being transcribed,
+ * a submit stops the recording, waits for those words and sends them with the
+ * draft, in one gesture. While that is already happening a second submit does
+ * nothing, so the message leaves once.</p>
+ *
+ * @param phase the microphone's phase, as `micButtonState` reads it
+ * @return what the submit should do
+ */
+export function voiceSubmit(
+  phase: "idle" | "warming" | "recording" | "transcribing" | "finishing",
+): VoiceSubmit {
+  if (phase === "recording" || phase === "transcribing") return "finish-then-send";
+  // While the speech model loads nothing was said yet, and a send now would
+  // leave a recording to start after it (card 527 criterion 8).
+  if (phase === "finishing" || phase === "warming") return "wait";
+  return "send";
+}

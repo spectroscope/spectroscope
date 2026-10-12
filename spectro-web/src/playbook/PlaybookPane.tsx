@@ -20,36 +20,68 @@
 // Card 485: a contents row under the step table counts what the folder brings
 // and opens the install and remove confirmations.
 //
+// Card 506: under the contents row the workflows of the playbook, each with a
+// Run control that sends the start frame for that file.
+//
 // Card 482: Build by this asks the server for the start preview and opens the
 // confirmation sheet (since card 485 with the contents read again beside it); Start sends the start frame with the hash the sheet
 // showed. Under the graph the run view draws this session's latest run.
 //
+// Card 524: Export saves the shown folder as <id>.playbook.zip; Import ZIP
+// reads a chosen .zip and BundleImport shows it and writes it into an empty
+// folder the owner picks.
+//
+// Card 525: the header draws the tabs of PANE_TABS (state/bundleEditor.ts):
+// Playbook (the view above), one tab per kind of contents (Skills, Agents,
+// Hooks, Commands, Workflows), Files, and New. A kind tab and Files draw
+// BundleTab: the contents entries, the shared file browser scoped to the
+// kind's folder and the selected file on the right. Every tab has a toolbar
+// that ends with Export and Import ZIP. Unsaved changes in the graph editor's
+// draft or in the open file lock the tabs. The tab and the folder live in
+// state/playbooks.ts, so a new playbook (Skills) and an imported ZIP
+// (Playbook) can turn the pane.
+//
+// Card 526: the Plugin tab between Workflows and Files lists the Claude Code
+// plugins of this home and imports the ticked kinds of one (PluginTab.tsx);
+// the report of the last import shows under the toolbar of every tab of that
+// folder until it is closed.
+//
 // The stylesheets are styles/playbook.css and styles/playbook-run.css,
 // imported by app.css: a surface chunk carries no stylesheet of its own.
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { t } from "../i18n/i18n";
 import { chooseFolder, usePickNote } from "../state/folderPick";
 import { useLang } from "../state/lang";
+import { fileDirty, loadTree, PANE_TABS, useBundleEditor } from "../state/bundleEditor";
 import { closeEditor, loadView, openEditor, useEditorState } from "../state/playbookEditor";
 import {
   copyBundled,
   loadPlaybook,
+  pickFolder,
   pinFolder,
   refreshFolders,
   registerFolder,
+  showFolder,
+  showTab,
   useLoadedPlaybook,
+  usePaneView,
   usePlaybookFolders,
 } from "../state/playbooks";
+import { exportBundle, openBundle } from "../state/playbookBundle";
 import { loadContents, usePlaybookContents, type ContentKind } from "../state/playbookContents";
 import type { StartPreview } from "../state/playbookRuns";
+import { BundleImport } from "./BundleImport";
+import { BundleTab, KindTools } from "./BundleTab";
 import { ContentsConfirm } from "./ContentsConfirm";
 import type { PlaybookDoc } from "./editor/doc";
 import { EditorShell } from "./editor/EditorShell";
 import { PlaybookGraph } from "./PlaybookGraph";
 import { PlaybookRunView } from "./PlaybookRunView";
 import { PlaybookStartSheet, readConfirmation } from "./PlaybookStartSheet";
+import { PluginReport, PluginTab } from "./PluginTab";
 import { StepTable } from "./StepTable";
+import { WorkflowList } from "./WorkflowList";
 
 /** The kinds the contents row counts, in the order the list shows them. */
 const COUNTED: ContentKind[] = ["skill", "command", "hook", "agent", "workflow"];
@@ -66,27 +98,33 @@ function messageOf(error: unknown): string {
  * @param props.wizard          the Spectrolyzr page App built under a ChunkBoundary; the New tab draws it (cards 484, 515)
  * @param props.sessionId       the live or stored session a run starts in and whose runs the run view draws (card 482)
  * @param props.onStartPlaybook sends the start frame; true when it reached the socket (card 482)
+ * @param props.onStartWorkflow sends the workflow start frame; true when it reached the socket (card 506)
  */
 export function PlaybookPane({
   workspace,
   wizard,
   sessionId,
   onStartPlaybook,
+  onStartWorkflow,
 }: {
   workspace: string | null;
   wizard?: ReactNode;
   sessionId: string | null;
   onStartPlaybook: (dir: string, hash: string) => boolean;
+  onStartWorkflow?: (dir: string, file: string, hash: string, input: string) => boolean;
 }) {
   const lang = useLang();
-  const [tab, setTab] = useState<"playbook" | "lyzr">("playbook");
+  const { tab: chosenTab, picked } = usePaneView();
   const { folders, active } = usePlaybookFolders();
   const loaded = useLoadedPlaybook();
   const ed = useEditorState();
+  const be = useBundleEditor();
   const editing = ed.open;
   const locked = ed.dirty;
+  /** Unsaved changes anywhere in the pane: the tabs and the toolbar's bundle buttons wait. */
+  const held = ed.dirty || fileDirty(be);
   const [path, setPath] = useState("");
-  const [picked, setPicked] = useState<string | null>(null);
+  const setPicked = pickFolder;
   const [notice, setNotice] = useState<string | null>(null);
   const pickNote = usePickNote("pane");
   const [dialog, setDialog] = useState<"install" | "remove" | null>(null);
@@ -96,6 +134,7 @@ export function PlaybookPane({
   const [starts, setStarts] = useState(0);
   const ws = workspace ?? "";
   const shown = picked ?? active;
+  const bundleFile = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     refreshFolders(ws).catch((e: unknown) => setNotice(messageOf(e)));
@@ -109,6 +148,20 @@ export function PlaybookPane({
     loadPlaybook(shown, ws).catch((e: unknown) => setNotice(messageOf(e)));
     loadView(shown, workspace).catch((e: unknown) => setNotice(messageOf(e)));
   }, [shown, ws, workspace, editing]);
+
+  // A tab the folder cannot fill yet falls back to Playbook: a kind tab needs
+  // the folder's playbook loaded, Files a folder shown.
+  const hasPlaybook = shown !== null && loaded !== null && loaded.playbook !== null && loaded.dir === shown;
+  const usable = (id: string): boolean =>
+    id === "playbook" || id === "lyzr" ? true : id === "files" ? shown !== null : hasPlaybook;
+  const tab = usable(chosenTab) ? chosenTab : "playbook";
+  const spec = PANE_TABS.find((x) => x.id === tab) ?? PANE_TABS[0];
+  const bundleTab = spec.folder !== undefined;
+
+  useEffect(() => {
+    if (!bundleTab || shown === null) return;
+    void loadTree(shown);
+  }, [bundleTab, shown]);
 
   const loadedDir = loaded?.playbook != null ? loaded.dir : null;
   useEffect(() => {
@@ -186,33 +239,123 @@ export function PlaybookPane({
 
   const tabs = (
     <div className="pb-tabs" role="tablist" aria-label={t(lang, "lyzr.title")}>
-      <button
-        type="button"
-        role="tab"
-        aria-selected={tab === "playbook"}
-        className={`pb-tab${tab === "playbook" ? " is-on" : ""}`}
-        onClick={() => setTab("playbook")}
-      >
-        {t(lang, "pb.title")}
-      </button>
-      <button
-        type="button"
-        role="tab"
-        aria-selected={tab === "lyzr"}
-        className={`pb-tab${tab === "lyzr" ? " is-on" : ""}`}
-        onClick={() => setTab("lyzr")}
-      >
-        {t(lang, "lyzr.tab")}
-      </button>
+      {PANE_TABS.map((x) => {
+        const on = tab === x.id;
+        const closed = !usable(x.id);
+        const blocked = held && !on;
+        return (
+          <button
+            key={x.id}
+            type="button"
+            role="tab"
+            aria-selected={on}
+            className={`pb-tab${on ? " is-on" : ""}`}
+            disabled={closed || blocked}
+            title={closed ? t(lang, "pbb.tabNeedsPlaybook") : blocked ? t(lang, "pbb.locked") : undefined}
+            onClick={() => {
+              if (!closed && !held) showTab(x.id);
+            }}
+          >
+            {t(lang, x.label)}
+          </button>
+        );
+      })}
     </div>
+  );
+
+  const lockNote = held ? (
+    <p className="pb-notice pbb-locked" role="status">
+      {t(lang, "pbb.locked")}
+    </p>
+  ) : null;
+
+  // Every tab's toolbar: the tab's own buttons, then Export and Import ZIP.
+  const toolbar = (
+    <div className="pb-toolbar" role="toolbar" aria-label={t(lang, "pbb.toolbar")}>
+      {spec.kind !== undefined && shown !== null && (
+        <KindTools spec={spec} dir={shown} workspace={workspace} />
+      )}
+      <button
+        type="button"
+        className="pb-export"
+        disabled={held || shown === null}
+        onClick={() => {
+          if (shown !== null) void exportBundle(shown);
+        }}
+      >
+        {t(lang, "pb.bundle.export")}
+      </button>
+      <button type="button" className="pb-import" disabled={held} onClick={() => bundleFile.current?.click()}>
+        {t(lang, "pb.bundle.import")}
+      </button>
+      <input
+        ref={bundleFile}
+        className="pb-bundle-file"
+        type="file"
+        accept=".zip,application/zip"
+        hidden
+        aria-hidden="true"
+        tabIndex={-1}
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          e.target.value = "";
+          if (file !== undefined) void openBundle(file);
+        }}
+      />
+    </div>
+  );
+
+  const bundleImport = (
+    <BundleImport workspace={workspace} onImported={(dir) => showFolder(dir, "playbook")} />
   );
 
   if (tab === "lyzr") {
     return (
       <div className="pb-pane">
         {tabs}
+        {lockNote}
+        {toolbar}
+        {bundleImport}
         <div className="pb-lyzr" role="tabpanel">
           {wizard}
+        </div>
+      </div>
+    );
+  }
+
+  if (tab === "plugin" && shown !== null) {
+    return (
+      <div className="pb-pane">
+        {tabs}
+        {lockNote}
+        <header className="pb-head">
+          <h2 className="pb-title">{title}</h2>
+          <p className="pb-description pbb-folder-line">{t(lang, "pbb.folderLine", { dir: shown })}</p>
+        </header>
+        {toolbar}
+        {bundleImport}
+        <PluginReport dir={shown} />
+        <div role="tabpanel">
+          <PluginTab dir={shown} workspace={workspace} />
+        </div>
+      </div>
+    );
+  }
+
+  if (bundleTab && shown !== null) {
+    return (
+      <div className="pb-pane">
+        {tabs}
+        {lockNote}
+        <header className="pb-head">
+          <h2 className="pb-title">{title}</h2>
+          <p className="pb-description pbb-folder-line">{t(lang, "pbb.folderLine", { dir: shown })}</p>
+        </header>
+        {toolbar}
+        {bundleImport}
+        <PluginReport dir={shown} />
+        <div role="tabpanel">
+          <BundleTab spec={spec} dir={shown} workspace={workspace} loaded={hasPlaybook ? loaded : null} />
         </div>
       </div>
     );
@@ -221,6 +364,7 @@ export function PlaybookPane({
   return (
     <div className="pb-pane">
       {tabs}
+      {lockNote}
       <header className="pb-head">
         <h2 className="pb-title">{title}</h2>
         {description !== "" && <p className="pb-description">{description}</p>}
@@ -250,6 +394,8 @@ export function PlaybookPane({
           ) : null}
         </div>
       </header>
+      {toolbar}
+      {bundleImport}
 
       <section className="pb-picker" aria-label={t(lang, "pb.folders")}>
         <h3 className="pb-h">{t(lang, "pb.folders")}</h3>
@@ -391,6 +537,13 @@ export function PlaybookPane({
                     </button>
                   </div>
                 </section>
+              )}
+              {here !== null && onStartWorkflow !== undefined && (
+                <WorkflowList
+                  items={here.items}
+                  canRun={canBuild}
+                  onRun={(file, hash, input) => onStartWorkflow(here.dir, file, hash, input)}
+                />
               )}
             </>
           )}

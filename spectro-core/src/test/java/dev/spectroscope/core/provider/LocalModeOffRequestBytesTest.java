@@ -142,6 +142,14 @@ class LocalModeOffRequestBytesTest {
         StandardTools.all(SpectroConfig.DEFAULT_COMMAND_TIMEOUT_SECONDS).forEach(registry::register);
         manager.tools().forEach(registry::register);
         manager.devTools().forEach(registry::register);
+        // Card 503: the two messaging tools, registered where the session
+        // registers them, after the spawn and role tools.
+        dev.spectroscope.core.messaging.MessagingTools.forSeat(new dev.spectroscope.core.messaging.SessionSeat(
+                () -> null, () -> "s", () -> manager, () -> true, "main")).forEach(registry::register);
+        // Card 505: wait_agents after the two messaging tools, and the parent's
+        // inbox wired to the agent and the manager, as the session does both.
+        manager.backgroundTools().forEach(registry::register);
+        dev.spectroscope.core.peer.PeerInbox inbox = new dev.spectroscope.core.peer.PeerInbox();
         Agent parent = new Agent(AgentOptions.builder()
                 .provider(provider)
                 .systemPrompt(RoleCatalog.BASE_SYSTEM_PROMPT + cwd)
@@ -150,12 +158,15 @@ class LocalModeOffRequestBytesTest {
                 .agentId("main")
                 .onPermission(request -> true)
                 .toolGroupsOff(groups::get)
+                .peerInbox(inbox)
                 .build());
+        manager.parentInbox(inbox);
         // What SessionConnection hands the agent at the top of a prompt once
         // the switch is off and the chat holds nothing.
         parent.setSessionsPerChat(released.sessionsPerChat());
         parent.setCareParagraph(released.careParagraph());
         parent.setReadSharePercent(released.readSharePercent());
+        parent.setAgentMessaging(released.agentMessaging());
         try (EventStream stream = manager.run(parent, "go", new RunOptions(new CancelSignal(), null))) {
             stream.forEach(event -> { });
         }
@@ -180,9 +191,18 @@ class LocalModeOffRequestBytesTest {
         return JSON.writeValueAsString(tree.get("tools")) + "\n" + JSON.writeValueAsString(system) + "\n";
     }
 
+    /** Card 503, owner decision 9 in its provisional form: the fixture's
+     *  folder sets agentMessaging false, so this test proves v0.14.4 bytes
+     *  with messaging off, not for a default installation. */
+    private static void messagingOff(Path folder) throws IOException {
+        Files.createDirectories(folder.resolve(".spectro"));
+        Files.writeString(folder.resolve(SpectroConfig.PROJECT_SETTINGS), "{ \"agentMessaging\": false }");
+    }
+
     @Test
     void anthropicReceivesTheV0144ToolsAndSystemPromptWithTheSwitchOff(@TempDir Path folder)
             throws IOException {
+        messagingOff(folder);
         String body = firstBody(new AnthropicProvider("claude-opus-4-8", true, "test-key", baseUrl), folder);
         String sent = toolsAndSystem(body);
         assertTrue(sent.contains("\"read_file\"") && sent.contains("\"spawn_agents\""),
@@ -193,6 +213,7 @@ class LocalModeOffRequestBytesTest {
     @Test
     void openAiReceivesTheV0144ToolsAndSystemPromptWithTheSwitchOff(@TempDir Path folder)
             throws IOException {
+        messagingOff(folder);
         String body = firstBody(new OpenAiCompatProvider(
                 new OpenAiCompatProvider.Options(baseUrl, "test-model", null)), folder);
         String sent = toolsAndSystem(body);
@@ -205,18 +226,136 @@ class LocalModeOffRequestBytesTest {
      *  something else, so the comparison above can tell the two apart. */
     @Test
     void theSwitchsValuesChangeTheBody(@TempDir Path folder) throws IOException {
+        messagingOff(folder);
         SpectroConfig released = SpectroConfig.load(SpectroConfig.Overrides.none(), folder);
-        assertEquals(null, released.sessionsPerChat(), "premise: the folder sets nothing");
+        assertEquals(null, released.sessionsPerChat(), "premise: the folder sets nothing else");
         String plain = toolsAndSystem(firstBody(
                 new AnthropicProvider("claude-opus-4-8", true, "test-key", baseUrl), folder));
         Files.createDirectories(folder.resolve(".spectro"));
         Files.writeString(folder.resolve(SpectroConfig.PROJECT_SETTINGS),
-                "{ \"readSharePercent\": 10, \"careParagraph\": \"on\", \"sessionsPerChat\": 3 }");
+                "{ \"readSharePercent\": 10, \"careParagraph\": \"on\", \"sessionsPerChat\": 3,"
+                        + " \"agentMessaging\": false }");
         received.set(null);
         String local = toolsAndSystem(firstBody(
                 new AnthropicProvider("claude-opus-4-8", true, "test-key", baseUrl), folder));
         assertTrue(local.contains("fits 10 %"), local);
         assertTrue(local.contains("Work in small steps."), local);
         assertTrue(!plain.equals(local), "the switch's values left the body as it was");
+    }
+
+    // ── card 503: the second capture, with the key on ─────────────────────
+
+    /** Where a capture run writes the messaging-on baseline instead of comparing. */
+    private static final String CAPTURE_ON_ENV = "SPECTRO_CAPTURE_MESSAGING_ON";
+    /** Where the measured size of the two definitions is written, when set. */
+    private static final String SIZE_OUT_ENV = "SPECTRO_MESSAGING_SIZE_OUT";
+
+    private static String fixtureOn(String name, String sent) throws IOException {
+        String capture = System.getenv(CAPTURE_ON_ENV);
+        if (capture != null && !capture.isBlank()) {
+            Path out = Path.of(capture).resolve(name);
+            Files.createDirectories(out.getParent());
+            Files.writeString(out, sent, StandardCharsets.UTF_8);
+            return sent;
+        }
+        try (InputStream in = LocalModeOffRequestBytesTest.class.getResourceAsStream("/messaging-on/" + name)) {
+            assertNotNull(in, "the messaging-on capture " + name + " is not on the test classpath");
+            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+        }
+    }
+
+    private static com.fasterxml.jackson.databind.node.ArrayNode withoutCacheMarks(JsonNode tools) {
+        com.fasterxml.jackson.databind.node.ArrayNode out = JSON.createArrayNode();
+        for (JsonNode tool : tools) {
+            com.fasterxml.jackson.databind.node.ObjectNode copy = tool.deepCopy();
+            copy.remove("cache_control");
+            out.add(copy);
+        }
+        return out;
+    }
+
+    private static String nameOf(JsonNode tool) {
+        return tool.has("function") ? tool.path("function").path("name").asText() : tool.path("name").asText();
+    }
+
+    /** A copy of a spawn_agents definition without what card 505 adds: the
+     *  {@code background} field and the sentence about it. */
+    private static JsonNode withoutBackground(JsonNode tool) {
+        com.fasterxml.jackson.databind.node.ObjectNode copy = tool.deepCopy();
+        com.fasterxml.jackson.databind.node.ObjectNode body = copy.has("function")
+                ? (com.fasterxml.jackson.databind.node.ObjectNode) copy.get("function") : copy;
+        String schemaKey = body.has("parameters") ? "parameters" : "input_schema";
+        ((com.fasterxml.jackson.databind.node.ObjectNode) body.get(schemaKey).get("properties")).remove("background");
+        String description = body.path("description").asText();
+        body.put("description", description.replace(SubagentManager.BACKGROUND_SENTENCE, ""));
+        return copy;
+    }
+
+    private static boolean offersBackground(JsonNode tool) {
+        JsonNode body = tool.has("function") ? tool.get("function") : tool;
+        JsonNode schema = body.has("parameters") ? body.get("parameters") : body.get("input_schema");
+        return schema.path("properties").has("background")
+                && body.path("description").asText().contains(SubagentManager.BACKGROUND_SENTENCE);
+    }
+
+    /** The on body is the v0.14.4 capture plus the three messaging definitions
+     *  (card 503's two and card 505's wait_agents) and the background field
+     *  on spawn_agents, and it is the new baseline for a default installation. */
+    private void theKeyOnAddsTheMessagingDefinitionsAndTheBackgroundField(LlmProvider provider, String capture,
+                                                                         String provName, Path folder)
+            throws IOException {
+        String on = toolsAndSystem(firstBody(provider, folder));
+        String[] onLines = on.split("\n");
+        String[] v0144 = fixture(capture).split("\n");
+        assertEquals(v0144[1], onLines[1], "the system prompt does not move");
+        JsonNode onTools = JSON.readTree(onLines[0]);
+        JsonNode offTools = JSON.readTree(v0144[0]);
+        com.fasterxml.jackson.databind.node.ArrayNode expected = withoutCacheMarks(offTools);
+        com.fasterxml.jackson.databind.node.ArrayNode actual = withoutCacheMarks(onTools);
+        assertEquals(offTools.size() + 3, onTools.size(), "three definitions more");
+        assertEquals("send_message", nameOf(onTools.get(onTools.size() - 3)));
+        assertEquals("list_agents", nameOf(onTools.get(onTools.size() - 2)));
+        assertEquals("wait_agents", nameOf(onTools.get(onTools.size() - 1)));
+        com.fasterxml.jackson.databind.node.ArrayNode head = JSON.createArrayNode();
+        int spawnAgents = -1;
+        for (int i = 0; i < offTools.size(); i++) {
+            if ("spawn_agents".equals(nameOf(actual.get(i)))) {
+                spawnAgents = i;
+                assertTrue(offersBackground(actual.get(i)), "spawn_agents offers background with the key on");
+                head.add(withoutBackground(actual.get(i)));
+            } else {
+                head.add(actual.get(i));
+            }
+        }
+        assertTrue(spawnAgents >= 0, "premise: the body carries spawn_agents");
+        assertEquals(expected, head, "every v0.14.4 definition is unchanged in its place, but for background");
+        assertEquals(fixtureOn(capture, on), on, "the messaging-on baseline");
+        // Card 503's bound holds for its two definitions, measured on them alone.
+        int pair = JSON.writeValueAsString(actual.get(onTools.size() - 3)).length()
+                + JSON.writeValueAsString(actual.get(onTools.size() - 2)).length() + 2;
+        assertTrue(pair > 0 && pair <= 1_200, "the two messaging definitions add " + pair + " characters");
+        int added = onLines[0].length() - v0144[0].length();
+        String sizeOut = System.getenv(SIZE_OUT_ENV);
+        if (sizeOut != null && !sizeOut.isBlank()) {
+            Files.writeString(Path.of(sizeOut), provName + " messaging_pair_chars=" + pair + " added_chars="
+                    + added + " tools_off_chars=" + v0144[0].length() + " tools_on_chars=" + onLines[0].length()
+                    + "\n", StandardCharsets.UTF_8, java.nio.file.StandardOpenOption.CREATE,
+                    java.nio.file.StandardOpenOption.APPEND);
+        }
+    }
+
+    @Test
+    void anthropicWithTheKeyOnCarriesTheMessagingDefinitionsAndTheBackgroundField(@TempDir Path folder)
+            throws IOException {
+        theKeyOnAddsTheMessagingDefinitionsAndTheBackgroundField(new AnthropicProvider("claude-opus-4-8", true, "test-key", baseUrl),
+                "anthropic-tools-and-system.txt", "anthropic", folder);
+    }
+
+    @Test
+    void openAiWithTheKeyOnCarriesTheMessagingDefinitionsAndTheBackgroundField(@TempDir Path folder)
+            throws IOException {
+        theKeyOnAddsTheMessagingDefinitionsAndTheBackgroundField(new OpenAiCompatProvider(
+                new OpenAiCompatProvider.Options(baseUrl, "test-model", null)),
+                "openai-tools-and-system.txt", "openai", folder);
     }
 }

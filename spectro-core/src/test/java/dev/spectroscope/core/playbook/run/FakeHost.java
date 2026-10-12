@@ -36,6 +36,13 @@ final class FakeHost implements PlaybookHost {
     final Map<String, Probe> rows = new HashMap<>();
     final Map<String, String> answers = new HashMap<>();
     final Deque<String> answerQueue = new ArrayDeque<>();
+    /** Card 506: every chat turn's record prompt, and the replies the turns give in order ("ok" when empty). */
+    final List<String> prompts = new CopyOnWriteArrayList<>();
+    final Deque<String> replies = new ArrayDeque<>();
+    /** Card 506 fix round 2: the stop reasons the turns give in order ("end_turn" when empty). */
+    final Deque<String> stopReasons = new ArrayDeque<>();
+    /** Card 506: a turn that ends normally even when its signal was cancelled, so only the runner can stop. */
+    boolean turnsIgnoreCancel;
     boolean nobodyToAsk;
     Playbook.ModelRef chat = new Playbook.ModelRef("lmstudio", "start-model");
 
@@ -51,6 +58,7 @@ final class FakeHost implements PlaybookHost {
 
     @Override
     public ChatTurn chatTurn(String recordPrompt, String modelPrompt, CancelSignal signal) {
+        prompts.add(recordPrompt);
         Matcher m = STEP_ID.matcher(recordPrompt);
         String id = m.find() ? m.group(1) : "?";
         chatTurns.add(id + "@" + chat.provider());
@@ -58,7 +66,9 @@ final class FakeHost implements PlaybookHost {
         if (action != null) {
             action.accept(this);
         }
-        return new ChatTurn(signal.isCancelled() ? "aborted" : "end_turn", "ok");
+        String reply = replies.isEmpty() ? "ok" : replies.poll();
+        String stop = stopReasons.isEmpty() ? "end_turn" : stopReasons.poll();
+        return new ChatTurn(signal.isCancelled() && !turnsIgnoreCancel ? "aborted" : stop, reply);
     }
 
     @Override public Playbook.ModelRef chatModel() { return chat; }

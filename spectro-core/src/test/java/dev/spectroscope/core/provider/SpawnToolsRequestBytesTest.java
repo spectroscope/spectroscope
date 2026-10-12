@@ -136,6 +136,16 @@ class SpawnToolsRequestBytesTest {
         ToolRegistry registry = new ToolRegistry();
         manager.tools().forEach(registry::register);
         manager.devTools().forEach(registry::register);
+        // Card 503, owner decision 9 in its provisional form: the session
+        // registers the two messaging tools after the spawn and role tools, and
+        // this fixture sets agentMessaging false, so the bytes compared below
+        // prove v0.14.4 identity with messaging off, not for a default install.
+        dev.spectroscope.core.messaging.MessagingTools.forSeat(new dev.spectroscope.core.messaging.SessionSeat(
+                () -> null, () -> "s", () -> manager, () -> true, "main")).forEach(registry::register);
+        // Card 505: wait_agents and the parent's inbox, as the session wires
+        // them; with messaging off neither wait_agents nor background is sent.
+        manager.backgroundTools().forEach(registry::register);
+        dev.spectroscope.core.peer.PeerInbox inbox = new dev.spectroscope.core.peer.PeerInbox();
         Agent parent = new Agent(AgentOptions.builder()
                 .provider(provider)
                 .systemPrompt(RoleCatalog.BASE_SYSTEM_PROMPT + cwd)
@@ -144,7 +154,10 @@ class SpawnToolsRequestBytesTest {
                 .agentId("main")
                 .onPermission(request -> true)
                 .sessionsPerChat(sessionsPerChat)
+                .agentMessaging(false)
+                .peerInbox(inbox)
                 .build());
+        manager.parentInbox(inbox);
         try (EventStream stream = manager.run(parent, "go", new RunOptions(new CancelSignal(), null))) {
             stream.forEach(event -> { });
         }

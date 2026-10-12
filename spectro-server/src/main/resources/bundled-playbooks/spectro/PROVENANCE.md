@@ -77,6 +77,13 @@ Each file that differs from its source, with what changed. The list is computed 
 | `writing-skills/persuasion-principles.md` | dashes used as punctuation replaced by commas, colons, semicolons or parentheses |
 | `writing-skills/testing-skills-with-subagents.md` | skill references renamed to spectropowers; dashes used as punctuation replaced by commas, colons, semicolons or parentheses |
 
+## Workflows
+
+Two fan-out workflows written for spectroscope on 2026-10-12 (card 506), not copied from superpowers. Each runs three explore children at the same time and one summariser over their results.
+
+- `workflows/fanout-research.json`: three explorers look for the answer to one question in the code, the documents and the tests; the summariser answers from what they found.
+- `workflows/fanout-review.json`: the chat prints the diff of the working folder, three reviewers read it for correctness, security and readability; the summariser joins their findings.
+
 ## Unchanged
 
 11 files are byte identical to their source.

@@ -1,6 +1,8 @@
 package dev.spectroscope.server.llm;
 
 import dev.spectroscope.core.config.SpectroConfig;
+import dev.spectroscope.core.config.SttRunnerChoice;
+import dev.spectroscope.core.config.SttStreaming;
 import dev.spectroscope.core.tools.ToolPath;
 import dev.spectroscope.server.fleet.FleetController;
 import dev.spectroscope.server.localmodel.LocalModelDownload;
@@ -75,13 +77,23 @@ public final class SttController {
     private final java.util.function.BooleanSupplier keyPresent;
     /** The {@code sttLanguage} setting, read per call like the provider. */
     private final java.util.function.Supplier<String> language;
+    /** The model the live socket runs (card 527), read per call: the
+     *  {@code sttModel} setting, then the env, then the default file. */
+    private final java.util.function.Supplier<Path> liveModel;
+    /** The {@code sttRunner} setting, read per call (card 528). */
+    private final java.util.function.Supplier<String> runner;
+    /** The resident whisper-server's state, read per call (card 528). */
+    private final java.util.function.Supplier<WhisperServerRunner.Status> serverStatus;
 
     public SttController() {
         this(Path.of(System.getProperty("user.home"), ".spectro", "models"),
                 ToolPath::locate, SttController::httpFetch,
                 () -> SpectroConfig.load(SpectroConfig.Overrides.none()).sttProvider(),
                 () -> SpectroConfig.hasApiKey(HostedTranscriber.KEY_ENV),
-                () -> SpectroConfig.load(SpectroConfig.Overrides.none()).sttLanguage());
+                () -> SpectroConfig.load(SpectroConfig.Overrides.none()).sttLanguage(),
+                TranscribeController::configuredModelPath,
+                () -> SpectroConfig.load(SpectroConfig.Overrides.none()).sttRunner(),
+                () -> SpeechRunners.shared().serverStatus());
     }
 
     /** Seam for tests: a models dir, the program lookup, and the HTTP leg. */
@@ -117,6 +129,56 @@ public final class SttController {
                   java.util.function.Supplier<String> configured,
                   java.util.function.BooleanSupplier keyPresent,
                   java.util.function.Supplier<String> language) {
+        this(modelsDir, locator, fetcher, configured, keyPresent, language,
+                () -> modelsDir.resolve(MODEL_FILE));
+    }
+
+    /**
+     * The full seam with the live model.
+     *
+     * @param modelsDir where the whisper model lives
+     * @param locator where a program sits
+     * @param fetcher the HTTP leg of the model download
+     * @param configured reads {@code sttProvider}
+     * @param keyPresent whether the hosted provider's key is set somewhere
+     * @param language reads {@code sttLanguage}
+     * @param liveModel the model file the live socket runs, read per call, so
+     *                  {@code localLive} answers what the socket will do
+     */
+    SttController(Path modelsDir, Function<String, ToolPath.Lookup> locator,
+                  LocalModelDownload.Fetcher fetcher,
+                  java.util.function.Supplier<String> configured,
+                  java.util.function.BooleanSupplier keyPresent,
+                  java.util.function.Supplier<String> language,
+                  java.util.function.Supplier<Path> liveModel) {
+        this(modelsDir, locator, fetcher, configured, keyPresent, language, liveModel,
+                () -> SpectroConfig.STT_RUNNER_AUTO, () -> new WhisperServerRunner.Status(false, null));
+    }
+
+    /**
+     * The full seam with the speech runner (card 528).
+     *
+     * @param modelsDir where the whisper model lives
+     * @param locator where a program sits
+     * @param fetcher the HTTP leg of the model download
+     * @param configured reads {@code sttProvider}
+     * @param keyPresent whether the hosted provider's key is set somewhere
+     * @param language reads {@code sttLanguage}
+     * @param liveModel the model file the live socket runs
+     * @param runner reads {@code sttRunner}
+     * @param serverStatus the resident whisper-server's state
+     */
+    SttController(Path modelsDir, Function<String, ToolPath.Lookup> locator,
+                  LocalModelDownload.Fetcher fetcher,
+                  java.util.function.Supplier<String> configured,
+                  java.util.function.BooleanSupplier keyPresent,
+                  java.util.function.Supplier<String> language,
+                  java.util.function.Supplier<Path> liveModel,
+                  java.util.function.Supplier<String> runner,
+                  java.util.function.Supplier<WhisperServerRunner.Status> serverStatus) {
+        this.runner = runner;
+        this.serverStatus = serverStatus;
+        this.liveModel = liveModel;
         this.modelsDir = modelsDir;
         this.locator = locator;
         this.download = new LocalModelDownload(modelsDir, MODEL_FILE, MODEL_SHA256, MODEL_BYTES,
@@ -209,6 +271,34 @@ public final class SttController {
                 "keyEnv", HostedTranscriber.KEY_ENV,
                 "model", HostedTranscriber.DEFAULT_MODEL));
         out.put("speechWorks", route == SttRoute.HOSTED ? key : (present && allBins));
+        // Card 527: the local route writes along live when whisper-cli and the
+        // model are both here, one whisper run over the open window per step.
+        // Whether a reader WANTS live text is a browser setting; this says
+        // whether the local route can give it, and how often.
+        // The same test the socket makes when a recording starts: whisper-cli
+        // found and the configured model file there.
+        Path liveFile = liveModel.get();
+        // Card 528: the program that runs is the one sttRunner resolves to.
+        SttRunnerChoice choice = SttRunnerChoice.resolve(runner.get(), locator.apply("whisper-server"),
+                locator.apply("whisper-cli"));
+        boolean liveReady = choice.ready() && Files.isRegularFile(liveFile);
+        Map<String, Object> localLive = new LinkedHashMap<>();
+        localLive.put("available", liveReady);
+        localLive.put("model", liveFile.getFileName() == null ? MODEL_FILE : liveFile.getFileName().toString());
+        localLive.put("chunkMs", SttStreaming.STT_LOCAL_CHUNK_MS);
+        localLive.put("windowMs", SttStreaming.STT_LOCAL_WINDOW_MS);
+        localLive.put("warmupTimeoutMs", SttStreaming.STT_WARMUP_TIMEOUT_MS);
+        boolean server = SpectroConfig.STT_RUNNER_SERVER.equals(choice.running());
+        WhisperServerRunner.Status resident = server ? serverStatus.get() : new WhisperServerRunner.Status(false, null);
+        Map<String, Object> running = new LinkedHashMap<>();
+        running.put("configured", choice.configured());
+        running.put("running", choice.running());
+        running.put("port", resident.port());
+        running.put("up", resident.up());
+        running.put("fallback", choice.fallback());
+        localLive.put("runner", running);
+        out.put("localLive", localLive);
+        out.put("runner", choice.configured());
         return out;
     }
 

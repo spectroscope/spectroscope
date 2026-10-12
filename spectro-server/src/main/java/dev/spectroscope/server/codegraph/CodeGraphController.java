@@ -82,7 +82,8 @@ public class CodeGraphController {
     /**
      * Whether the folder has a graph page.
      *
-     * @param exists     whether {@code graphify-out/graph.html} is a file inside the folder
+     * @param exists     whether {@code graphify-out/graph.html} is a file inside the folder,
+     *                   no larger than {@code MAX_PAGE_BYTES}
      * @param modifiedAt its modification time, ISO-8601 to the second, or null
      */
     public record Graph(boolean exists, String modifiedAt) {
@@ -277,9 +278,6 @@ public class CodeGraphController {
             return ResponseEntity.notFound().build();
         }
         try {
-            if (Files.size(page) > MAX_PAGE_BYTES) {
-                return ResponseEntity.notFound().build();
-            }
             return ResponseEntity.ok()
                     .contentType(new MediaType("text", "html", StandardCharsets.UTF_8))
                     .header("Content-Security-Policy", SANDBOX)
@@ -314,11 +312,17 @@ public class CodeGraphController {
         }
     }
 
-    /** The folder's graph page, realised, or null when it is absent or resolves outside the folder. */
+    /**
+     * The folder's graph page, realised, or null when it is absent, resolves
+     * outside the folder, or is larger than {@code MAX_PAGE_BYTES}. Status and
+     * view both ask here, so a page the view would refuse is no graph to show
+     * (card 546).
+     */
     private static Path graphPage(Path folder) {
         try {
             Path real = folder.resolve(GRAPH_HTML).toRealPath();
-            return real.startsWith(folder) && Files.isRegularFile(real) ? real : null;
+            return real.startsWith(folder) && Files.isRegularFile(real)
+                    && Files.size(real) <= MAX_PAGE_BYTES ? real : null;
         } catch (IOException | RuntimeException absent) {
             return null;
         }

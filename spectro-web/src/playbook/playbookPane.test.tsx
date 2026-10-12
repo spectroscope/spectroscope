@@ -16,7 +16,10 @@ import {
   openEditor,
   type EditorViewWire,
 } from "../state/playbookEditor";
+import { __resetPlaybookContents, loadContents } from "../state/playbookContents";
 import { __resetPlaybooks, loadPlaybook, refreshFolders, type LoadedPlaybook } from "../state/playbooks";
+import { drive } from "../testkit/driveComponent";
+import { WorkflowList } from "./WorkflowList";
 import type { PlaybookDoc } from "./editor/doc";
 import { PlaybookPane } from "./PlaybookPane";
 
@@ -160,6 +163,7 @@ function respond(body: unknown): void {
 beforeEach(() => {
   __resetPlaybooks();
   __resetPlaybookEditor();
+  __resetPlaybookContents();
   vi.stubGlobal("fetch", vi.fn());
 });
 
@@ -418,5 +422,76 @@ describe("PlaybookPane tabs (card 484, named New by card 515)", () => {
     expect(dict["lyzr.tab"]).toEqual({ en: "New", de: "Neu" });
     expect(out).not.toContain("wizard-probe");
     expect(out).toContain('class="pb-folders"');
+  });
+});
+
+describe("PlaybookPane workflows (card 506)", () => {
+  const contents = {
+    playbook: "p",
+    dir: "/p",
+    contentsHash: "c",
+    items: [
+      {
+        kind: "workflow",
+        name: "fanout-review.json",
+        source: "workflows/fanout-review.json",
+        sha256: "abc123",
+        state: "runnable",
+        scope: "runs",
+        bytes: 9,
+        target: null,
+        command: null,
+        files: [],
+      },
+    ],
+    promptChars: 0,
+    hooksOrigin: null,
+    findings: [],
+  };
+
+  it("lists the loaded playbook's workflows and Run sends the folder, the file, the hash and the text", async () => {
+    respond(LOADED);
+    await loadPlaybook("/p", "/ws");
+    respond(contents);
+    await loadContents("/p", "/ws");
+    const sent: string[][] = [];
+    const pane = (
+      <PlaybookPane
+        workspace="/ws"
+        sessionId="s1"
+        onStartPlaybook={() => false}
+        onStartWorkflow={(...args) => {
+          sent.push(args);
+          return true;
+        }}
+      />
+    );
+    const out = renderToStaticMarkup(pane);
+    expect(out).toContain(dict["wf.title"].en);
+    expect(out).toContain("fanout-review.json");
+    expect(out).toMatch(/<button[^>]*class="wf-run"[^>]*>/);
+    drive(
+      pane,
+      [PlaybookPane, WorkflowList],
+      [
+        (tree) =>
+          tree
+            .find((el) => el.props.className === "wf-input")
+            ?.props.onChange?.({ target: { value: "the login" } }),
+        (tree) => tree.find((el) => el.props.className === "wf-run")?.props.onClick?.(),
+      ],
+    );
+    expect(sent).toEqual([["/p", "workflows/fanout-review.json", "abc123", "the login"]]);
+  });
+
+  it("draws no workflow list without a start handler", async () => {
+    respond(LOADED);
+    await loadPlaybook("/p", "/ws");
+    respond(contents);
+    await loadContents("/p", "/ws");
+    const out = renderToStaticMarkup(
+      <PlaybookPane workspace="/ws" sessionId="s1" onStartPlaybook={() => false} />,
+    );
+    expect(out).not.toContain("wf-list");
   });
 });

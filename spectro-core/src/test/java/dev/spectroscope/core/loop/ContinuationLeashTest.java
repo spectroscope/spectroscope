@@ -292,4 +292,35 @@ class ContinuationLeashTest {
         assertTrue(verdict.orElseThrow().evidence().contains("200 of 200"),
                 "the COUNT is never clipped, only the list");
     }
+    /**
+     * Card 504, hub and spoke review round 1: a long step is cut for the
+     * continuation, and the cut never leaves half of a surrogate pair.
+     */
+    @Test
+    void aLongStepIsCutWithoutSplittingASurrogatePair() {
+        ContinuationLeash leash = new ContinuationLeash(3);
+        leash.startRun();
+        String face = "\uD83D\uDE00";
+        // The step is cut to 119 characters and an ellipsis; the pair sits on 118 and 119.
+        String step = "s".repeat(118) + face + " and the rest of a long step";
+        RunEvent.Plan ledger = new RunEvent.Plan("main", List.of(new RunEvent.PlanStep(step, "pending")), 1L);
+
+        String message = leash.consider(ledger, idle(ledger)).orElseThrow().message();
+
+        assertTrue(message.contains("s".repeat(118) + "\u2026"), "the pair goes whole: " + message);
+        for (int i = 0; i < message.length(); i++) {
+            char c = message.charAt(i);
+            if (Character.isHighSurrogate(c)) {
+                assertTrue(i + 1 < message.length() && Character.isLowSurrogate(message.charAt(i + 1)),
+                        "a high surrogate without its pair at " + i);
+            }
+        }
+        String fits = "s".repeat(117) + face + "tail of the step that runs on past the cap";
+        RunEvent.Plan kept = new RunEvent.Plan("main", List.of(new RunEvent.PlanStep(fits, "pending")), 1L);
+        ContinuationLeash fresh = new ContinuationLeash(3);
+        fresh.startRun();
+        String keptMessage = fresh.consider(kept, idle(kept)).orElseThrow().message();
+        assertTrue(keptMessage.contains("s".repeat(117) + face + "\u2026"),
+                "a pair that ends at the cut is kept whole: " + keptMessage);
+    }
 }

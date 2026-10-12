@@ -111,6 +111,107 @@ class ApiLocalFenceRegistrationTest {
                 "the fence must refuse the rebound Host and only the rebound Host");
     }
 
+    @Test
+    void thePlaybookFileRoutesRefuseAReboundHost() throws IOException {
+        // Card 522: the four routes that read and write a playbook folder. A rebound Host is
+        // refused at the filter, before any parameter is read.
+        for (String route : java.util.List.of("/api/playbooks/tree", "/api/playbooks/read",
+                "/api/playbooks/write", "/api/playbooks/file-at")) {
+            assertEquals(404, statusOf(route, "evil.example.com"), route);
+        }
+    }
+
+    @Test
+    void thePlaybookFileRoutesReachTheHandlerFromLocalhost() throws IOException {
+        // The positive side of the test above: from localhost the same requests reach Spring's
+        // dispatch, which answers the missing parameter (400) or the wrong method (405). Neither
+        // touches a folder.
+        assertEquals(400, statusOf("/api/playbooks/tree", "localhost:" + port));
+        assertEquals(400, statusOf("/api/playbooks/read", "localhost:" + port));
+        assertEquals(405, statusOf("/api/playbooks/write", "localhost:" + port));
+        assertEquals(405, statusOf("/api/playbooks/file-at", "localhost:" + port));
+    }
+
+    @Test
+    void aPlaybookWriteThatDeclaresMoreThanTheCapIsRefusedBeforeItsBodyIsRead() throws IOException {
+        // No body follows the header: the answer comes from the declared length alone.
+        long over = dev.spectroscope.server.playbooks.PlaybookController.MAX_WRITE_BODY_BYTES + 1L;
+        assertEquals(413, putStatusOf("/api/playbooks/write", over, ""));
+    }
+
+    @Test
+    void aSmallPlaybookWriteStillReachesTheHandler() throws IOException {
+        // The positive side: a short body passes the fence and the handler answers that it is not JSON.
+        assertEquals(400, putStatusOf("/api/playbooks/write", 1, "x"));
+    }
+
+    @Test
+    void thePlaybookBundleRoutesRefuseAReboundHost() throws IOException {
+        // Card 524: the export streams a folder and the import writes one. A rebound Host is refused
+        // at the filter, before any parameter is read.
+        for (String route : java.util.List.of("/api/playbooks/export", "/api/playbooks/import")) {
+            assertEquals(404, statusOf(route, "evil.example.com"), route);
+        }
+    }
+
+    @Test
+    void thePlaybookBundleRoutesReachTheHandlerFromLocalhost() throws IOException {
+        // The positive side: the export misses its parameter (400) and the import is not a GET (405).
+        assertEquals(400, statusOf("/api/playbooks/export", "localhost:" + port));
+        assertEquals(405, statusOf("/api/playbooks/import", "localhost:" + port));
+    }
+
+    @Test
+    void aPlaybookImportThatDeclaresMoreThanTheCapIsRefusedBeforeItsBodyIsRead() throws IOException {
+        long over = dev.spectroscope.server.playbooks.PlaybookController.MAX_IMPORT_BODY_BYTES + 1L;
+        assertEquals(413, sendStatusOf("POST", "/api/playbooks/import", over, ""));
+    }
+
+    @Test
+    void aSmallPlaybookImportStillReachesTheHandler() throws IOException {
+        assertEquals(400, sendStatusOf("POST", "/api/playbooks/import", 1, "x"));
+    }
+
+    @Test
+    void thePluginRoutesRefuseAReboundHost() throws IOException {
+        // Card 526: the listing reads the Claude Code plugins of the home and the import writes a
+        // playbook folder. A rebound Host is refused at the filter, before any parameter is read.
+        for (String route : java.util.List.of("/api/playbooks/plugin-sources", "/api/playbooks/import-plugin")) {
+            assertEquals(404, statusOf(route, "evil.example.com"), route);
+        }
+    }
+
+    @Test
+    void thePluginRoutesReachTheHandlerFromLocalhost() throws IOException {
+        // The positive side: the listing misses its parameter (400) and the import is not a GET (405).
+        assertEquals(400, statusOf("/api/playbooks/plugin-sources", "localhost:" + port));
+        assertEquals(405, statusOf("/api/playbooks/import-plugin", "localhost:" + port));
+    }
+
+    private int putStatusOf(String target, long declared, String body) throws IOException {
+        return sendStatusOf("PUT", target, declared, body);
+    }
+
+    private int sendStatusOf(String method, String target, long declared, String body) throws IOException {
+        try (Socket socket = new Socket(InetAddress.getLoopbackAddress(), port)) {
+            socket.setSoTimeout(10_000);
+            String request = method + " " + target + " HTTP/1.1\r\n"
+                    + "Host: localhost:" + port + "\r\n"
+                    + "Content-Type: application/json\r\n"
+                    + "Content-Length: " + declared + "\r\n"
+                    + "Connection: close\r\n"
+                    + "\r\n" + body;
+            OutputStream out = socket.getOutputStream();
+            out.write(request.getBytes(StandardCharsets.US_ASCII));
+            out.flush();
+            BufferedReader in = new BufferedReader(
+                    new InputStreamReader(socket.getInputStream(), StandardCharsets.US_ASCII));
+            String responseLine = in.readLine();
+            assertNotNull(responseLine, "the server closed without a response line");
+            return Integer.parseInt(responseLine.split(" ", 3)[1]);
+        }
+    }
+
     /**
      * Sends one HTTP/1.1 request over a loopback socket with the target and Host
      * exactly as given, and returns the status code.

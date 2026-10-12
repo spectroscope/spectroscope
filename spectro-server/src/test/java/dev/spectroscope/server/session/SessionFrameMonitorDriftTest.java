@@ -61,4 +61,41 @@ class SessionFrameMonitorDriftTest {
                 .as("methods that call sendFrame without holding the monitor")
                 .isEmpty();
     }
+
+    @Test
+    void theTwoPeerFramesAreSentUnderTheMonitor() throws IOException {
+        // Card 502: the positive half. peer_message and peer_roster are new
+        // senders; the walk above holds them to the monitor only if they exist.
+        assumeTrue(Files.isRegularFile(SOURCE), "not running from a source checkout");
+        String source = Files.readString(SOURCE);
+        assertThat(source).contains("synchronized void sendPeerMessage(");
+        assertThat(source).contains("synchronized void sendPeerRoster(");
+        assertThat(source).contains("\"type\", \"peer_message\"");
+        assertThat(source).contains("\"type\", \"peer_roster\"");
+    }
+
+    @Test
+    void theOperatorsPeerMessageFrameIsRoutedToTheConnection() throws IOException {
+        // Card 503: send_peer_message is inbound, from the page. The handler
+        // routes it, and the connection method it calls sends its answer
+        // through sendPeerMessage, which the walk above holds to the monitor.
+        Path handler = SOURCE.resolveSibling("SpectroSocketHandler.java");
+        assumeTrue(Files.isRegularFile(handler), "not running from a source checkout");
+        assertThat(Files.readString(handler)).contains("case \"send_peer_message\"")
+                .contains("connection.onSendPeerMessage(");
+        assertThat(Files.readString(SOURCE)).contains("public void onSendPeerMessage(");
+    }
+
+    @Test
+    void theLoopFramesAreRoutedAndSentUnderTheMonitor() throws IOException {
+        // Card 504: set_loop is inbound, from the page; loop_info is outbound
+        // and the walk above holds its sender to the monitor.
+        Path handler = SOURCE.resolveSibling("SpectroSocketHandler.java");
+        assumeTrue(Files.isRegularFile(handler), "not running from a source checkout");
+        assertThat(Files.readString(handler)).contains("case \"set_loop\"").contains("connection.onSetLoop(");
+        String source = Files.readString(SOURCE);
+        assertThat(source).contains("public void onSetLoop(");
+        assertThat(source).contains("synchronized void sendLoopInfo(");
+        assertThat(source).contains("\"type\", \"loop_info\"");
+    }
 }

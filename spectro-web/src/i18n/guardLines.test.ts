@@ -197,10 +197,11 @@ const DETECTORS = ["identical_writes", "repeated_failure", "stalled_plan", "othe
 // arriving because nobody was there it does not. Two sentences, not one with
 // a variable, because one of them would be false half the time.
 const INTERVENTIONS = ["CARRY_ON", "CARRY_ON.stoodDown", "CHANGE_COURSE", "END", "other"];
-const DECISIONS = ["continued", "no_progress", "budget_spent", "other"];
+const DECISIONS = ["continued", "no_progress", "budget_spent", "goal_continued", "other"];
 // "unknown" is a REAL outcome here, which is why the fallback everywhere is
 // spelled "other" — a fallback that collides with a meaningful value hides it.
-const OUTCOMES = ["met", "unmet", "unknown", "other"];
+// Card 504: the Java check sends met, failed and untested; a goal can also clear itself.
+const OUTCOMES = ["met", "unmet", "unknown", "failed", "untested", "cleared", "other"];
 
 const KEYS = [
   ...DETECTORS.map((d) => `info.noProgress.${d}`),

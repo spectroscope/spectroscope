@@ -13,11 +13,18 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { DockerStatus } from "./dockerOffer";
 import {
-  SEARXNG_INSTALL_COMMAND,
+  SEARXNG_FOLDER,
+  SEARXNG_RUN_COMMAND,
   SEARXNG_SAMPLE_PATH,
+  SEARXNG_SCRIPT_NAME,
+  SEARXNG_SCRIPT_ROUTE,
   WEB_SEARCH_TIERS,
   commitSearxngUrl,
+  searxngFetchCommand,
+  searxngInstallCommand,
   searxngOffer,
+  searxngScriptUrl,
+  tierHintKey,
   tierReading,
   webSearchCheck,
   webSearchRowValue,
@@ -36,12 +43,16 @@ const sample = (name: string): string =>
   fileURLToPath(new URL(`../../../${SEARXNG_SAMPLE_PATH}/${name}`, import.meta.url));
 
 describe("searxngOffer", () => {
-  it("hands over the command only when the daemon answers", () => {
-    expect(searxngOffer(status({ docker: "ready" })).kind).toBe("run");
-    expect(searxngOffer(status({ docker: "ready" })).command).toBe(SEARXNG_INSTALL_COMMAND);
-    expect(searxngOffer(status({ docker: "unreachable" })).command).toBeUndefined();
-    expect(searxngOffer(status({ docker: "absent" })).command).toBeUndefined();
-    expect(searxngOffer(null).command).toBeUndefined();
+  it("hands over the command and the download only when the daemon answers", () => {
+    expect(searxngOffer(status({ docker: "ready" }), "8291").kind).toBe("run");
+    expect(searxngOffer(status({ docker: "ready" }), "8291").command).toBe(searxngFetchCommand("8291"));
+    expect(searxngOffer(status({ docker: "ready" }), "8291").run).toBe(SEARXNG_RUN_COMMAND);
+    expect(searxngOffer(status({ docker: "ready" }), "8291").download).toBe(searxngScriptUrl("8291"));
+    for (const other of [status({ docker: "unreachable" }), status({ docker: "absent" }), null]) {
+      expect(searxngOffer(other, "8291").command).toBeUndefined();
+      expect(searxngOffer(other, "8291").run).toBeUndefined();
+      expect(searxngOffer(other, "8291").download).toBeUndefined();
+    }
   });
 
   it("says SearXNG rather than Langfuse in the two states that name a stack", () => {
@@ -63,11 +74,77 @@ describe("searxngOffer", () => {
     expect(searxngOffer(null).kind).toBe("unknown");
   });
 
-  it("the offered command starts the instance and nothing else", () => {
-    expect(SEARXNG_INSTALL_COMMAND).toContain(SEARXNG_SAMPLE_PATH);
-    expect(SEARXNG_INSTALL_COMMAND).toContain("./install.sh");
-    expect(SEARXNG_INSTALL_COMMAND).not.toContain("sudo");
-    expect(SEARXNG_INSTALL_COMMAND).not.toContain("| sh");
+  it("the offered command is three lines: a folder, the download, the run (card 531)", () => {
+    const lines = searxngInstallCommand("8291").split("\n");
+    expect(lines).toEqual([
+      "mkdir -p ~/spectro-searxng && cd ~/spectro-searxng",
+      "curl -fsSLO http://127.0.0.1:8291/local-setup/scripts/install-searxng.sh",
+      "bash ~/spectro-searxng/install-searxng.sh",
+    ]);
+    expect(SEARXNG_FOLDER).toBe("~/spectro-searxng");
+  });
+
+  it("copies the fetch and the run apart, so the script is read before it runs (fix round 2)", () => {
+    // One copy of all three lines ran the script unread. The first copy
+    // stops after the download; the run is a copy of its own.
+    expect(searxngFetchCommand("8291").split("\n")).toEqual(
+      searxngInstallCommand("8291").split("\n").slice(0, 2),
+    );
+    expect(searxngFetchCommand("8291")).not.toContain("bash ");
+    expect(SEARXNG_RUN_COMMAND).toBe(searxngInstallCommand("8291").split("\n")[2]);
+  });
+
+  it("the run line names the folder, so it works after the download button too (fix round 2)", () => {
+    // The download button saves into the browser's download folder, and the
+    // operator moves the file into the folder. The run line must not depend
+    // on the folder the terminal happens to be in.
+    expect(SEARXNG_RUN_COMMAND).toBe(`bash ${SEARXNG_FOLDER}/${SEARXNG_SCRIPT_NAME}`);
+  });
+
+  it("carries no shell comment: macOS zsh runs a pasted '#' line as a command (fix round 1)", () => {
+    // zsh leaves interactive_comments off, so a pasted "# read ..." line
+    // printed "zsh: command not found: #" in the first thing a Mac user pastes.
+    // The read hint lives under the block instead (set.searxngRead).
+    const command = searxngInstallCommand("8291");
+    expect(command).not.toContain("#");
+    for (const line of command.split("\n")) {
+      expect(line.trimStart().startsWith("#"), line).toBe(false);
+    }
+  });
+
+  it("downloads and runs on two lines, never through a pipe, never with sudo or git", () => {
+    const command = searxngInstallCommand("8291");
+    expect(command).not.toMatch(/\|\s*(ba)?sh\b/);
+    expect(command).not.toContain("sudo");
+    expect(command).not.toContain("git");
+  });
+
+  it("names the port the page runs on and nothing a caller could smuggle in", () => {
+    expect(searxngScriptUrl("8080")).toBe(`http://127.0.0.1:8080${SEARXNG_SCRIPT_ROUTE}`);
+    expect(SEARXNG_SCRIPT_ROUTE.endsWith(`/${SEARXNG_SCRIPT_NAME}`)).toBe(true);
+    // location.port is "" on a default port; anything that is not a port
+    // number never reaches the line.
+    expect(searxngScriptUrl("")).toBe(`http://127.0.0.1${SEARXNG_SCRIPT_ROUTE}`);
+    for (const bad of ["8080@evil.example", "80/../x", "8080 && rm -rf ~", "99999", "0"]) {
+      expect(searxngScriptUrl(bad), bad).toBe(`http://127.0.0.1${SEARXNG_SCRIPT_ROUTE}`);
+    }
+  });
+
+  it("the setup file no longer offers a clone", () => {
+    const source = readFileSync(fileURLToPath(new URL("./webSearchSetup.ts", import.meta.url)), "utf8");
+    expect(source).not.toContain("git clone");
+  });
+
+  it("the settings block asks tierHintKey before it adds the script sentence (fix round 1)", () => {
+    const block = readFileSync(fileURLToPath(new URL("./WebSearchSettings.tsx", import.meta.url)), "utf8");
+    expect(block).toContain("tierHintKey(reading, docker)");
+    expect(block).not.toMatch(/reading\.hintKey\s*\?/);
+  });
+
+  it("the settings block takes the port from the page, never from the query", () => {
+    const block = readFileSync(fileURLToPath(new URL("./WebSearchSettings.tsx", import.meta.url)), "utf8");
+    expect(block).toContain("window.location.port");
+    expect(block).not.toMatch(/location\.search|URLSearchParams/);
   });
 
   it("the command names a setup this repository actually ships, and it turns json on", () => {
@@ -89,6 +166,9 @@ describe("searxngOffer", () => {
     expect(installer).toContain("format=json");
     // And it hands the address over the way the Langfuse installer does.
     expect(installer).toContain("SPECTRO_SEARXNG_URL");
+    // Served alone by the app, it writes its compose file itself (card 531);
+    // CiStackDriftTest holds the heredoc to the sample's bytes.
+    expect(installer).toContain(`cat > "$compose_file" <<'COMPOSE'`);
   });
 });
 
@@ -127,6 +207,40 @@ describe("tierReading", () => {
     for (const tier of ["searxng", "tavily", "brave"]) {
       expect(tierReading(tier, "").labelKey).toBe("");
     }
+  });
+
+  it("only the scrape points to the setup script, in both languages (card 531)", () => {
+    expect(tierReading("duckduckgo", "").hintKey).toBe("set.tierScrapeScript");
+    for (const tier of ["searxng", "tavily", "brave", "some-future-tier"]) {
+      expect(tierReading(tier, "").hintKey).toBe("");
+    }
+    // Shown inside Settings, above the offer: it points down the page, not
+    // to the page the reader is already on (fix round 1).
+    expect(dict["set.tierScrapeScript"].en).toContain("download the setup script below");
+    expect(dict["set.tierScrapeScript"].de).toContain("unten");
+    for (const text of [dict["set.tierScrapeScript"].de, dict["set.tierScrapeScript"].en]) {
+      expect(text).not.toMatch(/Settings|Einstellungen/);
+    }
+    for (const text of [dict["set.tierScrapeScript"].de, dict["set.tierScrapeScript"].en]) {
+      expect(text).not.toMatch(/[\u2013\u2014]/);
+    }
+  });
+
+  it("points to the script only when the block below offers it (fix round 1)", () => {
+    const scrape = tierReading("duckduckgo", "");
+    expect(tierHintKey(scrape, status({ docker: "ready" }))).toBe("set.tierScrapeScript");
+    for (const other of [
+      status({ docker: "absent" }),
+      status({ docker: "unreachable" }),
+      status({ docker: "ready", compose: false }),
+      status({ docker: "ready", remote: true }),
+      null,
+    ]) {
+      expect(tierHintKey(scrape, other), JSON.stringify(other)).toBe("");
+    }
+    expect(tierHintKey(tierReading("searxng", "http://localhost:8888"), status({ docker: "ready" }))).toBe(
+      "",
+    );
   });
 
   it("an unknown tier says nothing rather than something wrong", () => {
@@ -249,6 +363,13 @@ describe("webSearchCheck", () => {
     expect(check.verdict).toBe("warn");
     for (const lang of ["de", "en"] as const) {
       expect(t(lang, check.reading.detailKey), lang).toContain("best-effort scrape");
+    }
+  });
+
+  it("the doctor row stays the tier sentence alone (card 531 leaves it unchanged)", () => {
+    const check = webSearchCheck(served({ tier: "duckduckgo" }));
+    for (const lang of ["de", "en"] as const) {
+      expect(webSearchRowValue(check, lang)).toBe(t(lang, "set.tier.duckduckgo"));
     }
   });
 

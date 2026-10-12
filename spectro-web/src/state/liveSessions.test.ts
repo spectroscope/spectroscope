@@ -245,3 +245,41 @@ describe("the poll under the push", () => {
     vi.useRealTimers();
   });
 });
+
+describe("card 502: the row grows five fields, additively", () => {
+  it("reads folder, name, status line, face and pid when the server sends them", () => {
+    const rows = liveSessionsOfFrame({
+      type: "live_sessions",
+      sessions: [
+        {
+          id: "s-1",
+          running: true,
+          since: 3,
+          folder: "/Users/x/ForgeDemo",
+          name: "ForgeDemo-7f",
+          statusLine: "running read_file",
+          face: "server",
+          pid: 4711,
+        },
+      ],
+    });
+    expect(rows).toEqual([
+      {
+        id: "s-1",
+        running: true,
+        since: 3,
+        folder: "/Users/x/ForgeDemo",
+        name: "ForgeDemo-7f",
+        statusLine: "running read_file",
+        face: "server",
+        pid: 4711,
+      },
+    ]);
+  });
+
+  it("keeps the three field row of an older server as it was", () => {
+    const rows = liveSessionsOfBody([{ id: "s-1", running: false, since: 2, folder: null, pid: "x" }]);
+    expect(rows).toEqual([{ id: "s-1", running: false, since: 2 }]);
+    expect(Object.keys(rows![0]).sort()).toEqual(["id", "running", "since"]);
+  });
+});

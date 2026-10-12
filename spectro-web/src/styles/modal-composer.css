@@ -1045,3 +1045,85 @@
   font-size: var(--fs-11);
   color: var(--text-faint);
 }
+
+/* Card 504: the strip under the composer, the goal line and the loop chip
+   (card 268). It takes no room while there is neither a goal nor a loop: the
+   component returns nothing then. Colour only on the lines. */
+.composer-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2) var(--sp-3);
+  min-width: 0;
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+}
+.goal-line,
+.loop-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  max-width: 100%;
+  padding: 2px var(--sp-2);
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--ev-pending);
+  border-radius: var(--radius-control);
+}
+.loop-chip {
+  border-left-color: var(--ev-subagent);
+}
+.goal-line-label,
+.loop-chip-label {
+  color: var(--text-faint);
+}
+.goal-line-outcome,
+.loop-chip-reason {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+.goal-line-verdict--met {
+  color: var(--ok);
+}
+.goal-line-verdict--unmet,
+.goal-line-verdict--cleared {
+  color: var(--warn);
+}
+.loop-chip-turn,
+.loop-chip-next {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.loop-chip-stop {
+  flex: none;
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  cursor: pointer;
+}
+.loop-chip-stop:hover {
+  border-color: var(--error);
+  color: var(--text);
+}
+
+/* Card 504: the goal section of the composer gear. */
+.goal-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: var(--sp-2);
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+}
+.goal-actions {
+  display: flex;
+  gap: var(--sp-2);
+  justify-content: flex-end;
+  margin-top: var(--sp-2);
+}

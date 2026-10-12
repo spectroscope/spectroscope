@@ -138,6 +138,14 @@ tasks.processResources {
     from(rootProject.layout.projectDirectory.dir(".spectro/skills")) {
         into("bundled-skills")
     }
+    // Card 531: the SearXNG setup script, served at
+    // /local-setup/scripts/install-searxng.sh by LocalSetupScriptController.
+    // A build output only, never a file in src/main/resources/static;
+    // LocalSetupScriptControllerTest holds the copy equal to the sample.
+    from(rootProject.layout.projectDirectory.file("samples/09-searxng/install.sh")) {
+        into("static/local-setup/scripts")
+        rename { "install-searxng.sh" }
+    }
     // Card 143: the release pipeline bumps *.kts and *.json — a Java literal is
     // invisible to it, and StarterBundles carried "0.4.1" straight through the
     // 0.5.0 cut. So the version travels with the build instead: this module's

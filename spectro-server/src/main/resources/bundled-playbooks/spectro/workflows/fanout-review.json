@@ -1,0 +1,38 @@
+{
+  "name": "fanout-review",
+  "description": "Three reviewers read the diff of the working folder at the same time; one summariser joins what they found.",
+  "steps": [
+    {
+      "kind": "prompt",
+      "id": "diff",
+      "template": "Run git diff HEAD in {{folder}} and answer with the diff exactly as it printed and nothing else. If it prints nothing, answer: no changes."
+    },
+    {
+      "kind": "fanout",
+      "id": "review",
+      "label": "review",
+      "agents": [
+        {
+          "role": "explore",
+          "task": "Review this diff for correctness: wrong logic, missed cases, tests that no longer hold. Read the changed files when you need more context. Answer with a short list of findings, each with file and line, or with: no findings.\n\nA note from the person who started this review (may be empty): {{input}}\n\n{{previous}}"
+        },
+        {
+          "role": "explore",
+          "task": "Review this diff for security: input that is trusted without a check, secrets, paths and commands built from outside data. Read the changed files when you need more context. Answer with a short list of findings, each with file and line, or with: no findings.\n\nA note from the person who started this review (may be empty): {{input}}\n\n{{previous}}"
+        },
+        {
+          "role": "explore",
+          "task": "Review this diff for readability and tests: names, dead code, comments that say more than the code does, changed behaviour without a test. Answer with a short list of findings, each with file and line, or with: no findings.\n\nA note from the person who started this review (may be empty): {{input}}\n\n{{previous}}"
+        }
+      ],
+      "join": {
+        "task": "Three reviewers read the same diff. Join their findings into one review: group them by file, drop the duplicates, put the most severe first, and end with one line that says approve or request changes.\n\nA note from the person who started this review (may be empty): {{input}}\n\n{{results}}"
+      }
+    },
+    {
+      "kind": "end",
+      "id": "done",
+      "result": "reviewed"
+    }
+  ]
+}

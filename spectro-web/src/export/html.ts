@@ -617,6 +617,18 @@ function turnHtml(turn: Turn, state: UiState, lang: Lang, inThread: boolean, fol
         `<div class="x-error"><div class="x-eyebrow">${escapeHtml(label(lang, "error"))}</div>` +
         `<div class="x-error-text">${escapeHtml(turn.text)}</div></div>`
       );
+    case "message": {
+      // Card 503: one agent message, the same words the chat block shows.
+      const head =
+        turn.direction === "sent"
+          ? t(lang, "msg.to", { name: turn.to })
+          : t(lang, "msg.from", { name: turn.from });
+      return (
+        `<article class="x-info x-info--neutral"><div class="x-eyebrow">${escapeHtml(head)} · ` +
+        `${escapeHtml(utcClock(turn.time))} UTC · ${escapeHtml(t(lang, turn.direction === "sent" && turn.status === "held" ? "msg.status.heldThere" : `msg.status.${turn.status}`))}</div>` +
+        `<div>${escapeHtml(turn.text)}</div></article>`
+      );
+    }
   }
 }
 

@@ -80,6 +80,17 @@ export function defaultMode(status: CodeGraphStatus | null): "full" | "update" {
   return status !== null && status.graph !== null && status.graph.exists ? "update" : "full";
 }
 
+/** One code graph row of the ⋮ menu and the folder chip menu (card 546). */
+export type CodeGraphRow = "show" | "update" | "build";
+
+/**
+ * The code graph rows, from the status the host already polls: "Show" and
+ * "Update" when graphify-out/graph.html exists, "Build" alone otherwise.
+ */
+export function codeGraphRows(status: CodeGraphStatus | null): CodeGraphRow[] {
+  return status !== null && status.graph !== null && status.graph.exists ? ["show", "update"] : ["build"];
+}
+
 /** The lines the failure sheet shows: the last twenty of the build's output. */
 export function failureLines(status: CodeGraphStatus | null): string[] {
   const tail = status?.job?.tail ?? [];

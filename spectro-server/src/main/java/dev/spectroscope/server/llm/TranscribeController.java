@@ -159,6 +159,18 @@ public class TranscribeController {
      * installed by setup-stt.sh.
      */
     private static Path defaultModelPath() {
+        return configuredModelPath();
+    }
+
+    /**
+     * The whisper model this server transcribes with, read fresh: the
+     * settings hierarchy first, then {@code SPECTRO_STT_MODEL}, then
+     * {@code ~/.spectro/models/ggml-small.bin}. Shared with the live local
+     * route (card 527), so both routes run the same file.
+     *
+     * @return the model path
+     */
+    public static Path configuredModelPath() {
         String configured = SpectroConfig.load(SpectroConfig.Overrides.none()).sttModel();
         if (configured != null && !configured.isBlank()) {
             return Path.of(configured);

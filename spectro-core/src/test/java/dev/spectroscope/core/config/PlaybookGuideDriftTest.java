@@ -551,8 +551,60 @@ class PlaybookGuideDriftTest {
                 "the limits still say a playbook's contents are not installed");
         assertFalse(part.contains("and that is all"),
                 "the chapter still says the step table only reports installed skills");
-        assertTrue(part.contains("Workflow files are listed and not run"),
-                "the limits do not say what stays out: workflow files are listed and not run");
+        // Card 506: workflow step lists run; the limits now say what of them stays out.
+        assertFalse(part.contains("no workflow runner"),
+                "the chapter still says the product has no workflow runner");
+        assertTrue(part.contains("A workflow file that is not a step list is listed and not run"),
+                "the limits do not say what stays out: a workflow file that is not a step list");
+    }
+
+    /** Card 506: the section that describes a workflow file and its run. */
+    private static String workflowSection(String chapter) {
+        int from = chapter.indexOf("id=\"ch-playbooks-workflows\"");
+        assertTrue(from >= 0, "the chapter has no workflow section (id ch-playbooks-workflows)");
+        int next = chapter.indexOf("<h2 ", from + 10);
+        return chapter.substring(from, next < 0 ? chapter.length() : next);
+    }
+
+    @Test
+    void theWorkflowSectionDescribesTheStepKindsTheRunAndTheRunControl() throws IOException {
+        Path root = rootOrSkip();
+        String section = collapse(workflowSection(chapter(root)));
+        List<String> missing = new ArrayList<>();
+        for (String kind : new java.util.TreeSet<>(dev.spectroscope.core.playbook.WorkflowReader.KINDS)) {
+            if (!section.contains("<code>" + kind + "</code>")) {
+                missing.add(kind);
+            }
+        }
+        assertEquals(List.of(), missing, "the workflow section leaves out step kinds the reader knows");
+        for (String word : List.of("<code>max_rounds</code>", "<code>repeat_until</code>", "<code>{{input}}</code>",
+                "<code>{{previous}}</code>", "<code>{{folder}}</code>", "<code>{{results}}</code>",
+                "<code>spawn_agents</code>", "<code>wait_agents</code>", "<code>list_agents</code>",
+                "<code>send_message</code>", "summariser")) {
+            assertTrue(section.contains(word), "the workflow section never names " + word);
+        }
+        assertTrue(section.contains(String.valueOf(dev.spectroscope.core.playbook.WorkflowReader.MAX_ROUNDS_LIMIT)),
+                "the workflow section does not state the round limit");
+        String i18n = Files.readString(root.resolve(I18N));
+        for (String key : List.of("wf.title", "wf.run", "wf.input")) {
+            assertTrue(section.contains(quoted(i18n, key)), "the workflow section does not quote " + key);
+        }
+    }
+
+    @Test
+    void theWorkflowSectionStatesTheRunsCeilingsAndThatAWorkerDoesNotRunFromTheModule() throws IOException {
+        // Card 506 fix round 2: a whole run has two ceilings, read at load, and a
+        // workflow that starts a worker child is listed and not run.
+        Path root = rootOrSkip();
+        String section = collapse(workflowSection(chapter(root)));
+        assertTrue(section.contains(dev.spectroscope.core.playbook.WorkflowReader.MAX_CHILD_RUNS + " helper runs"),
+                "the workflow section does not state the ceiling on helper runs");
+        assertTrue(section.contains(dev.spectroscope.core.playbook.WorkflowReader.MAX_STEP_RUNS + " step runs"),
+                "the workflow section does not state the ceiling on step runs");
+        assertTrue(section.contains("A workflow that starts a <code>worker</code> helper is listed and not run"),
+                "the workflow section does not say that a worker workflow is not run from the module");
+        assertFalse(section.contains("each with a role (explore or worker)"),
+                "the workflow section still offers worker as a role the module runs");
     }
 
     @Test
@@ -619,10 +671,18 @@ class PlaybookGuideDriftTest {
         assertEquals(List.of(), missing, "the section leaves out model roles of the shipped playbook");
         assertTrue(section.contains("contents row"),
                 "the section never says where the workflows of the new playbook are listed");
-        boolean none = playbook(root).get("contents").get("workflows").isEmpty();
-        assertTrue(none, "the shipped playbook declares workflows now: rewrite the sentence below and this check");
-        assertTrue(section.contains("declares no workflows"),
-                "the section never says that the shipped playbook declares no workflows");
+        // Card 506: the shipped playbook declares workflows, and the section names each one.
+        List<String> unnamed = new ArrayList<>();
+        playbook(root).get("contents").get("workflows").forEach(w -> {
+            String name = w.asText().substring(w.asText().lastIndexOf('/') + 1);
+            if (!section.contains("<code>" + name + "</code>")) {
+                unnamed.add(name);
+            }
+        });
+        assertFalse(playbook(root).get("contents").get("workflows").isEmpty(), "premise: the pack ships workflows");
+        assertEquals(List.of(), unnamed, "the section leaves out workflows the shipped playbook declares");
+        assertFalse(section.contains("declares no workflows"),
+                "the section still says that the shipped playbook declares no workflows");
     }
 
     @Test

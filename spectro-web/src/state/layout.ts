@@ -122,10 +122,12 @@ export interface LayoutState {
    *  this (the header toggle, the dock's close, the header panel icons); the
    *  agent's cue (card 241) and the other programmatic opens stay transient. */
   dockReturn: boolean;
-  /** Card 444: the dock shows one panel at a time. Off by default (owner call
-   *  1, answered 2026-09-29): side by side stays what everybody has. While on,
-   *  the store's opening verbs close the shown panel before they open another,
-   *  so every door into the dock obeys it without knowing about it. */
+  /** Card 444: the dock shows one panel at a time. While on, the store's
+   *  opening verbs close the shown panel before they open another, so every
+   *  door into the dock obeys it without knowing about it. On by default since
+   *  card 517 (owner, 2026-10-11): an origin with no layout blob starts in
+   *  tabs mode. A stored blob decides for itself, and a blob without the key
+   *  (written before card 444) reads as off, see hydrateLayout. */
   dockTabs: boolean;
 }
 
@@ -161,7 +163,7 @@ export const DEFAULT_LAYOUT: LayoutState = {
   // pane on one fresh tab exactly as it always did (restoreTabs).
   dockTermTabs: "",
   dockReturn: false,
-  dockTabs: false,
+  dockTabs: true,
 };
 
 const KEY = "spectroscope:layout";
@@ -287,7 +289,8 @@ function columnsAgreeingWithModes(state: LayoutState, stored: unknown): string {
  * @param termOpenRaw the legacy terminal-open entry ("1" meant open), or null
  */
 export function hydrateLayout(parsed: unknown, termOpenRaw: string | null): LayoutState {
-  const blob = typeof parsed === "object" && parsed !== null ? (parsed as Partial<LayoutState>) : {};
+  const stored = typeof parsed === "object" && parsed !== null;
+  const blob = stored ? (parsed as Partial<LayoutState>) : {};
   const state: LayoutState = { ...DEFAULT_LAYOUT, ...blob };
   // Card 361: the widths are clamped HERE, on the way in. Before this the
   // spread above was the whole of it and a hand-edited `rightPanelW: 5000`
@@ -305,8 +308,11 @@ export function hydrateLayout(parsed: unknown, termOpenRaw: string | null): Layo
   state.dockReturn = typeof blob.dockReturn === "boolean" ? blob.dockReturn : blob.rightPanelOpen === true;
   state.rightPanelOpen = false;
   // Card 444: only a real true turns tabs on; junk heals to side by side and
-  // leaves the rest of the blob alone.
-  state.dockTabs = blob.dockTabs === true;
+  // leaves the rest of the blob alone. Card 517: the default is tabs, but a
+  // stored blob without the key keeps side by side, so this line does not
+  // fall back to DEFAULT_LAYOUT. No object at all means no stored layout,
+  // which is the new installation and takes the default.
+  state.dockTabs = stored ? blob.dockTabs === true : DEFAULT_LAYOUT.dockTabs;
   const postCard = DOCK_FIELDS.some((f) => f in blob);
   if (postCard) {
     for (const f of DOCK_FIELDS) state[f] = normalizeMode(state[f]);

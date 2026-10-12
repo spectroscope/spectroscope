@@ -158,6 +158,22 @@ public final class SpectroCli implements Runnable {
      *  empty statement, and the loop then behaves exactly as before. */
     private dev.spectroscope.core.goal.SessionGoal goal;
     private SessionStore store;
+
+    /** Card 502: what other agents send this REPL session; the agent's loop drains it. */
+    private final dev.spectroscope.core.peer.PeerInbox peerInbox = new dev.spectroscope.core.peer.PeerInbox();
+    /** Card 502: true while a run is in flight at this prompt. */
+    private volatile boolean replRunning;
+    /** Card 502: true while /peer deliver runs, the one moment a message may start a run here. */
+    private volatile boolean peerDeciding;
+    /** Card 502: a released message the loop runs as its next input. */
+    private final AtomicReference<String> peerPrompt = new AtomicReference<>();
+    /** Card 504: the REPL's loop and the timer thread that holds its wakeups. */
+    private final ReplLoop replLoop = ReplLoop.onTimerThread(() -> replRunning, line -> System.out.println("\n" + line));
+    /** Card 504: what /loop hands the input loop to run next: the record and the model's text. */
+    private final AtomicReference<ReplLoop.Fire> loopPrompt = new AtomicReference<>();
+
+    /** Card 502: this process in the registry, or null when it could not register. */
+    private dev.spectroscope.core.peer.PeerNode peerNode;
     // The tracing seam (KONZEPT §4.3): persistence rides a required port, so
     // bus/OTel consumers can dock without touching the drain loop. Rebuilt
     // wherever the store is — the sink holds the store it writes.
@@ -264,6 +280,10 @@ public final class SpectroCli implements Runnable {
         SpeechRenderer speech = new SpeechRenderer(tts.voice(), speak || tts.enabled());
 
         printBanner(store, initialMessages.size());
+        // Card 502: the REPL is an attended face; it registers for as long as it runs.
+        // Card 503: it takes messages while agentMessaging is on.
+        boolean accepting = config.agentMessaging();
+        peerNode = PeerFace.register("repl", true, () -> List.of(replPort()), () -> accepting);
         replLoop(console, speech, currentSignal);
     }
 
@@ -361,6 +381,25 @@ public final class SpectroCli implements Runnable {
                 new dev.spectroscope.core.goal.CommandGoalCheck());
         goal.state(dev.spectroscope.core.goal.GoalStore.read(
                 dev.spectroscope.core.goal.GoalStore.fileFor(store.id())));
+        goal.listen(new dev.spectroscope.core.goal.SessionGoal.Listener() {
+            @Override
+            public void checkedIn(int count, long deferredMin, int children) {
+                // Card 504, criterion 3: one line of .loop.jsonl per check in.
+                new dev.spectroscope.core.loop.LoopSidecar(dev.spectroscope.core.loop.LoopSidecar.defaultDir())
+                        .checkIn(store.id(), count, deferredMin, children);
+            }
+
+            @Override
+            public void cleared(String reason) {
+                // Card 504, criterion 4: the file goes too, so the next start does not read it back.
+                try {
+                    dev.spectroscope.core.goal.GoalStore.write(
+                            dev.spectroscope.core.goal.GoalStore.fileFor(store.id()), null);
+                } catch (IOException unwritable) {
+                    System.err.println("Could not remove the goal file: " + unwritable.getMessage());
+                }
+            }
+        });
 
         registerTools();
         agent = buildAgent(initialMessages);
@@ -794,6 +833,8 @@ public final class SpectroCli implements Runnable {
                 .sessionsPerChat(config.sessionsPerChat())
                 // card 492: and its care paragraph switch
                 .careParagraph(config.careParagraph())
+                // Card 503: whether this face offers the two messaging tools
+                .agentMessaging(config.agentMessaging())
                 // Card 493: the read share, read when the REPL starts.
                 .readSharePercent(config.readSharePercent())
                 .build());
@@ -803,6 +844,18 @@ public final class SpectroCli implements Runnable {
         for (Tool tool : subagents.devTools()) {
             registry.register(tool);
         }
+        // Card 503: send_message and list_agents, last, on the REPL's seat: the
+        // registry of card 502 for the sessions on this machine, and the run's
+        // children. agentMessaging off takes both out of the agent's request.
+        dev.spectroscope.core.messaging.MessagingTools.forSeat(new dev.spectroscope.core.messaging.SessionSeat(
+                () -> peerNode, this::sessionId, () -> subagents,
+                () -> agent == null || !Boolean.FALSE.equals(agent.agentMessagingThisRun()), "main"))
+                .forEach(registry::register);
+        // Card 505: wait_agents, the join of a background fan-out, after them.
+        subagents.backgroundTools().forEach(registry::register);
+        // Card 504: schedule_wakeup, offered by the agent only while a loop runs.
+        registry.register(new dev.spectroscope.core.loop.ScheduleWakeupTool(replLoop::driverIfAny));
+        subagents.parentInbox(peerInbox); // card 502: a child's message to `parent` lands here
     }
 
     /** The interactive loop: prompt, read, dispatch (/speak, /voice, slash
@@ -824,13 +877,23 @@ public final class SpectroCli implements Runnable {
                 // Ctrl+C outside a run (or after run_end while trailing audio still plays):
                 // no run_end 'aborted' will arrive to trigger stop(), so stop the player here.
                 speech.stop();
-                String rawLine = console.readLine();
-                if (rawLine == null) {
-                    break;
-                }
-                String input = rawLine.trim();
-                if (input.isEmpty() || input.equals("/exit")) {
-                    break;
+                // Card 504: while a loop runs, a fired wakeup is the next input.
+                ReplLoop.Input next = replLoop.next(console);
+                String modelText = null;
+                String input;
+                if (next.fire() != null) {
+                    input = next.fire().record();
+                    modelText = next.fire().model();
+                    System.out.println(ansi.dim("[loop] wakeup: ") + input);
+                } else {
+                    String rawLine = next.line();
+                    if (rawLine == null) {
+                        break;
+                    }
+                    input = rawLine.trim();
+                    if (input.isEmpty() || input.equals("/exit")) {
+                        break;
+                    }
                 }
 
                 // toggle voice output at runtime — /speak off also stops any
@@ -850,17 +913,34 @@ public final class SpectroCli implements Runnable {
                     input = spoken.get();           // fall through to the normal user turn
                 }
 
-                if (input.startsWith("/")) {
+                if (modelText == null && input.startsWith("/")) {
                     handleSlashCommand(input);
-                    continue;
+                    // Card 504: /loop hands its first run to this loop.
+                    ReplLoop.Fire looped = loopPrompt.getAndSet(null);
+                    // Card 502: /peer deliver hands the released message to this loop.
+                    String released = peerPrompt.getAndSet(null);
+                    if (looped != null) {
+                        input = looped.record();
+                        modelText = looped.model();
+                    } else if (released == null) {
+                        continue;
+                    } else {
+                        input = released;
+                    }
                 }
 
                 CancelSignal signal = new CancelSignal();
                 currentSignal.set(signal);
-                try (var events = subagents.run(agent, input, new RunOptions(signal, null))) {
+                replRunning = true;
+                peerChanged();
+                try (var events = subagents.run(agent, input, new RunOptions(signal, null, modelText))) {
                     for (RunEvent rawEvent : events) {
                         // Card 473: the main run_start names the files beside the session.
                         RunEvent event = wireReference.stamp(rawEvent);
+                        if (event instanceof RunEvent.Compaction compaction
+                                && MAIN_AGENT_ID.equals(compaction.agentId())) {
+                            loopCompacted(); // card 504: the sentinel expands in full at the next fire
+                        }
                         tracing.onEvent(event);
                         speech.onEvent(event); // second consumer — the CLI rendering below is unchanged
                         renderer.render(event);
@@ -868,6 +948,13 @@ public final class SpectroCli implements Runnable {
                 } finally {
                     spinner.stop();
                     currentSignal.set(null);
+                    replRunning = false;
+                    peerChanged();
+                    // Card 504: the loop's tick ends with the run.
+                    dev.spectroscope.core.loop.LoopDriver loop = replLoop.driverIfAny();
+                    if (loop != null) {
+                        loop.runEnded();
+                    }
                 }
             }
         } catch (Exception loopError) {
@@ -875,6 +962,7 @@ public final class SpectroCli implements Runnable {
         } finally {
             speech.close(); // stop playback, release the synth/playback workers
             mcp.close();     // clean exit releases MCP server processes too
+            PeerFace.close(peerNode); // card 502: the record leaves with the REPL
         }
         System.out.println("Bye.");
     }
@@ -976,13 +1064,128 @@ public final class SpectroCli implements Runnable {
                 .sessionsPerChat(config.sessionsPerChat())
                 // Card 492: the care paragraph, read when the REPL starts.
                 .careParagraph(config.careParagraph())
+                // Card 503: whether this face offers the two messaging tools
+                .agentMessaging(config.agentMessaging())
                 // Card 493: the read share, read when the REPL starts.
                 .readSharePercent(config.readSharePercent())
+                // Card 502: what other agents send, read at steering's two safe points.
+                .peerInbox(peerInbox)
                 .onPermission(askOnTerminal)
                 .build());
         // Card 492: the helpers the paragraph names, from the one derivation.
         built.setCareHelpers(dev.spectroscope.core.session.CareParagraph.helpersFor(config));
+        built.loopActive(replLoop::active); // card 504: schedule_wakeup only in a loop
         return built;
+    }
+
+    // ---------------------------------------------------------- card 502
+
+    /** Rewrites this process's record after a run starts or ends. */
+    private void peerChanged() {
+        dev.spectroscope.core.peer.PeerNode node = peerNode;
+        if (node != null) {
+            node.changed();
+        }
+    }
+
+    /**
+     * {@code /peer deliver <msg_id>} and {@code /peer decline <msg_id>}.
+     *
+     * <p>The REPL reads its input on this thread, so it cannot start a run
+     * while it waits at the prompt: every message that arrives while it is
+     * idle is held and printed, and Deliver hands it to the loop as the next
+     * input.</p>
+     *
+     * @param rest the words after {@code /peer}
+     */
+    private void handlePeerCommand(String rest) {
+        String[] words = rest.split("\\s+");
+        dev.spectroscope.core.peer.PeerNode node = peerNode;
+        if (words.length != 2 || node == null || store == null
+                || !(words[0].equals("deliver") || words[0].equals("decline"))) {
+            System.out.println("Usage: /peer deliver <msg_id> or /peer decline <msg_id>.");
+            return;
+        }
+        peerDeciding = true;
+        try {
+            node.decide(store.id(), words[1], words[0].equals("deliver"));
+        } finally {
+            peerDeciding = false;
+        }
+    }
+
+    /** @return this REPL session as the process's peer node reads and drives it */
+    private dev.spectroscope.core.peer.PeerSession replPort() {
+        return new dev.spectroscope.core.peer.PeerSession() {
+            @Override
+            public String id() {
+                return store == null ? null : store.id();
+            }
+
+            @Override
+            public String cwd() {
+                return workspace == null ? null : workspace.toString();
+            }
+
+            @Override
+            public String title() {
+                return null;
+            }
+
+            @Override
+            public String mode() {
+                return config.permissionMode();
+            }
+
+            @Override
+            public boolean running() {
+                return replRunning;
+            }
+
+            @Override
+            public String statusLine() {
+                return replRunning ? "working" : "idle";
+            }
+
+            @Override
+            public Integer turn() {
+                return null;
+            }
+
+            @Override
+            public long since() {
+                return 0L;
+            }
+
+            @Override
+            public dev.spectroscope.core.peer.PeerInbox inbox() {
+                return peerInbox;
+            }
+
+            @Override
+            public boolean startRun(String prompt) {
+                if (!peerDeciding || replRunning) {
+                    return false;
+                }
+                return peerPrompt.compareAndSet(null, prompt);
+            }
+
+            @Override
+            public boolean isChild(String name) {
+                return subagents != null && subagents.isChild(name);
+            }
+
+            @Override
+            public void onPeerEvent(dev.spectroscope.core.peer.PeerEvent event) {
+                if ("held".equals(event.kind()) && event.envelope() != null) {
+                    System.out.println("\n[peer] A message from " + event.name() + " is held: "
+                            + event.envelope().summary() + "\n[peer] /peer deliver " + event.msgId()
+                            + " or /peer decline " + event.msgId());
+                } else if ("status".equals(event.kind()) && event.notice() != null) {
+                    System.out.println("\n[peer] " + event.notice());
+                }
+            }
+        };
     }
 
     // ---------------------------------------------------------- slash commands
@@ -993,6 +1196,11 @@ public final class SpectroCli implements Runnable {
      * @param command the full input line starting with {@code /}, including any argument
      */
     void handleSlashCommand(String command) {
+        // Card 502: the terminal's Deliver and Decline for a held message.
+        if (command.equals("/peer") || command.startsWith("/peer ")) {
+            handlePeerCommand(command.substring("/peer".length()).trim());
+            return;
+        }
         // /think on|off — toggles reasoning visibility live. The flag is a build-time
         // AgentOptions input, so we rebuild the agent to apply it. History is preserved
         // by reconstructing the conversation from the current session's JSONL file
@@ -1021,6 +1229,12 @@ public final class SpectroCli implements Runnable {
         // is deliberately NOT a tool the model could reach: a model-written goal
         // is a run defining its own success, which
         // konzept/PROMPT-ORCHESTRATION.md §3 rule 2 already refuses.
+        // Card 504: /loop [interval] <prompt> starts a loop and runs the prompt
+        // now; /loop stop ends it as user_abort.
+        if (dev.spectroscope.core.loop.LoopCommand.isLoop(command)) {
+            handleLoopCommand(command);
+            return;
+        }
         if (command.equals("/goal") || command.startsWith("/goal ")) {
             handleGoalCommand(command.length() > "/goal".length()
                     ? command.substring("/goal".length()).trim() : "");
@@ -1039,6 +1253,7 @@ public final class SpectroCli implements Runnable {
                 System.out.println("  /voice     push-to-talk: record, transcribe, edit, send");
                 System.out.println("  /speak     read answers aloud on|off");
                 System.out.println("  /goal      state this run's outcome and its check");
+                System.out.println("  /loop      /loop [interval] <prompt> repeats a prompt; /loop stop ends it");
                 System.out.println("  /compact   summarize older history now");
                 System.out.println("  /clear     start a fresh session (new agent, new file)");
                 System.out.println("  /exit      quit (empty line works too)");
@@ -1059,11 +1274,17 @@ public final class SpectroCli implements Runnable {
             case "/compact" -> agent.compactNow().ifPresentOrElse(event -> {
                 tracing.onEvent(event);
                 renderer.render(event);
+                loopCompacted(); // card 504
             }, () -> System.out.println("Nothing to compact — the history is still small."));
             case "/clear" -> {
                 // A new session means a new workspace: re-key the folder, refresh
                 // the prompt, and rebuild the tool world so subagents inherit it.
                 // MCP is reloaded by registerTools — release the old processes first.
+                // Card 504: the old session's loop ends; it must not fire into the new one.
+                dev.spectroscope.core.loop.LoopDriver oldLoop = replLoop.driverIfAny();
+                if (oldLoop != null) {
+                    oldLoop.userAbort();
+                }
                 store = new SessionStore(null);
                 renderer.forgetPlan(); // the new agent has no ledger; neither has the line
                 if (llmWire != null) {
@@ -1087,6 +1308,51 @@ public final class SpectroCli implements Runnable {
                 System.out.println("Workspace:   " + workspace);
             }
             default -> System.out.println("Unknown command: " + command + " (/help lists all)");
+        }
+    }
+
+    /**
+     * Card 504, criterion 6: {@code /loop [interval] <prompt>} and {@code /loop stop}.
+     * A start hands its first run to the input loop through {@link #loopPrompt}.
+     *
+     * @param command the whole line
+     */
+    void handleLoopCommand(String command) {
+        String rest = command.strip().substring("/loop".length()).strip();
+        if (rest.equals("stop")) {
+            dev.spectroscope.core.loop.LoopDriver loop = replLoop.driverIfAny();
+            if (loop == null || !loop.active()) {
+                System.out.println("No loop runs.");
+            } else {
+                loop.userAbort();
+            }
+            return;
+        }
+        dev.spectroscope.core.loop.LoopCommand parsed = dev.spectroscope.core.loop.LoopCommand.parse(command);
+        if (parsed == null) {
+            System.out.println(dev.spectroscope.core.loop.LoopCommand.USAGE);
+            return;
+        }
+        dev.spectroscope.core.loop.LoopDriver.Start started =
+                replLoop.driver(store.id()).start(parsed.prompt(), parsed.intervalSeconds());
+        loopPrompt.set(new ReplLoop.Fire(parsed.prompt(), started.modelText()));
+    }
+
+    /** @return card 504: what the next /loop run runs, for the tests */
+    ReplLoop.Fire pendingLoopRun() {
+        return loopPrompt.get();
+    }
+
+    /** @return card 504: the REPL's loop, for the tests */
+    ReplLoop loopForTests() {
+        return replLoop;
+    }
+
+    /** Card 504: the history was compacted; the loop's sentinel expands in full at its next fire. */
+    private void loopCompacted() {
+        dev.spectroscope.core.loop.LoopDriver loop = replLoop.driverIfAny();
+        if (loop != null) {
+            loop.compacted();
         }
     }
 

@@ -14,6 +14,7 @@ import { toolCallsById } from "../components/eventDetail";
 import type { ToolCallRef } from "../components/eventDetail";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
+import { pairSafeCut } from "../pairSafeCut";
 
 const APPLIED_WINDOW = 200;
 const QUEUE_WINDOW = 50;
@@ -22,30 +23,30 @@ const LONG_PREVIEW_CHARS = 60;
 const SHORT_PREVIEW_CHARS = 40;
 
 /** One line of human summary per event type — the trace stays scannable. */
-function summarize(event: RunEvent): string {
+export function summarize(event: RunEvent): string {
   switch (event.type) {
     case "run_start":
-      return event.prompt.slice(0, LONG_PREVIEW_CHARS);
+      return pairSafeCut(event.prompt, LONG_PREVIEW_CHARS);
     case "turn_start":
       return `turn ${event.turn}`;
     case "text_delta":
     case "thinking_delta":
-      return JSON.stringify(event.text.slice(0, SHORT_PREVIEW_CHARS));
+      return JSON.stringify(pairSafeCut(event.text, SHORT_PREVIEW_CHARS));
     case "tool_call":
     case "permission_request":
       return event.name;
     case "permission_decision":
       return event.allowed ? "allowed" : "denied";
     case "tool_result":
-      return `${event.isError ? "ERROR " : ""}${event.output.slice(0, SHORT_PREVIEW_CHARS)} · ${event.durationMs} ms`;
+      return `${event.isError ? "ERROR " : ""}${pairSafeCut(event.output, SHORT_PREVIEW_CHARS)} · ${event.durationMs} ms`;
     case "usage":
       return `${event.inputTokens} in / ${event.outputTokens} out`;
     case "run_end":
       return event.stopReason;
     case "error":
-      return event.message.slice(0, LONG_PREVIEW_CHARS);
+      return pairSafeCut(event.message, LONG_PREVIEW_CHARS);
     case "agent_spawn":
-      return `${event.agentId} · ${event.task.slice(0, SHORT_PREVIEW_CHARS)}`;
+      return `${event.agentId} · ${pairSafeCut(event.task, SHORT_PREVIEW_CHARS)}`;
     case "image_generated":
       return `${event.provider} · ${event.model}`;
     case "compaction":
@@ -53,7 +54,7 @@ function summarize(event: RunEvent): string {
     case "context_info":
       return `~${event.estimatedTokens} tokens`;
     case "agent_message":
-      return `${event.from} → ${event.to} · ${event.state}${event.label ? ` (${event.label})` : ""} · ${JSON.stringify(event.text.slice(0, SHORT_PREVIEW_CHARS))}`;
+      return `${event.from} → ${event.to} · ${event.state}${event.label ? ` (${event.label})` : ""} · ${JSON.stringify(pairSafeCut(event.text, SHORT_PREVIEW_CHARS))}`;
     default:
       return "";
   }

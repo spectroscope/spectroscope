@@ -316,6 +316,11 @@ const PRINTED_BY: { [T in RunEvent["type"]]?: FieldsOf<T> } = {
     llmWire: null,
     browserWire: null,
     children: null,
+    // Card 521: the ring divides by the window and names it in the popover
+    // headline (ContextRing.tsx, through ringFrame); the source word is never
+    // printed as it stands, it picks the headline's words.
+    contextWindow: "components/ContextRing.tsx",
+    windowSource: null,
     ts: null,
   },
   turn_start: { type: "LabTrace.tsx:88", turn: "LabTrace.tsx:28-29", agentId: null, ts: null },

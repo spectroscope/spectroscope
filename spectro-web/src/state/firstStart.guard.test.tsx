@@ -43,13 +43,32 @@ function leveling(introSeen: boolean): LevelingSnapshot {
   };
 }
 
-/** The App as markup, from a stored mode (or none) and the mark, with the given leveling state. */
-async function renderApp(stored: { mode?: ViewMode; chosen: boolean }, introSeen: boolean): Promise<string> {
+/**
+ * The App as markup, from a stored mode (or none) and the mark, with the given
+ * leveling state. `chosen: true` stores the current generation (card 518); a
+ * string stores that raw value.
+ */
+async function renderApp(
+  stored: { mode?: ViewMode; chosen: boolean | string },
+  introSeen: boolean,
+): Promise<string> {
   const viewMode = await import("./viewMode");
-  const levelingHook = await import("./useLeveling");
   const store = new Map<string, string>();
   if (stored.mode) store.set(viewMode.VIEW_MODE_KEY, stored.mode);
-  if (stored.chosen) store.set(viewMode.MODE_CHOSEN_KEY, "1");
+  if (stored.chosen === true) store.set(viewMode.MODE_CHOSEN_KEY, String(viewMode.MODE_SCREEN_GENERATION));
+  else if (typeof stored.chosen === "string") store.set(viewMode.MODE_CHOSEN_KEY, stored.chosen);
+  try {
+    return await renderFrom(store, introSeen);
+  } finally {
+    viewMode.__setViewModeStorage({ get: () => null, set: () => {} });
+    viewMode.__resetViewModeForTests();
+  }
+}
+
+/** The App as markup, loaded from the given storage the way a page load reads it. */
+async function renderFrom(store: Map<string, string>, introSeen: boolean): Promise<string> {
+  const viewMode = await import("./viewMode");
+  const levelingHook = await import("./useLeveling");
   viewMode.__setViewModeStorage({ get: (k) => store.get(k) ?? null, set: (k, v) => void store.set(k, v) });
   viewMode.__resetViewModeForTests();
   levelingHook.__setInitialLevelingForTests(leveling(introSeen));
@@ -57,8 +76,6 @@ async function renderApp(stored: { mode?: ViewMode; chosen: boolean }, introSeen
     return renderToStaticMarkup(<App />);
   } finally {
     levelingHook.__setInitialLevelingForTests(null);
-    viewMode.__setViewModeStorage({ get: () => null, set: () => {} });
-    viewMode.__resetViewModeForTests();
   }
 }
 
@@ -137,6 +154,73 @@ describe("the first start in the rendered App", () => {
           if (!chosen) expect(html).toContain(MODE_SCREEN);
         }
       }
+    }
+  });
+});
+
+// Card 518: the screen returns once for every origin that chose before the
+// mark carried a generation. The pattern of the test above: the mode chosen
+// back then stays in force behind the screen until the new choice.
+describe("the mode screen returns once after the update (card 518)", () => {
+  const OLD_MARK = "1";
+
+  it("an origin that chose learn on 0.14.2 sees the screen again, with learn behind it", async () => {
+    const html = await renderApp({ mode: "learn", chosen: OLD_MARK }, true);
+    expect(html).toContain(MODE_SCREEN);
+    expect(html).toContain('data-mode="developer"');
+    expect(html).not.toContain(TUTORIAL);
+    // learn is still in force: the lab tab is there, the playbook segment is not.
+    expect(tabs(html)).toContain("lab");
+    expect(tabs(html)).not.toContain("playbook");
+    expect(html).toContain('class="chat-row"');
+  });
+
+  it("a developer user who chose on 0.15.0 sees the screen with developer behind it", async () => {
+    const html = await renderApp({ mode: "developer", chosen: OLD_MARK }, true);
+    expect(html).toContain(MODE_SCREEN);
+    expect(tabs(html)).toContain("playbook");
+  });
+
+  it("picking developer on the returned screen lands in developer, and a reload shows no question", async () => {
+    const viewMode = await import("./viewMode");
+    const store = new Map<string, string>([
+      [viewMode.VIEW_MODE_KEY, "learn"],
+      [viewMode.MODE_CHOSEN_KEY, OLD_MARK],
+    ]);
+    try {
+      expect(await renderFrom(store, true)).toContain(MODE_SCREEN);
+      viewMode.chooseViewMode("developer");
+      const reloaded = await renderFrom(store, true);
+      expect(reloaded).not.toContain(MODE_SCREEN);
+      expect(reloaded).not.toContain(TUTORIAL);
+      expect(tabs(reloaded)).toContain("playbook");
+      expect(reloaded).toContain('class="chat-row"');
+    } finally {
+      viewMode.__setViewModeStorage({ get: () => null, set: () => {} });
+      viewMode.__resetViewModeForTests();
+    }
+  });
+
+  it("picking learn shows the tutorial question only if it was never answered (card 455 criterion 4)", async () => {
+    const viewMode = await import("./viewMode");
+    try {
+      for (const introSeen of [false, true]) {
+        const store = new Map<string, string>([
+          [viewMode.VIEW_MODE_KEY, "learn"],
+          [viewMode.MODE_CHOSEN_KEY, OLD_MARK],
+        ]);
+        const before = await renderFrom(store, introSeen);
+        expect(before, `introSeen=${introSeen}`).toContain(MODE_SCREEN);
+        expect(before, `introSeen=${introSeen}`).not.toContain(TUTORIAL);
+        viewMode.chooseViewMode("learn");
+        const after = await renderFrom(store, introSeen);
+        expect(after, `introSeen=${introSeen}`).not.toContain(MODE_SCREEN);
+        if (introSeen) expect(after).not.toContain(TUTORIAL);
+        else expect(after).toContain(TUTORIAL);
+      }
+    } finally {
+      viewMode.__setViewModeStorage({ get: () => null, set: () => {} });
+      viewMode.__resetViewModeForTests();
     }
   });
 });

@@ -25,11 +25,13 @@ public final class RoleCatalog {
      * explore may only read, BY CONSTRUCTION: every other tool is simply not
      * in its registry — more robust than any after-the-fact check.
      */
-    static final Set<String> EXPLORE_TOOL_NAMES = Set.of("list_dir", "read_file", "glob", "grep");
+    static final Set<String> EXPLORE_TOOL_NAMES =
+            Set.of("list_dir", "read_file", "glob", "grep", "code_graph");
 
     /**
-     * The base tools a RESEARCH child keeps (card 205): the explore read set
-     * plus use_skill, because the role's whole point is carrying the
+     * The base tools a RESEARCH child keeps (card 205): the four file readers
+     * of explore (not {@code code_graph}, which card 547 gave explore and the
+     * worker only) plus use_skill, because the role's whole point is carrying the
      * {@code spectroscope:research} skill in its belly. No write tool, no
      * run_command — a research child reads and reaches the web, nothing else.
      *
@@ -151,7 +153,9 @@ public final class RoleCatalog {
             AgentType.EXPLORE,
             "You are a research subagent (type explore). You can list directories (list_dir), "
                     + "read files (read_file), find files by glob pattern (glob) and search file "
-                    + "contents (grep) — no writing, no command execution. Carry out exactly "
+                    + "contents (grep), and you cannot write or execute commands. When the folder has a "
+                    + "code graph you can also ask it about callers, paths and what a change affects "
+                    + "(code_graph). Carry out exactly "
                     + "the task you were given. Answer as a compact memo: bullet points, concrete paths, "
                     + "findings. Your final text is the only thing your requester sees.",
             AgentType.WORKER,
@@ -189,6 +193,15 @@ public final class RoleCatalog {
                     + "large. With `spawn_agent`, hand an edit that is a self-contained subtask to a "
                     + "worker child. A child from `spawn_agent` sees only its task text, so write it as a complete "
                     + "assignment and ask for a short digest with path and line, not for file contents.";
+
+    /**
+     * Card 547: the one line that names {@code code_graph} in the system
+     * prompt. The loop adds it only to a run that offers the tool (a folder
+     * with a built code graph), so a run without it sends the prompt of
+     * v0.14.4. Kept out of {@link #DISCOVERY_GUIDANCE}, whose length card 470
+     * pins.
+     */
+    public static final String CODE_GRAPH_GUIDANCE = dev.spectroscope.core.tools.CodeGraphTool.PROMPT_LINE;
 
     /**
      * The base system prompt of the two interactive faces, the browser session
@@ -400,13 +413,17 @@ public final class RoleCatalog {
      *
      * @param type      the child profile
      * @param beltNames the belt the face hands to children, in registration order
-     * @return the role's tool names, report_status last
+     * @return the role's tool names, then report_status and card 503's send_message and list_agents
      */
     static List<String> toolsOf(AgentType type, List<String> beltNames) {
         BeltPolicy policy = beltPolicy(type);
         List<String> out = new ArrayList<>(beltNames.stream().filter(policy::holds).toList());
         policy.grant().stream().filter(name -> !out.contains(name)).forEach(out::add);
         out.add("report_status");
+        // Card 503: every child messages its parent and lists it; hub and spoke
+        // (owner, 2026-10-12), never another child.
+        out.add("send_message");
+        out.add("list_agents");
         return List.copyOf(out);
     }
 

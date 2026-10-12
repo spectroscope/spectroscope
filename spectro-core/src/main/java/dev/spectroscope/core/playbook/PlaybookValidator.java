@@ -32,6 +32,8 @@ public final class PlaybookValidator {
     static final String AGENT_ROLE = "agent:";
     /** One path segment of a contents entry: the skill token charset without the colon. */
     private static final String SEG = "[\\p{L}\\p{N}][\\p{L}\\p{N}_-]*";
+    /** The same segment rule as a pattern, for the routes that write files into a playbook folder (card 522). */
+    public static final Pattern PATH_SEGMENT = Pattern.compile(SEG);
     static final Pattern SKILL_PATH = Pattern.compile("skills/(" + SEG + ")");
     static final Pattern AGENT_PATH = Pattern.compile("agents/(" + SEG + ")\\.md");
     static final Pattern HOOK_PATH = Pattern.compile("hooks/hooks\\.json");

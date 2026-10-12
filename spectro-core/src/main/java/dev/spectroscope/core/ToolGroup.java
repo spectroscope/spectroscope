@@ -39,7 +39,11 @@ public enum ToolGroup {
     /** The dev role tools, as the role catalog names them. */
     ROLES("roles", name -> RoleCatalog.devToolNames().contains(name)),
     /** Every MCP tool, {@code mcp__<server>__<tool>}. */
-    MCP("mcp", name -> false);
+    MCP("mcp", name -> false),
+    /** Card 503: agent messaging, {@code send_message} and {@code list_agents};
+     *  card 505 adds {@code wait_agents}, the join of a background fan-out. */
+    MESSAGING("messaging", name -> "send_message".equals(name) || "list_agents".equals(name)
+            || "wait_agents".equals(name));
 
     /** The prefix every MCP tool name carries. */
     private static final String MCP_PREFIX = "mcp__";
@@ -102,7 +106,7 @@ public enum ToolGroup {
     /**
      * Every wire name, in the order the composer gear lists them.
      *
-     * @return the seven names, immutable
+     * @return the eight names, immutable
      */
     public static List<String> wireNames() {
         return Arrays.stream(values()).map(ToolGroup::wireName).toList();

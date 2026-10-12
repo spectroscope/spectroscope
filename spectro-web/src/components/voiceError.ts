@@ -28,6 +28,8 @@
  *   reads (card 187 step 5.4 moved that conversion into the browser). Its own
  *   reason and not `requestFailed`, because nothing was ever sent and pressing
  *   again in the same browser will do the same thing.
+ * - `warmupTimeout`: the live session did not say ready in time, the speech
+ *   model did not load (card 527 criterion 8). Nothing was recorded.
  * - `unknown` — something else. Deliberately last, and deliberately not silent.
  */
 export const VOICE_ERRORS = [
@@ -37,6 +39,7 @@ export const VOICE_ERRORS = [
   "sttMissing",
   "requestFailed",
   "convertFailed",
+  "warmupTimeout",
   "unknown",
 ] as const;
 

@@ -132,8 +132,18 @@ class ToolTierMapTest {
         ToolTierMap map = ToolTierMap.shipped();
         for (String name : java.util.List.of("web_fetch", "web_search", "browse_page",
                 "generate_image", "update_plan", "use_skill", "read_skill_file", "report_status",
-                "spawn_agent", "spawn_agents", "ask_user_question")) {
+                "spawn_agent", "spawn_agents", "ask_user_question", "send_message", "list_agents",
+                "wait_agents")) {
             assertNotEquals("unmapped", map.resolve(name).source(), name + " ships unrated");
         }
+    }
+
+    @Test
+    void theThreeMessagingToolsCarryTheTiersOfCards503And505() {
+        ToolTierMap map = ToolTierMap.shipped();
+        assertEquals(ToolTier.WRITE, map.resolve("send_message").tier());
+        assertEquals(ToolTier.READ, map.resolve("list_agents").tier());
+        assertEquals(ToolTier.READ, map.resolve("wait_agents").tier(), "card 505: the join only reads");
+        assertNotEquals("2026-09-01.1", map.mapVersion(), "the map version moves with the change");
     }
 }

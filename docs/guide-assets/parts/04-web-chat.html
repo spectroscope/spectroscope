@@ -25,7 +25,14 @@ and a small set of client frames in the other. Open <code>http://localhost:8080<
       the session has started. The ⋮ menu lists every panel of the dock (Work in the v2 chat
       view, Agents, Plan, System context, Files, Terminal, Browser and Images), each with its
       icon, its name and a check mark while it is open. Below a separator it offers
-      Keyboard shortcuts and spectro doctor. You set the language in Settings, on the General
+      Keyboard shortcuts and spectro doctor. The code graph rows stand above them, and the folder
+      chip menu has the same rows under its four actions. A folder without
+      <code>graphify-out/graph.html</code> gets one row, Build code graph, which opens the build
+      sheet on a full build. A folder with a graph gets two: Show code graph asks the Browser panel
+      for the graph the same way the Graph ready chip does, and Update code graph opens the sheet
+      on an update. A graph page too large for the server to serve counts as no graph. When graphify is not
+      installed, Build and Update show the install command and the sheet cannot start; Show
+      still opens the graph that is there. You set the language in Settings, on the General
       tab.</li>
   <li><strong>Under the message box</strong>: on the left the plus menu, the view menu (⋮),
       the image button, the microphone with its device menu and the gear for the permission
@@ -148,6 +155,19 @@ because the lines came in with them.</p>
   carries the bytes out.</p>
 </div>
 
+<h2 id="ch-chat-messages">Messages between agents</h2>
+<p>Sessions on this machine can message each other, and a run's children can message their parent
+(card 503, tools in <a href="#ch-tools-meta">chapter 9</a>). Each message is a block in the chat:
+who sent it or who it went to, the time, and its status (queued, received, held, delivered,
+declined, expired, refused or dropped). A message from a session that runs with other permissions
+than this one waits for you: the block says so and offers Deliver and Decline, and the model here
+reads it only after Deliver. Every received message has Reply, which puts the sender above the
+message box; what you send then goes to that agent as your message, not as a prompt to the model.
+A message between the parent and a child sits in the child's thread and once more in the main
+thread as one line. The rail lists the sessions other processes host on this machine, with their
+folder and what they are doing. A stored session shows its messages again when you open it. The
+switch <code>agentMessaging</code> in the settings menu of the composer turns all of it off.</p>
+
 <h2 id="ch-chat-composer">The composer</h2>
 <ul>
   <li><strong>Enter sends, Shift+Enter breaks the line</strong> — the only shortcut. The
@@ -168,14 +188,16 @@ because the lines came in with them.</p>
 
 <h2 id="ch-chat-commands">Commands</h2>
 
-<p>Two commands live in the composer. Type <code>/</code> at the start of an empty message
+<p>Three commands live in the composer. Type <code>/</code> at the start of an empty message
 and the picker lists them above the skills, each with one line of help. A click runs a command.
 Enter and Tab write the highlighted command into the message box, and Enter on a message that is
-exactly the command runs it, so a slash and a stray Enter start nothing. A message counts as a
-command only when it is exactly <code>/compact</code> or <code>/clear</code>. A sentence such as
-<code>please /clear the cache</code> is sent to the agent as written. A command never reaches
-the model as text, and while a run is active both answer "A run is already active, stop it
-first." They work in learn and in light.</p>
+exactly the command runs it, so a slash and a stray Enter start nothing. <code>/loop</code> takes
+words after it, so the picker only writes it into the message box. A message counts as a command
+only when it is exactly <code>/compact</code> or <code>/clear</code>, or starts with
+<code>/loop</code>. A sentence such as <code>please /clear the cache</code> is sent to the agent as
+written. <code>/compact</code> and <code>/clear</code> never reach the model as text, and while a run
+is active all three answer "A run is already active, stop it first." They work in learn and in
+light.</p>
 
 <!--SHOT:chat-commands-picker|The picker on a slash: the two commands above the skills-->
 
@@ -207,6 +229,60 @@ first." They work in learn and in light.</p>
   resume starts the history after it. The terminal's <code>/clear</code> is different: it opens a
   new session.</p>
 </div>
+
+<div class="callout">
+  <div class="co-title">/loop</div>
+  <p>Runs a prompt again and again (card 504). <code>/loop 5m check the build</code> runs the prompt
+  now and again every five minutes; an interval is written as seconds, minutes or hours
+  (<code>90s</code>, <code>5m</code>, <code>1h</code>) and is held between one minute and one hour.
+  <code>/loop watch the build</code>, without an interval, lets the model pace itself: after each
+  tick it calls <code>schedule_wakeup</code> with a delay and a reason, or ends the loop.
+  <code>/loop stop</code> ends the loop, as Stop on the chip does. The section below says how a
+  loop runs and ends.</p>
+</div>
+
+<h2 id="ch-chat-goal-loop">Goal and loop</h2>
+
+<p>The settings menu of the composer has a Goal section. Write what should be true and a check
+command, for example "The tests are green." and <code>npm test</code>, and press Set goal. The goal
+holds for every run of the session until you clear it, and it is kept in a file under
+<code>~/.spectro/goals</code>, which the section names. The harness runs the check when the model
+ends a turn without a tool call and nothing else waits for it: no sentence you typed during the
+turn, no message from another agent, no result of a background child. It also runs when the run
+reaches the turn cap or the reply stops at the output limit; the verdict is shown, and the run ends
+anyway. It does not run when you press Stop, when the run ends with an error, when the progress
+guard ends the run, or after a call to <code>schedule_wakeup</code>, which ends the run at once. If
+the check fails at a turn end below the cap, the run goes on with the check's output, and the chat
+says so.
+This does not use the leash's continuation budget: the turn cap stays the ceiling, 1,000 turns
+unless the session sets another. The run also ends when the check fails with exactly the same
+output twice in a row and no tool call succeeded in between. A check that prints its own duration,
+as most test runners do, never repeats that way, so such a goal runs until the check passes or the
+run reaches the turn cap. A line under the composer shows the goal and the verdict
+of its last check. While children of a background fan-out still run, the check waits; after 30
+minutes, then 60, then 120 and every 120 after that, the model gets a check in that lists each child
+with its last status line. When the backend refuses the key, the account cannot pay, the context is
+full or the model is gone, the goal clears itself, its file goes, and the chat says "Goal cleared
+after an unrecoverable error". A failure that may pass, a message you type into a running turn
+and the turn cap leave the goal in place.</p>
+
+<p>A loop lives in the server process that holds the session. Each wakeup lands on the whole
+minute at or after its delay. A wakeup fires only when the session is idle and a window has it
+open. One that falls due while no window is open waits, and fires when you open the session again.
+The chip under the composer shows the turn of the run in progress with the turn cap, when the
+loop wakes next and why, and Stop. The loop ends when you press Stop (in the chat or on the chip)
+or type <code>/loop stop</code>, when the model stops it with <code>schedule_wakeup</code> or ends two
+ticks in a row without a wakeup (after the first, the harness wakes it once more after 20 minutes),
+or seven days after it started. The chat
+names the reason, also for a loop that ended while no window had the session open: the line appears
+when you continue the session. A wakeup prompt the model wrote itself shows in the chat behind a line that
+says so. In a loop the goal is checked only on a tick whose run ends without
+<code>schedule_wakeup</code>. In a self paced loop that is a tick where the model sets no next
+wakeup. A loop with an interval needs no such call, so its check runs at the end of each tick unless
+the model stops the loop with <code>schedule_wakeup</code>. The record of a loop
+is <code>~/.spectro/loops/&lt;session-id&gt;.loop.jsonl</code>, one line per start, wakeup armed,
+wakeup held, wakeup fired and end, and one per goal check in. The switch
+<code>agentMessaging</code> does not touch a loop.</p>
 
 <h2 id="ch-chat-permission">The permission gate</h2>
 

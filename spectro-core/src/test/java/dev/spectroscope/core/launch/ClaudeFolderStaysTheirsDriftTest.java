@@ -150,6 +150,10 @@ class ClaudeFolderStaysTheirsDriftTest {
     private static final List<String> MAY_NAME_IT = List.of(
             // the read half of card 350 — the location constant itself
             "spectro-core/src/main/java/dev/spectroscope/core/launch/LaunchFile.java",
+            // ~/.claude/plugins: the Claude Code plugins the Plugin tab reads (card 526,
+            // the owner's "Plugin-Tab bauen" of 2026-10-11); read only, the import writes
+            // into the playbook folder from another source
+            "spectro-server/src/main/java/dev/spectroscope/server/playbooks/PluginSources.java",
             // ~/.claude/projects: Claude Code's transcripts, which ARE their data
             "spectro-server/src/main/java/dev/spectroscope/server/transcripts/"
                     + "ClaudeTranscriptsController.java");
@@ -296,14 +300,14 @@ class ClaudeFolderStaysTheirsDriftTest {
     }
 
     /**
-     * And the ones that reach it are the two that were decided, not a growing set.
+     * And the ones that reach it are the ones that were decided, not a growing set.
      *
      * <p>Reaching, not spelling: a source that resolves {@code LaunchFile.THEIRS}
      * has reached into their folder as surely as one that types the name, so it
      * belongs on this list too or it belongs nowhere.
      */
     @Test
-    void onlyTheTwoDecidedSourcesReachTheClaudeFolder() throws IOException {
+    void onlyTheDecidedSourcesReachTheClaudeFolder() throws IOException {
         List<String> naming = new ArrayList<>();
         for (Path source : mainSources()) {
             if (reachesTheirFolder(

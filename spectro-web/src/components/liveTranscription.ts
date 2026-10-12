@@ -16,11 +16,12 @@
 //      off a machine whose owner chose the offline path — so a local user who
 //      flips this on gets a grey switch and a sentence, not a hosted session.
 //
-// WHY LOCAL CANNOT STREAM TODAY: the local route spawns `whisper-cli` once over
-// a finished wav. Partials would need whisper.cpp's `stream` example, which is a
-// RESIDENT process this app would have to own, start, watch and reap — the road
-// the card weighs separately. Nothing here decides that; this module only
-// reports what today's routes can do.
+// HOW LOCAL STREAMS (card 527): `whisper-cli` is a one shot process, so the
+// server holds the audio of the open window and runs it over all of it every
+// chunk step. The answer replaces what the window showed. It streams only when
+// the server says it can (`localLive.available` on /api/stt/status: whisper-cli
+// and the model are both there); an older server never offered it, and then the
+// control stays grey as before.
 
 import { WHISPER_RATE } from "./wavClip";
 
@@ -42,6 +43,9 @@ export interface LiveStatus {
   readonly route: LiveRoute;
   /** Whether that route can actually run — false on hosted means no key. */
   readonly speechWorks: boolean;
+  /** Whether the server offers live text on the local route (card 527).
+   *  Absent from older servers, which read as no. */
+  readonly localStreams?: boolean;
 }
 
 /** What the toggle renders, what the hook does, and the sentence under both. */
@@ -98,7 +102,13 @@ export function captureRate(route: LiveRoute, live: boolean): number {
  */
 export function liveReading(status: LiveStatus, wanted: boolean): LiveReading {
   const blocked: LiveBlocked | null =
-    status.route === "local" ? "localRoute" : status.speechWorks ? null : "noKey";
+    status.route === "local"
+      ? status.speechWorks && status.localStreams === true
+        ? null
+        : "localRoute"
+      : status.speechWorks
+        ? null
+        : "noKey";
   const streams = blocked === null;
   return {
     route: status.route,

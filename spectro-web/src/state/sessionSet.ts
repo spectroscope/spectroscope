@@ -74,10 +74,15 @@ export interface SessionSetDeps {
   traceWanted: () => boolean;
   /** Every batch, after it is folded into its record. */
   onBatch?: (key: string, batch: RunEvent[], info: BatchInfo) => void;
-  /** A continuation the server refused because another socket holds the id. */
-  onBusy?: (sessionId: string) => void;
+  /** A continuation or a wake the server refused because another socket holds
+   *  the id. `woken` says it was a wake (card 520): the replay stays as it is. */
+  onBusy?: (sessionId: string, woken: boolean) => void;
   /** The record carrying the server-wide frames changed after the first one went away. */
   onCarrierChange?: () => void;
+  /** Card 504, review round 2: every client frame that reached a record's
+   *  socket, whichever path sent it (App's wrapper, a command, the drain of
+   *  a continued session). App's leveling beacons ride here. */
+  onSent?: (key: string, msg: ClientMessage) => void;
   now?: () => number;
 }
 
@@ -90,6 +95,10 @@ export interface SlotInit {
   firstMessage?: { text: string; attachments?: PendingAttachment[] };
   /** Card 471: a command a continued session sends first, once its socket is open. */
   firstCommand?: ChatCommandName;
+  /** Card 504: the frames (set_loop, set_goal, the gear's) a continued session
+   *  sends first, in order, once its socket is open. Review round 2 made it a
+   *  list: two gear changes before the resume fetched are two frames. */
+  firstFrames?: ClientMessage[];
   /** Close the record in view and put this one in its place. */
   replace?: boolean;
   /** Card 498: wake this stored session. The record opens out of view on a
@@ -105,6 +114,8 @@ export interface WokenContinuation {
   events: RunEvent[];
   firstMessage?: { text: string; attachments?: PendingAttachment[] };
   firstCommand?: ChatCommandName;
+  /** Card 504: the frames the composer sent while the session was stored. */
+  firstFrames?: ClientMessage[];
 }
 
 interface Internal {
@@ -114,6 +125,8 @@ interface Internal {
   awaitingRunStart: boolean;
   /** Card 471: the command waiting for this record's socket to open, sent once. */
   pendingCommand: ChatCommandName | null;
+  /** Card 504: the frames waiting for this record's socket to open, each sent once. */
+  pendingFrames: ClientMessage[];
   /** Card 498: the session a wake_session names, sent once the socket is open. */
   pendingWake: string | null;
 }
@@ -169,9 +182,22 @@ export class SessionSet {
     return this.records.get(key)?.slot;
   }
 
+  /** Any record of this session, a wake included. */
   findBySession(sessionId: string): SessionSlot | undefined {
     for (const record of this.records.values()) {
       if (record.slot.sessionId === sessionId) return record.slot;
+    }
+    return undefined;
+  }
+
+  /**
+   * The chat this page holds for the session, never a wake (card 520). A woken
+   * record has no history and stays out of view, so a click on its row or its
+   * deep link shows the replay instead of selecting it.
+   */
+  findHeld(sessionId: string): SessionSlot | undefined {
+    for (const record of this.records.values()) {
+      if (record.slot.sessionId === sessionId && !record.slot.woken) return record.slot;
     }
     return undefined;
   }
@@ -218,6 +244,7 @@ export class SessionSet {
       connection: null,
       awaitingRunStart: false,
       pendingCommand: init.firstCommand ?? null,
+      pendingFrames: [...(init.firstFrames ?? [])],
       pendingWake: wake,
     };
     this.records.set(key, record);
@@ -331,6 +358,7 @@ export class SessionSet {
       queue = enqueue(queue, init.firstMessage.text, init.firstMessage.attachments);
     }
     record.pendingCommand = init.firstCommand ?? record.pendingCommand;
+    record.pendingFrames = [...record.pendingFrames, ...(init.firstFrames ?? [])];
     record.slot = {
       ...record.slot,
       state,
@@ -341,6 +369,7 @@ export class SessionSet {
       queue,
     };
     this.viewed = key;
+    this.electCarrier();
     this.changed();
     this.drain(key);
   }
@@ -357,7 +386,8 @@ export class SessionSet {
     if (!this.records.has(key)) return;
     this.dropRecord(key);
     if (this.viewed === key || this.viewed === null) {
-      const next = this.list.length > 0 ? this.list[this.list.length - 1] : undefined;
+      // Card 520: a wake never comes into view on its own.
+      const next = [...this.list].reverse().find((slot) => !slot.woken);
       if (next === undefined) {
         this.open({});
         return;
@@ -416,6 +446,7 @@ export class SessionSet {
     if (record === undefined) return false;
     const sent = record.connection?.send(msg) === true;
     if (sent) {
+      this.deps.onSent?.(key, msg);
       const state = recordLiveOutgoing(record.slot.state, msg, this.deps.mode(), this.deps.traceWanted());
       if (state !== record.slot.state) this.patch(key, { state });
       if (msg.type === "user_message" && !record.slot.used) this.patch(key, { used: true });
@@ -544,7 +575,7 @@ export class SessionSet {
     this.changed();
     this.deps.onBatch?.(key, batch, { inView: this.viewed === key, carrier: this.carrierKey === key });
     if (busy !== null) {
-      this.deps.onBusy?.(busy);
+      this.deps.onBusy?.(busy, record.slot.woken);
       this.close(key);
       return;
     }
@@ -565,6 +596,11 @@ export class SessionSet {
       const command = record.pendingCommand;
       record.pendingCommand = null;
       this.command(key, command);
+    }
+    if (slot.conn.status === "open" && record.pendingFrames.length > 0) {
+      const frames = record.pendingFrames;
+      record.pendingFrames = [];
+      for (const frame of frames) this.sendClient(key, frame);
     }
     if (
       slot.conn.status !== "open" ||
@@ -599,13 +635,24 @@ export class SessionSet {
     this.rebuildList();
   }
 
-  /** The oldest record carries the server-wide frames; it changes only when it goes. */
+  /**
+   * The oldest record carries the server-wide frames; it changes only when it
+   * goes. A wake never carries them (card 520): it closes as soon as its
+   * session leaves the screen, and the fleet would go quiet with it.
+   */
   private electCarrier(): void {
-    if (this.carrierKey !== null && this.records.has(this.carrierKey)) return;
+    const current = this.carrierKey === null ? undefined : this.records.get(this.carrierKey);
+    if (current !== undefined && !current.slot.woken) return;
     const had = this.carrierKey;
-    const first = this.records.keys().next();
-    this.carrierKey = first.done === true ? null : first.value;
-    if (had !== null && this.carrierKey !== null && this.active) this.deps.onCarrierChange?.();
+    let next: string | null = null;
+    for (const [key, record] of this.records) {
+      if (!record.slot.woken) {
+        next = key;
+        break;
+      }
+    }
+    this.carrierKey = next;
+    if (had !== null && next !== had && this.active) this.deps.onCarrierChange?.();
   }
 
   private rebuildList(): void {

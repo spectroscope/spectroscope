@@ -144,6 +144,9 @@ public final class CronCommand implements Callable<Integer> {
         }
         System.out.println("spectroscope cron: " + jobs.size() + " job(s), zone " + zone + ". Ctrl+C ends it.");
         CronScheduler scheduler = new CronScheduler(runner, mapper, zone, System.out::println);
+        // Card 502: the scheduler process is the cron face, unattended: it is
+        // listed for other agents and refuses every message they send.
+        dev.spectroscope.core.peer.PeerNode peer = PeerFace.register("cron", false, List::of);
         CountDownLatch stopped = new CountDownLatch(1);
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             scheduler.stop();
@@ -155,6 +158,8 @@ public final class CronCommand implements Callable<Integer> {
             stopped.await(); // the daemon runs until Ctrl+C fires the shutdown hook
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
+        } finally {
+            PeerFace.close(peer);
         }
         return 0;
     }

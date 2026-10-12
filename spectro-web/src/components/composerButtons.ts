@@ -41,16 +41,19 @@ export interface ComposerButtonsView {
  * @param lang the chrome language for the labels
  */
 export function composerButtons(
-  opts: { running: boolean; stopping: boolean; draftEmpty: boolean; steers?: boolean },
+  opts: { running: boolean; stopping: boolean; draftEmpty: boolean; steers?: boolean; heard?: boolean },
   lang: Lang = "en",
 ): ComposerButtonsView {
   const steers = opts.running && opts.steers === true;
+  // Card 527: words heard while recording count as something to send, even
+  // before they reach the draft, so Enter can stop the recording and send.
+  const nothing = opts.draftEmpty && opts.heard !== true;
   return {
-    seat: opts.running && opts.draftEmpty ? "stop" : "send",
+    seat: opts.running && nothing ? "stop" : "send",
     stopDisabled: opts.stopping,
     stopLabel: t(lang, opts.stopping ? "chat.stopping" : "chat.stop"),
     sendLabel: t(lang, steers ? "chat.steer" : opts.running ? "chat.queue" : "chat.send"),
-    sendDisabled: opts.draftEmpty,
+    sendDisabled: nothing,
     sendHintKey: steers ? "chat.steerHint" : opts.running ? "chat.queuedHint" : null,
   };
 }

@@ -11,7 +11,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { RunEvent } from "../events";
 import { browserRevealPushLive, __resetBrowserRevealForTests } from "./browserReveal";
-import { __getState, __resetForTests, toggleDockCollapse, toggleDockPanel } from "./layout";
+import { __getState, __resetForTests, setDockTabs, toggleDockCollapse, toggleDockPanel } from "./layout";
 
 const action = { type: "browser_action" } as unknown as RunEvent;
 const start = { type: "run_start" } as unknown as RunEvent;
@@ -20,6 +20,8 @@ const noise = { type: "token" } as unknown as RunEvent;
 describe("the agent's browser cue reveals the dock panel (card 241)", () => {
   beforeEach(() => {
     __resetForTests();
+    // Card 517: a fresh store starts in tabs mode; these cases are side by side.
+    setDockTabs(false);
     __resetBrowserRevealForTests();
   });
 
@@ -59,6 +61,26 @@ describe("the agent's browser cue reveals the dock panel (card 241)", () => {
   it("a batch without a browser_action moves nothing", () => {
     browserRevealPushLive([noise, start, noise]);
     expect(__getState().dockBrowser).toBe("closed");
+    expect(__getState().rightPanelOpen).toBe(false);
+  });
+});
+
+describe("the browser cue in tabs mode, the default since card 517", () => {
+  beforeEach(() => {
+    __resetForTests();
+    __resetBrowserRevealForTests();
+  });
+
+  it("opens the dock on the browser alone, and an operator who hid it is not asked again", () => {
+    expect(__getState().dockTabs).toBe(true);
+    browserRevealPushLive([start, action]);
+    expect(__getState().rightPanelOpen).toBe(true);
+    expect(__getState().dockBrowser).toBe("open");
+    expect(__getState().dockAgents).toBe("closed");
+    toggleDockPanel("browser"); // in tabs mode the shown panel's door hides the dock
+    expect(__getState().rightPanelOpen).toBe(false);
+
+    browserRevealPushLive([action, action]);
     expect(__getState().rightPanelOpen).toBe(false);
   });
 });

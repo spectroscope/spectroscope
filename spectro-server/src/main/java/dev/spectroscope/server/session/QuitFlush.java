@@ -5,6 +5,8 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -35,8 +37,24 @@ final class QuitFlush {
 
     private static final Set<Drain> DRAINS = ConcurrentHashMap.newKeySet();
     private static final AtomicBoolean HOOKED = new AtomicBoolean();
+    /** Counted down when the shutdown hook's flush has returned. */
+    private static final CountDownLatch HOOK_FLUSHED = new CountDownLatch(1);
+    /** The bound the shutdown hook uses; {@link #BOUND} unless a test child set another. */
+    private static volatile Duration hookBound = BOUND;
+    /** What the shutdown hook's flush did, once it has run. */
+    private static volatile Flushed hookFlushed;
 
     private QuitFlush() {
+    }
+
+    /**
+     * What one flush did, counted by the flush itself.
+     *
+     * @param drained drains that wrote their last event within the bound
+     * @param sealed  drains still running at the deadline, sealed
+     * @param nanos   how long the flush took, from quit to the last seal
+     */
+    record Flushed(int drained, int sealed, long nanos) {
     }
 
     /** One run's drain, as a quit sees it. */
@@ -67,7 +85,7 @@ final class QuitFlush {
         if (HOOKED.compareAndSet(false, true)) {
             try {
                 Runtime.getRuntime().addShutdownHook(
-                        new Thread(() -> flush(List.copyOf(DRAINS), BOUND), "spectro-quit-flush"));
+                        new Thread(QuitFlush::flushOnShutdown, "spectro-quit-flush"));
             } catch (IllegalStateException alreadyShuttingDown) {
                 // The JVM is on its way out; nothing can be hooked any more.
             }
@@ -84,16 +102,53 @@ final class QuitFlush {
         DRAINS.remove(drain);
     }
 
+    /** The shutdown hook: flushes every registered drain and keeps what the flush did. */
+    private static void flushOnShutdown() {
+        try {
+            hookFlushed = flush(List.copyOf(DRAINS), hookBound);
+        } finally {
+            HOOK_FLUSHED.countDown();
+        }
+    }
+
+    /**
+     * Card 540: gives the shutdown hook another bound. Only the card 395 child JVM
+     * calls this, so that how loaded the machine is cannot decide whether its
+     * drain is sealed; the test then reads {@link #awaitHookFlush} instead of a
+     * wall clock.
+     *
+     * @param bound the bound the hook uses from now on
+     */
+    static void hookBoundForTest(Duration bound) {
+        hookBound = bound;
+    }
+
+    /**
+     * Card 540: waits for the shutdown hook's flush and says what it did. Only
+     * the card 395 child JVM calls this; production never reads it.
+     *
+     * @param timeout how long to wait at most
+     * @return what the hook's flush did, or null when it did not run within the timeout
+     * @throws InterruptedException when the waiting thread is interrupted
+     */
+    static Flushed awaitHookFlush(Duration timeout) throws InterruptedException {
+        return HOOK_FLUSHED.await(timeout.toNanos(), TimeUnit.NANOSECONDS) ? hookFlushed : null;
+    }
+
     /**
      * Quits every given drain, waits for them within one shared bound, and seals
      * the ones that did not finish.
      *
      * @param drains the drains to flush
      * @param bound  how long all of them together may take
+     * @return how many drains finished and how many were sealed
      */
-    static void flush(Collection<? extends Drain> drains, Duration bound) {
+    static Flushed flush(Collection<? extends Drain> drains, Duration bound) {
+        long start = System.nanoTime();
         drains.forEach(Drain::quit);
-        long deadline = System.nanoTime() + bound.toNanos();
+        long deadline = start + bound.toNanos();
+        int drainedCount = 0;
+        int sealedCount = 0;
         for (Drain drain : drains) {
             boolean drained;
             try {
@@ -102,9 +157,13 @@ final class QuitFlush {
                 Thread.currentThread().interrupt();
                 drained = false;
             }
-            if (!drained) {
+            if (drained) {
+                drainedCount++;
+            } else {
                 drain.seal();
+                sealedCount++;
             }
         }
+        return new Flushed(drainedCount, sealedCount, System.nanoTime() - start);
     }
 }

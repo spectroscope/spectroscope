@@ -230,54 +230,10 @@ public final class ContinuationLeash {
     }
 
     /**
-     * Decides what happens to a run whose GOAL CHECK just failed (card 267,
-     * criterion 6).
-     *
-     * <p>The second continuation reason, and deliberately not a second
-     * mechanism. It spends {@link #budget}, it moves the same {@code spent}
-     * counter and it compares against the same {@code lastSignature} — because a
-     * ceiling that is the product of two numbers, only one of which is visible,
-     * is not a ceiling anybody can reason about, and this class's own javadoc
-     * says so about the turn cap. A run whose plan is open AND whose check fails
-     * therefore cannot spend the budget twice.</p>
-     *
-     * <p>Where {@link #consider} refuses to grade an {@link PlanVerdict#UNKNOWN}
-     * run, this one has nothing to refuse: an exit code is not a guess. So the
-     * plan verdict is not consulted here at all — the check has already said
-     * what the ledger could only estimate.</p>
-     *
-     * @param signature what the run has to show for itself, from
-     *                  {@link #checkSignature(Integer, String, int)}
-     * @param guidance  the check's own output, which becomes the continuation
-     *                  message. The harness does not paraphrase a failure it did
-     *                  not produce
-     * @return the decision, or empty when the leash is off
-     */
-    public Optional<Verdict> considerFailedCheck(String signature, String guidance) {
-        int allowed = budget;
-        if (allowed <= 0) {
-            return Optional.empty();
-        }
-        if (spent >= allowed) {
-            return Optional.of(new Verdict(Decision.BUDGET_EXHAUSTED, null, spent, allowed,
-                    "not continued: the goal's check did not pass, and this run's budget of "
-                            + allowed + " continuations is spent"));
-        }
-        if (signature != null && signature.equals(lastSignature)) {
-            return Optional.of(new Verdict(Decision.NO_PROGRESS, null, spent, allowed,
-                    "not continued: the goal's check failed the same way as at continuation "
-                            + spent + ", and nothing the model did moved it"));
-        }
-        spent++;
-        lastSignature = signature;
-        return Optional.of(new Verdict(Decision.CONTINUED, guidance, spent, allowed,
-                "continued: the goal's check did not pass, continuation " + spent + " of "
-                        + allowed));
-    }
-
-    /**
      * What a run with a goal has to show for itself — the fingerprint two failed
-     * checks are compared by (card 267, criterion 6).
+     * checks are compared by (card 267, criterion 6). Since card 504 the goal's
+     * own counter, {@code GoalContinuation}, compares by it; the leash no
+     * longer counts goal continuations.
      *
      * <p>Both halves again, and for the reasons
      * {@link #signature(RunEvent.Plan, int)} states. The check's own exit code
@@ -286,13 +242,18 @@ public final class ContinuationLeash {
      * was cut from.</p>
      *
      * <p><b>The known weakness, said out loud.</b> A check whose output carries a
-     * timestamp or an elapsed time — most test runners print one — differs on
-     * every run, so this fingerprint never matches and the spin guard never
-     * fires. The bound that still holds in that case is the budget itself, which
-     * is why the budget and not the fingerprint is the load-bearing half.
+     * timestamp or an elapsed time (most test runners print one) differs on
+     * every run, so this fingerprint never matches and the brake never fires.
+     * The fingerprint also moves whenever the model makes one clean tool call
+     * between two checks. Since card 504 no continuation budget bounds a goal
+     * (concept decision 11): the bound that still holds is the run's turn cap,
+     * {@code Agent.DEFAULT_MAX_TURNS} (1000) unless the session sets another,
+     * so a goal whose check never repeats byte for byte can run to that cap.
      * Normalising the output was considered and refused: guessing which digits
      * of somebody else's test runner are noise is exactly the kind of invention
-     * this house measures instead of assuming.</p>
+     * this house measures instead of assuming. Whether to compare the exit
+     * code and the tool activity only, or to add a visible goal cap, is an
+     * open owner question on card 504.</p>
      *
      * @param exitCode        the check's exit code, or null when it never
      *                        produced one
@@ -362,6 +323,12 @@ public final class ContinuationLeash {
         if (text == null) {
             return "";
         }
-        return text.length() <= MAX_STEP_CHARS ? text : text.substring(0, MAX_STEP_CHARS - 1) + "…";
+        if (text.length() <= MAX_STEP_CHARS) {
+            return text;
+        }
+        // Card 504, hub and spoke review round 1: one fewer when the last kept
+        // character would be half of a surrogate pair.
+        int end = Character.isHighSurrogate(text.charAt(MAX_STEP_CHARS - 2)) ? MAX_STEP_CHARS - 2 : MAX_STEP_CHARS - 1;
+        return text.substring(0, end) + "…";
     }
 }

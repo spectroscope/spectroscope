@@ -15,8 +15,11 @@ import { micErrorOf, silencesTheButton, transcribeErrorOf, type VoiceError } fro
 import { levelOf, mayClick } from "./micLevel";
 import { MAX_CLIP_SECONDS, browserAudio, wavFromRecording } from "./wavClip";
 import { audioConstraint, readMicDevices, useMicDevice, type MicChoice } from "../state/micDevice";
-import { startLiveCapture, type LiveCapture } from "./liveCapture";
-import { LIVE_START, liveStep, type LiveFailure, type LiveText } from "./liveSession";
+import { openLiveSession, type LiveCapture, type LiveSession } from "./liveCapture";
+import { ArmFailure, armLive } from "./liveArm";
+import { LIVE_START, heardText, type LiveFailure, type LiveText } from "./liveSession";
+import { captureRate, type LiveRoute } from "./liveTranscription";
+import { TakeGate, finishBoundMs, liveTakeHandler, startFinish } from "./voiceTake";
 
 /** Whether the platform asked for no incidental effects. */
 function prefersReducedMotion(): boolean {
@@ -47,6 +50,10 @@ const RECORDING_TIMER_TICK_MS = 250;
 export interface VoiceInput {
   /** idle | recording | transcribing — feeds micButtonState. */
   micPhase: MicPhase;
+  /** Card 528: the server said this press loads the speech model, so the
+   *  loading card covers the composer until ready. False against a resident
+   *  model and outside the wait for ready. */
+  modelLoading: boolean;
   /** Flips to false only for a STATE — no device, or a server without stt.
    *  A denial or a failed request leaves the button, because both are events
    *  somebody can act on and press again (card 187, `silencesTheButton`). */
@@ -71,7 +78,28 @@ export interface VoiceInput {
   liveFailed: LiveFailure | null;
   /** First press records; second press stops and transcribes. */
   toggleMic: () => Promise<void>;
+  /**
+   * Card 527: Enter or Send while recording. Stops the capture, waits for the
+   * last words (bounded on the live routes) and resolves with them, never
+   * putting them into the draft; a transcript that arrives later is dropped.
+   * Resolves with "" when nothing is recording.
+   */
+  finish: () => Promise<string>;
 }
+
+/** Where a recording goes and how often the local route runs (card 527). */
+export interface VoiceRoute {
+  /** The route the server says it takes. */
+  route?: LiveRoute;
+  /** The local chunk step from /api/stt/status. */
+  chunkMs?: number;
+  /** How long to wait for the live session's ready, from /api/stt/status. */
+  warmupTimeoutMs?: number;
+}
+
+/** The wait for ready when the server names none: the governed
+ *  `STT_WARMUP_TIMEOUT_MS` of spectro-core, 20000 ms on 2026-10-11. */
+export const WARMUP_TIMEOUT_FALLBACK_MS = 20000;
 
 /**
  * Microphone state + recorder wiring. `onTranscript` receives the finished
@@ -84,8 +112,13 @@ export interface VoiceInput {
  *             encodes (a local route is not rerouted to get live text) is a
  *             decision about consent and belongs in one place
  */
-export function useVoiceInput(onTranscript: (text: string) => void, live: boolean = false): VoiceInput {
+export function useVoiceInput(
+  onTranscript: (text: string) => void,
+  live: boolean = false,
+  where: VoiceRoute = {},
+): VoiceInput {
   const [micPhase, setMicPhase] = useState<MicPhase>("idle");
+  const [modelLoading, setModelLoading] = useState(false);
   const [micAvailable, setMicAvailable] = useState(true);
   // Why the last attempt failed, or null. Card 187 step 1: both paths below used
   // to swallow the cause, so "you denied permission" and "the request failed"
@@ -105,12 +138,17 @@ export function useVoiceInput(onTranscript: (text: string) => void, live: boolea
   // any re-render, exactly like the arming guard; state for the text because
   // that is what gets drawn.
   const captureRef = useRef<LiveCapture | null>(null);
+  // The open socket while the model loads, before a capture exists (card 527).
+  const sessionRef = useRef<LiveSession | null>(null);
   const [liveText, setLiveText] = useState<LiveText>(LIVE_START);
   // The same value as `liveText`, readable synchronously. The frame handler has
   // to compare the state BEFORE and after a frame to know whether this is the
   // moment a transcript landed, and doing that inside a setState updater would
   // fire the side effects twice under StrictMode.
   const liveRef = useRef<LiveText>(LIVE_START);
+  // Card 527: one gate per take. A send claims the take's transcript through
+  // it, and a transcript that arrives after the send is swallowed there.
+  const gateRef = useRef<TakeGate>(new TakeGate());
 
   // Tick the recording timer while recording — and end it at the stated ceiling.
   // The limit exists because 16 kHz PCM is 32 kB per second, so a clip has a
@@ -159,43 +197,17 @@ export function useVoiceInput(onTranscript: (text: string) => void, live: boolea
     setLevel(0);
   }
 
-  async function toggleMic(): Promise<void> {
-    if (micPhase === "recording") {
-      // Both paths end on the second press; only what "end" means differs. The
-      // live one keeps its socket open afterwards, because the transcript is
-      // still on its way.
-      if (captureRef.current !== null) {
-        captureRef.current.commit();
-        setMicPhase("transcribing");
-      } else {
-        recorderRef.current?.stop(); // onstop takes over
-      }
-      return;
-    }
-    // The await below is a WINDOW: a second press while the permission prompt
-    // is open used to start a second recorder and orphan the first stream --
-    // a hot microphone nothing would ever stop. A ref and not state, because
-    // the second press arrives before any re-render.
-    if (armingRef.current) return;
-    armingRef.current = true;
-    setMicError(null); // a fresh attempt is not the last one's failure
-    let stream: MediaStream;
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraint(deviceId) });
-    } catch (refused) {
-      const reason = micErrorOf(refused);
-      setMicError(reason);
-      // Only a STATE takes the button away. A denial is an event: someone who
-      // then allows it in the site settings must be able to press again without
-      // reloading the page.
-      if (silencesTheButton(reason)) setMicAvailable(false);
-      armingRef.current = false;
-      return;
-    }
-    // Permission has just been granted, so the browser will name the devices
-    // now — this is the one moment the list stops being blank.
-    void refreshDevices();
-    // The meter: an analyser on the same stream, alive exactly as long as it is.
+  /** A getUserMedia refusal, read into a reason. Only a STATE takes the button
+   *  away; a denial is an event, and someone who then allows it in the site
+   *  settings must be able to press again without reloading the page. */
+  function refuseMicrophone(refused: unknown): void {
+    const reason = micErrorOf(refused);
+    setMicError(reason);
+    if (silencesTheButton(reason)) setMicAvailable(false);
+  }
+
+  /** The meter: an analyser on the same stream, alive exactly as long as it is. */
+  function startMeter(stream: MediaStream): void {
     try {
       const ctx = new AudioContext();
       const analyser = ctx.createAnalyser();
@@ -216,73 +228,133 @@ export function useVoiceInput(onTranscript: (text: string) => void, live: boolea
       // No Web Audio: the meter stays flat and everything else works. A missing
       // decoration must never cost the feature it decorates.
     }
-    if (live) {
-      // A different instrument for a different job: no MediaRecorder, no blob,
-      // no conversion at the end. The audio leaves in pieces while it is being
-      // spoken (liveCapture.ts), and what comes back is words.
-      liveRef.current = LIVE_START;
-      setLiveText(LIVE_START);
-      // The microphone stops; the SOCKET does not. Closing it the moment the
-      // transcript lands is what lost the record: the server sends `final` and
-      // then `wire`, and a socket closed in between drops the second one —
-      // measured, [ready, final] against [ready, final, wire]. Without that
-      // frame the exchange is on disk and in no trace, which is the one thing
-      // this card set exists to prevent.
-      const releaseTheMicrophone = (): void => {
-        stream.getTracks().forEach((track) => track.stop());
-        stopMeter();
-        setMicPhase("idle");
-      };
-      const finish = (): void => {
-        captureRef.current?.close();
-        captureRef.current = null;
-        releaseTheMicrophone();
-      };
-      try {
-        captureRef.current = await startLiveCapture(stream, (frame) => {
-          if ((frame as { type?: unknown } | null)?.type === "wire") {
-            // The record this session left, announced on the socket it already
-            // has — the batch path has to carry it in a POST answer instead.
-            noteVoiceExchange(frame);
-          }
-          const was = liveRef.current;
-          const now = liveStep(was, frame);
-          liveRef.current = now;
-          setLiveText(now);
-          // Only a `final` ever reaches the draft. The provisional text is a
-          // model guess, and the whole point of this card is that a guess is
-          // never quietly published as the answer.
-          if ((frame as { type?: unknown } | null)?.type === "wire") {
-            // The record has announced itself, so there is nothing left to wait
-            // for. NOW the socket may go.
-            finish();
-            return;
-          }
-          if (now.committed !== null && was.committed === null) {
-            // An empty transcript is what silence sounds like, and it is a real
-            // answer — the session finished. It is just not something to put in
-            // the draft, exactly as the batch path decided.
-            if (now.committed !== "") onTranscript(now.committed);
-            // Microphone off, socket open: the wire frame is still on its way.
-            releaseTheMicrophone();
-          } else if (now.failed !== null && was.failed === null) {
-            finish();
-          }
-        });
-      } catch {
-        // The socket never opened. Nothing was captured and nothing was sent,
-        // so this is the request-failed shape and not a microphone problem.
-        setMicError("requestFailed");
-        stream.getTracks().forEach((track) => track.stop());
-        stopMeter();
-        armingRef.current = false;
-        return;
-      }
+  }
+
+  /**
+   * The live path. A different instrument for a different job: no
+   * MediaRecorder, no blob, no conversion at the end. The audio leaves in
+   * pieces while it is being spoken (liveCapture.ts), and what comes back is
+   * words.
+   *
+   * Card 527 criterion 8: the socket opens first and the press waits for the
+   * server's ready, which on the local route comes once whisper has loaded the
+   * model. The phase is `warming` meanwhile and the composer shows the loading
+   * surface; the microphone is captured and the timer starts only on ready.
+   */
+  async function armLiveTake(): Promise<void> {
+    liveRef.current = LIVE_START;
+    setLiveText(LIVE_START);
+    setModelLoading(false);
+    setMicPhase("warming");
+    let stream: MediaStream | null = null;
+    // The microphone stops; the SOCKET does not. Closing it the moment the
+    // transcript lands is what lost the record: the server sends `final` and
+    // then `wire`, and a socket closed in between drops the second one.
+    const releaseTheMicrophone = (): void => {
+      stream?.getTracks().forEach((track) => track.stop());
+      stopMeter();
+      setMicPhase("idle");
+    };
+    const finish = (): void => {
+      captureRef.current?.close();
+      captureRef.current = null;
+      sessionRef.current?.close();
+      sessionRef.current = null;
+      releaseTheMicrophone();
+    };
+    // The frame rules live in voiceTake.ts, where a fake socket drives them:
+    // only a `final` reaches the draft, and only when no send claimed it.
+    // The record's `wire` frame is what closes the socket.
+    const take = liveTakeHandler({
+      gate: gateRef.current,
+      onTranscript,
+      onState: (now) => {
+        liveRef.current = now;
+        setLiveText(now);
+      },
+      // The record this session left, announced on the socket it already
+      // has. The batch path has to carry it in a POST answer instead.
+      noteWire: noteVoiceExchange,
+      // Microphone off, socket open: the wire frame is still on its way.
+      releaseMicrophone: releaseTheMicrophone,
+      close: finish,
+    });
+    try {
+      const armed = await armLive({
+        open: async () => {
+          const session = await openLiveSession((frame) => {
+            // Card 528: the warm up loads the model only when the server says so.
+            if ((frame as { type?: unknown } | null)?.type === "loading") setModelLoading(true);
+            take.onFrame(frame);
+          });
+          sessionRef.current = session;
+          return session;
+        },
+        getMic: () => navigator.mediaDevices.getUserMedia({ audio: audioConstraint(deviceId) }),
+        rate: captureRate(where.route ?? "hosted", true),
+        timeoutMs: where.warmupTimeoutMs ?? WARMUP_TIMEOUT_FALLBACK_MS,
+      });
+      setModelLoading(false);
+      stream = armed.stream;
+      captureRef.current = armed.capture;
+      void refreshDevices();
+      startMeter(armed.stream);
       setMicPhase("recording");
+    } catch (failure) {
+      const stage = failure instanceof ArmFailure ? failure.stage : "open";
+      // The socket never opened: nothing was captured and nothing was sent, so
+      // this is the request-failed shape. A refusal before ready already said
+      // why through the frame handler (`liveFailed`).
+      // A failed audio graph after the microphone opened is the same shape for
+      // the person: armLive has already stopped the tracks and closed the socket.
+      if (stage === "open" || stage === "capture") setMicError("requestFailed");
+      if (stage === "timeout") setMicError("warmupTimeout");
+      if (stage === "mic") refuseMicrophone((failure as ArmFailure).cause);
+      sessionRef.current = null;
+      setModelLoading(false);
+      setMicPhase("idle");
+    } finally {
+      armingRef.current = false;
+    }
+  }
+
+  async function toggleMic(): Promise<void> {
+    if (micPhase === "recording") {
+      // Both paths end on the second press; only what "end" means differs. The
+      // live one keeps its socket open afterwards, because the transcript is
+      // still on its way.
+      if (captureRef.current !== null) {
+        captureRef.current.commit();
+        setMicPhase("transcribing");
+      } else {
+        recorderRef.current?.stop(); // onstop takes over
+      }
+      return;
+    }
+    // The await below is a WINDOW: a second press while the permission prompt
+    // is open used to start a second recorder and orphan the first stream --
+    // a hot microphone nothing would ever stop. A ref and not state, because
+    // the second press arrives before any re-render.
+    if (armingRef.current) return;
+    armingRef.current = true;
+    gateRef.current = new TakeGate();
+    setMicError(null); // a fresh attempt is not the last one's failure
+    if (live) {
+      await armLiveTake();
+      return;
+    }
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraint(deviceId) });
+    } catch (refused) {
+      refuseMicrophone(refused);
       armingRef.current = false;
       return;
     }
-
+    // Permission has just been granted, so the browser will name the devices
+    // now — this is the one moment the list stops being blank.
+    void refreshDevices();
+    startMeter(stream);
     const recorder = new MediaRecorder(stream);
     const chunks: Blob[] = [];
     recorder.ondataavailable = (e) => chunks.push(e.data);
@@ -295,7 +367,9 @@ export function useVoiceInput(onTranscript: (text: string) => void, live: boolea
         audioRef.current = null;
       }
       setLevel(0);
-      setMicPhase("transcribing");
+      // A send that is waiting keeps the finishing phase (card 527).
+      setMicPhase((phase) => (phase === "finishing" ? "finishing" : "transcribing"));
+      const gate = gateRef.current;
       // The conversion whisper used to need a child process for (card 187 step
       // 5.4). It happens here because this is where the audio already is, and
       // its own failure is its own sentence: nothing was sent, so calling it a
@@ -306,6 +380,7 @@ export function useVoiceInput(onTranscript: (text: string) => void, live: boolea
       } catch {
         setMicError("convertFailed");
         setMicPhase("idle");
+        gate.fail();
         return;
       }
       try {
@@ -323,6 +398,7 @@ export function useVoiceInput(onTranscript: (text: string) => void, live: boolea
           const reason = transcribeErrorOf(res.status) ?? "requestFailed";
           setMicError(reason);
           if (silencesTheButton(reason)) setMicAvailable(false);
+          gate.fail();
           return;
         }
         const answer = (await res.json()) as { text?: string; wire?: unknown };
@@ -331,11 +407,13 @@ export function useVoiceInput(onTranscript: (text: string) => void, live: boolea
         // browser ever hears about its own record — and without it the spoken
         // bytes and the transcript show up in no trace anywhere.
         noteVoiceExchange(answer.wire);
-        if (answer.text) onTranscript(answer.text);
+        // A send that is waiting takes the answer; a late one is dropped (card 527).
+        if (!gate.offer(answer.text ?? "") && answer.text) onTranscript(answer.text);
       } catch {
         // Network or parse failure. It stays usable — but it says so now,
         // because a recording that vanishes without a word is the defect.
         setMicError("requestFailed");
+        gate.fail();
       } finally {
         setMicPhase("idle");
       }
@@ -345,6 +423,48 @@ export function useVoiceInput(onTranscript: (text: string) => void, live: boolea
     setMicPhase("recording");
     // From here the button is a STOP button, so the guard has done its job.
     armingRef.current = false;
+  }
+
+  /**
+   * Enter or Send while recording (card 527): stop, wait for the last words,
+   * hand them over. The draft never sees them; the caller sends them.
+   */
+  async function finish(): Promise<string> {
+    const gate = gateRef.current;
+    if (micPhase === "finishing" || gate.waiting) return "";
+    const capture = captureRef.current;
+    if (capture !== null) {
+      setMicPhase("finishing");
+      const text = await startFinish({
+        gate,
+        capture: {
+          // A second press of the microphone already committed; a second
+          // commit would ask the provider to transcribe an empty buffer.
+          commit: () => {
+            if (micPhase === "recording") capture.commit();
+          },
+          close: () => {
+            capture.close();
+            if (captureRef.current === capture) captureRef.current = null;
+          },
+        },
+        heard: () => heardText(liveRef.current),
+        boundMs: finishBoundMs(where.route ?? "hosted", where.chunkMs ?? 0, liveRef.current.runMs),
+      });
+      // The microphone is off either way: the final released it, or the bound
+      // passed and the capture was closed.
+      if (audioRef.current !== null) stopMeter();
+      setMicPhase("idle");
+      return text;
+    }
+    if (micPhase === "recording" || micPhase === "transcribing") {
+      // The batch route: the one answer is the transcript, however long it takes.
+      const text = gate.finish(() => "", null);
+      setMicPhase("finishing");
+      if (micPhase === "recording") recorderRef.current?.stop();
+      return text;
+    }
+    return "";
   }
 
   // Unmount while recording used to leak the live microphone stream, the
@@ -376,20 +496,27 @@ export function useVoiceInput(onTranscript: (text: string) => void, live: boolea
       const capture = captureRef.current;
       captureRef.current = null;
       capture?.close();
+      // A socket still waiting for the model goes too.
+      const session = sessionRef.current;
+      sessionRef.current = null;
+      session?.close();
     },
     [],
   );
 
   return {
     micPhase,
+    modelLoading,
     micAvailable,
     micError,
     level,
     choice,
     refreshDevices,
     recordMs,
-    provisional: liveText.provisional,
+    // Everything heard in this recording: closed windows and the open one.
+    provisional: heardText(liveText),
     liveFailed: liveText.failed,
     toggleMic,
+    finish,
   };
 }

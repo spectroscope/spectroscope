@@ -89,7 +89,7 @@ renderers”.</p>
 
 <table class="tbl">
   <tr><th>command</th><th>behaviour</th></tr>
-  <tr><td><code>/help</code></td><td>lists all twelve commands with one-liners</td></tr>
+  <tr><td><code>/help</code></td><td>lists all fourteen commands with one-liners</td></tr>
   <tr><td><code>/cost</code></td><td>cumulative session tokens: <code>Session usage: X in / Y out</code></td></tr>
   <tr><td><code>/model</code></td><td>current provider · model (+ base URL for local providers)</td></tr>
   <tr><td><code>/sessions</code></td><td>the stored-session listing, same as <code>spectro sessions</code></td></tr>
@@ -98,6 +98,8 @@ renderers”.</p>
   <tr><td><code>/think on|off</code></td><td>toggles reasoning visibility; rebuilds the agent and reloads the session history so nothing is lost</td></tr>
   <tr><td><code>/voice</code></td><td>push-to-talk: record → transcribe → editable confirmation (chapter 17)</td></tr>
   <tr><td><code>/speak on|off</code></td><td>voice output at runtime; <code>off</code> also stops the current sentence</td></tr>
+  <tr><td><code>/goal</code></td><td>states this session's outcome and the command that checks it, shows it, or clears it (card 267)</td></tr>
+  <tr><td><code>/loop [interval] &lt;prompt&gt;</code></td><td>runs the prompt now and again: with an interval on a timer thread of the REPL, without one on the model's <code>schedule_wakeup</code>. While a loop runs, the prompt also wakes for a fired wakeup. <code>/loop stop</code> ends it; <code>/clear</code> ends it too (card 504)</td></tr>
   <tr><td><code>/compact</code></td><td>force a context compaction now (<code>Agent.compactNow()</code>); prints the result or “Nothing to compact”</td></tr>
   <tr><td><code>/clear</code></td><td>fresh agent, fresh session file: <code>New session: &lt;id&gt;</code></td></tr>
   <tr><td><code>/exit</code></td><td>leave (empty line or Ctrl-D work too)</td></tr>

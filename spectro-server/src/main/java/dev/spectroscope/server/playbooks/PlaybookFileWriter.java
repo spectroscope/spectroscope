@@ -69,7 +69,7 @@ public final class PlaybookFileWriter {
                 config));
     }
 
-    private static void writeAtomically(Path target, byte[] content) throws IOException {
+    static void writeAtomically(Path target, byte[] content) throws IOException {
         Path folder = target.getParent();
         Path temp = Files.createTempFile(folder, "." + target.getFileName() + ".", ".tmp");
         try {

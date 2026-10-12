@@ -1,0 +1,33 @@
+{
+  "name": "fanout-research",
+  "description": "Three explorers look for the answer to one question in the code, the documents and the tests at the same time; one summariser answers from what they found.",
+  "steps": [
+    {
+      "kind": "fanout",
+      "id": "explore",
+      "label": "research",
+      "agents": [
+        {
+          "role": "explore",
+          "task": "Find what the source code of {{folder}} says about this question. Read only; quote file and line for every fact you report.\n\nQuestion: {{input}}"
+        },
+        {
+          "role": "explore",
+          "task": "Find what the documents of {{folder}} say about this question: README, docs, CLAUDE.md, comments at the top of files. Read only; quote file and line for every fact you report.\n\nQuestion: {{input}}"
+        },
+        {
+          "role": "explore",
+          "task": "Find what the tests and the build files of {{folder}} say about this question. Read only; quote file and line for every fact you report.\n\nQuestion: {{input}}"
+        }
+      ],
+      "join": {
+        "task": "Three helpers looked for the answer to one question. Answer the question in a few sentences using only what they found, name the file and line behind each fact, and say what none of them could find.\n\nQuestion: {{input}}\n\n{{results}}"
+      }
+    },
+    {
+      "kind": "end",
+      "id": "done",
+      "result": "answered"
+    }
+  ]
+}

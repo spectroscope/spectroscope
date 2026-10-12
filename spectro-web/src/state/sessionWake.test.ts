@@ -136,6 +136,64 @@ describe("a wake", () => {
     expect(h.set.heldRows().map((row) => row.id)).toContain(ID);
   });
 
+  it("a woken session sends a loop frame on its own socket when the composer continues it (card 504, fix round 2)", () => {
+    h.sockets[0].status("open");
+    const key = h.set.open({ wake: ID });
+    h.sockets[1].status("open");
+    h.sockets[1].emit([answer()]);
+
+    h.set.continueWoken(key, {
+      state: initialState,
+      events: [],
+      firstFrames: [{ type: "set_loop", action: "stop" }],
+    });
+
+    expect(h.sockets[1].sent).toEqual([
+      { type: "wake_session", sessionId: ID },
+      { type: "set_loop", action: "stop" },
+    ]);
+    expect(h.sockets[0].sent, "never on the socket that was in view").toEqual([]);
+  });
+
+  it("a woken session sends the goal's set_goal on its own socket when the gear continues it (card 504, hub and spoke fix round)", () => {
+    h.sockets[0].status("open");
+    const key = h.set.open({ wake: ID });
+    h.sockets[1].status("open");
+    h.sockets[1].emit([answer()]);
+
+    h.set.continueWoken(key, {
+      state: initialState,
+      events: [],
+      firstFrames: [{ type: "set_goal", outcome: "the tests are green", check: "npm test" }],
+    });
+
+    expect(h.sockets[1].sent).toEqual([
+      { type: "wake_session", sessionId: ID },
+      { type: "set_goal", outcome: "the tests are green", check: "npm test" },
+    ]);
+    expect(h.sockets[0].sent, "never on the socket that was in view").toEqual([]);
+    expect(h.set.viewKey(), "the continued session comes into view").toBe(key);
+  });
+
+  it("a woken session sends the goal's clear on its own socket too (card 504, hub and spoke fix round)", () => {
+    h.sockets[0].status("open");
+    const key = h.set.open({ wake: ID });
+    h.sockets[1].status("open");
+    h.sockets[1].emit([answer()]);
+
+    h.set.continueWoken(key, {
+      state: initialState,
+      events: [],
+      firstFrames: [{ type: "set_goal", outcome: "", check: "" }],
+    });
+
+    expect(h.sockets[1].sent).toEqual([
+      { type: "wake_session", sessionId: ID },
+      { type: "set_goal", outcome: "", check: "" },
+    ]);
+    expect(h.sockets[0].sent).toEqual([]);
+  });
+
   it("drops its record when the server says another socket holds the session", () => {
     const inView = h.set.viewKey();
     const key = h.set.open({ wake: ID });

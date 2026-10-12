@@ -115,6 +115,26 @@ describe("installContents", () => {
     expect(answer).toEqual({ ok: true, installed: ["p:a", "p:b"] });
   });
 
+  it("names the workspace the list was read for, so the hooks install for the same folder", async () => {
+    fetchMock.mockResolvedValueOnce(reply(200, preview([item("a", "new")])));
+    await loadContents("/p/spectro", "/ws");
+    fetchMock.mockResolvedValueOnce(reply(200, { installed: ["p:a"] }));
+    await installContents("/p/spectro", "h1", true);
+    const [, init] = fetchMock.mock.calls[1] as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toEqual({
+      dir: "/p/spectro",
+      contentsHash: "h1",
+      hooks: true,
+      workspace: "/ws",
+    });
+    fetchMock.mockResolvedValueOnce(reply(200, preview([item("a", "new")])));
+    await loadContents("/p/spectro", null);
+    fetchMock.mockResolvedValueOnce(reply(200, { installed: ["p:a"] }));
+    await installContents("/p/spectro", "h1", true);
+    const [, again] = fetchMock.mock.calls[3] as [string, RequestInit];
+    expect(JSON.parse(again.body as string)).toEqual({ dir: "/p/spectro", contentsHash: "h1", hooks: true });
+  });
+
   it("maps a 409 to a failure with status, reason, message, names and leftover", async () => {
     fetchMock.mockResolvedValue(
       reply(409, { reason: "TAKEN", message: "a target exists", names: ["/h/.spectro/skills/p"] }),

@@ -17,7 +17,7 @@
 // made: a slow answer for an earlier choice never overwrites a later one.
 
 import { useSyncExternalStore } from "react";
-import { noteFolder } from "./playbooks";
+import { noteFolder, showFolder } from "./playbooks";
 
 export type Bilingual = { en: string; de: string };
 
@@ -373,6 +373,9 @@ export async function generatePlaybook(): Promise<LyzrResult> {
     result = { kind: "failed", message: e instanceof Error ? e.message : String(e) };
   }
   set({ ...state, result });
+  // Card 525: the pane turns to the Skills tab of the new folder, so the
+  // owner sees what the copy carries.
+  if (result.kind === "written" && result.playbook !== null) showFolder(result.playbook.dir, "skills");
   return result;
 }
 

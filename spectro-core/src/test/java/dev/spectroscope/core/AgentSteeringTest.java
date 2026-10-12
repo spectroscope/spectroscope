@@ -698,6 +698,7 @@ class AgentSteeringTest {
     }
 
     @Test
+    @GuideExit("goal-check.waiting-sentence")
     void aWaitingSentenceKeepsARunWithAStatedGoalAliveAndTheNextRequestCarriesIt() {
         SteeringInbox inbox = new SteeringInbox();
         ScriptedCheck check = new ScriptedCheck(met());
@@ -729,6 +730,7 @@ class AgentSteeringTest {
     }
 
     @Test
+    @GuideExit("goal-check.error")
     void aGoalRunThatEndsByAbortOrErrorAfterASentenceKeptItOpenRunsNoCheck() {
         // The exit a sentence keeps open is not graded, and the abort and error
         // exits do not grade either. This pins what the loop does today; the
@@ -872,7 +874,9 @@ class AgentSteeringTest {
                         "max_tokens"),
                 new Scenario("turn cap", List.of(answerTurn()),
                         () -> new ScriptedCheck(failed("still red")), true, 1,
-                        GoalVerdict.UNMET_STOP_REASON));
+                        // Card 504: a failed check on the last permitted turn
+                        // ends at the cap and keeps the cap's name.
+                        "max_turns"));
 
         for (Scenario scenario : scenarios) {
             Recording withInbox = new Recording(turn -> { }, scenario.script());

@@ -121,3 +121,23 @@ describe("readZip", () => {
     await expect(readZip(new TextEncoder().encode('{"type":"run_start"}\n'))).rejects.toThrow(/not a zip/);
   });
 });
+
+// Card 524: a playbook bundle comes from someone else, so the reader stops a
+// large or lying archive before it inflates it.
+describe("readZip with a byte ceiling", async () => {
+  const { handZip: zipOf } = await import("../testkit/handZip");
+
+  it("refuses an archive whose entries declare more than the ceiling, before inflating", async () => {
+    const data = zipOf([
+      { name: "a.txt", data: new Uint8Array(600) },
+      { name: "b.txt", data: new Uint8Array(600) },
+    ]);
+    await expect(readZip(data, { maxBytes: 1000 })).rejects.toThrow(/more than 1000 bytes/);
+    await expect(readZip(data, { maxBytes: 1200 })).resolves.toHaveLength(2);
+  });
+
+  it("stops an entry that inflates past the size it declares", async () => {
+    const data = zipOf([{ name: "bomb.txt", data: new Uint8Array(4 * 1024 * 1024), declaredSize: 10 }]);
+    await expect(readZip(data, { maxBytes: 1000 })).rejects.toThrow(/larger than it declares/);
+  });
+});

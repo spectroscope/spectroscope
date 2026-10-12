@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# setup-tts.sh — reproducible TTS setup for spectroscope. Downloads the
+# setup-tts.sh: reproducible TTS setup for spectroscope. Downloads the
 # piper binary (GitHub release rhasspy/piper, matching OS/arch) and the voice
 # en_US-lessac-medium (Hugging Face, rhasspy/piper-voices) into ~/.spectro/models/.
 # Idempotent: a second run only verifies, downloads nothing again.
@@ -40,19 +40,19 @@ check_sha256() { # $1 file, $2 expected sum, $3 display name
   local actual; actual="$(sha256_of "$1")"
   if [ "$2" = "PLACEHOLDER_SHA256" ]; then
     echo "ERROR: Checksum for $3 is not yet entered."
-    echo "  Computed sum: $actual — verify the source, enter it above, run again."
+    echo "  Computed sum: $actual. Verify the source, enter it above, run again."
     exit 1
   fi
   if [ "$actual" != "$2" ]; then
-    echo "ERROR: SHA256 mismatch for $3 — file tampered with or incomplete."
+    echo "ERROR: SHA256 mismatch for $3. The file was tampered with or is incomplete."
     echo "  expected: $2"
     echo "  received: $actual"
     rm -f "$1"; exit 1
   fi
 }
 
-download() { # $1 url, $2 target file — idempotent: do not re-download an existing file
-  if [ -f "$2" ]; then echo "$(basename "$2") already downloaded — skipped."; return; fi
+download() { # $1 url, $2 target file; idempotent: do not re-download an existing file
+  if [ -f "$2" ]; then echo "$(basename "$2") already downloaded, skipped."; return; fi
   echo "Downloading $1 ..."
   curl -fL --retry 3 -o "$2.part" "$1"
   mv "$2.part" "$2"
@@ -69,7 +69,7 @@ mkdir -p "$MODELS_DIR"
 
 # 1) piper binary
 if [ -x "$PIPER_DIR/piper" ]; then
-  echo "piper already installed: $PIPER_DIR/piper — skipped."
+  echo "piper already installed: $PIPER_DIR/piper, skipped."
 else
   fetch_checked "$PIPER_ASSET" "$PIPER_RELEASE_BASE/$PIPER_ASSET" "$SHA256_PIPER"
   tar -xzf "$MODELS_DIR/$PIPER_ASSET" -C "$MODELS_DIR"   # extracts into $PIPER_DIR

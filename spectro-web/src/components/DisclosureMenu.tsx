@@ -20,9 +20,11 @@ import { CHAT_VIEW_MODES, setChatView, useChatView } from "../state/chatView";
 import { setLiveTraceWanted, useLiveTraceWanted } from "../state/liveTrace";
 import { dismissesMenu, MODAL_LAYER } from "./menuDismiss";
 import { RtkFilterSection } from "./RtkFilterSection";
+import { AgentMessagingSection } from "./AgentMessagingSection";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { useRtkFilter } from "../state/rtkFilter";
+import { useAgentMessaging } from "../state/agentMessaging";
 import { isOpen } from "../state/surfaces";
 import { useViewMode } from "../state/viewMode";
 
@@ -47,6 +49,7 @@ export function DisclosureMenu({ fold }: DisclosureMenuProps = {}) {
   const traceOpen = isOpen("liveTraceSwitch", useViewMode());
   const [open, setOpen] = useState(false);
   const rtk = useRtkFilter(open);
+  const messaging = useAgentMessaging(open); // card 503
   const [focusIdx, setFocusIdx] = useState(0);
   const ref = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -296,6 +299,8 @@ export function DisclosureMenu({ fold }: DisclosureMenuProps = {}) {
               den chat einstellungen", so it sits at the bottom of this menu
               and adds nothing to the icon row under the field. */}
           <RtkFilterSection lang={lang} rtk={rtk} />
+          {/* Card 503: agent messaging on or off, after the rtk switch. */}
+          <AgentMessagingSection lang={lang} messaging={messaging} />
         </div>
       )}
     </div>

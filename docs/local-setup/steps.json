@@ -1,0 +1,1984 @@
+{
+  "$schema": "./steps.schema.json",
+  "page": {
+    "title": "local setup",
+    "lead": "This page lists what spectroscope needs on your machine, level by level. Level 1 is all you need to run the app. The levels after it are optional, and one route per level is enough. Mark a step with \"I have this\" and the ring of its level fills.",
+    "version": "0.15.2",
+    "scope": {
+      "text": "macOS means Apple silicon. Linux means Debian 12 and 13, Ubuntu 22.04 and 24.04. Windows is not covered.",
+      "source": [
+        "P:README.md::Apple silicon only",
+        "S37",
+        "S39",
+        "S53",
+        "S54"
+      ]
+    },
+    "scriptsNote": "Scripts are files to download, read and run yourself. The page runs nothing.",
+    "needs": {
+      "homebrew": {
+        "name": "Homebrew",
+        "platforms": {
+          "mac": {
+            "text": "The macOS commands marked \"needs Homebrew\" use it, and so does the speech script. If brew is not found, install Homebrew first. Its page shows the install line and explains what it does. The DMG needs no Homebrew.",
+            "url": "https://brew.sh",
+            "linkLabel": "brew.sh",
+            "source": [
+              "S1",
+              "P:README.md::is the same kit without the tap",
+              "P:scripts/setup-stt.sh::Homebrew missing"
+            ]
+          }
+        }
+      },
+      "git": {
+        "name": "git",
+        "platforms": {
+          "mac": {
+            "text": "The commands marked \"needs git\" clone a repository. To install git, run brew install git, or xcode-select --install for Apple's git in the Command Line Tools.",
+            "url": "https://git-scm.com/install/mac",
+            "linkLabel": "git-scm.com",
+            "source": "S48"
+          },
+          "linux": {
+            "text": "The commands marked \"needs git\" clone a repository. To install git, run sudo apt-get install git.",
+            "url": "https://git-scm.com/install/linux",
+            "linkLabel": "git-scm.com",
+            "source": "S49"
+          }
+        }
+      },
+      "docker-repo": {
+        "name": "Docker's apt repository",
+        "platforms": {
+          "linux": {
+            "text": "The Linux Docker command installs packages from Docker's own apt repository. Add that repository first, with the lines on Docker's install page for your system.",
+            "url": "https://docs.docker.com/engine/install/ubuntu/#install-using-the-repository",
+            "linkLabel": "Docker on Ubuntu",
+            "source": [
+              "S37",
+              "S38",
+              "S39"
+            ],
+            "more": [
+              {
+                "url": "https://docs.docker.com/engine/install/debian/",
+                "linkLabel": "Docker on Debian"
+              }
+            ]
+          }
+        }
+      },
+      "build-tools": {
+        "name": "cmake and a C and C++ compiler",
+        "platforms": {
+          "linux": {
+            "text": "The whisper.cpp build lines on Linux call cmake and a C and C++ compiler. Install both from your distribution first. The whisper.cpp README shows the build.",
+            "url": "https://github.com/ggml-org/whisper.cpp/blob/master/README.md",
+            "linkLabel": "whisper.cpp README",
+            "source": "S24"
+          }
+        }
+      },
+      "ollama": {
+        "name": "Ollama",
+        "platforms": {
+          "linux": {
+            "text": "The Linux line marked \"needs Ollama\" talks to a running Ollama. Install Ollama first, with its installer or the manual route on its Linux page. Step 2.2 quotes the installer.",
+            "url": "https://docs.ollama.com/linux",
+            "linkLabel": "docs.ollama.com",
+            "source": "S12"
+          }
+        }
+      }
+    }
+  },
+  "paths": {
+    "dmg": "DMG",
+    "cask": "Homebrew cask",
+    "apt": "apt package",
+    "appimage": "AppImage",
+    "jar": "server jar",
+    "zip": "CLI zip",
+    "source": "source build"
+  },
+  "platformNames": {
+    "mac": "macOS",
+    "linux": "Linux"
+  },
+  "sources": {
+    "S1": {
+      "url": "https://brew.sh",
+      "says": "The Homebrew install line, a script piped into bash, and what it does.",
+      "fetched": "2026-10-11"
+    },
+    "S4": {
+      "url": "https://formulae.brew.sh/formula/openjdk@21",
+      "says": "brew install openjdk@21, and the symlink that lets the system Java wrappers find it.",
+      "fetched": "2026-10-11"
+    },
+    "S5": {
+      "url": "https://formulae.brew.sh/api/formula/whisper.cpp.json",
+      "says": "The formula is whisper.cpp; whisper-cpp is its old name.",
+      "fetched": "2026-10-11"
+    },
+    "S6": {
+      "url": null,
+      "says": "brew info whisper-cpp resolves to whisper.cpp on a Mac (local run).",
+      "fetched": "2026-10-11"
+    },
+    "S7": {
+      "url": "https://formulae.brew.sh/formula/llama.cpp",
+      "says": "brew install llama.cpp installs llama-server.",
+      "fetched": "2026-10-11"
+    },
+    "S8": {
+      "url": "https://formulae.brew.sh/formula/ollama",
+      "says": "brew install ollama, and brew services start ollama runs the server.",
+      "fetched": "2026-10-11"
+    },
+    "S9": {
+      "url": "https://ollama.com/download",
+      "says": "macOS: download Ollama.dmg. Linux: the install script.",
+      "fetched": "2026-10-11"
+    },
+    "S10": {
+      "url": "https://docs.ollama.com/quickstart",
+      "says": "ollama pull and ollama run; the server is at http://localhost:11434.",
+      "fetched": "2026-10-11"
+    },
+    "S11": {
+      "url": "https://docs.ollama.com/macos",
+      "says": "Ollama needs macOS 14 or newer.",
+      "fetched": "2026-10-11"
+    },
+    "S12": {
+      "url": "https://docs.ollama.com/linux",
+      "says": "The Linux install script, the manual route, the systemd unit and ollama -v.",
+      "fetched": "2026-10-11"
+    },
+    "S13": {
+      "url": "https://docs.ollama.com/faq",
+      "says": "Ollama binds 127.0.0.1 port 11434 by default.",
+      "fetched": "2026-10-11"
+    },
+    "S14": {
+      "url": "https://ollama.com/library/qwen2.5/tags",
+      "says": "The tag qwen2.5:7b, 4.7 GB, 32K context.",
+      "fetched": "2026-10-11"
+    },
+    "S15": {
+      "url": "https://lmstudio.ai/docs/app/basics",
+      "says": "Install from lmstudio.ai/download; download models in the Discover tab.",
+      "fetched": "2026-10-11"
+    },
+    "S16": {
+      "url": "https://lmstudio.ai/docs/developer/core/server",
+      "says": "Start the server in the Developer tab or with lms server start.",
+      "fetched": "2026-10-11"
+    },
+    "S17": {
+      "url": "https://lmstudio.ai/docs/developer/openai-compat",
+      "says": "The examples use http://localhost:1234/v1 and serve GET /v1/models.",
+      "fetched": "2026-10-11"
+    },
+    "S18": {
+      "url": "https://lmstudio.ai/docs/cli",
+      "says": "lms ships with LM Studio; lms server start.",
+      "fetched": "2026-10-11"
+    },
+    "S19": {
+      "url": "https://lmstudio.ai/docs/system-requirements",
+      "says": "macOS: Apple silicon, macOS 14 or newer, 16 GB of memory or more recommended.",
+      "fetched": "2026-10-11"
+    },
+    "S20": {
+      "url": "https://formulae.brew.sh/api/cask/lm-studio.json",
+      "says": "brew install --cask lm-studio is a valid cask.",
+      "fetched": "2026-10-11"
+    },
+    "S21": {
+      "url": "https://raw.githubusercontent.com/ggml-org/llama.cpp/master/docs/install.md",
+      "says": "Homebrew on Mac and Linux: brew install llama.cpp.",
+      "fetched": "2026-10-11"
+    },
+    "S22": {
+      "url": "https://raw.githubusercontent.com/ggml-org/llama.cpp/master/tools/server/README.md",
+      "says": "llama-server listens on port 9931 by default on master; --port sets it.",
+      "fetched": "2026-10-11"
+    },
+    "S24": {
+      "url": "https://github.com/ggml-org/whisper.cpp/blob/master/README.md",
+      "says": "Get whisper.cpp with git clone https://github.com/ggml-org/whisper.cpp.git and cd whisper.cpp, then build it with cmake -B build and cmake --build build -j --config Release. The project is plain C and C++.",
+      "fetched": "2026-10-11"
+    },
+    "S28": {
+      "url": "https://huggingface.co/api/models/ggerganov/whisper.cpp/tree/main",
+      "says": "ggml-small.bin has 487,601,967 bytes.",
+      "fetched": "2026-10-11"
+    },
+    "S31": {
+      "url": "https://docs.searxng.org/dev/search_api.html",
+      "says": "The format must be switched on in search; an unset format answers 403.",
+      "fetched": "2026-10-11"
+    },
+    "S34": {
+      "url": "https://docs.docker.com/desktop/setup/install/mac-install/",
+      "says": "Docker Desktop: open the app and accept the agreement; at least 4 GB of memory.",
+      "fetched": "2026-10-11"
+    },
+    "S35": {
+      "url": "https://formulae.brew.sh/api/cask.json",
+      "says": "The cask docker-desktop needs macOS 14 or newer.",
+      "fetched": "2026-10-11"
+    },
+    "S36": {
+      "url": "https://docs.orbstack.dev/quick-start",
+      "says": "brew install orbstack; Docker and Compose work right away.",
+      "fetched": "2026-10-11"
+    },
+    "S37": {
+      "url": "https://docs.docker.com/engine/install/ubuntu/",
+      "says": "The engine packages, sudo docker run hello-world to verify, and a link to the post-installation steps for Linux. Without those steps, docker needs sudo.",
+      "fetched": "2026-10-11"
+    },
+    "S38": {
+      "url": "https://docs.docker.com/engine/install/ubuntu/#install-using-the-repository",
+      "says": "How to add Docker's apt repository on Ubuntu.",
+      "fetched": "2026-10-11"
+    },
+    "S39": {
+      "url": "https://docs.docker.com/engine/install/debian/",
+      "says": "Debian 12 and 13 use the same package list, and the page shows how to add Docker's apt repository on Debian.",
+      "fetched": "2026-10-11"
+    },
+    "S41": {
+      "url": "https://docs.astral.sh/uv/getting-started/installation/",
+      "says": "The uv installer for macOS and Linux, and brew install uv.",
+      "fetched": "2026-10-11"
+    },
+    "S42": {
+      "url": "https://formulae.brew.sh/api/formula/uv.json",
+      "says": "brew install uv.",
+      "fetched": "2026-10-11"
+    },
+    "S43": {
+      "url": "https://pypi.org/pypi/graphifyy/json",
+      "says": "uv tool install graphifyy, and uv tool update-shell when graphify is not found.",
+      "fetched": "2026-10-11"
+    },
+    "S48": {
+      "url": "https://git-scm.com/install/mac",
+      "says": "git on macOS: brew install git, or xcode-select --install for the git in Apple's Command Line Tools.",
+      "fetched": "2026-10-11"
+    },
+    "S49": {
+      "url": "https://git-scm.com/install/linux",
+      "says": "git on Debian and Ubuntu: apt-get install git.",
+      "fetched": "2026-10-11"
+    },
+    "S53": {
+      "url": "https://packages.debian.org/search?keywords=openjdk-21-jdk",
+      "says": "openjdk-21-jdk is in Debian 13 and not in Debian 12.",
+      "fetched": "2026-10-11"
+    },
+    "S54": {
+      "url": "https://packages.ubuntu.com/search?keywords=openjdk-21-jdk",
+      "says": "openjdk-21-jdk is in Ubuntu 22.04 and 24.04.",
+      "fetched": "2026-10-11"
+    },
+    "S55": {
+      "url": "https://adoptium.net/installation/linux/",
+      "says": "The Adoptium apt repository; its index lists temurin-21-jdk for Debian 12.",
+      "fetched": "2026-10-11"
+    },
+    "S56": {
+      "url": "https://formulae.brew.sh/api/formula/ffmpeg.json",
+      "says": "brew install ffmpeg.",
+      "fetched": "2026-10-11"
+    },
+    "S62": {
+      "url": "https://ollama.com/library/qwen3.5/tags",
+      "says": "The tag qwen3.5:27b-q4_K_M, 17 GB, 256K context.",
+      "fetched": "2026-10-11"
+    },
+    "S64": {
+      "url": "https://github.com/rhasspy/piper/releases",
+      "says": "The Piper archives for macOS arm64 and Linux x86_64 have 19,146,957 and 26,460,462 bytes.",
+      "fetched": "2026-10-11"
+    },
+    "S65": {
+      "url": "https://huggingface.co/api/models/rhasspy/piper-voices/tree/v1.0.0/en/en_US/lessac/medium",
+      "says": "en_US-lessac-medium.onnx has 63,201,294 bytes.",
+      "fetched": "2026-10-11"
+    },
+    "S66": {
+      "url": "https://ollama.com/download/Ollama.dmg",
+      "says": "Ollama.dmg has 206,944,401 bytes.",
+      "fetched": "2026-10-11"
+    },
+    "S67": {
+      "url": "https://desktop.docker.com/mac/main/arm64/Docker.dmg",
+      "says": "Docker.dmg for Apple silicon has 587,631,519 bytes.",
+      "fetched": "2026-10-11"
+    }
+  },
+  "levels": [
+    {
+      "id": 1,
+      "title": "run the app",
+      "goal": "The app opens and answers."
+    },
+    {
+      "id": 2,
+      "title": "a local model",
+      "goal": "One local route answers a prompt without a cloud key. One of the four steps is enough. With the DMG, the cask, the apt package or the AppImage, the first step needs no extra install."
+    },
+    {
+      "id": 3,
+      "title": "speech",
+      "goal": "The microphone button turns speech into text on this machine, or through a hosted key."
+    },
+    {
+      "id": 4,
+      "title": "web search",
+      "goal": "The web_search tool uses a private SearXNG instance that answers JSON, or a Tavily or Brave key."
+    },
+    {
+      "id": 5,
+      "title": "code graph",
+      "goal": "Build code graph works, and the browse_page tool finds a browser."
+    },
+    {
+      "id": 6,
+      "title": "playbooks",
+      "goal": "A playbook runs from start to end on the models it names."
+    },
+    {
+      "id": 7,
+      "title": "developer path",
+      "goal": "Your project folder is the workspace, and the playbook's checks can run its tests."
+    }
+  ],
+  "plates": {
+    "mode-intro": "The mode question on the first start.",
+    "local-chooser": "The model chooser of the built-in model.",
+    "provider-picker": "The provider picker with the local routes.",
+    "voice-notice": "The notice on the first press of the microphone button.",
+    "web-search-settings": "Settings, web search, with the Docker state.",
+    "codegraph-chip": "The Build code graph chip."
+  },
+  "steps": [
+    {
+      "id": "1.1",
+      "level": 1,
+      "title": "install the app",
+      "enables": "Installs the desktop app. The DMG, the Homebrew cask, the apt package and the AppImage bring their own Java runtime and their own llama-server.",
+      "applies": [
+        "dmg",
+        "cask",
+        "apt",
+        "appimage",
+        "jar",
+        "zip"
+      ],
+      "platforms": [
+        "mac",
+        "linux"
+      ],
+      "commands": {
+        "mac": [
+          {
+            "text": "brew install --cask spectroscope/tap/spectroscope",
+            "source": "P:README.md::spectroscope/tap/spectroscope",
+            "label": "Homebrew cask",
+            "needs": [
+              "homebrew"
+            ]
+          }
+        ],
+        "linux": [
+          {
+            "text": "curl -fsSL https://apt.spectroscope.dev/spectroscope.asc | sudo gpg --dearmor -o /usr/share/keyrings/spectroscope.gpg\necho \"deb [signed-by=/usr/share/keyrings/spectroscope.gpg] https://apt.spectroscope.dev stable main\" | sudo tee /etc/apt/sources.list.d/spectroscope.list\nsudo apt update && sudo apt install spectroscope",
+            "source": "P:README.md::apt.spectroscope.dev stable main",
+            "label": "apt, Debian 12 and Ubuntu 24.04, x86_64"
+          }
+        ]
+      },
+      "links": {
+        "mac": [
+          {
+            "label": "spectroscope-arm64.dmg",
+            "url": "https://github.com/spectroscope/spectroscope/releases/latest/download/spectroscope-arm64.dmg",
+            "source": "P:docs/RELEASE-PLAYBOOK.md::spectroscope-arm64.dmg"
+          }
+        ],
+        "linux": [
+          {
+            "label": "spectroscope-x86_64.AppImage",
+            "url": "https://github.com/spectroscope/spectroscope/releases/latest/download/spectroscope-x86_64.AppImage",
+            "source": "P:docs/RELEASE-PLAYBOOK.md::spectroscope-x86_64.AppImage"
+          }
+        ],
+        "all": [
+          {
+            "label": "spectro-server.jar",
+            "url": "https://github.com/spectroscope/spectroscope/releases/latest/download/spectro-server.jar",
+            "source": "P:docs/RELEASE-PLAYBOOK.md::spectro-server.jar"
+          },
+          {
+            "label": "spectro.zip (the CLI)",
+            "url": "https://github.com/spectroscope/spectroscope/releases/latest/download/spectro.zip",
+            "source": "P:docs/RELEASE-PLAYBOOK.md::spectro.zip"
+          }
+        ]
+      },
+      "notes": {
+        "mac": [
+          {
+            "text": "Apple silicon only. There is no Intel build.",
+            "source": "P:README.md::Apple silicon only"
+          }
+        ],
+        "all": [
+          {
+            "text": "The server jar and the CLI zip need a JDK 21 or newer. Step 1.2 covers it.",
+            "source": "P:README.md::run them on a JDK 21"
+          }
+        ]
+      },
+      "check": {
+        "all": {
+          "kind": "sentence",
+          "text": "The app opens its window.",
+          "source": "P:spectro-server/src/main/java/dev/spectroscope/server/session/SessionsController.java::@GetMapping(\"/api/health\")"
+        }
+      },
+      "probe": {
+        "route": "/api/health",
+        "field": "HTTP 200"
+      },
+      "script": "generate",
+      "shots": [],
+      "size": []
+    },
+    {
+      "id": "1.2",
+      "level": 1,
+      "title": "a JDK",
+      "enables": "Java 21 or newer, for the server jar, the CLI zip and a build from source.",
+      "applies": [
+        "jar",
+        "zip",
+        "source"
+      ],
+      "notNeeded": {
+        "text": "They bring their own Java runtime.",
+        "source": "P:README.md::brings its own Java runtime"
+      },
+      "platforms": [
+        "mac",
+        "linux"
+      ],
+      "commands": {
+        "mac": [
+          {
+            "text": "brew install openjdk@21",
+            "source": "S4",
+            "needs": [
+              "homebrew"
+            ]
+          },
+          {
+            "text": "sudo ln -sfn $HOMEBREW_PREFIX/opt/openjdk@21/libexec/openjdk.jdk /Library/Java/JavaVirtualMachines/openjdk-21.jdk",
+            "source": "S4",
+            "label": "so the system Java wrappers find it"
+          }
+        ],
+        "linux": [
+          {
+            "text": "sudo apt install openjdk-21-jdk",
+            "source": [
+              "S53",
+              "S54"
+            ],
+            "label": "Ubuntu 22.04 and 24.04, Debian 13"
+          }
+        ]
+      },
+      "notes": {
+        "linux": [
+          {
+            "text": "Debian 12 has no openjdk-21-jdk. Add the Adoptium apt repository as its installation page shows, then install temurin-21-jdk.",
+            "source": [
+              "S53",
+              "S55"
+            ]
+          }
+        ]
+      },
+      "check": {
+        "all": {
+          "kind": "command",
+          "text": "spectro doctor",
+          "source": "P:spectro-cli/src/main/java/dev/spectroscope/cli/DoctorCommand.java::21+ required",
+          "expect": "From the CLI zip: the first check names the Java version and passes at 21 or newer."
+        }
+      },
+      "probe": null,
+      "script": "generate",
+      "shots": [],
+      "size": []
+    },
+    {
+      "id": "1.3",
+      "level": 1,
+      "title": "choose a mode",
+      "enables": "The first start asks which mode to open. learn is the full app, light is the chat with its workspace, sessions and skills.",
+      "applies": [
+        "dmg",
+        "cask",
+        "apt",
+        "appimage",
+        "jar",
+        "zip",
+        "source"
+      ],
+      "platforms": [
+        "mac",
+        "linux"
+      ],
+      "commands": {},
+      "check": {
+        "all": {
+          "kind": "sentence",
+          "text": "The question does not come back on the next start.",
+          "source": "P:spectro-web/src/state/firstStart.ts"
+        }
+      },
+      "probe": null,
+      "script": null,
+      "shots": [
+        "mode-intro"
+      ],
+      "size": []
+    },
+    {
+      "id": "2.1",
+      "level": 2,
+      "title": "the built-in model",
+      "enables": "A model that runs inside the app with nothing else installed. The kits bring the llama-server engine it runs on.",
+      "applies": [
+        "dmg",
+        "cask",
+        "apt",
+        "appimage",
+        "jar",
+        "zip",
+        "source"
+      ],
+      "platforms": [
+        "mac",
+        "linux"
+      ],
+      "commands": {
+        "mac": [
+          {
+            "text": "brew install llama.cpp",
+            "source": "S7",
+            "label": "only for the server jar, the CLI zip and a source build: installs the engine",
+            "needs": [
+              "homebrew"
+            ]
+          }
+        ]
+      },
+      "notes": {
+        "all": [
+          {
+            "text": "In the app, open the model chooser and download a model. It lands in ~/.spectro/models.",
+            "source": "P:spectro-server/src/main/java/dev/spectroscope/server/localmodel/LocalModelController.java::\"/api/local-model/download\""
+          }
+        ],
+        "linux": [
+          {
+            "text": "With the server jar or the CLI zip, you supply llama-server yourself. Step 2.4 shows where to get it.",
+            "source": "P:README.md::supply yourself"
+          }
+        ]
+      },
+      "check": {
+        "all": {
+          "kind": "sentence",
+          "text": "The model chooser shows the model as downloaded.",
+          "source": "P:spectro-server/src/main/java/dev/spectroscope/server/localmodel/LocalModelController.java::\"/api/local-model/catalog\""
+        }
+      },
+      "probe": {
+        "route": "/api/local-model/catalog",
+        "field": "download state per model"
+      },
+      "script": "generate",
+      "shots": [
+        "local-chooser"
+      ],
+      "size": [
+        {
+          "text": "qwen3-4b, the default built-in model: 2,497,280,256 bytes.",
+          "date": "2026-10-11",
+          "method": "sizeBytes in the product's model catalogue",
+          "source": "P:spectro-core/src/main/resources/local/models.json::\"sizeBytes\": 2497280256",
+          "platforms": [
+            "mac",
+            "linux"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "2.2",
+      "level": 2,
+      "title": "Ollama",
+      "enables": "A local model server. spectroscope connects to it at http://localhost:11434.",
+      "address": {
+        "provider": "ollama",
+        "url": "http://localhost:11434",
+        "source": "S13"
+      },
+      "applies": [
+        "dmg",
+        "cask",
+        "apt",
+        "appimage",
+        "jar",
+        "zip",
+        "source"
+      ],
+      "platforms": [
+        "mac",
+        "linux"
+      ],
+      "commands": {
+        "mac": [
+          {
+            "text": "brew install ollama",
+            "source": "S8",
+            "label": "with Homebrew",
+            "needs": [
+              "homebrew"
+            ]
+          },
+          {
+            "text": "brew services start ollama",
+            "source": "S8",
+            "needs": [
+              "homebrew"
+            ]
+          },
+          {
+            "text": "ollama pull qwen2.5:7b",
+            "source": [
+              "S10",
+              "S14"
+            ],
+            "label": "the first model"
+          }
+        ],
+        "linux": [
+          {
+            "text": "ollama pull qwen2.5:7b",
+            "source": [
+              "S10",
+              "S14"
+            ],
+            "label": "the first model, once Ollama runs",
+            "needs": [
+              "ollama"
+            ]
+          }
+        ]
+      },
+      "vendor": {
+        "linux": [
+          {
+            "text": "curl -fsSL https://ollama.com/install.sh | sh",
+            "source": "S12",
+            "url": "https://docs.ollama.com/linux",
+            "says": "This is Ollama's own installer for Linux. It downloads a script and runs it in your shell. Read the script first. The same page shows a manual route that unpacks the program without a script."
+          }
+        ]
+      },
+      "links": {
+        "mac": [
+          {
+            "label": "Ollama.dmg from ollama.com, the app route",
+            "url": "https://ollama.com/download",
+            "source": "S9"
+          }
+        ]
+      },
+      "notes": {
+        "mac": [
+          {
+            "text": "The Ollama app needs macOS 14 or newer.",
+            "source": "S11"
+          }
+        ]
+      },
+      "check": {
+        "all": {
+          "kind": "command",
+          "text": "ollama -v",
+          "source": "S12",
+          "expect": "Prints the installed version."
+        }
+      },
+      "probe": {
+        "route": "/api/providers",
+        "field": "ollama answers and lists a model"
+      },
+      "script": "generate",
+      "shots": [
+        "provider-picker"
+      ],
+      "size": [
+        {
+          "text": "Ollama.dmg: 206,944,401 bytes.",
+          "date": "2026-10-11",
+          "method": "content-length of a HEAD request",
+          "source": "S66",
+          "platforms": [
+            "mac"
+          ]
+        },
+        {
+          "text": "qwen2.5:7b: 4.7 GB, 32K context.",
+          "date": "2026-10-11",
+          "method": "read on the Ollama library page",
+          "source": "S14",
+          "platforms": [
+            "mac",
+            "linux"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "2.3",
+      "level": 2,
+      "title": "LM Studio",
+      "enables": "A desktop app with a local model server. spectroscope connects to it at http://localhost:1234.",
+      "address": {
+        "provider": "lmstudio",
+        "url": "http://localhost:1234",
+        "source": "S17"
+      },
+      "applies": [
+        "dmg",
+        "cask",
+        "apt",
+        "appimage",
+        "jar",
+        "zip",
+        "source"
+      ],
+      "platforms": [
+        "mac"
+      ],
+      "commands": {
+        "mac": [
+          {
+            "text": "brew install --cask lm-studio",
+            "source": "S20",
+            "label": "with Homebrew",
+            "needs": [
+              "homebrew"
+            ]
+          },
+          {
+            "text": "lms server start",
+            "source": [
+              "S16",
+              "S18"
+            ],
+            "label": "after you have downloaded a model in the Discover tab",
+            "script": false
+          }
+        ]
+      },
+      "links": {
+        "mac": [
+          {
+            "label": "LM Studio from lmstudio.ai",
+            "url": "https://lmstudio.ai/download",
+            "source": "S15"
+          }
+        ]
+      },
+      "notes": {
+        "mac": [
+          {
+            "text": "Apple silicon, macOS 14 or newer, 16 GB of memory or more recommended.",
+            "source": "S19"
+          },
+          {
+            "text": "You can also start the server with the switch in the Developer tab.",
+            "source": "S16"
+          }
+        ]
+      },
+      "check": {
+        "mac": {
+          "kind": "command",
+          "text": "curl http://localhost:1234/v1/models",
+          "source": "S17",
+          "expect": "Answers with JSON once the server runs."
+        }
+      },
+      "probe": {
+        "route": "/api/providers",
+        "field": "lmstudio answers"
+      },
+      "script": "generate",
+      "shots": [],
+      "size": []
+    },
+    {
+      "id": "2.4",
+      "level": 2,
+      "title": "llama.cpp server",
+      "enables": "Runs a GGUF model file you choose. spectroscope connects to it at http://localhost:8080.",
+      "address": {
+        "provider": "llamacpp",
+        "url": "http://localhost:8080",
+        "source": "P:spectro-core/src/main/java/dev/spectroscope/core/config/SpectroConfig.java::case \"llamacpp\" -> \"http://localhost:8080\""
+      },
+      "applies": [
+        "dmg",
+        "cask",
+        "apt",
+        "appimage",
+        "jar",
+        "zip",
+        "source"
+      ],
+      "platforms": [
+        "mac",
+        "linux"
+      ],
+      "commands": {
+        "mac": [
+          {
+            "text": "brew install llama.cpp",
+            "source": [
+              "S7",
+              "S21"
+            ],
+            "needs": [
+              "homebrew"
+            ]
+          },
+          {
+            "text": "llama-server -m model.gguf --port 8080",
+            "source": "S22",
+            "label": "model.gguf stands for your model file",
+            "script": false
+          }
+        ],
+        "linux": [
+          {
+            "text": "llama-server -m model.gguf --port 8080",
+            "source": "S22",
+            "label": "model.gguf stands for your model file",
+            "script": false
+          }
+        ]
+      },
+      "notes": {
+        "all": [
+          {
+            "text": "Keep --port 8080. The master branch of llama.cpp listens on 9931 when no port is given; spectroscope looks on 8080.",
+            "source": [
+              "S22",
+              "P:spectro-core/src/main/java/dev/spectroscope/core/config/SpectroConfig.java::case \"llamacpp\" -> \"http://localhost:8080\""
+            ]
+          }
+        ],
+        "linux": [
+          {
+            "text": "On Linux, the install page of llama.cpp lists the ways to get llama-server.",
+            "source": "S21"
+          }
+        ]
+      },
+      "check": {
+        "all": {
+          "kind": "command",
+          "text": "curl http://localhost:8080/health",
+          "source": "P:spectro-cli/src/main/java/dev/spectroscope/cli/DoctorCommand.java::case LLAMACPP ->",
+          "expect": "Answers once the model is loaded."
+        }
+      },
+      "probe": {
+        "route": "/api/providers",
+        "field": "llamacpp answers"
+      },
+      "script": "generate",
+      "shots": [],
+      "size": []
+    },
+    {
+      "id": "3.1",
+      "level": 3,
+      "title": "microphone access",
+      "enables": "macOS lets the app use the microphone.",
+      "page": false,
+      "pageWhy": "No verified check yet: the microphone entitlement waits on card 457.",
+      "applies": [
+        "dmg",
+        "cask"
+      ],
+      "platforms": [
+        "mac"
+      ],
+      "commands": {},
+      "check": {
+        "mac": {
+          "kind": "none",
+          "text": "Not checkable from the app."
+        }
+      },
+      "probe": null,
+      "script": null,
+      "shots": [],
+      "size": []
+    },
+    {
+      "id": "3.2",
+      "level": 3,
+      "title": "whisper-cli",
+      "enables": "Turns the microphone recording into text on this machine.",
+      "applies": [
+        "dmg",
+        "cask",
+        "apt",
+        "appimage",
+        "jar",
+        "zip",
+        "source"
+      ],
+      "platforms": [
+        "mac",
+        "linux"
+      ],
+      "commands": {
+        "mac": [
+          {
+            "text": "brew install whisper-cpp",
+            "source": [
+              "S5",
+              "S6",
+              "P:spectro-server/src/main/java/dev/spectroscope/server/llm/SttController.java::\"brew install whisper-cpp\""
+            ],
+            "needs": [
+              "homebrew"
+            ]
+          }
+        ],
+        "linux": [
+          {
+            "text": "git clone https://github.com/ggml-org/whisper.cpp.git",
+            "source": "S24",
+            "needs": [
+              "git"
+            ]
+          },
+          {
+            "text": "cd whisper.cpp",
+            "source": "S24"
+          },
+          {
+            "text": "cmake -B build",
+            "source": "S24",
+            "needs": [
+              "build-tools"
+            ]
+          },
+          {
+            "text": "cmake --build build -j --config Release",
+            "source": "S24",
+            "needs": [
+              "build-tools"
+            ]
+          }
+        ]
+      },
+      "notes": {
+        "mac": [
+          {
+            "text": "whisper-cpp is the old name of the Homebrew formula whisper.cpp. Homebrew resolves it.",
+            "source": "S5"
+          }
+        ],
+        "linux": [
+          {
+            "text": "Then put build/bin/whisper-cli on the PATH.",
+            "source": "P:spectro-server/src/main/java/dev/spectroscope/server/llm/SttController.java::build/bin/whisper-cli on the PATH"
+          }
+        ]
+      },
+      "check": {
+        "mac": {
+          "kind": "command",
+          "text": "brew info whisper-cpp",
+          "source": "S6",
+          "expect": "Shows whisper.cpp as installed."
+        },
+        "linux": {
+          "kind": "sentence",
+          "text": "The app's speech status lists whisper-cli as found.",
+          "source": "P:spectro-server/src/main/java/dev/spectroscope/server/llm/SttController.java::@GetMapping(\"/api/stt/status\")"
+        }
+      },
+      "probe": {
+        "route": "/api/stt/status",
+        "field": "binaries[].found"
+      },
+      "script": "generate",
+      "shots": [
+        "voice-notice"
+      ],
+      "size": []
+    },
+    {
+      "id": "3.3",
+      "level": 3,
+      "title": "speech model",
+      "enables": "The model file whisper-cli reads: ggml-small.bin in ~/.spectro/models.",
+      "applies": [
+        "dmg",
+        "cask",
+        "apt",
+        "appimage",
+        "jar",
+        "zip",
+        "source"
+      ],
+      "platforms": [
+        "mac",
+        "linux"
+      ],
+      "commands": {
+        "mac": [
+          {
+            "text": "bash setup-stt.sh",
+            "source": "P:scripts/setup-stt.sh",
+            "label": "in the folder you downloaded the script to",
+            "needs": [
+              "homebrew"
+            ]
+          }
+        ],
+        "linux": [
+          {
+            "text": "bash setup-stt.sh",
+            "source": "P:scripts/setup-stt.sh",
+            "label": "in the folder you downloaded the script to"
+          }
+        ]
+      },
+      "notes": {
+        "all": [
+          {
+            "text": "The script downloads the model and checks its sha256. The app can also download this file from Settings, and it checks the same sha256.",
+            "source": "P:scripts/setup-stt.sh::sha256_of"
+          }
+        ],
+        "mac": [
+          {
+            "text": "On macOS the script also installs whisper-cpp with Homebrew when it is missing.",
+            "source": "P:scripts/setup-stt.sh::command -v whisper-cli"
+          }
+        ]
+      },
+      "check": {
+        "all": {
+          "kind": "command",
+          "text": "ls -l ~/.spectro/models/ggml-small.bin",
+          "source": [
+            "P:spectro-server/src/main/java/dev/spectroscope/server/llm/SttController.java::\".spectro\", \"models\"",
+            "S28"
+          ],
+          "expect": "The file has 487,601,967 bytes."
+        }
+      },
+      "probe": {
+        "route": "/api/stt/status",
+        "field": "model.present"
+      },
+      "script": {
+        "copy": [
+          {
+            "from": "scripts/setup-stt.sh",
+            "to": "setup-stt.sh"
+          }
+        ]
+      },
+      "shots": [],
+      "size": [
+        {
+          "text": "ggml-small.bin: 487,601,967 bytes.",
+          "date": "2026-10-11",
+          "method": "Hugging Face model tree API",
+          "source": "S28",
+          "platforms": [
+            "mac",
+            "linux"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "3.4",
+      "level": 3,
+      "title": "hosted speech",
+      "enables": "Sends speech to a hosted service instead of a local model, when a key is present.",
+      "applies": [
+        "dmg",
+        "cask",
+        "apt",
+        "appimage",
+        "jar",
+        "zip",
+        "source"
+      ],
+      "platforms": [
+        "mac",
+        "linux"
+      ],
+      "commands": {},
+      "notes": {
+        "all": [
+          {
+            "text": "Set OPENAI_API_KEY in the environment, or type the key in Settings. This page never shows a key.",
+            "source": "P:spectro-server/src/main/java/dev/spectroscope/server/llm/HostedTranscriber.java::KEY_ENV = \"OPENAI_API_KEY\""
+          }
+        ]
+      },
+      "check": {
+        "all": {
+          "kind": "sentence",
+          "text": "The app's speech status reports a hosted key as present.",
+          "source": "P:spectro-server/src/main/java/dev/spectroscope/server/llm/SttController.java::@GetMapping(\"/api/stt/status\")"
+        }
+      },
+      "probe": {
+        "route": "/api/stt/status",
+        "field": "hosted.keyPresent"
+      },
+      "script": null,
+      "shots": [],
+      "size": []
+    },
+    {
+      "id": "3.5",
+      "level": 3,
+      "title": "CLI voice",
+      "enables": "The CLI's /voice records with ffmpeg, and --speak reads answers aloud with Piper. The app does not need either.",
+      "applies": [
+        "zip",
+        "source"
+      ],
+      "platforms": [
+        "mac",
+        "linux"
+      ],
+      "commands": {
+        "mac": [
+          {
+            "text": "brew install ffmpeg",
+            "source": "S56",
+            "needs": [
+              "homebrew"
+            ]
+          },
+          {
+            "text": "bash setup-tts.sh",
+            "source": "P:scripts/setup-tts.sh",
+            "label": "Piper and its voice, in the folder you downloaded the script to"
+          }
+        ],
+        "linux": [
+          {
+            "text": "bash setup-tts.sh",
+            "source": "P:scripts/setup-tts.sh",
+            "label": "Piper and its voice, in the folder you downloaded the script to"
+          }
+        ]
+      },
+      "notes": {
+        "linux": [
+          {
+            "text": "Playback uses aplay, or ffplay when aplay is missing.",
+            "source": "P:spectro-cli/src/main/java/dev/spectroscope/cli/speech/PiperSpeechEngine.java::else aplay, else ffplay"
+          }
+        ]
+      },
+      "check": {
+        "all": {
+          "kind": "command",
+          "text": "ls ~/.spectro/models/piper/piper ~/.spectro/models/en_US-lessac-medium.onnx",
+          "source": "P:spectro-cli/src/main/java/dev/spectroscope/cli/DoctorCommand.java::resolve(\"piper\")",
+          "expect": "Both files are listed."
+        }
+      },
+      "probe": null,
+      "script": {
+        "copy": [
+          {
+            "from": "scripts/setup-tts.sh",
+            "to": "setup-tts.sh"
+          }
+        ]
+      },
+      "shots": [],
+      "size": [
+        {
+          "text": "Piper for macOS on Apple silicon: 19,146,957 bytes.",
+          "date": "2026-10-11",
+          "method": "content-length of a HEAD request",
+          "source": "S64",
+          "platforms": [
+            "mac"
+          ]
+        },
+        {
+          "text": "Piper for Linux x86_64: 26,460,462 bytes.",
+          "date": "2026-10-11",
+          "method": "content-length of a HEAD request",
+          "source": "S64",
+          "platforms": [
+            "linux"
+          ]
+        },
+        {
+          "text": "The voice en_US-lessac-medium: 63,201,294 bytes.",
+          "date": "2026-10-11",
+          "method": "Hugging Face model tree API",
+          "source": "S65",
+          "platforms": [
+            "mac",
+            "linux"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "4.1",
+      "level": 4,
+      "title": "Docker",
+      "enables": "Runs the SearXNG container of the next step.",
+      "applies": [
+        "dmg",
+        "cask",
+        "apt",
+        "appimage",
+        "jar",
+        "zip",
+        "source"
+      ],
+      "platforms": [
+        "mac",
+        "linux"
+      ],
+      "commands": {
+        "mac": [
+          {
+            "text": "brew install --cask docker-desktop",
+            "source": "S35",
+            "label": "Docker Desktop with Homebrew",
+            "needs": [
+              "homebrew"
+            ]
+          },
+          {
+            "text": "brew install orbstack",
+            "source": "S36",
+            "label": "or OrbStack, which also runs Docker",
+            "script": false,
+            "needs": [
+              "homebrew"
+            ]
+          }
+        ],
+        "linux": [
+          {
+            "text": "sudo apt install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin",
+            "source": [
+              "S37",
+              "S39"
+            ],
+            "label": "after you have added Docker's apt repository",
+            "needs": [
+              "docker-repo"
+            ]
+          }
+        ]
+      },
+      "links": {
+        "mac": [
+          {
+            "label": "Docker.dmg for Apple silicon",
+            "url": "https://desktop.docker.com/mac/main/arm64/Docker.dmg",
+            "source": "S67"
+          }
+        ],
+        "linux": [
+          {
+            "label": "Docker's apt repository on Ubuntu",
+            "url": "https://docs.docker.com/engine/install/ubuntu/#install-using-the-repository",
+            "source": "S38"
+          },
+          {
+            "label": "Docker Engine on Debian",
+            "url": "https://docs.docker.com/engine/install/debian/",
+            "source": "S39"
+          }
+        ]
+      },
+      "notes": {
+        "mac": [
+          {
+            "text": "Open Docker Desktop once and accept its agreement. It needs macOS 14 or newer and at least 4 GB of memory.",
+            "source": [
+              "S34",
+              "S35"
+            ]
+          }
+        ],
+        "linux": [
+          {
+            "text": "On Linux, docker needs sudo until you have done Docker's post-installation steps. Docker's install page links them.",
+            "source": "S37"
+          }
+        ]
+      },
+      "check": {
+        "mac": {
+          "kind": "sentence",
+          "text": "The app's Docker status reads ready.",
+          "source": "P:spectro-server/src/main/java/dev/spectroscope/server/observability/DockerStatusController.java::\"/api/docker/status\""
+        },
+        "linux": {
+          "kind": "command",
+          "text": "sudo docker run hello-world",
+          "source": "S37",
+          "expect": "Runs the hello-world image."
+        }
+      },
+      "probe": {
+        "route": "/api/docker/status",
+        "field": "docker is ready"
+      },
+      "script": "generate",
+      "shots": [
+        "web-search-settings"
+      ],
+      "size": [
+        {
+          "text": "Docker.dmg for Apple silicon: 587,631,519 bytes.",
+          "date": "2026-10-11",
+          "method": "content-length of a HEAD request",
+          "source": "S67",
+          "platforms": [
+            "mac"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "4.2",
+      "level": 4,
+      "title": "SearXNG",
+      "enables": "A private search engine in Docker that answers JSON. The script writes its address to ~/.spectro/.env.",
+      "applies": [
+        "dmg",
+        "cask",
+        "apt",
+        "appimage",
+        "jar",
+        "zip",
+        "source"
+      ],
+      "platforms": [
+        "mac",
+        "linux"
+      ],
+      "commands": {
+        "mac": [
+          {
+            "text": "mkdir -p ~/spectro-searxng && cd ~/spectro-searxng",
+            "source": "P:spectro-web/src/components/webSearchSetup.ts::SEARXNG_FOLDER = \"~/spectro-searxng\"",
+            "label": "make a folder for the script and the files it writes"
+          },
+          {
+            "text": "bash install-searxng.sh",
+            "source": "P:samples/09-searxng/install.sh",
+            "label": "save install-searxng.sh into that folder, read it, then run this there"
+          }
+        ],
+        "linux": [
+          {
+            "text": "mkdir -p ~/spectro-searxng && cd ~/spectro-searxng",
+            "source": "P:spectro-web/src/components/webSearchSetup.ts::SEARXNG_FOLDER = \"~/spectro-searxng\"",
+            "label": "make a folder for the script and the files it writes"
+          },
+          {
+            "text": "bash install-searxng.sh",
+            "source": "P:samples/09-searxng/install.sh",
+            "label": "save install-searxng.sh into that folder, read it, then run this there"
+          }
+        ]
+      },
+      "notes": {
+        "all": [
+          {
+            "text": "The script needs openssl. It writes settings.yml with JSON switched on, starts one container, waits for a JSON answer, and only then writes SPECTRO_SEARXNG_URL.",
+            "source": "P:samples/09-searxng/install.sh::It does exactly three things"
+          },
+          {
+            "text": "install-searxng.sh runs on its own. If there is no docker-compose.yml in its folder, it writes one with the same content as the docker-compose.yml on this page. The app offers the same script in Settings, under web search.",
+            "source": [
+              "P:samples/09-searxng/install.sh::none was beside this script",
+              "P:spectro-web/src/components/webSearchSetup.ts::SEARXNG_SCRIPT_ROUTE"
+            ]
+          }
+        ],
+        "linux": [
+          {
+            "text": "install-searxng.sh calls docker without sudo. On Linux, do Docker's post-installation steps from step 4.1 first, or the script stops at a permission error.",
+            "source": [
+              "S37",
+              "P:samples/09-searxng/install.sh::--project-directory \"$state_dir\" up -d"
+            ]
+          }
+        ]
+      },
+      "check": {
+        "all": {
+          "kind": "command",
+          "text": "curl 'http://localhost:8888/search?q=test&format=json'",
+          "source": [
+            "S31",
+            "P:samples/09-searxng/install.sh::SEARXNG_PORT:-8888"
+          ],
+          "expect": "Answers JSON. A 403 means json is missing under search.formats; web_search then reads the HTML page and still answers."
+        }
+      },
+      "probe": {
+        "route": "/api/config",
+        "field": "webSearch"
+      },
+      "script": {
+        "copy": [
+          {
+            "from": "samples/09-searxng/install.sh",
+            "to": "install-searxng.sh"
+          },
+          {
+            "from": "samples/09-searxng/docker-compose.yml",
+            "to": "docker-compose.yml"
+          }
+        ]
+      },
+      "shots": [],
+      "size": []
+    },
+    {
+      "id": "4.3",
+      "level": 4,
+      "title": "confirm the tier",
+      "enables": "Shows which search route web_search takes.",
+      "applies": [
+        "dmg",
+        "cask",
+        "apt",
+        "appimage",
+        "jar",
+        "zip",
+        "source"
+      ],
+      "platforms": [
+        "mac",
+        "linux"
+      ],
+      "commands": {},
+      "check": {
+        "all": {
+          "kind": "command",
+          "text": "spectro doctor",
+          "source": [
+            "P:spectro-cli/src/main/java/dev/spectroscope/cli/DoctorCommand.java::\"web search: \"",
+            "P:spectro-core/src/main/java/dev/spectroscope/core/web/WebSearchTiers.java::case SEARXNG ->"
+          ],
+          "expect": "The web search line starts with searxng and names the address."
+        }
+      },
+      "probe": {
+        "route": "/api/config",
+        "field": "webSearch"
+      },
+      "script": null,
+      "shots": [],
+      "size": []
+    },
+    {
+      "id": "4.4",
+      "level": 4,
+      "title": "Tavily or Brave",
+      "enables": "A hosted search key instead of SearXNG.",
+      "applies": [
+        "dmg",
+        "cask",
+        "apt",
+        "appimage",
+        "jar",
+        "zip",
+        "source"
+      ],
+      "platforms": [
+        "mac",
+        "linux"
+      ],
+      "commands": {},
+      "notes": {
+        "all": [
+          {
+            "text": "Create a key with Tavily or Brave and type it in Settings. The variables are TAVILY_API_KEY and BRAVE_API_KEY. With both keys, web_search uses Tavily. A saved SearXNG address comes before both.",
+            "source": "P:spectro-core/src/main/java/dev/spectroscope/core/web/WebSearchTiers.java::TAVILY_KEY_ENV = \"TAVILY_API_KEY\""
+          }
+        ]
+      },
+      "check": {
+        "all": {
+          "kind": "command",
+          "text": "spectro doctor",
+          "source": "P:spectro-cli/src/main/java/dev/spectroscope/cli/DoctorCommand.java::\"web search: \"",
+          "expect": "The web search line names the Tavily or the Brave Search API."
+        }
+      },
+      "probe": null,
+      "script": null,
+      "shots": [],
+      "size": []
+    },
+    {
+      "id": "5.1",
+      "level": 5,
+      "title": "uv",
+      "enables": "Installs graphify in the next step.",
+      "applies": [
+        "dmg",
+        "cask",
+        "apt",
+        "appimage",
+        "jar",
+        "zip",
+        "source"
+      ],
+      "platforms": [
+        "mac",
+        "linux"
+      ],
+      "commands": {
+        "mac": [
+          {
+            "text": "brew install uv",
+            "source": [
+              "S41",
+              "S42"
+            ],
+            "needs": [
+              "homebrew"
+            ]
+          }
+        ]
+      },
+      "vendor": {
+        "mac": [
+          {
+            "text": "curl -LsSf https://astral.sh/uv/install.sh | sh",
+            "source": "S41",
+            "url": "https://docs.astral.sh/uv/getting-started/installation/",
+            "says": "This is uv's own installer. It downloads a script and runs it in your shell. Read the script first."
+          }
+        ],
+        "linux": [
+          {
+            "text": "curl -LsSf https://astral.sh/uv/install.sh | sh",
+            "source": "S41",
+            "url": "https://docs.astral.sh/uv/getting-started/installation/",
+            "says": "This is uv's own installer. It downloads a script and runs it in your shell. Read the script first. The same page lists other routes."
+          }
+        ]
+      },
+      "check": {
+        "all": {
+          "kind": "sentence",
+          "text": "The uv command of the next step runs.",
+          "source": "S41"
+        }
+      },
+      "probe": null,
+      "script": "generate",
+      "shots": [],
+      "size": []
+    },
+    {
+      "id": "5.2",
+      "level": 5,
+      "title": "graphify",
+      "enables": "Makes the Build code graph button work. The package is graphifyy with two y; the command it installs is graphify.",
+      "applies": [
+        "dmg",
+        "cask",
+        "apt",
+        "appimage",
+        "jar",
+        "zip",
+        "source"
+      ],
+      "platforms": [
+        "mac",
+        "linux"
+      ],
+      "commands": {
+        "mac": [
+          {
+            "text": "uv tool install graphifyy",
+            "source": [
+              "S43",
+              "P:spectro-server/src/main/java/dev/spectroscope/server/codegraph/GraphifyCommand.java::INSTALL_LINE"
+            ]
+          },
+          {
+            "text": "uv tool update-shell",
+            "source": "S43",
+            "label": "only when graphify is not found afterwards",
+            "script": false
+          }
+        ],
+        "linux": [
+          {
+            "text": "uv tool install graphifyy",
+            "source": [
+              "S43",
+              "P:spectro-server/src/main/java/dev/spectroscope/server/codegraph/GraphifyCommand.java::INSTALL_LINE"
+            ]
+          },
+          {
+            "text": "uv tool update-shell",
+            "source": "S43",
+            "label": "only when graphify is not found afterwards",
+            "script": false
+          }
+        ]
+      },
+      "check": {
+        "all": {
+          "kind": "command",
+          "text": "spectro doctor",
+          "source": "P:spectro-cli/src/main/java/dev/spectroscope/cli/DoctorCommand.java::code graph: graphify at",
+          "expect": "The code graph line names the graphify path."
+        }
+      },
+      "probe": {
+        "route": "/api/codegraph/status",
+        "field": "installed"
+      },
+      "script": "generate",
+      "shots": [
+        "codegraph-chip"
+      ],
+      "size": []
+    },
+    {
+      "id": "5.3",
+      "level": 5,
+      "title": "a browser",
+      "enables": "The browse_page tool reads web pages through Chrome or another Chromium browser.",
+      "applies": [
+        "dmg",
+        "cask",
+        "apt",
+        "appimage",
+        "jar",
+        "zip",
+        "source"
+      ],
+      "platforms": [
+        "mac",
+        "linux"
+      ],
+      "commands": {},
+      "notes": {
+        "mac": [
+          {
+            "text": "Install Google Chrome. Chromium, Microsoft Edge or Brave in /Applications also count, and SPECTRO_CHROME can point at another binary.",
+            "source": "P:spectro-core/src/main/java/dev/spectroscope/core/web/BrowsePageTool.java::Google Chrome.app"
+          }
+        ],
+        "linux": [
+          {
+            "text": "Install Chrome or Chromium. The tool looks for google-chrome, google-chrome-stable, chromium, chromium-browser or chrome on the PATH, and SPECTRO_CHROME can point at another binary.",
+            "source": "P:spectro-core/src/main/java/dev/spectroscope/core/web/BrowsePageTool.java::PATH_BINARIES"
+          }
+        ]
+      },
+      "check": {
+        "all": {
+          "kind": "command",
+          "text": "spectro doctor",
+          "source": "P:spectro-cli/src/main/java/dev/spectroscope/cli/DoctorCommand.java::browse_page: chrome at",
+          "expect": "The browse_page line names the browser it found."
+        }
+      },
+      "probe": null,
+      "script": null,
+      "shots": [],
+      "size": []
+    },
+    {
+      "id": "6.1",
+      "level": 6,
+      "title": "the spectro playbook",
+      "enables": "The playbook that ships with the app, with its skills and templates. You copy it in the app; there is nothing to download.",
+      "applies": [
+        "dmg",
+        "cask",
+        "apt",
+        "appimage",
+        "jar",
+        "zip",
+        "source"
+      ],
+      "platforms": [
+        "mac",
+        "linux"
+      ],
+      "commands": {},
+      "check": {
+        "all": {
+          "kind": "sentence",
+          "text": "The playbook list shows spectro.",
+          "source": "P:spectro-server/src/main/java/dev/spectroscope/server/playbooks/PlaybookController.java::@GetMapping(\"/api/playbooks\")"
+        }
+      },
+      "probe": {
+        "route": "/api/playbooks",
+        "field": "the spectro playbook"
+      },
+      "script": null,
+      "shots": [],
+      "size": []
+    },
+    {
+      "id": "6.2",
+      "level": 6,
+      "title": "skill packs",
+      "enables": "The skill packs the playbook brings.",
+      "page": false,
+      "pageWhy": "Version 1 shows two check cards for level 6; the skill packs arrive with the playbook of step 6.1.",
+      "applies": [
+        "dmg",
+        "cask",
+        "apt",
+        "appimage",
+        "jar",
+        "zip",
+        "source"
+      ],
+      "platforms": [
+        "mac",
+        "linux"
+      ],
+      "commands": {},
+      "check": {
+        "all": {
+          "kind": "sentence",
+          "text": "The skills list shows the playbook's skill packs.",
+          "source": "P:spectro-server/src/main/java/dev/spectroscope/server/settings/SkillsController.java::@GetMapping(\"/api/skills\")"
+        }
+      },
+      "probe": {
+        "route": "/api/skills",
+        "field": "the playbook's skills"
+      },
+      "script": null,
+      "shots": [],
+      "size": []
+    },
+    {
+      "id": "6.3",
+      "level": 6,
+      "title": "model slots",
+      "enables": "Each of the playbook's four model slots has a model that answers. The fast slot names the Ollama tag qwen3.5:27b-q4_K_M; the other three need an Anthropic key.",
+      "applies": [
+        "dmg",
+        "cask",
+        "apt",
+        "appimage",
+        "jar",
+        "zip",
+        "source"
+      ],
+      "platforms": [
+        "mac",
+        "linux"
+      ],
+      "commands": {},
+      "check": {
+        "all": {
+          "kind": "sentence",
+          "text": "The start preview shows ready for all four slots.",
+          "source": "P:spectro-server/src/main/java/dev/spectroscope/server/playbooks/PlaybookController.java::\"/api/playbooks/start-preview\""
+        }
+      },
+      "probe": {
+        "route": "/api/playbooks/start-preview",
+        "field": "a state word per slot"
+      },
+      "script": null,
+      "shots": [],
+      "size": [
+        {
+          "text": "qwen3.5:27b-q4_K_M: 17 GB, 256K context.",
+          "date": "2026-10-11",
+          "method": "read on the Ollama library page",
+          "source": "S62",
+          "platforms": [
+            "mac",
+            "linux"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "7.1",
+      "level": 7,
+      "title": "workspace",
+      "enables": "Point the app at your project folder.",
+      "applies": [
+        "dmg",
+        "cask",
+        "apt",
+        "appimage",
+        "jar",
+        "zip",
+        "source"
+      ],
+      "platforms": [
+        "mac",
+        "linux"
+      ],
+      "commands": {},
+      "check": {
+        "all": {
+          "kind": "sentence",
+          "text": "The folder chip in the header shows the project folder.",
+          "source": "P:spectro-core/src/main/java/dev/spectroscope/core/config/SpectroConfig.java::String workspace,"
+        }
+      },
+      "probe": null,
+      "script": null,
+      "shots": [],
+      "size": []
+    },
+    {
+      "id": "7.2",
+      "level": 7,
+      "title": "test command",
+      "enables": "The playbook's tests_green check runs the command you give for {test}.",
+      "applies": [
+        "dmg",
+        "cask",
+        "apt",
+        "appimage",
+        "jar",
+        "zip",
+        "source"
+      ],
+      "platforms": [
+        "mac",
+        "linux"
+      ],
+      "commands": {},
+      "check": {
+        "all": {
+          "kind": "sentence",
+          "text": "The start preview shows {test} as filled.",
+          "source": "P:spectro-server/src/main/resources/bundled-playbooks/spectro/playbook.json::\"tests_green\""
+        }
+      },
+      "probe": {
+        "route": "/api/playbooks/start-preview",
+        "field": "the {test} variable"
+      },
+      "script": null,
+      "shots": [],
+      "size": []
+    },
+    {
+      "id": "7.3",
+      "level": 7,
+      "title": "source build tools",
+      "enables": "A JDK 21, Node and git for a build from source.",
+      "page": false,
+      "pageWhy": "Version 1 shows two check cards for level 7; the check commands for java, node and git are not printed by a primary source (S59).",
+      "applies": [
+        "source"
+      ],
+      "platforms": [
+        "mac",
+        "linux"
+      ],
+      "commands": {},
+      "check": {
+        "all": {
+          "kind": "none",
+          "text": "No verified check command yet."
+        }
+      },
+      "probe": null,
+      "script": null,
+      "shots": [],
+      "size": []
+    },
+    {
+      "id": "7.4",
+      "level": 7,
+      "title": "GitHub CLI",
+      "enables": "gh for pull requests. You sign in yourself.",
+      "page": false,
+      "pageWhy": "Version 1 shows two check cards for level 7; the check commands for gh are not printed by a primary source (S59).",
+      "applies": [
+        "source"
+      ],
+      "platforms": [
+        "mac",
+        "linux"
+      ],
+      "commands": {},
+      "check": {
+        "all": {
+          "kind": "none",
+          "text": "No verified check command yet."
+        }
+      },
+      "probe": null,
+      "script": null,
+      "shots": [],
+      "size": []
+    }
+  ]
+}

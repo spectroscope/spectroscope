@@ -202,6 +202,9 @@ export function ComposerMeta(props: {
    *  Required, so a caller that forgets to pass it does not compile. */
   aiCredits: number | null;
   context: UiState["context"];
+  /** Card 521: the window named since the last snapshot; absent reads the
+   *  snapshot alone. */
+  announcedWindow?: UiState["announcedWindow"];
   onWindowOverride?: (tokens: number | null) => void;
 }) {
   const provider = props.provider ?? FALLBACK_PROVIDER_LABEL;
@@ -232,6 +235,7 @@ export function ComposerMeta(props: {
         <ContextRing
           lastInputTokens={props.lastInputTokens}
           context={props.context}
+          announcedWindow={props.announcedWindow}
           aiCredits={props.aiCredits}
           onWindowOverride={ringWindowOverride(props.liveView, props.onWindowOverride)}
         />

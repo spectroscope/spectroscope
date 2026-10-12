@@ -184,26 +184,38 @@ export function messageLanes(events: readonly RunEvent[], upto?: number): Messag
 
   /** agentId -> prefix index of the latest task message sent to it. */
   const openTask = new Map<string, number>();
+  /** Card 505: the msg_ids of the peer messages already drawn. A message an
+   *  agent of the run sent is recorded twice, sent and then received; it is
+   *  one handover. */
+  const peerSeen = new Set<string>();
   const messages: LaneMessage[] = [];
   /** Lane order is the order lanes were first spoken to. */
   const laneMsgs = new Map<string, LaneMessage[]>();
 
   prefix.forEach((e, at) => {
     if (e.type !== "agent_message") return;
-    const { direction, fromTree } = directionOf(e.from, e.to, e.role, parentOf);
+    if (e.role === "peer" && e.label != null && e.label !== "") {
+      if (peerSeen.has(e.label)) return;
+      peerSeen.add(e.label);
+    }
+    // Card 505: a child writes to its parent as `parent`. The tree knows
+    // which agent that is, so the handover is drawn to it.
+    const to = e.to === "parent" ? (parentOf(e.from) ?? e.to) : e.to;
+    const { direction, fromTree } = directionOf(e.from, to, e.role, parentOf);
 
     // A reply answers the task most recently handed to the agent that is
     // replying — the LATEST, because a lane can be tasked more than once and
-    // the first task is not the one being answered.
-    const answers = e.role === "task" ? null : (openTask.get(e.from) ?? null);
+    // the first task is not the one being answered. A peer message answers
+    // no task: it is a word between agents while the work goes on.
+    const answers = e.role === "task" || e.role === "peer" ? null : (openTask.get(e.from) ?? null);
 
     const m: LaneMessage = {
       index: at,
       event: e,
       from: e.from,
-      to: e.to,
+      to,
       fromTag: tagOf(e.from),
-      toTag: tagOf(e.to),
+      toTag: tagOf(to),
       direction,
       fromTree,
       role: e.role,
@@ -212,13 +224,13 @@ export function messageLanes(events: readonly RunEvent[], upto?: number): Messag
       chars: e.text.length,
       answers,
     };
-    if (e.role === "task") openTask.set(e.to, at);
+    if (e.role === "task") openTask.set(to, at);
     messages.push(m);
 
     // The lane is the CHILD side of the handover: a task belongs to the agent
     // it was given to, a reply to the agent that sent it. That keeps one
     // conversation on one row instead of splitting it across two.
-    const laneId = direction === "down" ? e.to : e.from;
+    const laneId = direction === "down" ? to : e.from;
     const list = laneMsgs.get(laneId);
     if (list === undefined) laneMsgs.set(laneId, [m]);
     else list.push(m);

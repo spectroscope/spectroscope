@@ -38,8 +38,18 @@ export interface SttStatus {
   ready?: boolean | null;
   /** The install line for the missing binary, or null when none is missing. */
   binaryHint?: string | null;
-  model?: { present?: boolean | null; expectedBytes?: number | null } | null;
+  model?: { present?: boolean | null; expectedBytes?: number | null; file?: string | null } | null;
   hosted?: { keyPresent?: boolean | null; keyEnv?: string | null; model?: string | null } | null;
+  /** Card 527: whether the local route can write along live, and how often a
+   *  whisper run covers the open window. Absent from older servers. */
+  localLive?: {
+    available?: boolean | null;
+    chunkMs?: number | null;
+    windowMs?: number | null;
+    warmupTimeoutMs?: number | null;
+    /** The model file the live socket runs, from the sttModel setting. */
+    model?: string | null;
+  } | null;
 }
 
 /** One line of the sheet: a fact, and whether it is settled or outstanding. */

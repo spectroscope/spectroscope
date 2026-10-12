@@ -59,7 +59,7 @@ await ctx.addInitScript(([design]) => {
     // 0.14.2 (card 455): the learn-or-light question comes first on a new
     // origin. These plates show the full app, so it counts as answered: learn.
     localStorage.setItem("spectroscope:mode", "learn");
-    localStorage.setItem("spectroscope:mode-chosen", "1");
+    localStorage.setItem("spectroscope:mode-chosen", "2");
   } catch {}
 }, [DESIGN]);
 const page = await ctx.newPage();

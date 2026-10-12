@@ -120,6 +120,7 @@ import {
   traceWithVoice,
 } from "../wire/llmWire";
 import { LlmExchangeDetail } from "./LlmExchangeDetail";
+import { pairSafeCut } from "../pairSafeCut";
 
 /** agent_message summaries clip their text to this width (CLI parity). */
 const AGENT_MESSAGE_PREVIEW_CHARS = 60;
@@ -435,7 +436,7 @@ export function lensRole(type: string, wearsReasoning: boolean): "hi" | "anchor"
 export function reasoningLead(text: string, max = 72): string {
   const flat = text.replace(/\s+/g, " ").trim();
   if (flat.length <= max) return flat;
-  const cut = flat.slice(0, max);
+  const cut = pairSafeCut(flat, max);
   const space = cut.lastIndexOf(" ");
   return `${(space > max * 0.6 ? cut.slice(0, space) : cut).trimEnd()}…`;
 }
@@ -485,7 +486,7 @@ export function summarize(entry: TraceEntry, lang: Lang): string {
       )}`;
     case "agent_message":
       return `${String(p["from"] ?? "")} → ${String(p["to"] ?? "")} · ${String(p["state"] ?? "")} · ${JSON.stringify(
-        String(p["text"] ?? "").slice(0, AGENT_MESSAGE_PREVIEW_CHARS),
+        pairSafeCut(String(p["text"] ?? ""), AGENT_MESSAGE_PREVIEW_CHARS),
       )}`;
     case "ground_info": {
       // Where the run stood, and what it left to get there (card 167). The
@@ -828,7 +829,7 @@ function chainLabel(e: TraceEntry): string {
   const p = e.payload as Record<string, unknown>;
   switch (e.type) {
     case "run_start":
-      return `prompt "${String(p["prompt"] ?? "").slice(0, 24)}"`;
+      return `prompt "${pairSafeCut(String(p["prompt"] ?? ""), 24)}"`;
     case "turn_start":
       return `turn ${String(p["turn"] ?? "?")}`;
     case "tool_call":
@@ -2445,7 +2446,7 @@ export function TraceView(props: {
           pairTarget !== undefined
             ? {
                 seq: pairTarget.seq,
-                label: `${pairTarget.type} · ${summarize(pairTarget, lang).slice(0, 60)}`,
+                label: `${pairTarget.type} · ${pairSafeCut(summarize(pairTarget, lang), 60)}`,
               }
             : undefined
         }

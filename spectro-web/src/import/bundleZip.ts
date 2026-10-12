@@ -39,6 +39,12 @@ export interface SliceOptions {
   now?: () => number;
 }
 
+/** The options of {@link readZip}: slicing, plus a ceiling on what the entries unpack to. */
+export interface ReadOptions extends SliceOptions {
+  /** The most bytes all entries may declare together; checked before any entry is inflated (card 524). */
+  maxBytes?: number;
+}
+
 /** Bytes checked between two looks at the clock. */
 const CHUNK = 256 * 1024;
 
@@ -84,9 +90,33 @@ async function crc32(bytes: Uint8Array, tick: (n: number) => Promise<void>): Pro
   return (c ^ 0xffffffff) >>> 0;
 }
 
-async function inflateRaw(bytes: Uint8Array): Promise<Uint8Array> {
+/**
+ * Inflates one entry and stops as soon as it passes the size its header
+ * declares (card 524): an archive that lies about a size is refused before it
+ * fills the memory.
+ */
+async function inflateRaw(bytes: Uint8Array, name: string, declared: number): Promise<Uint8Array> {
   const stream = new Blob([bytes as BlobPart]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
-  return new Uint8Array(await new Response(stream).arrayBuffer());
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  let length = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    length += value.length;
+    if (length > declared) {
+      await reader.cancel();
+      throw new Error(`${name}: the entry is larger than it declares`);
+    }
+    chunks.push(value);
+  }
+  const out = new Uint8Array(length);
+  let at = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, at);
+    at += chunk.length;
+  }
+  return out;
 }
 
 /** The end-of-central-directory record, searched from the back: it is at
@@ -106,13 +136,13 @@ function endRecord(view: DataView): number {
  * thread for about 190 ms in one go).
  *
  * @param data    the archive's bytes
- * @param options slicing and progress; progress counts the entries'
- *                uncompressed bytes
+ * @param options slicing, progress and an optional ceiling; progress
+ *                counts the entries' uncompressed bytes
  * @return the entries; a directory entry (a name ending in "/") is skipped
  * @throws when the bytes are not a zip, an entry is encrypted, uses a method
  *         other than stored or deflated, needs ZIP64, or fails its checksum
  */
-export async function readZip(data: Uint8Array, options: SliceOptions = {}): Promise<ZipEntryBytes[]> {
+export async function readZip(data: Uint8Array, options: ReadOptions = {}): Promise<ZipEntryBytes[]> {
   if (data.byteLength < 22) throw new Error("not a zip archive");
   const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
   const end = endRecord(view);
@@ -122,6 +152,9 @@ export async function readZip(data: Uint8Array, options: SliceOptions = {}): Pro
   const names = new TextDecoder("utf-8", { fatal: false });
   const out: ZipEntryBytes[] = [];
   const total = totalSize(view, cdOffset, count);
+  if (options.maxBytes !== undefined && total > options.maxBytes) {
+    throw new Error(`the archive unpacks to more than ${options.maxBytes} bytes`);
+  }
   const clock = sliceClock(total, options);
   let at = cdOffset;
   for (let i = 0; i < count; i++) {
@@ -150,7 +183,7 @@ export async function readZip(data: Uint8Array, options: SliceOptions = {}): Pro
     const body = data.subarray(dataStart, dataStart + packed);
     let bytes: Uint8Array;
     if (method === 0) bytes = body;
-    else if (method === 8) bytes = await inflateRaw(body);
+    else if (method === 8) bytes = await inflateRaw(body, name, size);
     else throw new Error(`${name}: compression method ${method} is not read`);
     if (bytes.length !== size || (await crc32(bytes, clock.tick)) !== crc) {
       throw new Error(`${name}: the entry does not match its checksum`);

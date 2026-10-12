@@ -88,6 +88,15 @@ public final class Redaction {
     }
 
     /**
+     * The rule names in the order the rules fire.
+     *
+     * @return every rule's name
+     */
+    public static List<String> ruleNames() {
+        return RULES.stream().map(Rule::name).toList();
+    }
+
+    /**
      * The coarse size band a redacted value reports instead of its length.
      *
      * <p>An exact length is a small oracle — enough of one that it is already a

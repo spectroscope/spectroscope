@@ -257,9 +257,10 @@ class SpectroServerIntegrationTest {
 
         List<JsonNode> announced = announcements(events);
         List<String> types = announced.stream().map(e -> e.path("type").asText()).toList();
-        // Card 466: the gear learns the seven tool groups over the socket.
+        // Card 466: the gear learns the tool groups over the socket; card 503
+        // added the eighth, messaging.
         JsonNode groups = lastOfType(events, "tool_groups_info");
-        assertEquals(7, groups.path("groups").size(), "seven tool groups, got " + groups);
+        assertEquals(8, groups.path("groups").size(), "eight tool groups, got " + groups);
         assertEquals(0, groups.path("off").size(), "nothing is switched off as shipped, got " + groups);
         // Card 493: and the Local mode switch, off as shipped, with its four rows.
         JsonNode localMode = lastOfType(events, "local_mode_info");
@@ -409,6 +410,9 @@ class SpectroServerIntegrationTest {
                 .filter(e -> !"live_sessions".equals(e.path("type").asText()))
                 .filter(e -> !"tool_groups_info".equals(e.path("type").asText()))
                 .filter(e -> !"local_mode_info".equals(e.path("type").asText()))
+                // Card 502: peer_roster is a fact about the other processes of
+                // the home, pushed on the drain thread like live_sessions.
+                .filter(e -> !"peer_roster".equals(e.path("type").asText()))
                 .toList();
     }
 

@@ -12,12 +12,16 @@ import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { HeaderMenu, HEADER_MENU_TOOLS, menuRows, nextMenuIndex } from "./headerPanelControls";
-import { __resetForTests, toggleDockPanel } from "../state/layout";
+import { __resetForTests, setDockTabs, toggleDockPanel } from "../state/layout";
 import { DOCK_ORDER } from "./dockModel";
 import { blockOf, read as readSource } from "../testkit/source";
 import { resetCodeGraphForTest, setCodeGraphStatus } from "../codegraph/codeGraphStore";
 
-beforeEach(() => __resetForTests());
+// Card 517: a fresh store starts in tabs mode; this file is about side by side.
+beforeEach(() => {
+  __resetForTests();
+  setDockTabs(false);
+});
 
 const read = (rel: string): string => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
 

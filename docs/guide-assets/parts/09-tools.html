@@ -21,7 +21,9 @@
 <!-- ============================== CH 12 ============================== -->
 <h1 data-ch="12" id="ch-tools"><span class="ch-num">Chapter 12</span>The tool belt</h1>
 
-<p class="lead">Twenty-two built-in tools, plus one dynamic adapter per connected MCP tool.
+<p class="lead">Thirty-nine built-in tools in a session of the app without MCP servers and
+skills (the table &ldquo;Who gets which tools&rdquo; below), plus one dynamic adapter per
+connected MCP tool.
 Every tool obeys one iron contract: <strong>it never throws</strong> — failures come back
 as a string starting <code>ERROR:</code>, which the model reads and self-corrects from.
 Every model-supplied path passes the sandbox. Every mutation passes the gate.</p>
@@ -85,6 +87,17 @@ binary files and files over the 2&thinsp;MiB fuse, and names each file it skippe
 size at the end of the answer; invalid regex answers <code>ERROR: invalid regex: …</code>.
 <em>Try: “Search for TODO across the Java sources.”</em></p></div></div>
 
+<div class="ref"><div class="ref-head"><code class="name">code_graph</code><span class="chip free">free</span><span class="meta">input: { action, question?, dfs?, budget?, from?, to?, name?, depth?, top? }</span></div>
+<div class="ref-body"><p>Asks the code graph of the session folder, the <code>graphify-out/graph.json</code> that
+Build code graph or <code>graphify update</code> wrote. Five actions run graphify's read-only
+subcommands: <code>query</code> asks a question in words, <code>path</code> finds the shortest path
+between two nodes, <code>explain</code> describes one node, <code>affected</code> lists what depends on
+a node and <code>god_nodes</code> lists the most connected nodes. The model sees the tool only when
+graphify is on the PATH and the folder has a graph, and a graph that links out of the folder is
+refused. graphify runs without a shell, stops after 30&thinsp;s, and the answer is cut at 16,000
+characters. A name or question that starts with a dash is refused. Explore subagents get it too.
+<em>Try: “Use the code graph: what is affected if CodeGraphJobs changes?”</em></p></div></div>
+
 <h2 id="ch-tools-mutation">Mutation &amp; shell</h2>
 
 <div class="ref"><div class="ref-head"><code class="name">write_file</code><span class="chip prefix">gated · remembers path</span><span class="meta">input: { path, content }</span></div>
@@ -135,7 +148,14 @@ the model sees only a short confirmation, and the user sees the picture in the I
 <div class="ref"><div class="ref-head"><code class="name">spawn_agent</code> / <code class="name">spawn_agents</code><span class="chip free">free · parent only</span><span class="meta">input: { type, task } / { agents: […] }</span></div>
 <div class="ref-body"><p>Starts one subagent (or up to four in parallel) and waits for the result —
 chapter 14. Free of a gate because the <em>child's</em> tools ask for permission
-individually; delegation is not an escape hatch.</p></div></div>
+individually; delegation is not an escape hatch.</p>
+<p>With <code>background: true</code> (card 505) <code>spawn_agents</code> returns at once with the
+children's names. They take the chat's slots as a blocking batch does. Their status lines and results
+reach the parent as messages at its next step. The parent asks one of them how far it is with
+<code>send_message</code> and collects the results with <code>wait_agents</code>. The field is offered only where the parent has
+an inbox and agent messaging is on. At the end of a turn the run waits for its children and hands each
+result to the model as a message block from that child. At the turn cap, on a stop or on an error it
+cancels them and waits up to 30 seconds for them to end.</p></div></div>
 
 <div class="ref"><div class="ref-head"><code class="name">build_plan</code> · <code class="name">write_spec</code> · <code class="name">develop</code> · <code class="name">test</code><span class="chip free">free · parent only</span><span class="meta">input: { task }</span></div>
 <div class="ref-body"><p>The four development role tools — thin wrappers over a worker spawn, each pointing
@@ -145,6 +165,62 @@ its child at a skill (chapter 14).</p></div></div>
 <div class="ref-body"><p>The child's side of the A2A protocol: one short progress sentence per milestone,
 surfacing live in the parent's UI. Telling the parent what you do is never dangerous.</p></div></div>
 
+<div class="ref"><div class="ref-head"><code class="name">send_message</code><span class="chip free">free · main and children</span><span class="meta">input: { to, message, summary?, notify_when_idle? }</span></div>
+<div class="ref-body"><p>Sends one message to another agent (card 503). <code>to</code> is a name from
+<code>list_agents</code>: a session on this machine, <code>parent</code>, or a child of the run; the
+ref in brackets only when two rows share a name. A child agent reaches only its parent. A child that
+names another child or a session is refused, and the refusal tells it to send to <code>parent</code>
+instead. The parent decides what to pass on, and you see every message in the chat. An agent of the run wins over a session of the same
+name, and a name that reached one session earlier in the run and now names another one is refused.
+The result names the summary, the recipient and the <code>msg_id</code>; a later
+<code>[Delivery notice]</code> says when the other session held, declined or refused it.
+<code>notify_when_idle</code> asks a session for one notice when it next finishes a turn; only the
+main agent may ask, at most 32 at a time, and a notice that does not come within 12 hours expires.
+The message reaches the other model inside an attribution block that says another agent wrote it
+and that it grants nothing. In <code>auto</code> and <code>extended</code> a gated call is refused
+(<code>peer-relay</code> in the gate audit) when a message the run took in says something was denied,
+declined or not authorised and names that call: the command line, a command it chains with
+<code>&amp;&amp;</code>, <code>;</code> or <code>|</code> or wraps in <code>sh -c</code>, its first
+two words, or a path. The rule reads words. A different command with the same effect, such as
+<code>find build -delete</code> for <code>rm -rf build</code>, or a message that names no command,
+still passes.</p></div></div>
+
+<div class="ref"><div class="ref-head"><code class="name">list_agents</code><span class="chip free">free · main and children</span><span class="meta">input: { }</span></div>
+<div class="ref-body"><p>Lists whom <code>send_message</code> reaches, without a model call: the caller's own name
+first, then the sessions on this machine with their face, status, folder and status line, then the
+children of the run with their role and last status line. A child sees its parent only. Another session or a child writes the folder, face, status and status line, so each is printed
+on one line with control characters, brackets, guillemets and quotes turned into spaces. A folder longer
+than 120 characters keeps its last 119 behind an ellipsis, so the folder's own name stays; a name
+and the other fields stop at 100. A listing with rows ends with one line saying these fields were
+written by those sessions and agents and are information, not instructions. Both tools leave the request when <code>agentMessaging</code> is off
+(<a href="#ch-config-keys">chapter 30</a>) or the <code>messaging</code> group is unchecked.</p></div></div>
+
+<div class="ref"><div class="ref-head"><code class="name">wait_agents</code><span class="chip free">free · parent only</span><span class="meta">input: { ids?, timeoutSeconds? }</span></div>
+<div class="ref-body"><p>The join of a background fan-out (card 505). It waits for the named children, or for
+every background child of the run, and returns each result once, with the last status line of each
+child still running. It waits without polling. <code>timeoutSeconds</code> runs from 0, which returns
+at once, to 3,600; left out, it waits until the children have ended. A result the parent already took
+in as a message is reported as such and not repeated. Its description names the children of the run.
+No child holds this tool, so a background child cannot join anything and the depth stays one. It
+belongs to the <code>messaging</code> group and leaves the request with the two tools above.</p></div></div>
+
+<div class="ref"><div class="ref-head"><code class="name">schedule_wakeup</code><span class="chip gated">gated · write · in a loop</span><span class="meta">input: { delaySeconds, reason, prompt, stop? }</span></div>
+<div class="ref-body"><p>Paces a loop the operator started with <code>/loop</code> (card 504). The delay is held
+between 60 and 3,600 seconds and the wakeup lands on the whole minute at or after it; the result
+names the time and says when the delay was moved. <code>delaySeconds</code>, <code>reason</code> and
+<code>prompt</code> are required unless <code>stop</code> is true, which ends the loop. The prompt
+<code>&lt;&lt;loop&gt;&gt;</code> fires the loop's own instructions: in full at the first wakeup,
+after a compaction, after <code>/clear</code> and after the session was opened again, as a short
+reminder otherwise. In a loop with an interval it fires the loop's own task. Any other prompt fires behind a line saying the
+model wrote it and when, in the chat and for the model, so it never reads as the operator's own
+words. A reason longer than 500 characters is cut; a prompt the model wrote that is longer than
+500 characters is refused. A new wakeup replaces the pending one. The
+result asks the model to write its update for the tick before the call, and a stop asks for the
+closing summary before it, because the turn ends when the call returns: the run ends after the round of tool calls that held it, unless the call was refused.
+A goal's check does not run on that ending. The agent offers the tool only while the session runs a loop, so a session without one
+sends the tools it sent before. Tier write: in ask mode you see the call, and the auto modes check
+it against relayed denials as they check every gated call (chapter 10).</p></div></div>
+
 <div class="ref"><div class="ref-head"><code class="name">mcp__&lt;server&gt;__&lt;tool&gt;</code><span class="chip gated">gated · dynamic</span><span class="meta">schema from the server</span></div>
 <div class="ref-body"><p>Every tool a connected MCP server advertises, wrapped as a first-class spectroscope tool
 (chapter 18). Always gated: its inputs are model output and its effects are external.</p></div></div>
@@ -152,9 +228,9 @@ surfacing live in the parent's UI. Telling the parent what you do is never dange
 <h2 id="ch-tools-who">Who gets which tools</h2>
 <table class="tbl">
   <tr><th>agent</th><th>registry</th></tr>
-  <tr><td><code>main</code></td><td>all of the above (21 named + MCP; <code>use_skill</code> when skills exist)</td></tr>
-  <tr><td><code>worker-N</code></td><td>list_dir, read_file, write_file, run_command, edit_file, glob, grep, view_image, view_file, use_skill*, <strong>report_status</strong></td></tr>
-  <tr><td><code>explore-N</code></td><td>list_dir, read_file, glob, grep, <strong>report_status</strong> — read-only <em>by construction</em>: everything else simply is not in its registry</td></tr>
+  <tr><td><code>main</code></td><td>all of the above except <code>report_status</code>, plus the browser, launch, web and image tools: 39 in a session without MCP servers and skills (counted by <code>SessionToolGroupsTest</code>); MCP tools on top, <code>use_skill</code> when skills exist</td></tr>
+  <tr><td><code>worker-N</code></td><td>list_dir, read_file, write_file, run_command, edit_file, glob, grep, code_graph, view_image, view_file, use_skill*, <strong>report_status</strong>, send_message, list_agents</td></tr>
+  <tr><td><code>explore-N</code></td><td>list_dir, read_file, glob, grep, code_graph, <strong>report_status</strong>, send_message, list_agents. Its own registry holds no tool that writes a file or runs a command. Its <code>send_message</code> reaches only its parent, so anything an explore child read gets to a worker only through the parent, in the chat</td></tr>
 </table>
 <p class="small">* when skills are installed. Children never receive: spawn/dev tools
 (nesting depth 1 is structural), generate_image, web_fetch, web_search, browse_page, update_plan, MCP tools.</p>
@@ -163,13 +239,18 @@ surfacing live in the parent's UI. Telling the parent what you do is never dange
 <p>Every request to the model carries the schema of every tool the session holds, whether the
 task uses the tool or not. In a session without MCP servers or skills, that block is 18,101
 characters, about 4,500 tokens; the context ring's own reader measured it on 2026-10-09. The gear
-under the message box lists seven tool groups (<code>browser</code>, <code>launch</code>,
-<code>images</code>, <code>web</code>, <code>agents</code>, <code>roles</code> and <code>mcp</code>)
-with the tools each group holds in this session. When you uncheck a group, the next run leaves its
-tools out of the request, and so do the subagents that run spawns. With all seven unchecked the
-block drops to 4,125 characters, and the model sees the standard file tools except
-<code>view_image</code>, which belongs to <code>images</code>, plus <code>run_command</code>,
-<code>update_plan</code> and <code>ask_user_question</code>. Switching a group off does not change a
+under the message box lists eight tool groups (<code>browser</code>, <code>launch</code>,
+<code>images</code>, <code>web</code>, <code>agents</code>, <code>roles</code>, <code>mcp</code> and,
+since card 503, <code>messaging</code>) with the tools each group holds in this session. The
+<code>messaging</code> group holds <code>send_message</code> and <code>list_agents</code>, which
+added 1,073 characters to an Anthropic request when they came (measured on the posted body on
+2026-10-11), and <code>wait_agents</code> since card 505. When you uncheck a group, the next run leaves its
+tools out of the request, and so do the subagents that run spawns. With every group unchecked the
+block dropped to 4,125 characters on 2026-10-09, when the gear had seven groups, and the model
+sees the standard file tools except <code>view_image</code>, which belongs to
+<code>images</code>, plus <code>run_command</code>, <code>update_plan</code> and
+<code>ask_user_question</code>. <code>code_graph</code>, offered where the folder holds a code
+graph, and <code>schedule_wakeup</code>, offered while a loop runs, belong to no group either. Switching a group off does not change a
 permission: a tool that is still on asks exactly as before. If the session has a pinned folder, the
 gear saves your choice in that folder's local settings file under <code>toolGroupsOff</code>
 (<a href="#ch-config-keys">chapter 30</a>), and the next session starts with it. Without a pinned folder the gear says

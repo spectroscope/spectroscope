@@ -51,7 +51,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * the hub received for the node).</p>
  *
  * <p>The fixtures under {@code src/test/resources/steering-baseline/} were
- * written by this same class on a {@code git archive} of {@code 301f6e69}. When
+ * written by this same class on a {@code git archive} of {@code 301f6e69}. In
+ * the 0.15.2 integration each {@code run_start} gained the field
+ * {@code windowSource} of card 521 and nothing else; the four files were
+ * written again by this class then (the old and new files differ only there). When
  * a fixture is missing, the test writes what it saw to
  * {@code build/steering-baseline/} and fails, so a missing file is never green.</p>
  *

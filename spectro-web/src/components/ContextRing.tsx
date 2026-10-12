@@ -20,10 +20,10 @@
 // later context_info names the window with the source `window_override`.
 
 import { Fragment, useEffect, useRef, useState } from "react";
-import type { ContextSnapshot } from "../state/reducer";
+import type { ContextSnapshot, WindowAnnouncement } from "../state/reducer";
 import { formatCredits, formatTokens } from "../format";
 import { formatWindow } from "./contextWindow";
-import { contextGauge, namedWindow, type ContextGauge } from "./contextRingMath";
+import { contextGauge, namedWindow, ringFrame, type ContextGauge, type RingFrame } from "./contextRingMath";
 import { t, type Lang } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { parseWindowDraft, WINDOW_OVERRIDE_CEILING, WINDOW_OVERRIDE_FLOOR } from "../wire/windowOverride";
@@ -66,15 +66,20 @@ export function ContextRing(props: {
   /** The session's cost in GitHub AI credits, or null when no call reported
    *  one (card 496). */
   aiCredits: number | null;
+  /** Card 521: a window named since the last snapshot, by the main agent's
+   *  run_start or the server's provider_info. Absent or null reads the
+   *  snapshot alone. */
+  announcedWindow?: WindowAnnouncement | null;
 }) {
   const { lastInputTokens, context } = props;
+  const frame = ringFrame(context, props.announcedWindow);
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLSpanElement>(null);
 
   // The window the RUN reported, not a guess about the model's name. It arrives
   // on the same frame as the threshold, and since card 377 it is what the gauge
   // divides by whenever the harness derived that threshold from it.
-  const gauge = contextGauge(context?.threshold, context?.contextWindow, context?.thresholdSource);
+  const gauge = contextGauge(frame.threshold, frame.contextWindow, frame.thresholdSource);
   const scale = gauge.denominator.value;
   const pct = scale > 0 ? (lastInputTokens / scale) * 100 : 0;
   const shownPct = Math.round(pct);
@@ -154,6 +159,7 @@ export function ContextRing(props: {
         <ContextPopover
           lastInputTokens={lastInputTokens}
           context={context}
+          frame={frame}
           gauge={gauge}
           shownPct={shownPct}
           onWindowOverride={props.onWindowOverride}
@@ -177,6 +183,9 @@ export function ContextRing(props: {
 export function ContextPopover(props: {
   lastInputTokens: number;
   context: ContextSnapshot | null;
+  /** Card 521: what the ring divides by, from `ringFrame`. Absent reads the
+   *  snapshot alone. */
+  frame?: RingFrame;
   gauge: ContextGauge;
   shownPct: number;
   /** See ContextRing: undefined draws no row. */
@@ -185,21 +194,25 @@ export function ContextPopover(props: {
   aiCredits: number | null;
 }) {
   const { lastInputTokens, context, gauge, shownPct, onWindowOverride, aiCredits } = props;
+  const frame = props.frame ?? ringFrame(context, null);
   const lang = useLang();
   const [draft, setDraft] = useState("");
   // On only when the frame says the operator's window decided. Keyed on the
   // source word and nothing else: `override` is the settings threshold, and
   // the reverted first build read that one (review 2026-09-24, E4).
   const activeWindow =
-    context?.thresholdSource === "window_override" && context.contextWindow !== undefined
-      ? context.contextWindow
+    frame.thresholdSource === "window_override" && frame.contextWindow !== undefined
+      ? frame.contextWindow
       : null;
   const denominator = gauge.denominator;
   // NOT called `window`: this is a browser component, and a local binding of
   // that name shadows the global inside the whole function. It compiles and
   // lints today only because nothing here touches the DOM — the next line that
   // reaches for `window.matchMedia` would silently get a `NamedWindow | null`.
-  const named = namedWindow(context?.contextWindow, context?.thresholdSource, denominator);
+  const named = namedWindow(frame.contextWindow, frame.thresholdSource, denominator);
+  // Card 521: a run that learned no window is said to have none, so a
+  // percentage of the fallback is not read as a share of the real window.
+  const windowUnknown = frame.contextWindow === undefined || frame.contextWindow <= 0;
   return (
     <div className="context-pop" role="dialog" aria-label="Context usage">
       <span className="eyebrow">Context</span>
@@ -216,6 +229,7 @@ export function ContextPopover(props: {
           {t(lang, "ctx.credits", { credits: formatCredits(aiCredits, lang) })}
         </p>
       )}
+      {windowUnknown && <p className="context-unknown">{t(lang, "ctx.window.unknown")}</p>}
       {named !== null && (
         <p className="context-window tabular">
           {named.of === "loaded" ? "loaded " : named.of === "published" ? "model " : ""}window ·{" "}

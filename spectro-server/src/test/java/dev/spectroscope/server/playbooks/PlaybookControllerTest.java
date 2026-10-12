@@ -309,6 +309,27 @@ class PlaybookControllerTest {
     }
 
     @Test
+    void theContentsAndInstallRoutesPutTheWorkspaceInPlaceOfTheProjectPlaceholder() throws IOException {
+        PlaybookController contents = contentsController();
+        Path a = fullFolder(contents, "a");
+        Files.writeString(a.resolve("hooks/hooks.json"),
+                PlaybookContentsTest.HOOKS.replace("sh {hooks}/guard.sh", "sh {project}/check.sh"));
+        Path ws = Files.createDirectories(tmp.resolve("ws")).toRealPath();
+        PlaybookContents.Preview shown = (PlaybookContents.Preview) contents.contents(a.toString(), ws.toString(), local())
+                .getBody();
+        assertEquals(List.of("sh " + ws + "/check.sh"), shown.items().stream().filter(i -> i.kind().equals("hook"))
+                .map(PlaybookContents.Item::command).toList());
+
+        ObjectNode body = (ObjectNode) installBody(a, shown.contentsHash(), true);
+        ResponseEntity<?> withoutWorkspace = contents.install(body, local());
+        assertEquals(409, withoutWorkspace.getStatusCode().value(), "the list was shown for another folder");
+        ResponseEntity<?> installed = contents.install(body.put("workspace", ws.toString()), local());
+
+        assertEquals(200, installed.getStatusCode().value(), String.valueOf(installed.getBody()));
+        assertTrue(Files.readString(tmp.resolve("home/.spectro/settings.json")).contains(ws + "/check.sh"));
+    }
+
+    @Test
     void theInstallRouteAnswersChangedUnlicensedThenInstallsOnceAndAnswersAlready() throws IOException {
         PlaybookController contents = contentsController();
         Path a = fullFolder(contents, "a");

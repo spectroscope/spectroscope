@@ -50,8 +50,14 @@ export type RunEvent =
       llmWire?: string;
       browserWire?: string;
       children?: string[];
+      /** Card 521: the window this run derived its threshold against, absent
+       *  when the run learned none (never 0), and the source of that
+       *  derivation, the same word context_info calls thresholdSource. The
+       *  ring reads both for a stored session before any frame arrives. */
+      contextWindow?: number;
+      windowSource?: ThresholdSource;
       ts: number;
-    } // provider?, model?, attachments?, workspace?, llmWire?, browserWire?, children? all additive
+    } // provider?, model?, attachments?, workspace?, llmWire?, browserWire?, children?, contextWindow?, windowSource? all additive
   | { type: "turn_start"; agentId: string; turn: number; ts: number }
   | { type: "text_delta"; agentId: string; text: string; ts: number }
   | { type: "thinking_delta"; agentId: string; text: string; ts: number } // reasoning stream, additive
@@ -559,10 +565,24 @@ export type ClientMessage =
   // Card 482: start a playbook run. The hash is the one the confirmation sheet
   // showed; the server loads the folder again and refuses a mismatch.
   | { type: "start_playbook"; dir: string; hash: string }
+  // Card 506: Run on a workflow of the playbook module. The hash is the one
+  // the contents list showed for the file; input is the text typed beside Run.
+  | { type: "start_workflow"; dir: string; file: string; hash: string; input: string; lang: "en" | "de" }
   // Card 498: a click into the message box of a stored session. The server
   // binds the session to this socket and answers with its workspace_info;
   // no run starts and no model is called.
-  | { type: "wake_session"; sessionId: string };
+  | { type: "wake_session"; sessionId: string }
+  // Card 502: the operator's Deliver or Decline on a held agent message.
+  | { type: "peer_message_decision"; msgId: string; deliver: boolean }
+  // Card 503: the operator's own message to another agent, a Reply in the
+  // chat. To a session by its id when the page knows it, else by name.
+  | { type: "send_peer_message"; to: string; toSession?: string; text: string }
+  // Card 267, given a face by card 504: the operator states the goal from the
+  // gear's goal section. A blank outcome clears it.
+  | { type: "set_goal"; outcome: string; check: string }
+  // Card 504: /loop from the chat starts a loop; the loop chip's Stop ends it.
+  | { type: "set_loop"; action: "start"; prompt: string; intervalSeconds?: number }
+  | { type: "set_loop"; action: "stop" };
 
 // GET /api/sessions — the sidebar list (REST contract, design/BUILD-PLAN.md).
 export interface SessionMeta {

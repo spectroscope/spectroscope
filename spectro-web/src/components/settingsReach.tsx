@@ -92,6 +92,9 @@ export const SETTING_REACH = {
   sttModel: "live",
   sttProvider: "live",
   sttLanguage: "live",
+  // Card 528: the live socket reads the runner when a recording starts, so a
+  // save reaches the next press.
+  sttRunner: "live",
   // SettingsController applies this to the running process on PUT.
   logLevel: "live",
   // ---- settled for the session ----
@@ -231,6 +234,10 @@ export const SETTING_REACH = {
   // it when it starts and when a folder is pinned; no control saves it, the
   // switch writes it.
   localModeKeys: "next-session",
+  // Card 503: the browser session re-reads the key before every prompt and a
+  // run reads it once when it starts, so the two tools leave the request of
+  // the next run. The inbound refusal reads the user settings on each message.
+  agentMessaging: "next-run",
 } as const satisfies Record<string, Reach>;
 
 /** A settings key this page knows how to be honest about. A new field has to

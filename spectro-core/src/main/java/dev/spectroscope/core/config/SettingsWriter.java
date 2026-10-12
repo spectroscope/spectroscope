@@ -104,7 +104,11 @@ public final class SettingsWriter {
             "careParagraph",
             // Card 493: the read share, and the record of the Local mode switch.
             "readSharePercent",
-            "localModeKeys");
+            "localModeKeys",
+            // Card 528: what runs whisper on the local live route.
+            "sttRunner",
+            // Card 503: whether agents message each other, on or off.
+            "agentMessaging");
 
     /** Fields that apply to the whole process, not one workspace — a
      *  {@code PROJECT}/{@code LOCAL} patch setting any of them is refused. This is
@@ -474,6 +478,7 @@ public final class SettingsWriter {
             case "imageProvider" -> requireOneOf(key, value.asText(), SpectroConfig.KNOWN_IMAGE_PROVIDERS);
             case "sttProvider" -> requireOneOf(key, value.asText(), SpectroConfig.KNOWN_STT_PROVIDERS);
             case "sttLanguage" -> requireOneOf(key, value.asText(), SpectroConfig.KNOWN_STT_LANGUAGES);
+            case "sttRunner" -> requireOneOf(key, value.asText(), SpectroConfig.KNOWN_STT_RUNNERS);
             case "logLevel" -> requireOneOf(key, value.asText(), SpectroConfig.KNOWN_LOG_LEVELS);
             case "permissionMode" -> requireOneOf(key, value.asText(), SpectroConfig.KNOWN_PERMISSION_MODES);
             case "rtkFilter" -> requireOneOf(key, value.asText(), SpectroConfig.KNOWN_RTK_FILTER_VALUES);

@@ -40,6 +40,7 @@ export const GOVERNING_UNITS = [
   "BYTES",
   "MILLISECONDS",
   "SECONDS",
+  "MINUTES",
   "COUNT",
   "PERCENT",
   "PIXELS",

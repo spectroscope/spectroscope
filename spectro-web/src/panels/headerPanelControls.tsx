@@ -16,11 +16,30 @@ import type { DockPanelId } from "../state/layout";
 import { DOCK_ORDER, dockLabelKey, dockModes } from "./dockModel";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
-import { openCodeGraphSheet, useCodeGraph } from "../codegraph/codeGraphStore";
+import { useCodeGraph } from "../codegraph/codeGraphStore";
+import { codeGraphRows, type CodeGraphRow } from "../codegraph/codeGraphModel";
+import { pressCodeGraphRow } from "../codegraph/CodeGraphHeaderStatus";
 
 /** The tools behind the separator, in their order. */
 export const HEADER_MENU_TOOLS = ["codegraph", "keymap", "doctor"] as const;
-type ToolId = (typeof HEADER_MENU_TOOLS)[number];
+
+/**
+ * The menu ids of the code graph rows (card 546): "codegraph" stays the Build
+ * row; a folder with a graph gets "codegraphShow" and "codegraphUpdate".
+ */
+export const CODE_GRAPH_ROW_IDS = {
+  build: "codegraph",
+  show: "codegraphShow",
+  update: "codegraphUpdate",
+} as const satisfies Record<CodeGraphRow, string>;
+
+type ToolId = (typeof HEADER_MENU_TOOLS)[number] | "codegraphShow" | "codegraphUpdate";
+
+/** The code graph row a menu id stands for, or null for another tool. */
+function codeGraphRowOf(id: ToolId): CodeGraphRow | null {
+  for (const [row, rowId] of Object.entries(CODE_GRAPH_ROW_IDS)) if (rowId === id) return row as CodeGraphRow;
+  return null;
+}
 
 /** One row of the menu. */
 export type MenuRow = { id: DockPanelId; kind: "panel" } | { id: ToolId; kind: "tool" };
@@ -33,14 +52,23 @@ export type MenuRow = { id: DockPanelId; kind: "panel" } | { id: ToolId; kind: "
  * @param opts.workOffered whether the v2 reading offers the work panel
  * @returns the rows the markup draws
  */
-export function menuRows(opts: { showDock: boolean; workOffered: boolean }): MenuRow[] {
+export function menuRows(opts: {
+  showDock: boolean;
+  workOffered: boolean;
+  /** The code graph rows (card 546); left out, Build alone. */
+  codeGraph?: CodeGraphRow[];
+}): MenuRow[] {
   const rows: MenuRow[] = [];
   if (opts.showDock) {
     for (const id of DOCK_ORDER) {
       if (id !== "work" || opts.workOffered) rows.push({ id, kind: "panel" });
     }
   }
-  for (const id of HEADER_MENU_TOOLS) rows.push({ id, kind: "tool" });
+  for (const id of HEADER_MENU_TOOLS) {
+    if (id === "codegraph") {
+      for (const row of opts.codeGraph ?? ["build"]) rows.push({ id: CODE_GRAPH_ROW_IDS[row], kind: "tool" });
+    } else rows.push({ id, kind: "tool" });
+  }
   return rows;
 }
 
@@ -106,6 +134,20 @@ const GLYPHS: Record<MenuRow["id"], ReactNode> = {
       <path d="M5 4.3l6 .5M4.3 5.3l1.9 5.3M11.6 6.3l-3.6 4.6" />
     </>
   ),
+  codegraphShow: (
+    <>
+      <circle cx="3.5" cy="4" r="1.5" />
+      <circle cx="12.5" cy="5" r="1.5" />
+      <circle cx="7" cy="12" r="1.5" />
+      <path d="M5 4.3l6 .5M4.3 5.3l1.9 5.3M11.6 6.3l-3.6 4.6" />
+    </>
+  ),
+  codegraphUpdate: (
+    <>
+      <path d="M13 8a5 5 0 1 1-1.5-3.6" />
+      <path d="M13 2.5v2.6h-2.6" />
+    </>
+  ),
   keymap: (
     <>
       <rect x="1.5" y="4" width="13" height="8" rx="1.6" />
@@ -119,6 +161,12 @@ const GLYPHS: Record<MenuRow["id"], ReactNode> = {
     </>
   ),
 };
+
+/** Build and Update need graphify; Show opens a graph that is already there. */
+function needsInstallNote(id: ToolId): boolean {
+  const row = codeGraphRowOf(id);
+  return row === "build" || row === "update";
+}
 
 /** The name of a row, from the panel vocabulary or the menu's own keys. */
 function rowLabelKey(row: MenuRow): string {
@@ -159,7 +207,7 @@ export function HeaderMenu(props: {
   const modes = dockModes(layout);
   // Card 472: the code graph row explains the install line when the server
   // said graphify is not on its tool PATH (null: not known yet, no note).
-  const codeGraph = useCodeGraph().status;
+  const { status: codeGraph, sessionId: codeGraphSession } = useCodeGraph();
   const codeGraphMissing = codeGraph !== null && !codeGraph.installed;
   const [open, setOpen] = useState(props.menuOpenForTest === true);
   const anchor = useRef<HTMLDivElement>(null);
@@ -192,7 +240,11 @@ export function HeaderMenu(props: {
     };
   }, [open]);
 
-  const rows = menuRows({ showDock: props.showDock, workOffered: props.workOffered });
+  const rows = menuRows({
+    showDock: props.showDock,
+    workOffered: props.workOffered,
+    codeGraph: codeGraphRows(codeGraph),
+  });
 
   const onMenuKey = (e: ReactKeyboardEvent<HTMLDivElement>): void => {
     const items = [...(pop.current?.querySelectorAll<HTMLButtonElement>("[data-menu-row]") ?? [])];
@@ -206,9 +258,9 @@ export function HeaderMenu(props: {
 
   const press = (row: MenuRow): void => {
     if (row.kind === "panel") pressDockPanel(row.id);
-    else if (row.id === "codegraph") {
+    else if (codeGraphRowOf(row.id) !== null) {
       close(false);
-      openCodeGraphSheet("build");
+      pressCodeGraphRow(codeGraphRowOf(row.id) ?? "build", codeGraphSession);
     } else if (row.id === "keymap") {
       close(false);
       props.onOpenKeymap();
@@ -281,7 +333,7 @@ export function HeaderMenu(props: {
                   </svg>
                   <span className="hdr-menu-label">
                     {t(lang, rowLabelKey(row))}
-                    {row.id === "codegraph" && codeGraphMissing && (
+                    {row.kind === "tool" && needsInstallNote(row.id) && codeGraphMissing && (
                       <span className="hdr-menu-note">
                         {t(lang, "hdr.menu.codegraphNote", { install: codeGraph?.install ?? "" })}
                       </span>
