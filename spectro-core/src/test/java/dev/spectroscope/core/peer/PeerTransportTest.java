@@ -459,6 +459,81 @@ class PeerTransportTest {
         }
     }
 
+    /**
+     * A refused connect closes its channel (the JDK closes a SocketChannel whose
+     * connect fails), so the retry must connect on a fresh one. On Linux a full
+     * listen backlog refuses a connect from a virtual thread at once with
+     * EAGAIN; a sender that retried on the closed channel stayed refused until
+     * the send timeout and answered busy (release 0.15.2, gate run 38255441288).
+     */
+    @Test
+    void aSenderRefusedByAFullBacklogDeliversOnceTheBacklogDrains() throws Exception {
+        LiveRegistry registry = registry();
+        java.util.concurrent.CountDownLatch gate = new java.util.concurrent.CountDownLatch(1);
+        PeerEndpoint endpoint = new PeerEndpoint(registry, ProcessIdentity.current(), (frame, pid) -> {
+            received.add(frame);
+            verifiedPids.add(pid);
+        }, PeerLimits.AUTH_TIMEOUT_MS, server -> {
+            try {
+                gate.await();
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                throw new IOException("interrupted");
+            }
+            return server.accept();
+        });
+        endpoint.start();
+        closing.add(endpoint);
+        List<SocketChannel> backlog = new ArrayList<>();
+        try {
+            int refusedAt = fillBacklog(endpoint.socket(), backlog);
+            assertTrue(refusedAt > 0, "the backlog took " + refusedAt + " connections before refusing");
+            java.util.concurrent.CompletableFuture<PeerClient.Result> sending =
+                    java.util.concurrent.CompletableFuture.supplyAsync(() -> new PeerClient(registry,
+                            ProcessIdentity.current(), 5_000).send(record(ProcessIdentity.current(),
+                            endpoint.socket()), "peer", hello("after the backlog drained")));
+            Thread.sleep(4 * PeerLimits.CONNECT_RETRY_MS);
+            assertTrue(refusesAConnect(endpoint.socket()), "the backlog is still full when the gate opens");
+            gate.countDown();
+            PeerClient.Result result = sending.get(10, TimeUnit.SECONDS);
+            assertTrue(result.sent(), String.valueOf(result.text()));
+            awaitSize(received, 1);
+            assertEquals("after the backlog drained", received.getFirst().get("text").asText());
+        } finally {
+            gate.countDown();
+            for (SocketChannel raw : backlog) {
+                raw.close();
+            }
+        }
+    }
+
+    /** Connects without blocking until the backlog refuses; @return how many it took. */
+    private static int fillBacklog(Path socket, List<SocketChannel> held) throws IOException {
+        for (int i = 0; i < 4_096; i++) {
+            SocketChannel raw = SocketChannel.open(StandardProtocolFamily.UNIX);
+            raw.configureBlocking(false);
+            try {
+                raw.connect(UnixDomainSocketAddress.of(socket));
+            } catch (IOException refused) {
+                raw.close();
+                return i;
+            }
+            held.add(raw);
+        }
+        return -1;
+    }
+
+    /** @return true when a fresh connect is refused now */
+    private static boolean refusesAConnect(Path socket) throws IOException {
+        try (SocketChannel probe = SocketChannel.open(StandardProtocolFamily.UNIX)) {
+            probe.configureBlocking(false);
+            probe.connect(UnixDomainSocketAddress.of(socket));
+            return false;
+        } catch (IOException refused) {
+            return true;
+        }
+    }
+
     @Test
     void theAcceptLoopGoesOnAfterATransientFailure() throws Exception {
         LiveRegistry registry = registry();

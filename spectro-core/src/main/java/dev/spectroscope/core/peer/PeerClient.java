@@ -123,26 +123,36 @@ public final class PeerClient {
 
     private Result exchange(LiveRecord target, String name, String line,
                             AtomicReference<SocketChannel> open) {
-        try (SocketChannel channel = SocketChannel.open(StandardProtocolFamily.UNIX)) {
-            open.set(channel);
-            while (true) {
+        SocketChannel connected;
+        while (true) {
+            // A failed connect closes its channel, so every attempt opens a new one.
+            SocketChannel attempt;
+            try {
+                attempt = SocketChannel.open(StandardProtocolFamily.UNIX);
+            } catch (IOException broken) {
+                return Result.failed(Error.GONE, gone(name, broken.getClass().getSimpleName()));
+            }
+            open.set(attempt);
+            try {
+                attempt.connect(UnixDomainSocketAddress.of(target.socket()));
+                connected = attempt;
+                break;
+            } catch (IOException refused) {
+                closeQuietly(attempt);
+                if (!stillThere(target)) {
+                    return Result.failed(Error.GONE, gone(name, refused.getClass().getSimpleName()));
+                }
+                // A full listen backlog refuses a connect to a live process (on
+                // Linux at once with EAGAIN); the send timeout ends the retries as busy.
                 try {
-                    channel.connect(UnixDomainSocketAddress.of(target.socket()));
-                    break;
-                } catch (IOException refused) {
-                    if (!stillThere(target)) {
-                        return Result.failed(Error.GONE, gone(name, refused.getClass().getSimpleName()));
-                    }
-                    // A full listen backlog refuses a connect to a live process; the
-                    // send timeout ends the retries as busy.
-                    try {
-                        Thread.sleep(PeerLimits.CONNECT_RETRY_MS);
-                    } catch (InterruptedException interrupted) {
-                        Thread.currentThread().interrupt();
-                        return Result.failed(Error.BUSY, busy(name));
-                    }
+                    Thread.sleep(PeerLimits.CONNECT_RETRY_MS);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    return Result.failed(Error.BUSY, busy(name));
                 }
             }
+        }
+        try (SocketChannel channel = connected) {
             LineReader in = new LineReader(Channels.newInputStream(channel));
             Optional<JsonNode> hello = Optional.ofNullable(in.readLine()).flatMap(PeerFrames::parse)
                     .filter(f -> "hello".equals(f.path("type").asText()));
