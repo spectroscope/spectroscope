@@ -154,7 +154,7 @@ def strip_data_uris(text):
 def visible_text(page):
     """The page without data URIs, scripts and style, tags removed."""
     text = strip_data_uris(page)
-    text = re.sub(r"<script\b.*?</script>", " ", text, flags=re.S)
+    text = re.sub(r"<script\b.*?</script>", " ", text, flags=re.S | re.I)
     text = re.sub(r"<style\b.*?</style>", " ", text, flags=re.S)
     text = re.sub(r"<[^>]+>", " ", text)
     return html.unescape(text)
@@ -275,7 +275,7 @@ class Output(unittest.TestCase):
             self.assertEqual(outs[0], outs[1])
 
     def test_one_file_with_no_external_request(self):
-        tags = re.sub(r"(<script\b[^>]*>).*?(</script>)", r"\1\2", self.page, flags=re.S)
+        tags = re.sub(r"(<script\b[^>]*>).*?(</script>)", r"\1\2", self.page, flags=re.S | re.I)
         self.assertNotRegex(tags, r'<script[^>]+\bsrc=')
         self.assertNotRegex(self.page, r'<link\b[^>]*rel="?stylesheet')
         self.assertNotIn("@import", self.page)
@@ -352,7 +352,7 @@ class Output(unittest.TestCase):
 
     def test_the_mark_key_is_read_and_written_in_try(self):
         self.assertIn("spectroscope:localSetup", self.page)
-        script = re.findall(r"<script>(.*?)</script>", self.page, re.S)[-1]
+        script = re.findall(r"<script>(.*?)</script>", self.page, re.S | re.I)[-1]
         for m in re.finditer(r"localStorage\.(getItem|setItem)\(", script):
             before = script[max(0, m.start() - 120):m.start()]
             self.assertIn("try", before, "a localStorage call outside a try block")
@@ -508,7 +508,7 @@ class ReviewRound1(unittest.TestCase):
         node = shutil.which("node")
         if not node:
             self.skipTest("node is not on the PATH")
-        for i, script in enumerate(re.findall(r"<script>(.*?)</script>", self.page, re.S)):
+        for i, script in enumerate(re.findall(r"<script>(.*?)</script>", self.page, re.S | re.I)):
             with tempfile.NamedTemporaryFile("w", suffix=".js", delete=False) as fh:
                 fh.write(script)
             try:

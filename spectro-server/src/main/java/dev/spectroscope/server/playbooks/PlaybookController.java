@@ -1009,8 +1009,14 @@ public class PlaybookController {
             return null;
         }
         try {
-            Path real = Path.of(dir).toRealPath();
-            return folders.read().folders().contains(real.toString()) ? real : null;
+            String real = Path.of(dir).toRealPath().toString();
+            // The answer is the registry's own entry, never the caller's string.
+            for (String folder : folders.read().folders()) {
+                if (folder.equals(real)) {
+                    return Path.of(folder);
+                }
+            }
+            return null;
         } catch (IOException | RuntimeException missing) {
             return null;
         }

@@ -44,7 +44,9 @@ public final class MessagesSidecar {
         if (sessionId == null || !SESSION_ID.matcher(sessionId).matches()) {
             return null;
         }
-        return dir.resolve(sessionId + ".messages.jsonl");
+        Path base = dir.toAbsolutePath().normalize();
+        Path file = base.resolve(sessionId + ".messages.jsonl").normalize();
+        return file.startsWith(base) ? file : null;
     }
 
     /**
