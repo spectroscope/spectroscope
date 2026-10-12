@@ -107,6 +107,25 @@ export const SOCKET_ONLY_TYPES: ReadonlySet<string> = new Set([
   // socket at this moment; a stored "woken" would be a claim about a server
   // that has since restarted. Its answer is the workspace_info above.
   "wake_session",
+  // Card 502. Agent messaging on the app's own screen: a message another
+  // agent sent or received, a held message waiting for Deliver or Decline, a
+  // status, a rename (peer_message); the sessions other processes of this home
+  // host right now (peer_roster); and the page's own outbound answer to a held
+  // message (peer_message_decision). The record of a message is the
+  // agent_message line with role peer, which is in the union, and the
+  // .messages.jsonl sidecar; these three are views of it and of this moment.
+  "peer_message",
+  "peer_roster",
+  "peer_message_decision",
+  // Card 503: the page's own outbound message, a Reply from the chat as the
+  // operator. The record of it is the sender's .messages.jsonl line.
+  "send_peer_message",
+  // Card 504: the session's loop as the page shows it (loop_info), and the
+  // page's own /loop and the chip's Stop (set_loop). The record of a loop is
+  // the .loop.jsonl sidecar; a stored "the next wakeup is at 10:42" would be a
+  // claim about a timer nobody holds once the server restarted.
+  "loop_info",
+  "set_loop",
 ]);
 
 /** What an import read out of somebody else's transcript: the todo list, the

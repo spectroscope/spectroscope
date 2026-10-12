@@ -99,3 +99,23 @@ describe("the send seat while a run is up (card 380)", () => {
     expect(view.sendHintKey).toBeNull();
   });
 });
+
+describe("Send while recording (card 527)", () => {
+  it("enables Send on heard text while the draft is still empty", () => {
+    const v = composerButtons({ running: false, stopping: false, draftEmpty: true, heard: true });
+    expect(v.seat).toBe("send");
+    expect(v.sendDisabled).toBe(false);
+  });
+
+  it("keeps Send in the seat during a run when words were heard", () => {
+    const v = composerButtons({ running: true, stopping: false, draftEmpty: true, heard: true });
+    expect(v.seat).toBe("send");
+    expect(v.sendDisabled).toBe(false);
+  });
+
+  it("without heard text an empty draft still disables Send", () => {
+    expect(
+      composerButtons({ running: false, stopping: false, draftEmpty: true, heard: false }).sendDisabled,
+    ).toBe(true);
+  });
+});

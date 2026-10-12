@@ -27,6 +27,7 @@ import { rowsPrefFrom, type RowsPref } from "./flowmap/workerGrid";
 import { AnalyzeRun } from "../components/AnalyzeRun";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
+import { labChatState, liveGoalLoopShown, type LiveGoalLoop } from "./labChatState";
 
 /** The card-view choice survives tab switches and reloads (TextView pattern). */
 export const VIEW_STORAGE_KEY = "spectroscope.lab.view";
@@ -108,6 +109,10 @@ export function LabView(props: {
   onDelete?: () => void;
   /** Passed through to the Lab's own Chat — its composer gear needs it too. */
   sendClient: (msg: ClientMessage) => boolean;
+  /** Card 504, hub and spoke fix round: the session's own frames (/loop,
+   *  /loop stop, the goal), passed through to the Lab's Chat so a stored
+   *  session is continued before they leave, as in the main chat. */
+  onSessionFrame?: (frame: ClientMessage) => boolean;
   /** App's focusInTrace seam (card 301): a click on a handover or a file row
    *  lands the trace on the event that recorded it. Absent = the dock's rows
    *  render but do not navigate. */
@@ -115,6 +120,12 @@ export function LabView(props: {
   /** Card 473: the session an LLM exchange is read under (an import's held
    *  wire, or the server's sidecar), for the Lab's chat and JSONL strip. */
   exchangeSessionId?: string | null;
+  /** Card 504, last fix round: the live record's state, whose goal and loop
+   *  the Lab's chat shows on the live run (the dam holds their frames). */
+  liveStatus?: LiveGoalLoop | null;
+  /** Card 504, last fix round: the stored session the Lab shows, when it can
+   *  be continued, for the recorded permission mode in the chat's gear. */
+  storedSessionId?: string | null;
 }) {
   const st = useStepper();
   const lang = useLang();
@@ -262,6 +273,13 @@ export function LabView(props: {
         ),
       );
   };
+  // Card 504, last fix round: at the live end of the live run the chat's goal
+  // and loop are the live record's, not the stepped fold's
+  // (lab/labChatState.ts). Stepped back, the fold's stay.
+  const chatState = useMemo(
+    () => labChatState(st.ui, liveGoalLoopShown(replay === null, st.queue.length, props.liveStatus ?? null)),
+    [st.ui, replay, st.queue.length, props.liveStatus],
+  );
   const rowClass = `lab-row${layout.chatOpen ? "" : " lab-row--chat-collapsed"}${layout.traceOpen ? "" : " lab-row--trace-collapsed"}`;
   const rowStyle = {
     "--lab-chat-w": `${layout.chatW}px`,
@@ -272,7 +290,7 @@ export function LabView(props: {
   return (
     <div className={rowClass} ref={rowRef} style={rowStyle}>
       <Chat
-        state={st.ui}
+        state={chatState}
         liveView={viewingLive}
         onSend={props.onSend}
         onReturnToLive={props.onReturnToLive}
@@ -281,7 +299,9 @@ export function LabView(props: {
         readOnlyNote={props.readOnlyNote}
         onDelete={props.onDelete}
         sendClient={props.sendClient}
+        onSessionFrame={props.onSessionFrame}
         exchangeSessionId={props.exchangeSessionId ?? null}
+        storedSessionId={props.storedSessionId}
       />
       <Resizer
         collapsed={!layout.chatOpen}

@@ -421,6 +421,27 @@
   opacity: 1;
   align-self: flex-start;
 }
+/* Card 531: the SearXNG offer has a download beside the copy chip, and the
+   download wears the same chip, so the two read as one row of actions. */
+.settings-docker-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.settings-docker a.settings-docker-download {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
+  color: var(--text-dim);
+  font-family: var(--font-ui);
+  font-size: var(--fs-11);
+  padding: 2px var(--sp-2);
+}
+.settings-docker a.settings-docker-download:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
 
 /* ---- footer ---- */
 .settings-foot {

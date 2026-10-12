@@ -104,3 +104,15 @@
     animation-name: none;
   }
 }
+
+/* Card 527 criterion 8: the same card while the speech model loads, over the
+   composer instead of the main column. The composer is about 72 px tall and
+   the surface clips its paint, so the card sits flush and slimmer here. */
+.opening-surface--speech {
+  padding: 0;
+}
+
+.opening-surface--speech .opening-card {
+  align-items: center;
+  padding: var(--sp-2) var(--sp-3);
+}

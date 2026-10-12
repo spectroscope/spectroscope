@@ -81,7 +81,15 @@ final class ContextDescriber {
                 + SpectroConfig.loadProjectMd(cwd) + SpectroConfig.loadAgentsMd(configuredWorkspace)
                 + skills.systemPromptSection();
 
-        List<Tool> standardTools = StandardTools.all(config.commandTimeoutSeconds());
+        // Card 547: code_graph follows the standard set on both faces, as
+        // SessionConnection registers it.
+        List<Tool> standardTools = new ArrayList<>(StandardTools.all(config.commandTimeoutSeconds()));
+        dev.spectroscope.core.tools.CodeGraphTool codeGraph = new dev.spectroscope.core.tools.CodeGraphTool();
+        standardTools.add(codeGraph);
+        // The line the loop adds to a run that offers the tool in this folder.
+        if (codeGraph.offeredIn(configuredWorkspace)) {
+            systemPrompt = systemPrompt + "\n\n" + codeGraph.systemPromptLine();
+        }
         List<String> mcpServerNames = config.mcpServers().stream()
                 .map(server -> server.name())
                 .toList();

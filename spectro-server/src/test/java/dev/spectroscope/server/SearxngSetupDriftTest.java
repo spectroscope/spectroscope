@@ -37,6 +37,20 @@ class SearxngSetupDriftTest {
     static final Path COMPOSE =
             LangfuseComposeDriftTest.repoRoot().resolve("samples/09-searxng/docker-compose.yml");
 
+    /**
+     * A copy of the installer in {@code work}, executable. The script writes
+     * every file into the folder it lives in (card 531, fix round 2), so a run
+     * of the repository copy would write into {@code samples/09-searxng}.
+     */
+    private static Path beside(Path work) throws IOException {
+        Path copy = work.resolve("install.sh");
+        if (!Files.exists(copy)) {
+            Files.copy(SCRIPT, copy);
+            assertTrue(copy.toFile().setExecutable(true));
+        }
+        return copy;
+    }
+
     private static String read(Path file) throws IOException {
         assertTrue(Files.exists(file), "must ship: " + file);
         return Files.readString(file);
@@ -83,7 +97,7 @@ class SearxngSetupDriftTest {
         // criterion 7 in the only form a test can hold it: run the configure
         // half for real and read what it produced.
         Path work = Files.createDirectory(home.resolve("work"));
-        Result configured = run(work, List.of(SCRIPT.toString(), "--configure-only"),
+        Result configured = run(work, List.of(beside(work).toString(), "--configure-only"),
                 Map.of("HOME", Files.createDirectory(home.resolve("home")).toString()));
 
         assertEquals(0, configured.exit(), configured.output());
@@ -106,7 +120,7 @@ class SearxngSetupDriftTest {
                 "the instance key must be generated on the user's machine");
 
         Path work = Files.createDirectory(home.resolve("work"));
-        assertEquals(0, run(work, List.of(SCRIPT.toString(), "--configure-only"),
+        assertEquals(0, run(work, List.of(beside(work).toString(), "--configure-only"),
                 Map.of("HOME", Files.createDirectory(home.resolve("home")).toString())).exit());
         String yaml = Files.readString(work.resolve("searxng/settings.yml"));
 
@@ -125,10 +139,10 @@ class SearxngSetupDriftTest {
         Path fakeHome = Files.createDirectory(home.resolve("home"));
         Map<String, String> env = Map.of("HOME", fakeHome.toString());
 
-        assertEquals(0, run(work, List.of(SCRIPT.toString(), "--configure-only"), env).exit());
+        assertEquals(0, run(work, List.of(beside(work).toString(), "--configure-only"), env).exit());
         String first = Files.readString(work.resolve("searxng/settings.yml"));
 
-        Result again = run(work, List.of(SCRIPT.toString(), "--configure-only"), env);
+        Result again = run(work, List.of(beside(work).toString(), "--configure-only"), env);
         assertEquals(0, again.exit(), again.output());
         assertEquals(first, Files.readString(work.resolve("searxng/settings.yml")),
                 "a re-run must not rotate the instance's identity");
@@ -151,7 +165,7 @@ class SearxngSetupDriftTest {
                     - html
                 """);
 
-        Result refused = run(work, List.of(SCRIPT.toString(), "--configure-only"),
+        Result refused = run(work, List.of(beside(work).toString(), "--configure-only"),
                 Map.of("HOME", Files.createDirectory(home.resolve("home")).toString()));
 
         assertNotEquals(0, refused.exit(),

@@ -330,4 +330,45 @@ class MergedEventStreamTest {
         assertInstanceOf(RunEvent.RunEnd.class, got.getLast(), "run_end is present and last");
         assertTrue(tsInOrder, "the merged deltas leave the queue in the order of their first piece");
     }
+    /** Card 505, non-functional: four background children write into the
+     *  one merged stream at once; the one consumer reads all 1,000 of their
+     *  events, each producer's in its own order. */
+    @Test
+    void oneThousandEventsFromFourProducersReachTheOneConsumer() throws Exception {
+        MergedEventStream merged = new MergedEventStream(() -> { });
+        CountDownLatch go = new CountDownLatch(1);
+        List<Thread> producers = new ArrayList<>();
+        for (int p = 0; p < 4; p++) {
+            String child = "worker-" + (p + 1);
+            producers.add(Thread.ofVirtual().start(() -> {
+                try {
+                    go.await();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                for (int i = 0; i < 250; i++) {
+                    merged.put(new RunEvent.AgentMessage(child, "main", "status", "working", child + "#" + i,
+                            null, i));
+                }
+            }));
+        }
+        List<RunEvent> got = new ArrayList<>();
+        Thread consumer = Thread.ofVirtual().start(() -> merged.forEach(got::add));
+        go.countDown();
+        for (Thread producer : producers) {
+            producer.join();
+        }
+        merged.end();
+        consumer.join(5_000);
+        assertEquals(1_000, got.size(), "no event lost");
+        for (int p = 1; p <= 4; p++) {
+            String child = "worker-" + p;
+            List<String> own = got.stream().map(e -> ((RunEvent.AgentMessage) e))
+                    .filter(m -> m.from().equals(child)).map(RunEvent.AgentMessage::text).toList();
+            assertEquals(250, own.size(), child);
+            for (int i = 0; i < 250; i++) {
+                assertEquals(child + "#" + i, own.get(i), "each producer keeps its order");
+            }
+        }
+    }
 }

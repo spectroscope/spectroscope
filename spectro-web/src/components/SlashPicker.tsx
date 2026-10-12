@@ -133,7 +133,12 @@ export function useSlashPicker(
   /** Runs a command; the composer empties the draft (card 471). */
   const run = (command: ChatCommand): void => {
     if (onCommand === undefined) return;
-    onCommand(command.name);
+    // Card 504: a command that takes words is written into the draft, not run.
+    if (command.takesArgs) {
+      complete(command);
+      return;
+    }
+    onCommand(command.name as ChatCommandName);
     setDismissed(false);
     setIndex(0);
   };
@@ -141,7 +146,7 @@ export function useSlashPicker(
   /** Writes a command into the draft without running it. A command only opens
    *  the draft, so it replaces everything up to the caret. */
   const complete = (command: ChatCommand): void => {
-    const text = `/${command.name}`;
+    const text = command.takesArgs ? `/${command.name} ` : `/${command.name}`;
     onPick(text + draft.slice(caret), text.length);
     setIndex(0);
   };

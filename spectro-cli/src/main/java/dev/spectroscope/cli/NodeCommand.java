@@ -408,6 +408,9 @@ public final class NodeCommand implements Callable<Integer> {
 
         String nodeId = id != null && !id.isBlank() ? id : "node-" + ProcessHandle.current().pid();
         long epoch = freshEpoch();
+        // Card 502: a fleet node is an unattended face: listed, refusing.
+        dev.spectroscope.core.peer.PeerNode peer = PeerFace.register("node", false,
+                () -> List.of(PeerFace.unattended(nodeId, workspace, permissions)));
 
         try {
             // Provider construction lives INSIDE the try: a missing key must
@@ -432,6 +435,8 @@ public final class NodeCommand implements Callable<Integer> {
         } catch (IllegalStateException missingKeyOrTrigger) {
             System.err.println(missingKeyOrTrigger.getMessage());
             return 1;
+        } finally {
+            PeerFace.close(peer); // card 502
         }
     }
 

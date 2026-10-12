@@ -168,7 +168,7 @@ public final class Spectro {
                             + dev.spectroscope.core.config.SpectroConfig.loadAgentsMd(workspace);
             // settings-reach: compactionThreshold, thinking, maxTurns, maxTokens,
             //     toolResultElision, toolGroupsOff, sessionsPerChat, careParagraph,
-            //     readSharePercent | embedded library | this agent is built by a JVM program that
+            //     readSharePercent, agentMessaging | embedded library | this agent is built by a JVM program that
             //     embedded spectroscope as a dependency, and its configuration is
             //     the code above, not the operator's ~/.spectro/settings.json. A
             //     library that read a settings file off whatever machine it happens

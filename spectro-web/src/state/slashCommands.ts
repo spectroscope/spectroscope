@@ -11,6 +11,8 @@
 // Everything in this file is pure so the suite can drive it in node; the
 // popover that uses it is markup over these three functions.
 
+import { pairSafeCut } from "../pairSafeCut";
+
 /** One installed skill, as `GET /api/skills` lists it. */
 export interface SkillOption {
   /** As the agent knows it: `<pack>:<skill>` for a catalogue install, bare otherwise. */
@@ -171,7 +173,7 @@ export function tokenInsert(
   const pad = /^\s/.test(rest) ? "" : " ";
   const token = `/${skill.name}${pad}`;
   return {
-    text: draft.slice(0, at.start) + token + rest,
+    text: pairSafeCut(draft, at.start) + token + rest,
     caret: at.start + token.length + (pad === "" ? 1 : 0),
   };
 }

@@ -13,6 +13,15 @@ import { t } from "../i18n/i18n";
 import { SEARXNG_HTML_NOTE_KEY, searxngHtmlAddress } from "./searxngHtmlNote";
 import { parseToolGroupsInfo, type ToolGroupsInfo } from "./toolGroups";
 import { parseLocalModeInfo, type LocalModeInfo } from "./localMode";
+import {
+  LOOP_END_REASONS,
+  parseGoalInfo,
+  parseLoopInfo,
+  type GoalInfo,
+  type GoalVerdictView,
+  type LoopInfo,
+} from "./goalLoop";
+import { foldPeerFrame, foldPeerRecord } from "./peerMessages";
 
 export interface ToolCard {
   callId: string;
@@ -129,7 +138,37 @@ export type Turn =
   /** agentId marks a failure that belongs to a subagent's thread — `error` has
    *  carried the field on the wire all along, and a session import sets it for
    *  an outage recorded inside a child. Absent is the run's own failure. */
-  | { kind: "error"; text: string; agentId?: string };
+  | { kind: "error"; text: string; agentId?: string }
+  /** Card 503: one agent message, sent or received, keyed by its msg_id.
+   *  Folded from the socket-only peer_message frame and from the
+   *  agent_message records with role peer (state/peerMessages.ts). */
+  | {
+      kind: "message";
+      direction: "sent" | "received";
+      /** The sender's name, or the agent id of an agent of this run. */
+      from: string;
+      /** The recipient's name; empty for a message this session received. */
+      to: string;
+      /** The sending session, when the message came from another session. */
+      fromSession?: string;
+      /** When the message was sent or received, epoch millis. */
+      time: number;
+      /** queued, received, or one of card 502's six delivery states. */
+      status: string;
+      summary: string;
+      text: string;
+      msgId: string;
+      /** Set when the message is between the parent and this child, which
+       *  puts the block in the child's thread (card 271). */
+      agentId?: string;
+      /** Rebuilt from a stored session; offers no Deliver or Decline. */
+      replay?: boolean;
+      /** Card 506: a workflow summariser's message to its parent, the run's
+       *  answer; drawn in full in the main thread, with no Reply. */
+      answer?: true;
+      /** Why a status was given, when the frame said. */
+      reason?: string;
+    };
 
 export interface PendingPermission {
   callId: string;
@@ -289,6 +328,17 @@ export interface ProviderInfo {
   host: string;
 }
 
+/** Card 521: a window named outside context_info, by the main agent's
+ *  run_start or by the server's provider_info (on connect, resume, wake and a
+ *  switch of the model). The ring divides by it until the main agent's next
+ *  context_info. `threshold` is absent on both: neither frame states one. */
+export interface WindowAnnouncement {
+  /** The window, absent when the sender knew none (never 0). */
+  contextWindow?: number;
+  /** The source word, as context_info's thresholdSource spells it. */
+  thresholdSource?: ThresholdSource;
+}
+
 export interface UiState {
   turns: Turn[];
   /** tool_call + tool_result, paired by callId. */
@@ -335,8 +385,13 @@ export interface UiState {
    *  starts. The pane says this out loud: a tool that promises you can watch
    *  everything must not drop the beginning of an incident without a word. */
   traceDropped: number;
-  /** Latest context_info snapshot — latest wins, null until the first one. */
+  /** Latest context_info snapshot of the run's own agent (card 521: a
+   *  child's never lands here). Latest wins, null until the first one. */
   context: ContextSnapshot | null;
+  /** Card 521: the window the main agent's run_start or the server's
+   *  provider_info named after the last snapshot, or null. The ring reads
+   *  it before `context` (see contextRingMath `ringFrame`). */
+  announcedWindow: WindowAnnouncement | null;
   /** inputTokens of the LAST usage event of the run's own agent — the context
    *  ring's live value (the provider reports the true request size). */
   lastInputTokens: number;
@@ -408,6 +463,14 @@ export interface UiState {
   /** Card 493: the Local mode switch the server announced in its socket-only
    *  local_mode_info frame. Null until the first frame. */
   localMode: LocalModeInfo | null;
+  /** Card 504: the goal in force, from the socket-only goal_info frame. Null until the first frame. */
+  goal: GoalInfo | null;
+  /** Card 504: the last goal_check verdict, for the goal line under the composer. */
+  goalVerdict: GoalVerdictView | null;
+  /** Card 504: the session's loop, from the socket-only loop_info frame. Null until the first frame. */
+  loop: LoopInfo | null;
+  /** Card 504: the root run's current turn while it is live, for the loop chip; null between runs. */
+  runTurn: number | null;
   /** ts of the current assistant turn's first event, per agent — so the `usage`
    *  event can stamp each answer's duration. Transient bookkeeping, not shown. */
   assistantTurnStart: Record<string, number>;
@@ -438,6 +501,7 @@ export const initialState: UiState = {
   trace: [],
   traceDropped: 0,
   context: null,
+  announcedWindow: null,
   lastInputTokens: 0,
   rootAgentId: null,
   thinkingActive: false,
@@ -455,6 +519,10 @@ export const initialState: UiState = {
   permissionMode: "ask",
   toolGroups: null,
   localMode: null,
+  goal: null,
+  goalVerdict: null,
+  loop: null,
+  runTurn: null,
   assistantTurnStart: {},
   answerAwaitingUsage: [],
 };
@@ -632,12 +700,29 @@ const PROGRESS_INTERVENTIONS: ReadonlySet<string> = new Set(["CARRY_ON", "CHANGE
 /** The leash's decisions (card 266). Deliberately NOT the run_end vocabulary:
  *  the leash's own `no_progress` and the guard's stop reason of the same name
  *  are different facts, and only the enum tells them apart. */
-const CONTINUATION_DECISIONS: ReadonlySet<string> = new Set(["continued", "no_progress", "budget_spent"]);
+const CONTINUATION_DECISIONS: ReadonlySet<string> = new Set([
+  "continued",
+  "no_progress",
+  "budget_spent",
+  // Card 504: a failed goal check continued the run on the goal's own counter.
+  "goal_continued",
+]);
 
 /** The goal check's verdicts (card 267). */
-const GOAL_OUTCOMES: ReadonlySet<string> = new Set(["met", "unmet", "unknown"]);
+const GOAL_OUTCOMES: ReadonlySet<string> = new Set([
+  "met",
+  "unmet",
+  "unknown",
+  // Card 504: the goal cleared itself after an unrecoverable error.
+  "cleared",
+  // Card 504, live check: the two words the command check sends besides
+  // "met" (GoalVerdict.Outcome), which this set never named.
+  "failed",
+  "untested",
+]);
 
 import { CLEAN_FINISHES, stopReasonKey } from "./stopReason";
+import { pairSafeCut } from "../pairSafeCut";
 
 const addTurn = (s: UiState, turn: Turn): UiState => ({ ...s, turns: [...s.turns, turn] });
 
@@ -685,6 +770,7 @@ function turnOwner(state: Pick<UiState, "cards" | "rootAgentId">, turn: Turn): s
       return state.cards[turn.callId]?.agentId ?? root;
     case "info":
     case "error":
+    case "message":
       return turn.agentId ?? root;
     default:
       return root;
@@ -939,12 +1025,19 @@ function applyFrame(traced: UiState, event: RunEvent): UiState {
   // Same boundary rule for provider_info: connect + every switch announce the
   // active backend; the chip/map/host column follow wire truth, latest wins.
   if (raw.type === "provider_info") {
-    const p = event as unknown as ProviderInfo;
+    const p = event as unknown as ProviderInfo & { contextWindow?: unknown; windowSource?: unknown };
     const model = String(p.model ?? "");
     return {
       ...traced,
       provider: typeof p.provider === "string" ? p.provider : traced.provider,
       providerInfo: { provider: String(p.provider ?? ""), model, host: String(p.host ?? "") },
+      // Card 521: a server that names the window's source names the ring's
+      // denominator until the next context_info. One that names none (older
+      // than the card) leaves the ring alone.
+      announcedWindow:
+        typeof p.windowSource === "string" && p.windowSource !== ""
+          ? announcement(p.contextWindow, p.windowSource)
+          : traced.announcedWindow,
       // For a session that names its model per message (an imported transcript)
       // run_start only ever carried the first one — every switch arrives here.
       // Answers are stamped at their own usage event, so an announcement moves
@@ -1051,6 +1144,41 @@ function applyFrame(traced: UiState, event: RunEvent): UiState {
   if (raw.type === "local_mode_info") {
     return { ...traced, localMode: parseLocalModeInfo(event) ?? traced.localMode };
   }
+  // Card 504: the goal in force, socket-only (card 267's goal_info). A frame
+  // that cannot be read keeps the last truth.
+  if (raw.type === "goal_info") {
+    return { ...traced, goal: parseGoalInfo(event) ?? traced.goal };
+  }
+  // Card 504: the session's loop, socket-only. When a loop that ran ends, the
+  // chat says why, once. Fix round 1: a loop that ended while no window had
+  // the session comes with endUnseen, and the page that attaches next writes
+  // the line it missed.
+  if (raw.type === "loop_info") {
+    const loop = parseLoopInfo(event);
+    if (loop === null) return traced;
+    const next = { ...traced, loop };
+    const sameLoop = traced.loop !== null && traced.loop.loopId === loop.loopId;
+    const alreadyEnded = sameLoop && traced.loop?.endedReason !== null;
+    const ended =
+      !loop.active &&
+      loop.endedReason !== null &&
+      !alreadyEnded &&
+      ((sameLoop && traced.loop?.endedReason === null) || loop.endUnseen);
+    if (!ended) return next;
+    const reason = loop.endedReason as string;
+    return addTurn(next, {
+      kind: "info",
+      text: `The loop ended: ${reason}`,
+      infoKey: LOOP_END_REASONS.includes(reason) ? `info.loop.ended.${reason}` : "info.loop.ended.other",
+      infoVars: { reason },
+      tone: reason === "user_abort" ? "neutral" : "warn",
+    });
+  }
+  // Card 503: same boundary rule for agent messaging. The frame draws or
+  // updates one message block, keyed by msg_id.
+  if (raw.type === "peer_message") {
+    return foldPeerFrame(traced, event);
+  }
   // The session-wide agent roster folds separately from the UI state and uses
   // the PRE-apply rootRunId (applyEvent's run_end clears it).
   const applied = applyEvent(traced, event);
@@ -1085,6 +1213,15 @@ export function recordResumeMarker(state: UiState, payload: unknown): UiState {
 /** Replay placeholders show this many hex chars of an attachment's sha256. */
 const ATTACHMENT_SHA_PREVIEW_CHARS = 8;
 
+/** Card 521: an announcement from a frame's loose window fields. A window that
+ *  is not a positive number is no window; the key is then left out. */
+function announcement(contextWindow: unknown, source: unknown): WindowAnnouncement {
+  return {
+    ...(typeof contextWindow === "number" && contextWindow > 0 ? { contextWindow } : {}),
+    ...(typeof source === "string" && source !== "" ? { thresholdSource: source as ThresholdSource } : {}),
+  };
+}
+
 function applyEvent(state: UiState, event: RunEvent): UiState {
   switch (event.type) {
     case "run_start": {
@@ -1104,12 +1241,19 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
         !attachments?.length && event.attachments?.length
           ? "\n" +
             event.attachments
-              .map((a) => `[image ${a.sha256.slice(0, ATTACHMENT_SHA_PREVIEW_CHARS)}]`)
+              .map((a) => `[image ${pairSafeCut(a.sha256, ATTACHMENT_SHA_PREVIEW_CHARS)}]`)
               .join(" ")
           : "";
       return addTurn(
         {
           ...state,
+          // Card 521: the window this run derived, recorded on its run_start,
+          // so a stored session shows it before any context_info. A line from
+          // before the card names neither field and changes nothing.
+          announcedWindow:
+            event.windowSource !== undefined || event.contextWindow !== undefined
+              ? announcement(event.contextWindow, event.windowSource)
+              : state.announcedWindow,
           running: true,
           rootRunId: event.runId,
           runStartTs: event.ts,
@@ -1135,7 +1279,11 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
       // Card 414: a new model turn has written nothing yet, so its usage must
       // not reach an answer an earlier turn wrote and never billed.
       const answerAwaitingUsage = withoutAgent(state.answerAwaitingUsage, event.agentId);
-      return answerAwaitingUsage === state.answerAwaitingUsage ? state : { ...state, answerAwaitingUsage };
+      // Card 504: the loop chip's "turn n of maxTurns" follows the root run.
+      const rootTurn =
+        state.rootRunId !== null && event.agentId === state.rootAgentId && state.runTurn !== event.turn;
+      if (answerAwaitingUsage === state.answerAwaitingUsage && !rootTurn) return state;
+      return { ...state, answerAwaitingUsage, ...(rootTurn ? { runTurn: event.turn } : {}) };
     }
 
     case "thinking_delta": {
@@ -1306,6 +1454,11 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
       };
       return withSearxngHtmlNote(next, event, state.cards[event.callId]?.name);
     }
+
+    case "agent_message":
+      // Card 503: a peer message an agent of this run sent or took in. Every
+      // other role is the roster's (foldAgents) and draws nothing here.
+      return event.role === "peer" ? foldPeerRecord(state, event) : state;
 
     case "agent_spawn":
       return addTurn(state, {
@@ -1512,21 +1665,26 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
       });
 
     case "goal_check":
-      return addTurn(state, {
-        kind: "info",
-        text: `Goal ${event.outcome}: ${event.evidence}`,
-        infoKey: GOAL_OUTCOMES.has(event.outcome)
-          ? `info.goalCheck.${event.outcome}`
-          : "info.goalCheck.other",
-        infoVars: {
-          outcome: event.outcome,
-          command: event.command,
-          code: event.exitCode ?? "",
-          evidence: event.evidence,
+      return addTurn(
+        { ...state, goalVerdict: { outcome: event.outcome, evidence: event.evidence } },
+        {
+          kind: "info",
+          text: `Goal ${event.outcome}: ${event.evidence}`,
+          infoKey: GOAL_OUTCOMES.has(event.outcome)
+            ? `info.goalCheck.${event.outcome}`
+            : "info.goalCheck.other",
+          infoVars: {
+            outcome: event.outcome,
+            command: event.command,
+            code: event.exitCode ?? "",
+            evidence: event.evidence,
+            // Card 504: the error class a cleared goal names in brackets.
+            reason: /\(([^()]+)\)\s*$/.exec(event.evidence)?.[1] ?? "",
+          },
+          tone: event.outcome === "met" ? "neutral" : "warn",
+          agentId: event.agentId,
         },
-        tone: event.outcome === "met" ? "neutral" : "warn",
-        agentId: event.agentId,
-      });
+      );
 
     case "images_withheld":
       return addTurn(state, {
@@ -1651,6 +1809,7 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
         thinkingActive: false,
         thinkingAgents: [],
         lastStopReason: event.stopReason,
+        runTurn: null,
       };
     }
 
@@ -1716,8 +1875,13 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
     case "context_info":
       // No chat turn — introspection feeds the context ring and the trace
       // only. Latest snapshot wins.
+      // Card 521: the run's own agent only. A child runs against its own
+      // window, and its snapshot replacing the parent's made the ring divide
+      // a parent's usage by a child's window.
+      if (event.agentId !== (state.rootAgentId ?? "main")) return state;
       return {
         ...state,
+        announcedWindow: null,
         context: {
           turn: event.turn,
           messages: event.messages,
@@ -1736,10 +1900,17 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
       // window for this session. It moves the ring at once by replacing the
       // three fields that follow from the choice; what only a run measures
       // (turn, messages, estimate, parts) stays. Before the first context_info
-      // there is no snapshot, and none is invented.
-      if (state.context === null) return state;
+      // there is no snapshot, and none is invented; card 521 lets the ring
+      // read the choice as an announcement instead.
+      if (state.context === null) {
+        return {
+          ...state,
+          announcedWindow: announcement(event.contextWindow, event.thresholdSource),
+        };
+      }
       return {
         ...state,
+        announcedWindow: null,
         context: {
           turn: state.context.turn,
           messages: state.context.messages,

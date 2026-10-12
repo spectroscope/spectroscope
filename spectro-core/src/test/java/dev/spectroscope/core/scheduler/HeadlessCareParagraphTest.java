@@ -53,7 +53,9 @@ class HeadlessCareParagraphTest {
                 base.maxTokens(), base.subagentBudgetSeconds(), base.rtkFilter(),
                 base.subagentBudgetTokens(), base.desktopNotifications(),
                 base.toolResultElision(), base.toolGroupsOff(), base.sessionsPerChat(), care,
-                base.readSharePercent(), base.localModeKeys());
+                base.readSharePercent(), base.localModeKeys(), base.sttRunner(),
+                // Card 503, owner decision 9: the fixture sets agentMessaging false.
+                false);
     }
 
     private static List<String> runWith(String care, Path cwd) {

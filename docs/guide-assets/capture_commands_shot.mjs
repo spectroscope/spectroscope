@@ -40,7 +40,7 @@ await ctx.addInitScript(([design]) => {
     );
     localStorage.setItem("spectroscope:onboarded", "1");
     localStorage.setItem("spectroscope:mode", "learn");
-    localStorage.setItem("spectroscope:mode-chosen", "1");
+    localStorage.setItem("spectroscope:mode-chosen", "2");
   } catch {}
 }, [DESIGN]);
 const page = await ctx.newPage();

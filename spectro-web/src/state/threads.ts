@@ -52,6 +52,7 @@ function ownerOf(turn: Turn, cards: Record<string, ToolCard>, root: string): str
     // fail the owner === root spine and draw a thread chip for nobody.
     case "info":
     case "error":
+    case "message":
       return turn.agentId ?? root;
     default:
       return root;
@@ -119,6 +120,11 @@ export function groupTurnsV2(
     if (owner === root) {
       blocks.push({ kind: "turn", turn, index });
       return;
+    }
+    // Card 503: a message between the parent and a child sits in the child's
+    // thread and, once, in the main thread, where it draws as one line.
+    if (turn.kind === "message") {
+      blocks.push({ kind: "turn", turn, index });
     }
     const already = announcedBy.get(owner);
     if (already !== undefined) {

@@ -36,11 +36,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @Timeout(value = 90, unit = TimeUnit.SECONDS)
 class LaunchSupervisorTest {
 
-    /** A free port, taken and released — the OS will not hand it out twice in a row. */
+    /** A free port, taken and released; card 540: free at every address, see {@link ClaimablePorts}. */
     private static int freePort() throws IOException {
-        try (ServerSocket socket = new ServerSocket(0)) {
-            return socket.getLocalPort();
-        }
+        return ClaimablePorts.free();
     }
 
     /**

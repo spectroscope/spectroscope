@@ -14,13 +14,20 @@
 // keep its promise — the answer card 100 already reached for llama-server.
 
 import { useCallback, useEffect, useState } from "react";
-import { t } from "../i18n/i18n";
+import { t, type Lang } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { formatBytes } from "../workspace/preview";
 import { liveReading, type LiveRoute } from "./liveTranscription";
 import { ReachBlock } from "./settingsReach";
 import { setLiveWanted, useLiveWanted } from "../state/liveWanted";
-import { SttSearchedNotes, type SttBinaryState } from "./SttSearchedNotes";
+import {
+  SttLocalLiveNote,
+  SttRunnerNote,
+  SttSearchedNotes,
+  type SttBinaryState,
+  type SttLocalLive,
+  type SttRunnerState,
+} from "./SttSearchedNotes";
 
 interface SttStatus {
   model: { file: string; path: string; present: boolean; bytes: number; expectedBytes: number };
@@ -33,11 +40,15 @@ interface SttStatus {
   provider?: string;
   /** The dictation language as configured: "auto" | "de" | "en". */
   language?: string;
+  /** Card 528: the runner as configured: "auto" | "cli" | "server". */
+  runner?: string;
   /** What a recording would do right now: "local" | "hosted". */
   route?: string;
   hosted?: { keyPresent: boolean; keyEnv: string; model: string };
   /** Whether the route being taken can actually run. */
   speechWorks?: boolean;
+  /** Card 527: live text on the local route, and its chunk step. */
+  localLive?: SttLocalLive;
 }
 
 /** The values `sttProvider` accepts, in the order the pane offers them. */
@@ -45,6 +56,58 @@ const STT_PROVIDERS = ["auto", "local", "openai"] as const;
 
 /** The values `sttLanguage` accepts — "auto" lets the model detect. */
 const STT_LANGUAGES = ["auto", "de", "en"] as const;
+
+/** The values `sttRunner` accepts (card 528), in the order the pane offers them. */
+const STT_RUNNERS = ["auto", "cli", "server"] as const;
+
+/**
+ * Card 528: the `sttRunner` select and the state of the resident server under
+ * it. Silent against a server that does not report the runner.
+ *
+ * @param runner the setting as the status reports it
+ * @param localRunner the status's `localLive.runner`
+ * @param lang the interface language
+ * @param onSave writes one settings key; without it the select is greyed out
+ * @param onSaved called after a save, to read the status again
+ * @returns the field, or null
+ */
+export function SttRunnerField({
+  runner,
+  localRunner,
+  lang,
+  onSave,
+  onSaved,
+}: {
+  runner: string | undefined;
+  localRunner: SttRunnerState | null | undefined;
+  lang: Lang;
+  onSave?: (patch: Record<string, unknown>) => void;
+  onSaved: () => void;
+}) {
+  if (runner === undefined) return null;
+  return (
+    <ReachBlock lang={lang} fields={["sttRunner"]}>
+      <label className="settings-field">
+        <span>{t(lang, "set.sttRunner")}</span>
+        <select
+          value={String(runner)}
+          onChange={(e) => {
+            onSave?.({ sttRunner: e.target.value });
+            onSaved();
+          }}
+          disabled={onSave === undefined}
+        >
+          {STT_RUNNERS.map((r) => (
+            <option key={r} value={r}>
+              {t(lang, `set.sttRunner.${r}`)}
+            </option>
+          ))}
+        </select>
+      </label>
+      <SttRunnerNote runner={localRunner} lang={lang} />
+    </ReachBlock>
+  );
+}
 
 export function SttSettings({
   anchorId,
@@ -90,6 +153,7 @@ export function SttSettings({
     {
       route: (status.route === "hosted" ? "hosted" : "local") as LiveRoute,
       speechWorks: status.speechWorks !== false,
+      localStreams: status.localLive?.available === true,
     },
     liveWanted,
   );
@@ -182,8 +246,20 @@ export function SttSettings({
               switch with no reason is a vanished button with extra steps, which
               is the defect step 1 of this card was opened for. */}
           <p className="settings-note">{t(lang, live.key)}</p>
+          <SttLocalLiveNote localLive={status.localLive} wanted={liveWanted} lang={lang} />
         </>
       )}
+      {/* Card 528: what runs whisper for live text on the local route. The
+          socket reads the setting when a recording starts, so a change reaches
+          the next press. */}
+      <SttRunnerField
+        runner={status.runner}
+        localRunner={status.localLive?.runner}
+        lang={lang}
+        onSave={onSave}
+        // Re-ask the server, as for the provider above.
+        onSaved={() => window.setTimeout(() => void load(), 150)}
+      />
       {status.hosted !== undefined && (
         <p className="settings-note">
           {status.hosted.keyPresent

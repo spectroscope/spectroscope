@@ -37,7 +37,10 @@ const SLICED =
 /** What each open does when the fold hands back null (criterion 10: its state never lands). */
 const ON_NULL: Record<string, RegExp> = {
   openSession: /^;\s*if \(folded === null\) return;/,
-  resumeSession: /^;\s*if \(folded === null\) return;/,
+  // Card 504, final round: the superseded resume also drops its frames
+  // before it stops (resumeJoinWiring.drift.test.ts pins the drop).
+  resumeSession:
+    /^;\s*if \(folded === null\) \{\s*(?:\/\/[^\n]*\n\s*)*for \(const frame of resumeJoin\.take\(ticket\)\) sentWrites\.drop\(id, frame\);\s*return;\s*\}/,
   // The import also turns a failed fold into null, and lowers its own sign then.
   openImport:
     /^\.catch\(\(e: unknown\) => \{[^}]*reportBrowserError\("import", e\);\s*return null;\s*\}\);\s*if \(folded === null\) \{\s*if \(navNonce\.isCurrent\(ticket\)\) setOpening\(null\);\s*return;\s*\}/,

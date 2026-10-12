@@ -115,6 +115,14 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
      *                    Today every child agent writes into its parent's
      *                    file, so the list is empty. The names are file names,
      *                    never paths, and a reader refuses any other shape.
+     * @param contextWindow the context window this run derived its threshold
+     *                    against, additive (card 521); null (omitted) when the
+     *                    run learned none, because a 0 in a window field would
+     *                    read as a claim about the room available
+     * @param windowSource the wire name of the fact behind that derivation
+     *                    ({@code CompactionThreshold.Source.wireName()}),
+     *                    additive (card 521); null (omitted) on a line from
+     *                    before the field and on a producer that states none
      * @param ts          epoch millis of emission
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -127,6 +135,8 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
                     String llmWire,                   // additive (card 473)
                     String browserWire,               // additive (card 473)
                     List<String> children,            // additive (card 473)
+                    Integer contextWindow,            // additive (card 521)
+                    String windowSource,              // additive (card 521)
                     long ts) implements RunEvent {
 
         /** Defensive copy of the child list; null stays null (no reference).
@@ -143,10 +153,51 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
          * @param llmWire     the llm wire's file name; null when not named
          * @param browserWire the browser wire's file name; null when not named
          * @param children    the child session ids; null on a line without the reference
+         * @param contextWindow the window the run derived against; null when none
+         * @param windowSource the wire name of the fact behind it; null when not stated
          * @param ts          epoch millis of emission */
         public RunStart {
             children = children == null ? null : List.copyOf(children);
+            contextWindow = contextWindow == null || contextWindow <= 0 ? null : contextWindow;
         }
+
+        /** Pre-card-521 arity: no window; Jackson keeps using the canonical.
+         *
+         * @param runId       unique id of the run
+         * @param agentId     the agent running it
+         * @param parentId    the spawning agent's id; null on the main agent
+         * @param prompt      the user message that started the run
+         * @param provider    label of the LLM backend serving the run
+         * @param model       the model id serving the run; null when unknown
+         * @param trigger     what woke a triggered node's run; null when none
+         * @param attachments images riding along with the prompt; null when none
+         * @param workspace   the folder this run worked in; null when none
+         * @param llmWire     the llm wire's file name; null when not named
+         * @param browserWire the browser wire's file name; null when not named
+         * @param children    the child session ids; null on a line without the reference
+         * @param ts          epoch millis of emission */
+        public RunStart(String runId, String agentId, String parentId, String prompt,
+                        String provider, String model, String trigger,
+                        List<Attachment> attachments, String workspace,
+                        String llmWire, String browserWire, List<String> children, long ts) {
+            this(runId, agentId, parentId, prompt, provider, model, trigger, attachments,
+                    workspace, llmWire, browserWire, children, null, null, ts);
+        }
+
+        /**
+         * This line with the window the run derived (card 521); every other
+         * field, the moment included, is kept.
+         *
+         * @param window the window in tokens; 0 or less is "none" and is not written
+         * @param source the wire name of the fact behind the derivation, or null
+         * @return the copy that names the window
+         */
+        public RunStart withWindow(int window, String source) {
+            return new RunStart(runId, agentId, parentId, prompt, provider, model, trigger,
+                    attachments, workspace, llmWire, browserWire, children,
+                    window > 0 ? window : null, source, ts);
+        }
+
 
         /** Pre-card-473 arity: no reference; Jackson keeps using the canonical.
          *
@@ -179,7 +230,7 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
         public RunStart withWires(String llmWire, String browserWire, List<String> children) {
             return new RunStart(runId, agentId, parentId, prompt, provider, model, trigger,
                     attachments, workspace, llmWire, browserWire,
-                    children == null ? List.of() : children, ts);
+                    children == null ? List.of() : children, contextWindow, windowSource, ts);
         }
 
         /** Pre-card-284 arity — no workspace; Jackson keeps using the canonical.
@@ -1116,9 +1167,14 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
      * {@code label} names the dev tool that spawned the child ({@code build_plan},
      * …); plain {@code spawn_agent} spawns carry none.
      *
+     * <p>Card 502 adds the role word {@code peer} for a message between agents
+     * of different runs or sessions, with the state words {@code sent} and
+     * {@code received}; on a {@code peer} line {@code label} carries the
+     * message's {@code msg_id}. No component changes.</p>
+     *
      * @param from  the sending agent's id
      * @param to    the receiving agent's id
-     * @param role  {@code task}, {@code status} or {@code result}
+     * @param role  {@code task}, {@code status}, {@code result} or {@code peer}
      * @param state the A2A lifecycle state: submitted, working, completed or failed
      * @param text  the message content — the task text, a status line, or the result
      * @param label the dev tool that spawned the child; null on plain spawns

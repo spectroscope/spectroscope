@@ -11,6 +11,7 @@ import type { ConnectionStatus } from "../transport/ws";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import type { ClientMessage, RunEvent } from "../events";
+import type { TraceOrigin } from "../state/traceFace";
 import type { Turn, UiState } from "../state/reducer";
 import { liveThinkingTurns } from "../state/reducer";
 import { groupTurns, groupTurnsV2 } from "../state/threads";
@@ -36,7 +37,9 @@ import {
   type ReaderPull,
 } from "../state/scrollPin";
 import { agentAccent, answerLineSegments, clockTime } from "../format";
-import { composerSubmit, type ChatCommandName } from "../state/chatCommands";
+import { MessageBlock, replyFrame, replyTargetOf, decisionFrame, type ReplyTarget } from "./MessageBlock";
+import { composerSubmit, loopFrame, loopStopFrame, type ChatCommandName } from "../state/chatCommands";
+import { ComposerStrip } from "./ComposerStrip";
 import { Markdown } from "./Markdown";
 import { ToolCard } from "./ToolCard";
 import { AttachmentThumbs } from "./AttachmentThumbs";
@@ -46,12 +49,15 @@ import { ThinkingDisclosure } from "./ThinkingDisclosure";
 import { useThinkingCeiling } from "./thinkingCeiling";
 import { WorkingLine, showWorkingLine } from "./WorkingLine";
 import { useAttachments } from "./useAttachments";
-import { useVoiceInput } from "./useVoiceInput";
+import { useComposerVoice } from "./voiceHook";
+import { SpeechModelOpening } from "./OpeningSurface";
+import { useSendFocus } from "./useSendFocus";
 import { liveReading, type LiveRoute } from "./liveTranscription";
 import { composerHeight, showsPlaceholder } from "./composerGrowth";
 import {
   atDraft,
   composerKeyAction,
+  voiceSubmit,
   recallEntries,
   recallReadout,
   walkStep,
@@ -65,7 +71,7 @@ import { markVoiceNoticeSeen, readVoiceNoticeSeen, shouldShowVoiceNotice } from 
 import { VoiceNotice } from "./VoiceNotice";
 import { meterBars } from "./micLevel";
 import { MicMenu } from "./MicMenu";
-import { formatTimer, micButtonState } from "./voiceButton";
+import { formatTimer, micButtonState, speechModelLoads } from "./voiceButton";
 import { composerButtons } from "./composerButtons";
 import { useSlashPicker } from "./SlashPicker";
 import type { QueuedMessage } from "../state/sendQueue";
@@ -88,6 +94,7 @@ import { skillTokenSegments } from "../state/skillTokens";
 import { useSkills } from "../state/skillList";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
+import { useRecordedMode } from "../state/recordedMode";
 import { bundleLink } from "./rowMenuItems";
 import { AnswerExchange } from "./AnswerExchange";
 
@@ -138,6 +145,13 @@ export function Chat(props: {
    *  import's held wire, or the server's sidecar), or null for none. Absent
    *  or null means no answer offers its exchange. */
   exchangeSessionId?: string | null;
+  /** Card 519: where the session came from, which decides the faces an
+   *  answer's exchange offers. Absent means a session of our own. */
+  exchangeOrigin?: TraceOrigin;
+  /** Card 504, last fix round: the stored session on screen that can be
+   *  continued, whose recorded permission mode the gear marks; null or absent
+   *  otherwise. */
+  storedSessionId?: string | null;
   /** true when this is the live socket view, false for a replayed archive. */
   liveView: boolean;
   onSend: (text: string, attachments?: PendingAttachment[]) => void;
@@ -146,6 +160,14 @@ export function Chat(props: {
    *  (the socket is down), and the draft stays. Absent in hosts without a
    *  session to command (the Lab); there a command draft sends nothing. */
   onCommand?: (command: ChatCommandName) => boolean;
+  /** Card 504: the frames that belong to the session itself leave here:
+   *  /loop and /loop stop (fix round 2), the gear's Set goal and Clear goal
+   *  (hub and spoke fix round), and the gear's permission mode, tool groups
+   *  and Local mode (its review, round 1). The host sends them on the session's
+   *  own socket and continues a stored session first, as it does a command.
+   *  False means the frame did not leave. Absent, they go through
+   *  sendClient. */
+  onSessionFrame?: (frame: ClientMessage) => boolean;
   onReturnToLive: () => void;
   /** Card 458: a stored session that the first message continues. The live
    *  composer stands under its history instead of the archive bar, and the
@@ -235,6 +257,9 @@ export function Chat(props: {
   const translated = useTranslation(props.viewKey ?? "live");
   const [draft, setDraft] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // Card 503: a Reply pins the recipient of the next send; it leaves as
+  // send_peer_message from the operator, not as a prompt.
+  const [replyTo, setReplyTo] = useState<ReplyTarget | null>(null);
   // The live layer, measured by autosize. A ref rather than state: it is read
   // during a layout pass, not rendered from.
   const ghostRef = useRef<HTMLDivElement>(null);
@@ -264,12 +289,25 @@ export function Chat(props: {
     {
       route: (sttStatus?.route === "hosted" ? "hosted" : "local") as LiveRoute,
       speechWorks: sttStatus?.speechWorks !== false,
+      // Card 527: the local route streams when the server says it can.
+      localStreams: sttStatus?.localLive?.available === true,
     },
     // Until the status has arrived the route is unknown, and an unknown route
     // is not a licence to open a metered session.
     liveWanted && sttStatus !== null,
   );
-  const voice = useVoiceInput((text) => setDraft((prev) => (prev ? `${prev} ${text}` : text)), live.active);
+  const voice = useComposerVoice(
+    (text) => setDraft((prev) => (prev ? `${prev} ${text}` : text)),
+    live.active,
+    {
+      route: live.route,
+      chunkMs: sttStatus?.localLive?.chunkMs ?? undefined,
+      warmupTimeoutMs: sttStatus?.localLive?.warmupTimeoutMs ?? undefined,
+    },
+  );
+  // Card 527: Send takes the focus when the first words of a recording
+  // appear, so Enter sends; a key typed in the box keeps the focus there.
+  const sendFocus = useSendFocus(voice.micPhase === "recording", voice.provisional);
   const loadSttStatus = useCallback(async () => {
     try {
       const res = await fetch("/api/stt/status");
@@ -717,14 +755,71 @@ export function Chat(props: {
   const draftMarks = useMemo(() => skillTokenSegments(draft, knownSkills), [draft, knownSkills]);
   const marksRef = useRef<HTMLDivElement>(null);
 
+  // Card 504: the session's own frames, on its own socket (see onSessionFrame).
+  const sendSession = props.onSessionFrame ?? props.sendClient;
+  const [recordedMode, chooseRecordedMode] = useRecordedMode(
+    props.liveView ? null : (props.storedSessionId ?? null),
+  );
+
+  // The draft as it stands when the last words of a recording arrive: the send
+  // waits for them, and the reader may have typed meanwhile.
+  const draftRef = useRef(draft);
+  useEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
   const submit = (): void => {
     if (!composerOpen) return;
-    const decided = composerSubmit(draft);
+    if (replyTo !== null) {
+      const frame = replyFrame(replyTo, draft);
+      if (frame === null) return;
+      props.sendClient(frame);
+      setReplyTo(null);
+      setDraft("");
+      setWalk(atDraft());
+      return;
+    }
+    // Card 527: Enter or Send while the microphone is on stops the recording,
+    // waits for the last words and sends them with the draft, in one gesture.
+    const intent = voiceSubmit(voice.micPhase);
+    if (intent === "wait") return;
+    if (intent === "finish-then-send") {
+      // The draft as pressed; the effect above keeps it current if the reader
+      // types while the last words are on their way.
+      draftRef.current = draft;
+      void voice.finish().then((heard) => {
+        const typed = draftRef.current.trim();
+        const words = heard.trim();
+        sendText(typed === "" ? words : words === "" ? typed : `${typed} ${words}`);
+      });
+      return;
+    }
+    sendText(draft);
+  };
+  const sendText = (written: string): void => {
+    const decided = composerSubmit(written);
     if (decided === null) return;
     // Card 471: a draft that is exactly a command is not a prompt. It leaves
     // as its own frame, or not at all, and never through onSend.
     if (decided.kind === "command") {
       runCommand(decided.name);
+      return;
+    }
+    // Card 504: /loop leaves as set_loop on this session's socket; the server
+    // runs the prompt now. The draft empties only when the frame left.
+    // Fix round 1: /loop stop ends the loop, as the chip's Stop does.
+    if (decided.kind === "loopStop") {
+      if (sendSession(loopStopFrame())) {
+        setDraft("");
+        setWalk(atDraft());
+      }
+      return;
+    }
+    if (decided.kind === "loop") {
+      setPin(true);
+      if (sendSession(loopFrame(decided))) {
+        setDraft("");
+        setWalk(atDraft());
+      }
       return;
     }
     const text = decided.text;
@@ -758,7 +853,7 @@ export function Chat(props: {
       }),
     [state.turns, state.cards, state.rootAgentId, state.thinkingAgents],
   );
-  const micBase = micButtonState(voice.micPhase, voice.micAvailable, lang);
+  const micBase = micButtonState(voice.micPhase, voice.micAvailable, lang, live.route);
   // Card 187 step 1: a failure says why, on the control that failed. The button
   // keeps its own title while nothing has gone wrong, so the normal case reads
   // exactly as it always did.
@@ -766,6 +861,9 @@ export function Chat(props: {
     voice.micError === null ? micBase : { ...micBase, title: t(lang, voiceErrorKey(voice.micError)) };
   const buttons = composerButtons(
     {
+      // Card 527: words heard while recording count as something to send.
+      heard:
+        (voice.micPhase === "recording" || voice.micPhase === "transcribing") && voice.provisional !== "",
       running: liveView && state.running,
       stopping: props.stopRequested === true,
       draftEmpty: draft.trim() === "",
@@ -890,7 +988,12 @@ export function Chat(props: {
             {/* Card 473: the LLM exchange behind a billed answer, read from the
                 session's wire (an import's held one included). */}
             {props.exchangeSessionId != null && turn.endTs !== undefined && (
-              <AnswerExchange sessionId={props.exchangeSessionId} agentId={turn.agentId} endTs={turn.endTs} />
+              <AnswerExchange
+                sessionId={props.exchangeSessionId}
+                agentId={turn.agentId}
+                endTs={turn.endTs}
+                origin={props.exchangeOrigin}
+              />
             )}
           </div>
         );
@@ -926,6 +1029,21 @@ export function Chat(props: {
                 })
               : turn.text}
           </div>
+        );
+      case "message":
+        return (
+          <MessageBlock
+            key={`${vk}:${i}`}
+            turn={turn}
+            lang={lang}
+            live={liveView}
+            compact={turn.agentId !== undefined && !inThread}
+            onDecide={(msgId, deliver) => props.sendClient(decisionFrame(msgId, deliver))}
+            onReply={(message) => {
+              setReplyTo(replyTargetOf(message));
+              requestAnimationFrame(() => textareaRef.current?.focus());
+            }}
+          />
         );
       case "error":
         return (
@@ -1277,6 +1395,14 @@ export function Chat(props: {
               {/* Card 183: anchored to .composer-inner, which is why it is the
                   positioned ancestor. It opens UPWARD like the menus in the
                   action row below — there is nothing beneath the bar. */}
+              {/* Card 527 criterion 8: while the speech model loads, the card
+                  and spinner of a long session open cover the composer. */}
+              {speechModelLoads(voice.micPhase, live.route, voice.modelLoading) && (
+                <SpeechModelOpening
+                  model={sttStatus?.localLive?.model ?? sttStatus?.model?.file ?? "ggml-small.bin"}
+                  lang={lang}
+                />
+              )}
               {slash.node}
               <input
                 ref={attachments.fileInputRef}
@@ -1294,6 +1420,20 @@ export function Chat(props: {
                   streams and nothing new is drafted (composerButtons decides).
                   Everything else lives in the action row below. */}
               <div className="composer-box">
+                {/* Card 503: the recipient a Reply pinned, with a way out. */}
+                {replyTo !== null && (
+                  <div className="msg-reply-chip" role="status">
+                    <span>{t(lang, "msg.replyTo", { name: replyTo.name })}</span>
+                    <button
+                      type="button"
+                      className="link"
+                      aria-label={t(lang, "msg.replyCancel")}
+                      onClick={() => setReplyTo(null)}
+                    >
+                      ×
+                    </button>
+                  </div>
+                )}
                 {/* The pictures ride INSIDE the border, above the caret (owner,
                     2026-08-12). Outside .composer-field on purpose: in there
                     they would push the dictation ghost down by their own
@@ -1348,7 +1488,11 @@ export function Chat(props: {
                       rows={1}
                       value={draft}
                       placeholder={
-                        showsPlaceholder(draft, voice.provisional) ? t(lang, "chat.placeholder") : ""
+                        !showsPlaceholder(draft, voice.provisional)
+                          ? ""
+                          : replyTo !== null
+                            ? t(lang, "msg.replyPlaceholder", { name: replyTo.name })
+                            : t(lang, "chat.placeholder")
                       }
                       aria-label={t(lang, "chat.placeholder")}
                       onFocus={props.onComposerFocus}
@@ -1363,6 +1507,8 @@ export function Chat(props: {
                         if (marksRef.current !== null) marksRef.current.scrollTop = e.currentTarget.scrollTop;
                       }}
                       onKeyDown={(e) => {
+                        // Card 527: typing during a recording keeps the focus here.
+                        sendFocus.keyDown(e.key);
                         // The picker keeps first refusal: it owns both arrows
                         // and Enter while its list is open.
                         if (slash.handleKey(e)) return;
@@ -1409,6 +1555,7 @@ export function Chat(props: {
                     </button>
                   ) : (
                     <button
+                      ref={sendFocus.ref}
                       type="button"
                       className="composer-seat composer-seat--send"
                       disabled={buttons.sendDisabled}
@@ -1486,7 +1633,9 @@ export function Chat(props: {
                   className={
                     mic.recording
                       ? "icon-button attach-button mic-button recording"
-                      : "icon-button attach-button mic-button"
+                      : voice.micPhase === "finishing"
+                        ? "icon-button attach-button mic-button finishing"
+                        : "icon-button attach-button mic-button"
                   }
                   aria-label={mic.title}
                   aria-pressed={mic.recording}
@@ -1500,33 +1649,33 @@ export function Chat(props: {
                        be readable without reading (card 187 step 5). */
                     <span className="mic-led" aria-hidden="true" />
                   )}
-                  {mic.recording ? (
-                    // Card 383: 16 at 16, like the idle microphone it replaces,
-                    // so a viewBox unit is one CSS pixel. It rendered at 14
-                    // against a 16 unit box, which put every coordinate the
-                    // glyph was drawn on at an arbitrary subpixel offset. The
-                    // square goes from 10 units to 9 to keep the size it had on
-                    // screen: 9px now against 8.75px before.
-                    <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" aria-hidden="true">
-                      <rect x="3.5" y="3.5" width="9" height="9" rx="1.5" />
-                    </svg>
-                  ) : (
-                    <svg
-                      viewBox="0 0 16 16"
-                      width="16"
-                      height="16"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      aria-hidden="true"
-                    >
-                      <rect x="6" y="1.5" width="4" height="8" rx="2" />
-                      <path d="M3.5 7.5a4.5 4.5 0 0 0 9 0" />
-                      <path d="M8 12v2.5M5.5 14.5h5" />
-                    </svg>
-                  )}
+                  {/* Card 528: one microphone glyph, filled while it records,
+                      in place of the square the owner did not like
+                      (2026-10-11). Card 383's 16 at 16 stays, so a viewBox
+                      unit is one CSS pixel. */}
+                  <svg
+                    viewBox="0 0 16 16"
+                    width="16"
+                    height="16"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                    className={mic.glyph === "filled" ? "mic-glyph mic-glyph--filled" : "mic-glyph"}
+                  >
+                    <rect
+                      x="6"
+                      y="1.5"
+                      width="4"
+                      height="8"
+                      rx="2"
+                      fill={mic.glyph === "filled" ? "currentColor" : "none"}
+                    />
+                    <path d="M3.5 7.5a4.5 4.5 0 0 0 9 0" />
+                    <path d="M8 12v2.5M5.5 14.5h5" />
+                  </svg>
                 </button>
                 {/* The device picker, right beside the glyph it belongs to
                     (card 187 step 2). It opens even while the button is disabled:
@@ -1534,13 +1683,18 @@ export function Chat(props: {
                     not work. */}
                 <MicMenu choice={voice.choice} onOpen={() => void voice.refreshDevices()} />
                 <ComposerGear
+                  goal={state.goal}
                   workspaceInfo={state.workspace}
                   permissionMode={state.permissionMode}
+                  recordedMode={recordedMode}
+                  storedSessionId={props.liveView ? null : (props.storedSessionId ?? null)}
+                  onModeChosen={chooseRecordedMode}
                   toolGroups={state.toolGroups}
                   localMode={state.localMode}
                   provider={props.composerMeta?.provider}
                   model={props.composerMeta?.model}
                   sendClient={props.sendClient}
+                  sendSession={sendSession}
                 />
                 {/* Card 463: the model, the thinking level and the context
                     ring, at the right end of the row, the ring last. */}
@@ -1551,11 +1705,21 @@ export function Chat(props: {
                     lastInputTokens={state.lastInputTokens}
                     aiCredits={state.aiCredits}
                     context={state.context}
+                    announcedWindow={state.announcedWindow}
                     onWindowOverride={props.onWindowOverride}
                   />
                 )}
               </div>
             </div>
+            {/* Card 504: the goal line and the loop chip, under the composer. */}
+            <ComposerStrip
+              lang={lang}
+              goal={state.goal}
+              verdict={state.goalVerdict}
+              loop={state.loop}
+              runTurn={state.running ? state.runTurn : null}
+              sendClient={props.sendClient}
+            />
           </div>
         </div>
       ) : (
@@ -1626,6 +1790,7 @@ export function Chat(props: {
                   lastInputTokens={state.lastInputTokens}
                   aiCredits={state.aiCredits}
                   context={state.context}
+                  announcedWindow={state.announcedWindow}
                 />
               )}
             </div>

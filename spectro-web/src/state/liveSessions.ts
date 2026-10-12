@@ -33,6 +33,16 @@ export interface LiveSessionRow {
   readonly running: boolean;
   /** When the holding socket claimed it, epoch millis. */
   readonly since: number;
+  /** Card 502: the session's folder, when the server knows it. */
+  readonly folder?: string;
+  /** Card 502: the name other agents address the session by. */
+  readonly name?: string;
+  /** Card 502: what the harness knows the session is doing, without a model call. */
+  readonly statusLine?: string;
+  /** Card 502: the face that hosts it: server, repl, headless, cron or node. */
+  readonly face?: string;
+  /** Card 502: the process that hosts it. */
+  readonly pid?: number;
 }
 
 /**
@@ -64,12 +74,28 @@ function emit(): void {
 /** One row, or null when the value is not one. */
 function row(value: unknown): LiveSessionRow | null {
   if (typeof value !== "object" || value === null) return null;
-  const candidate = value as { id?: unknown; running?: unknown; since?: unknown };
+  const candidate = value as {
+    id?: unknown;
+    running?: unknown;
+    since?: unknown;
+    folder?: unknown;
+    name?: unknown;
+    statusLine?: unknown;
+    face?: unknown;
+    pid?: unknown;
+  };
   if (typeof candidate.id !== "string" || candidate.id === "") return null;
+  // Card 502: the five fields are additive. A row from an older server has
+  // none of them, and a field it lacks stays absent rather than empty.
   return {
     id: candidate.id,
     running: candidate.running === true,
     since: typeof candidate.since === "number" ? candidate.since : 0,
+    ...(typeof candidate.folder === "string" ? { folder: candidate.folder } : {}),
+    ...(typeof candidate.name === "string" ? { name: candidate.name } : {}),
+    ...(typeof candidate.statusLine === "string" ? { statusLine: candidate.statusLine } : {}),
+    ...(typeof candidate.face === "string" ? { face: candidate.face } : {}),
+    ...(typeof candidate.pid === "number" ? { pid: candidate.pid } : {}),
   };
 }
 
@@ -129,9 +155,16 @@ export function readSessionBusy(frame: unknown): string | null {
  */
 export function liveSessionsPushLive(batch: RunEvent[]): void {
   let latest: LiveSessionRow[] | null = null;
+  let peers: LiveSessionRow[] | null = null;
   for (const frame of batch as unknown[]) {
     const parsed = liveSessionsOfFrame(frame);
     if (parsed !== null) latest = parsed;
+    const others = peerRosterOfFrame(frame);
+    if (others !== null) peers = others;
+  }
+  if (peers !== null) {
+    peerRoster = peers;
+    for (const cb of peerListeners) cb();
   }
   if (latest === null) return;
   live = latest;
@@ -203,9 +236,64 @@ export function __setTestHooks(hooks: { fetch?: typeof fetch }): void {
   }
 }
 
+/**
+ * Card 503: what a live row says under its name, without a model call: the
+ * last segment of its folder and its status line.
+ *
+ * @param row a live row
+ * @returns "ForgeDemo · running read_file", or undefined when the row carries neither
+ */
+export function liveLineOf(row: LiveSessionRow): string | undefined {
+  const folder = row.folder
+    ?.split(/[\\/]/)
+    .filter((part) => part !== "")
+    .pop();
+  const parts = [folder, row.statusLine].filter((part): part is string => part !== undefined && part !== "");
+  return parts.length === 0 ? undefined : parts.join(" · ");
+}
+
+/** Card 503: the sessions other processes of this home host, latest wins. */
+let peerRoster: LiveSessionRow[] = [];
+const peerListeners = new Set<() => void>();
+
+/**
+ * Card 503: reads a `peer_roster` socket frame.
+ *
+ * @param frame anything off the wire
+ * @returns the rows, or null when the frame is not one
+ */
+export function peerRosterOfFrame(frame: unknown): LiveSessionRow[] | null {
+  if (typeof frame !== "object" || frame === null) return null;
+  if ((frame as { type?: unknown }).type !== "peer_roster") return null;
+  return rows((frame as { sessions?: unknown }).sessions);
+}
+
+function peerSnapshot(): LiveSessionRow[] {
+  return peerRoster;
+}
+
+function peerSubscribe(cb: () => void): () => void {
+  peerListeners.add(cb);
+  return () => {
+    peerListeners.delete(cb);
+  };
+}
+
+/** React binding: the sessions of other processes on this machine right now. */
+export function usePeerRoster(): LiveSessionRow[] {
+  return useSyncExternalStore(peerSubscribe, peerSnapshot, peerSnapshot);
+}
+
+/** The peer roster, for pure store tests. */
+export function __getPeerRoster(): LiveSessionRow[] {
+  return peerRoster;
+}
+
 /** Reset all module state — call in beforeEach so tests never bleed. */
 export function __resetForTests(): void {
   live = [];
+  peerRoster = [];
+  peerListeners.clear();
   generation = 0;
   listeners.clear();
   doFetch = (...args) => fetch(...args);

@@ -192,3 +192,46 @@ export function contextGauge(
     windowOf: null,
   };
 }
+
+/** The three fields the gauge reads, from wherever they were last named. */
+export interface RingFrame {
+  threshold?: number;
+  contextWindow?: number;
+  thresholdSource?: string;
+}
+
+/**
+ * What the ring divides by, from the snapshot or from a later announcement
+ * (card 521).
+ *
+ * The main agent's run_start and the server's provider_info name a window
+ * outside context_info: a stored session's run_start before any snapshot, a
+ * wake or a switch of the model after the last one. The reducer keeps such an
+ * announcement only until the main agent's next snapshot, so when one is held
+ * it is the newer fact. It states no threshold; when it names the same window
+ * and source as the snapshot, the snapshot is read whole, so the compaction
+ * mark stays on the ring.
+ *
+ * @param context the main agent's last snapshot, or null
+ * @param announced the window named since that snapshot, or null
+ * @return the threshold, window and source for {@link contextGauge}
+ */
+export function ringFrame(
+  context: { threshold: number; contextWindow?: number; thresholdSource?: string } | null,
+  announced: { contextWindow?: number; thresholdSource?: string } | null | undefined,
+): RingFrame {
+  const fromContext: RingFrame = {
+    threshold: context?.threshold,
+    contextWindow: context?.contextWindow,
+    thresholdSource: context?.thresholdSource,
+  };
+  if (announced === null || announced === undefined) return fromContext;
+  if (
+    context !== null &&
+    context.contextWindow === announced.contextWindow &&
+    context.thresholdSource === announced.thresholdSource
+  ) {
+    return fromContext;
+  }
+  return { contextWindow: announced.contextWindow, thresholdSource: announced.thresholdSource };
+}

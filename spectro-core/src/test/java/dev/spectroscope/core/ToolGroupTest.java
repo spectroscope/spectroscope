@@ -15,7 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * Card 466, criterion 1 and the drift half of criterion 6: the seven groups,
+ * Card 466, criterion 1 and the drift half of criterion 6: the groups (seven, and card 503 the eighth),
  * named after what they switch off, and a membership that is read from the
  * tool's own name rather than from a hand list.
  */
@@ -32,8 +32,9 @@ class ToolGroupTest {
     }
 
     @Test
-    void theSevenGroupsCarryTheNamesTheCardGivesThem() {
-        assertEquals(List.of("browser", "launch", "images", "web", "agents", "roles", "mcp"),
+    void theGroupsCarryTheNamesTheirCardsGiveThem() {
+        // Card 503 appended the eighth, messaging, for send_message and list_agents.
+        assertEquals(List.of("browser", "launch", "images", "web", "agents", "roles", "mcp", "messaging"),
                 ToolGroup.wireNames());
         for (String name : ToolGroup.wireNames()) {
             assertEquals(name, ToolGroup.named(name).orElseThrow().wireName(), name);
@@ -64,6 +65,18 @@ class ToolGroupTest {
         assertEquals(Optional.of(ToolGroup.WEB), ToolGroup.of("browse_page"));
         assertEquals(Optional.of(ToolGroup.AGENTS), ToolGroup.of("spawn_agent"));
         assertEquals(Optional.of(ToolGroup.AGENTS), ToolGroup.of("spawn_agents"));
+    }
+
+    @Test
+    void theTwoMessagingToolsLandInTheMessagingGroup() {
+        // Card 503, criterion 6: the gear switches both off per session.
+        assertEquals(Optional.of(ToolGroup.MESSAGING), ToolGroup.of("send_message"));
+        assertEquals(Optional.of(ToolGroup.MESSAGING), ToolGroup.of("list_agents"));
+        assertEquals(Optional.empty(), ToolGroup.of("report_status"), "the cheap status line stays on");
+        assertEquals(Optional.of(ToolGroup.MCP), ToolGroup.of("mcp__peers__send_message"));
+        assertEquals(List.of("read_file"), names(ToolGroup.visible(
+                List.of(spec("read_file"), spec("send_message"), spec("list_agents")),
+                Set.of(ToolGroup.MESSAGING))));
     }
 
     @Test

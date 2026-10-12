@@ -5,6 +5,7 @@
 
 import type { RunEvent } from "../events";
 import { buildTextFeed, feedToPlainText } from "./textFeed";
+import { pairSafeCut } from "../pairSafeCut";
 
 /** Default digest bound — roughly a short session; big runs get elided. */
 export const DIGEST_CAP_CHARS = 24000;
@@ -21,7 +22,7 @@ export function buildExplainDigest(events: readonly RunEvent[], cap: number = DI
   const head = Math.floor(cap * 0.6);
   const tail = cap - head;
   const elided = text.length - head - tail;
-  return `${text.slice(0, head)}\n[… ${elided} characters elided …]\n${text.slice(text.length - tail)}`;
+  return `${pairSafeCut(text, head)}\n[… ${elided} characters elided …]\n${text.slice(text.length - tail)}`;
 }
 
 /** One parsed NDJSON message from the explain stream. */

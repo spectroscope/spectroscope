@@ -15,6 +15,7 @@ import type { Firing, Marking } from "../lab/petriModel";
 import { advanceScene, initialScene } from "../lab/labScene";
 import type { Scene } from "../lab/labScene";
 import { beacon } from "./levelingBeacon";
+import { pairSafeCut } from "../pairSafeCut";
 
 export type StepSource = "live" | { replayId: string };
 export type StepMode = "step" | "flow";
@@ -196,7 +197,7 @@ const SKILL_TOOLS: ReadonlySet<string> = new Set(["Skill", "use_skill"]);
 /** One line, capped with a visible mark — a tick's tooltip is not a transcript. */
 function markMessage(text: string): string {
   const oneLine = text.replace(/\s+/g, " ").trim();
-  return oneLine.length <= MARK_MESSAGE_CAP ? oneLine : `${oneLine.slice(0, MARK_MESSAGE_CAP - 1)}…`;
+  return oneLine.length <= MARK_MESSAGE_CAP ? oneLine : `${pairSafeCut(oneLine, MARK_MESSAGE_CAP - 1)}…`;
 }
 
 /** The skill's own name out of a Skill call's input; null when it names none. */

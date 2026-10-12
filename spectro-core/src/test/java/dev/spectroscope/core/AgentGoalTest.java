@@ -322,6 +322,7 @@ class AgentGoalTest {
     // ── criterion 3: the check decides the ending ─────────────────────────
 
     @Test
+    @GuideExit("goal-check.turn-end")
     void aPassingCheckEndsTheRunDoneAndNamesTheCheck() {
         List<RunEvent> events = run(agent(new Recording(alwaysJustAnswers()),
                 goal(new ScriptedCheck(met()), OUTCOME, "node --test"),
@@ -334,6 +335,7 @@ class AgentGoalTest {
     }
 
     @Test
+    @GuideExit("goal-check.failing-check")
     void aFailingCheckContinuesTheRunWithTheFailureAsTheGuidance() {
         // The scenario, line by line: the model answers without calling a tool
         // and the check still fails, so the harness continues with the failing
@@ -345,7 +347,7 @@ class AgentGoalTest {
                 new ContinuationLeash(3)));
         assertEquals(GoalVerdict.MET_STOP_REASON, lastStopReason(events));
         assertEquals(1, continuations(events).size());
-        assertEquals("continued", continuations(events).get(0).decision());
+        assertEquals("goal_continued", continuations(events).get(0).decision());
         String secondTurn = lastUserText(provider.requests.get(1));
         assertTrue(secondTurn.contains("expected 0.2, got 0.18432"),
                 "the model was not told what actually failed: " + secondTurn);
@@ -373,6 +375,7 @@ class AgentGoalTest {
     }
 
     @Test
+    @GuideExit("goal-check.turn-cap")
     void aCeilingKeepsItsOwnNameAndTheRecordStillSaysWhetherTheOutcomeWasReached() {
         // Found by the live AC-8 run and not by reading the diff: with the check
         // wired only to the voluntary exit, a run that hit the turn cap ended
@@ -400,6 +403,7 @@ class AgentGoalTest {
     }
 
     @Test
+    @GuideExit("goal-check.output-limit")
     void theTokenCeilingIsTheSameCase() {
         List<RunEvent> events = run(agent(new Recording(request ->
                         List.of(new LlmProvider.PTextDelta("cut off"),
@@ -415,15 +419,20 @@ class AgentGoalTest {
     // ── criterion 6: the check cannot become the thing that spins ─────────
 
     @Test
-    void aFailingCheckConsumesTheContinuationBudgetAndTheRunEndsUnmet() {
+    void aFailingCheckNoLongerSpendsTheContinuationBudget() {
+        // Card 504 replaced card 267's criterion 6 premise (concept decision
+        // 11): the goal continues from its own counter, so four different
+        // failures pass a leash budget of two and the run ends met.
+        ContinuationLeash leash = new ContinuationLeash(2);
         Recording provider = new Recording(worksThenAnswers());
         List<RunEvent> events = run(agent(provider,
                 goal(new ScriptedCheck(failed("still red 1"), failed("still red 2"),
-                        failed("still red 3"), failed("still red 4")), OUTCOME, "node --test"),
-                new ContinuationLeash(2)));
-        assertEquals(GoalVerdict.UNMET_STOP_REASON, lastStopReason(events));
-        assertEquals(List.of("continued", "continued", "budget_exhausted"),
+                        failed("still red 3"), failed("still red 4"), met()), OUTCOME, "node --test"),
+                leash));
+        assertEquals(GoalVerdict.MET_STOP_REASON, lastStopReason(events));
+        assertEquals(List.of("goal_continued", "goal_continued", "goal_continued", "goal_continued"),
                 continuations(events).stream().map(RunEvent.Continuation::decision).toList());
+        assertEquals(0, leash.continuations());
     }
 
     @Test
@@ -436,17 +445,21 @@ class AgentGoalTest {
                         "node --test"),
                 new ContinuationLeash(5)));
         assertEquals(GoalVerdict.UNMET_STOP_REASON, lastStopReason(events));
-        assertEquals(List.of("continued", "no_progress"),
+        assertEquals(List.of("goal_continued", "no_progress"),
                 continuations(events).stream().map(RunEvent.Continuation::decision).toList());
     }
 
     @Test
-    void aRunWithoutALeashStillGetsItsVerdictItJustDoesNotContinue() {
+    void aRunWithoutALeashContinuesOnTheGoalCounterUntilTheSameFailureComesBack() {
+        // Card 504: the goal's counter does not need the leash object. The
+        // fence for unattended faces is that they hold no goal at all
+        // (criterion 5, GoalFenceTest).
         List<RunEvent> events = run(agent(new Recording(alwaysJustAnswers()),
                 goal(new ScriptedCheck(failed("red")), OUTCOME, "node --test"), null));
         assertEquals(GoalVerdict.UNMET_STOP_REASON, lastStopReason(events));
-        assertEquals(1, checks(events).size());
-        assertEquals(0, continuations(events).size());
+        assertEquals(2, checks(events).size());
+        assertEquals(List.of("goal_continued", "no_progress"),
+                continuations(events).stream().map(RunEvent.Continuation::decision).toList());
     }
 
     // ── criterion 7: the verdict comes from the check, not the ledger ─────
@@ -554,7 +567,9 @@ class AgentGoalTest {
                     asks.incrementAndGet();
                     return true;
                 }, null));
-        assertEquals(GoalVerdict.UNMET_STOP_REASON, lastStopReason(events));
+        // Card 504: every turn makes a clean call, so the fingerprint moves and
+        // the goal's counter carries the run to the turn cap.
+        assertEquals("max_turns", lastStopReason(events));
         assertTrue(checks(events).size() >= 2, "only one check ran, so this pins nothing");
         assertEquals(1, asks.get(), "the operator was asked " + asks.get() + " times");
     }
@@ -613,6 +628,7 @@ class AgentGoalTest {
     }
 
     @Test
+    @GuideExit("goal-check.stop")
     void anAbortedRunIsNeverGraded() {
         // Running the operator's command after they stopped the run is the
         // harness acting past a stop.
@@ -694,12 +710,15 @@ class AgentGoalTest {
                 goal(new ScriptedCheck(failed("not ok 3 - refresh token expired early")),
                         OUTCOME, "node --test"),
                 new ContinuationLeash(0)));
-        assertEquals(1, checks(events).size());
+        // Card 504: a budget of 0 no longer stops a goal, so the same failure
+        // runs twice and the second is the no progress brake.
+        assertEquals(2, checks(events).size());
         assertEquals("not ok 3 - refresh token expired early", checks(events).get(0).output(),
                 "the goal_check line has to carry what the check printed");
     }
 
     @Test
+    @GuideExit("goal-check.progress-guard")
     void aRunTheGuardEndedIsNotGradedAndSaysSoByItsStopReason() {
         // DECIDED, not left ambiguous. Card 262's guard END is a PERSON saying
         // stop — the operator answered "end the run" to a question. Grading it

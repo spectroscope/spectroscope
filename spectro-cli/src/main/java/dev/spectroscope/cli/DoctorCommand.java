@@ -389,6 +389,9 @@ public final class DoctorCommand implements Callable<Integer> {
         Path sttModel = sttModelPath(config);
         emit(List.of(voiceInputLine(ToolPath.locate("whisper-cli"), sttModel,
                 Files.exists(sttModel), sttModelSource(config))));
+        // Card 528: what runs whisper for live text in the app.
+        emit(List.of(voiceRunnerLine(config.sttRunner(), ToolPath.locate("whisper-server"),
+                ToolPath.locate("whisper-cli"))));
 
         // Code graph (card 472): graphify behind "Build code graph", optional.
         emit(List.of(codeGraphLine(ToolPath.locate("graphify"))));
@@ -648,8 +651,13 @@ public final class DoctorCommand implements Callable<Integer> {
     static Line voiceInputLine(ToolPath.Lookup whisper, Path sttModel, boolean modelPresent,
                                String sttSource) {
         if (whisper.isFound() && modelPresent) {
+            // Card 527: the app's local route writes along live, one whisper
+            // run over the open window per chunk step.
+            long step = dev.spectroscope.core.config.SttStreaming.STT_LOCAL_CHUNK_MS;
             return new Line(Kind.PASS, "voice input: whisper-cli + " + sttModel.getFileName()
-                    + " ready (source: " + sttSource + ") (/voice)");
+                    + " ready (source: " + sttSource + ") (/voice); live text in the app every "
+                    + (step % 1000 == 0 ? String.valueOf(step / 1000) : String.valueOf(step / 1000.0))
+                    + " s (chunk step " + step + " ms)");
         }
         String binary = whisper.isFound()
                 ? "whisper-cli present"
@@ -657,6 +665,36 @@ public final class DoctorCommand implements Callable<Integer> {
         return new Line(Kind.INFO, "voice input: " + binary
                 + " · model (source: " + sttSource + ") " + (modelPresent ? "present" : "missing")
                 + "; run bash scripts/setup-stt.sh to enable /voice");
+    }
+
+    /**
+     * The voice runner line (card 528): what {@code sttRunner} runs on this
+     * machine for live text in the app. The doctor runs outside the app, so
+     * the resident server's port and state are named as a place to look, not
+     * as a fact.
+     *
+     * @param configured the {@code sttRunner} setting
+     * @param server where whisper-server was looked for
+     * @param cli where whisper-cli was looked for
+     * @return a note, never a verdict
+     */
+    static Line voiceRunnerLine(String configured, ToolPath.Lookup server, ToolPath.Lookup cli) {
+        dev.spectroscope.core.config.SttRunnerChoice choice =
+                dev.spectroscope.core.config.SttRunnerChoice.resolve(configured, server, cli);
+        String head = "voice runner: sttRunner " + choice.configured() + " runs " + choice.engine();
+        if ("server".equals(choice.running())) {
+            long minutes = dev.spectroscope.core.config.SttStreaming.STT_SERVER_IDLE_MS / 60_000L;
+            return new Line(Kind.INFO, head + " (" + choice.binary() + "); the app starts it on 127.0.0.1"
+                    + " and a free port on the first press, keeps the model loaded and stops it after "
+                    + minutes + " idle minutes; its port and whether it is up are in /api/stt/status of"
+                    + " the running app");
+        }
+        String where = choice.ready() ? " (" + choice.binary() + ")" : " (missing)";
+        if (choice.fallback()) {
+            return new Line(Kind.INFO, head + where + "; whisper-server missing (searched "
+                    + String.join(", ", server.searched()) + "); brew install whisper-cpp installs both");
+        }
+        return new Line(Kind.INFO, head + where + "; the model loads on every press");
     }
 
     /**

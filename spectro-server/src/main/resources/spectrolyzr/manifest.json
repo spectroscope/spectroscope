@@ -862,6 +862,13 @@
               "en": "The template of a document that one step writes and the next step reads.",
               "de": "Die Vorlage eines Dokuments, das ein Schritt schreibt und der nächste liest."
             }
+          },
+          {
+            "prefix": "workflows/",
+            "why": {
+              "en": "A fan-out workflow you start from the playbook module: three helpers work at the same time and one summariser joins what they found.",
+              "de": "Ein Fan-out-Workflow, den du im Playbook-Modul startest: drei Helfer arbeiten gleichzeitig, ein Zusammenfasser führt ihre Ergebnisse zusammen."
+            }
           }
         ]
       }

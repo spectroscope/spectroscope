@@ -1,0 +1,12 @@
+{
+  "name": "fixture",
+  "description": "A small plugin for the tests of the Plugin tab. It carries skills, agents, commands, hooks and MCP servers.",
+  "version": "1.0.0",
+  "license": "MIT",
+  "mcpServers": {
+    "fixture-plugin-json-server": {
+      "command": "npx",
+      "args": ["fixture-plugin-json-mcp"]
+    }
+  }
+}

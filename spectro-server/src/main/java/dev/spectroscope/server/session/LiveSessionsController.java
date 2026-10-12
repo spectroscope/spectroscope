@@ -1,8 +1,10 @@
 package dev.spectroscope.server.session;
 
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -32,14 +34,29 @@ public class LiveSessionsController {
     }
 
     /**
-     * Which sessions are live on this server right now.
+     * Which sessions are live on this server right now, and with
+     * {@code scope=machine} on every live process of this home (card 502).
      *
+     * @param scope null for this server, {@code machine} to add the sessions
+     *              the registry under {@code ~/.spectro/live} lists for other
+     *              processes
      * @return one row per live session — {@code id}, {@code running},
-     *         {@code since} — oldest claim first; an empty list when nothing
-     *         is live, which is a fact and not an error
+     *         {@code since}, {@code folder}, {@code name}, {@code statusLine},
+     *         {@code face}, {@code pid}; this server's rows first, oldest
+     *         claim first; an empty list when nothing is live, which is a fact
+     *         and not an error
      */
     @GetMapping("/api/sessions/live")
-    public List<LiveSessions.LiveSession> live() {
-        return liveSessions.snapshot();
+    public List<LiveSessions.LiveSession> live(@RequestParam(name = "scope", required = false) String scope) {
+        List<LiveSessions.LiveSession> rows = liveSessions.snapshot();
+        LiveSessions.PeerBridge bridge = liveSessions.bridge();
+        if (!"machine".equals(scope) || bridge == null) {
+            return rows;
+        }
+        List<LiveSessions.LiveSession> all = new ArrayList<>(rows);
+        for (dev.spectroscope.core.peer.LiveRecord record : bridge.others()) {
+            all.addAll(LiveSessions.rowsOf(record));
+        }
+        return all;
     }
 }

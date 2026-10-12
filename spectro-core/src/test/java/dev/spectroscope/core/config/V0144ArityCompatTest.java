@@ -27,13 +27,18 @@ import static org.junit.jupiter.api.Assertions.assertNull;
  */
 class V0144ArityCompatTest {
 
-    /** The components appended after v0.14.4, in record order. */
+    /** The components appended after v0.14.4, in record order; card 503 appended agentMessaging. */
     private static final List<String> APPENDED =
-            List.of("sessionsPerChat", "careParagraph", "readSharePercent");
+            List.of("sessionsPerChat", "careParagraph", "readSharePercent", "agentMessaging");
 
-    /** The config also carries what the Local mode switch wrote (card 493). */
+    /** AgentOptions also carries card 502's peer inbox, appended after v0.15.1. */
+    private static final List<String> APPENDED_TO_OPTIONS =
+            List.of("sessionsPerChat", "careParagraph", "readSharePercent", "peerInbox", "agentMessaging");
+
+    /** The config also carries what the Local mode switch wrote (card 493)
+     *  the speech runner (card 528) and the messaging switch (card 503). */
     private static final List<String> APPENDED_TO_CONFIG =
-            List.of("sessionsPerChat", "careParagraph", "readSharePercent", "localModeKeys");
+            List.of("sessionsPerChat", "careParagraph", "readSharePercent", "localModeKeys", "sttRunner", "agentMessaging");
 
     private static Object[] nulls(Class<?>[] types) {
         Object[] args = new Object[types.length];
@@ -51,7 +56,8 @@ class V0144ArityCompatTest {
 
     private static Object buildAtV0144Arity(Class<?> record, int v0144Arity) throws Exception {
         RecordComponent[] components = record.getRecordComponents();
-        List<String> appended = record == SpectroConfig.class ? APPENDED_TO_CONFIG : APPENDED;
+        List<String> appended = record == SpectroConfig.class ? APPENDED_TO_CONFIG
+                : record == dev.spectroscope.core.AgentOptions.class ? APPENDED_TO_OPTIONS : APPENDED;
         assertEquals(appended,
                 Arrays.stream(components).skip(v0144Arity).map(RecordComponent::getName).toList(),
                 record.getSimpleName() + ": premise, v0.14.4's arity plus the appended components");
@@ -75,6 +81,8 @@ class V0144ArityCompatTest {
         assertEquals(SpectroConfig.DEFAULT_READ_SHARE_PERCENT, component(built, "readSharePercent"),
                 "the read share ships at the v0.14.4 constant");
         assertEquals(List.of(), component(built, "localModeKeys"), "the switch wrote nothing");
+        assertEquals(SpectroConfig.DEFAULT_STT_RUNNER, component(built, "sttRunner"),
+                "the speech runner ships auto");
     }
 
     @Test

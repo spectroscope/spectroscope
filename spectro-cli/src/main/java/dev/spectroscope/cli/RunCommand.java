@@ -215,6 +215,10 @@ public final class RunCommand implements Callable<Integer> {
             System.err.println(mcpWarning);
         }
 
+        // Card 502: spectro run is an unattended face. It lists itself for
+        // other agents to see and refuses every message they send.
+        dev.spectroscope.core.peer.PeerNode peer = PeerFace.register("headless", false,
+                () -> List.of(PeerFace.unattended(store.id(), workspace, permissions)));
         // In --json mode stdout carries ONLY NDJSON; everything else goes to stderr.
         HeadlessRunner.Outcome outcome;
         try {
@@ -238,6 +242,8 @@ public final class RunCommand implements Callable<Integer> {
             System.err.println(missingKey.getMessage());
             speech.close();
             return 1;
+        } finally {
+            PeerFace.close(peer); // card 502: the record leaves with the run
         }
 
         // Wait for the last sentence to finish before the process exits (otherwise the

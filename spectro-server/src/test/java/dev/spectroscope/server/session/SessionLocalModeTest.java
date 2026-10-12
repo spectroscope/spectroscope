@@ -204,7 +204,7 @@ class SessionLocalModeTest {
 
         assertThat(connection.agent().sessionsPerChat()).isNull();
         assertThat(connection.agent().readSharePercent()).isEqualTo(25);
-        assertThat(connection.agent().toolSpecsForNextRun()).isEqualTo(connection.belt().specs());
+        assertThat(connection.agent().toolSpecsForNextRun()).isEqualTo(offeredBelt(connection, workspace));
         assertThat(connection.agent().careParagraphForNextRun())
                 .as("the care paragraph the operator set by hand before switching on")
                 .contains("Work in small steps.");
@@ -251,6 +251,11 @@ class SessionLocalModeTest {
         assertThat(names(connection.agent().toolSpecsForNextRun())).noneMatch(name -> name.startsWith("browser_"));
     }
 
+    /**
+     * Card 504: the belt as a run outside a loop advertises it, every group
+     * on: the whole belt minus schedule_wakeup, which is offered only while
+     * the session runs a loop.
+     */
     @Test
     void theToolGroupCheckboxesInLocalModeReplaceThePresetAndShowChanged(@TempDir Path workspace)
             throws IOException {
@@ -262,7 +267,7 @@ class SessionLocalModeTest {
         assertThat(groups.path("value").toString()).isEqualTo("[\"browser\"]");
         assertThat(groups.path("changed").asBoolean()).isTrue();
         connection.onSetLocalMode(off());
-        assertThat(connection.agent().toolSpecsForNextRun()).isEqualTo(connection.belt().specs());
+        assertThat(connection.agent().toolSpecsForNextRun()).isEqualTo(offeredBelt(connection, workspace));
         assertThat(readLocal(workspace).has("toolGroupsOff")).isFalse();
     }
 
@@ -414,5 +419,15 @@ class SessionLocalModeTest {
         assertThat(Map.of("sessionsPerChat", 3, "readSharePercent", 10).get(
                 row(info, "readSharePercent").path("key").asText())).isEqualTo(10);
         assertThat(row(info, "readSharePercent").path("preset").asInt()).isEqualTo(10);
+    }
+
+    /** Card 547: the belt minus the tools a run in this folder does not offer (code_graph without a graph). */
+    /** The belt as a run outside a loop offers it in {@code workspace}: no
+     *  {@code schedule_wakeup} (card 504) and no tool the folder lacks (card 547). */
+    private static List<ToolSpec> offeredBelt(SessionConnection connection, Path workspace) {
+        java.util.Set<String> notOffered = connection.belt().notOfferedIn(workspace);
+        return connection.belt().specs().stream()
+                .filter(spec -> !"schedule_wakeup".equals(spec.name()))
+                .filter(spec -> !notOffered.contains(spec.name())).toList();
     }
 }

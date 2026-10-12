@@ -137,6 +137,9 @@ public final class Agent {
      */
     public static final String GOAL_CHECK_GATE = "goal_check";
 
+    /** Card 504: the {@code goal_check.outcome} of a goal that cleared itself after an unrecoverable error. */
+    public static final String GOAL_CLEARED = "cleared";
+
     private final AgentOptions options;
     // Multi-turn history lives in the agent, across runs on the same instance.
     private final List<ProviderMessage> messages = new ArrayList<>();
@@ -189,6 +192,10 @@ public final class Agent {
 
     /** Card 466: the tool groups this run leaves out, read once when it starts. */
     private volatile Set<ToolGroup> groupsOffThisRun = Set.of();
+    /** Card 547: the tools the current run does not offer in its folder, read when it started. */
+    private volatile Set<String> notOfferedThisRun = Set.of();
+    /** Card 547: the system prompt lines of the tools this run offers, read when it started. */
+    private volatile String toolLinesThisRun = "";
 
     /** Card 490: the session count of the chat this agent leads, live. Seeded
      *  from {@link AgentOptions#sessionsPerChat()}; null sets no count. */
@@ -201,6 +208,19 @@ public final class Agent {
     /** Card 492: the {@code careParagraph} setting the NEXT run reads. Seeded
      *  from the options; a face with a live control sets it between runs. */
     private volatile String careSetting;
+    /** Card 503: the agentMessaging setting the next run reads; null is the shipped on. */
+    private volatile Boolean agentMessaging;
+    /** Card 503: the agentMessaging setting the current run read when it started. */
+    private volatile Boolean agentMessagingThisRun;
+
+    /** Card 505: the children this agent's runs start in the background, or
+     *  null on every face that starts none. Set by the subagent manager. */
+    private volatile BackgroundChildren backgroundChildren;
+    /** Card 504: the clock the goal's check in reads; tests set a fake one. */
+    private volatile java.util.function.LongSupplier checkInClock = System::currentTimeMillis;
+    /** Card 504: the goal's continuation counter, reset at the top of every run. */
+    private final dev.spectroscope.core.goal.GoalContinuation goalCounter =
+            new dev.spectroscope.core.goal.GoalContinuation();
 
     /** Card 492: the helper count the next run's paragraph names. */
     private volatile int careHelpers = dev.spectroscope.core.session.CareParagraph.DEFAULT_HELPERS;
@@ -286,6 +306,7 @@ public final class Agent {
         this.sessionsPerChat = dev.spectroscope.core.subagents.SessionCount
                 .of(options.sessionsPerChat()).sessions();
         this.careSetting = options.careParagraph();
+        this.agentMessaging = options.agentMessaging();
         this.readSharePercent = options.readSharePercent();
         // A tool this agent does not carry cannot be called again, so a stub
         // that says "call it again" would be false: its results stay whole.
@@ -421,10 +442,71 @@ public final class Agent {
                     emit.accept(new RunEvent.SteeringMessage(agentId, unread, false, 0, now()));
                 }
             }
+            // Card 502: the peer inbox closes on the same way out; what the run
+            // did not read goes back to the host through the inbox's own hook.
+            if (options.peerInbox() != null) {
+                options.peerInbox().close();
+            }
             // One operator line per run (the JSONL stays the source of truth).
             log.info("run finished in {} ms",
                     (System.nanoTime() - startedAtNanos) / 1_000_000);
             org.slf4j.MDC.remove("agentId");
+        }
+    }
+
+    /**
+     * Card 502: takes every waiting delivery notice and every waiting peer
+     * message into the history, the notices as they are and the messages one
+     * attribution block each, records one {@code agent_message} line per message
+     * (role {@code peer}, state {@code received}, the {@code msg_id} in
+     * {@code label}) and tells the host what was absorbed.
+     *
+     * @param peers   the run's peer inbox, or null
+     * @param agentId this agent's id
+     * @param emit    the run's sink
+     * @return true when at least one notice or message was absorbed
+     */
+    private boolean absorbPeerMessages(dev.spectroscope.core.peer.PeerInbox peers, String agentId,
+                                       Consumer<RunEvent> emit) {
+        if (peers == null) {
+            return false;
+        }
+        List<String> notices = peers.takeNotices();
+        for (String notice : notices) {
+            appendUserText(messages, notice);
+        }
+        List<dev.spectroscope.core.peer.PeerEnvelope> taken = peers.take();
+        if (taken.isEmpty()) {
+            return !notices.isEmpty();
+        }
+        for (dev.spectroscope.core.peer.PeerEnvelope message : taken) {
+            String from = message.fromName() != null ? message.fromName() : message.fromSession();
+            emit.accept(new RunEvent.AgentMessage(from, agentId, "peer", "received",
+                    message.text(), message.msgId(), now()));
+        }
+        appendUserText(messages, dev.spectroscope.core.peer.PeerInbox.attributed(taken, true));
+        peers.absorbed(taken);
+        return true;
+    }
+
+    /**
+     * Card 505, fix round: the results the end_turn join collected reach the
+     * model the way a message from another agent does. Each is recorded as a
+     * peer message this agent received, rendered as its child's attributed
+     * block with the trailer, and counted as absorbed, so the relay rule reads
+     * it before an auto mode approves a gated call.
+     */
+    private void handInResults(List<dev.spectroscope.core.peer.PeerEnvelope> results,
+                               dev.spectroscope.core.peer.PeerInbox peers, String agentId,
+                               Consumer<RunEvent> emit) {
+        for (dev.spectroscope.core.peer.PeerEnvelope result : results) {
+            emit.accept(new RunEvent.AgentMessage(result.fromName(), agentId, "peer", "received",
+                    result.text(), result.msgId(), now()));
+        }
+        appendUserText(messages, BackgroundChildren.HAND_IN_HEADER + "\n\n"
+                + dev.spectroscope.core.peer.PeerInbox.attributed(results, true));
+        if (peers != null) {
+            peers.absorbed(results);
         }
     }
 
@@ -470,6 +552,28 @@ public final class Agent {
     }
 
     /**
+     * Card 505: wraps the run's sink so that the run's own {@code run_end}
+     * settles its background children first. Keyed on the event, like
+     * {@link #closingTheInbox}, so every exit passes it: what still runs is
+     * cancelled and waited for, and its last events reach the stream before
+     * the run's end does.
+     *
+     * @param sink     the sink to wrap
+     * @param runId    this run's id; a child's {@code run_end} passes untouched
+     * @param children the run's background children
+     * @return the sink the loop writes to
+     */
+    private static Consumer<RunEvent> settlingTheChildren(Consumer<RunEvent> sink, String runId,
+                                                          BackgroundChildren children) {
+        return event -> {
+            if (event instanceof RunEnd end && runId.equals(end.runId())) {
+                children.settle();
+            }
+            sink.accept(event);
+        };
+    }
+
+    /**
      * The loop body behind the MDC bracket — unchanged semantics.
      *
      * @param prompt         the user message that opens the run
@@ -489,7 +593,16 @@ public final class Agent {
         // child agent have nobody attached at the moment a turn is in flight,
         // and a null inbox leaves this loop exactly as card 267 left it.
         dev.spectroscope.core.steering.SteeringInbox steering = options.steering();
-        Consumer<RunEvent> emit = steering == null ? sink : closingTheInbox(sink, runId, agentId, steering);
+        Consumer<RunEvent> inboxSink = steering == null ? sink : closingTheInbox(sink, runId, agentId, steering);
+        // Card 505: the children this run starts in the background. Null on
+        // every face that starts none, which leaves the exits as they were.
+        BackgroundChildren background = this.backgroundChildren;
+        Consumer<RunEvent> emit = background == null ? inboxSink
+                : settlingTheChildren(inboxSink, runId, background);
+        // Card 502: what other agents sent. Null on every face that hosts no
+        // peer inbox, which leaves this loop exactly as card 380 left it.
+        // It closes in loop()'s finally, which every way out passes.
+        dev.spectroscope.core.peer.PeerInbox peers = options.peerInbox();
         int maxTokens = options.maxTokens() != null ? options.maxTokens() : DEFAULT_MAX_TOKENS;
         // Card 263: ONCE per run, before the first token flows — the provider's
         // window question can cost a round trip, and context_info is emitted
@@ -535,7 +648,16 @@ public final class Agent {
         // Card 466: read ONCE per run, so a switch flipped in the gear reaches
         // the next run of this already-built agent, and a run never changes
         // the tool list it advertises halfway through.
+        agentMessagingThisRun = agentMessaging;
         groupsOffThisRun = toolGroupsOffNow();
+        // Card 504: read ONCE per run for the same reason, so a loop that
+        // ends while the run works leaves its tools array as it started.
+        loopActiveThisRun = loopActive.getAsBoolean();
+        // Card 547: read ONCE per run for the same reason. A tool that needs
+        // something the folder lacks (a code graph) stays out of every request
+        // of this run, and appears in the next run once it is there.
+        notOfferedThisRun = notOfferedNow();
+        toolLinesThisRun = options.registry() == null ? "" : options.registry().promptLines(notOfferedThisRun);
         // Card 490: read ONCE per run for the same reason. The spawn tools put
         // the count into their descriptions, the tools come first in every
         // request, and a description that changed inside a run would throw
@@ -564,6 +686,10 @@ public final class Agent {
         // — no heading in the system prompt, no check, no new exit.
         SessionGoal goal = options.goal();
         GoalGate goalGate = new GoalGate();
+        // Card 504: the goal's own counter, outside the leash's budget.
+        goalCounter.startRun();
+        // Card 504: the check in clock of this run, made at the first deferral.
+        dev.spectroscope.core.goal.GoalCheckIn checkIn = null;
         ProgressGuard progress = options.progressGuard();
 
         if (progress != null) {
@@ -587,12 +713,18 @@ public final class Agent {
         if (steering != null) {
             steering.open();
         }
+        if (peers != null) {
+            peers.open();
+        }
         // The folder is recorded on the run itself (card 284): the in-memory pin
         // dies with the process, so without this a resume after a restart lands
         // in the configured default and says nothing about the swap.
+        // Card 521: the window this run derived rides along, so a stored session
+        // keeps the window its model had and the ring reads it back.
         emit.accept(new RunStart(runId, agentId, options.parentId(), prompt,
                 providerLabel, options.provider().modelName(), null, attachments,
-                options.cwd() == null ? null : options.cwd().toString(), now()));
+                options.cwd() == null ? null : options.cwd().toString(), now())
+                .withWindow(compaction.window(), compaction.source().wireName()));
         log.info("run {} started (provider {})", runId, providerLabel);
         log.info("compacting at {} input tokens ({})",
                 compactionThreshold, compaction.source().wireName());
@@ -652,6 +784,9 @@ public final class Agent {
                                 dev.spectroscope.core.steering.SteeringInbox.attributed(said));
                     }
                 }
+                // Card 502: messages from other agents, at the same safe point
+                // and through the same fold, each in its attribution block.
+                absorbPeerMessages(peers, agentId, emit);
 
                 // Card 262, detector 3: the only one of the three with no tool
                 // call to hang on, so the loop asks it itself — once per turn,
@@ -792,7 +927,9 @@ public final class Agent {
                 RunGoal statedGoal = goal == null ? null : goal.stated();
                 // Card 492: the care paragraph sits between the base prompt and
                 // the goal, so the part that is fixed for the run comes first.
-                String baseForRun = options.systemPrompt() + careThisRun;
+                // Card 547: the lines of the tools this run offers sit right
+                // after the base prompt and are empty when none is offered.
+                String baseForRun = options.systemPrompt() + toolLinesThisRun + careThisRun;
                 String systemForTurn = statedGoal == null
                         ? baseForRun
                         : baseForRun + statedGoal.promptSection();
@@ -935,6 +1072,57 @@ public final class Agent {
                             continue;
                         }
                     }
+                    // Card 502: a message from another agent at this exit buys
+                    // the next turn the way a steering sentence does, under the
+                    // same cap.
+                    if (peers != null && !signal.isCancelled()
+                            && "end_turn".equals(reason) && turn < maxTurns
+                            && absorbPeerMessages(peers, agentId, emit)) {
+                        continue;
+                    }
+                    // Card 505: children still running in the background, or a
+                    // result nobody collected. Without a goal the run waits for
+                    // them and hands their results in, so it never ends with a
+                    // child still running; with a goal it waits up to the check
+                    // in interval and, when one still runs, says so instead. The
+                    // goal is checked at the end_turn after the last result.
+                    if (background != null && !signal.isCancelled()
+                            && "end_turn".equals(reason) && turn < maxTurns && background.pending()) {
+                        RunGoal goalNow = goal == null ? null : goal.stated();
+                        // Card 504: with a goal the check is deferred, and the
+                        // wait stops at the next check in: 30, 60, 120 minutes,
+                        // then 120, counted from the last check in.
+                        if (goalNow != null && checkIn == null) {
+                            checkIn = new dev.spectroscope.core.goal.GoalCheckIn(background.checkInMs(),
+                                    checkInClock);
+                        }
+                        // A check in that fell due during the model's turn waits
+                        // one millisecond: join reads zero as "until they end".
+                        List<dev.spectroscope.core.peer.PeerEnvelope> results =
+                                background.join(signal, goalNow != null ? Math.max(1L, checkIn.waitMs()) : 0L);
+                        if (signal.isCancelled()) {
+                            emit.accept(new RunEnd(runId, abortStopReason(signal), now()));
+                            return;
+                        }
+                        if (results == null && goalNow != null) {
+                            int running = background.runningCount();
+                            long minutes = checkIn.deferredMinutes();
+                            checkIn.checkedIn();
+                            appendUserText(messages, dev.spectroscope.core.goal.GoalCheckIn.text(
+                                    goalNow.outcome(), minutes, background.runningLines()));
+                            goal.listener().checkedIn(checkIn.count(), minutes, running);
+                            continue;
+                        }
+                        if (checkIn != null) {
+                            // The last child ended: the deferral drops, and the
+                            // check runs at the next end_turn.
+                            checkIn.reset();
+                        }
+                        if (results != null && !results.isEmpty()) {
+                            handInResults(results, peers, agentId, emit);
+                            continue;
+                        }
+                    }
                     // Card 267, THE PIVOT. Where a goal is stated, the CHECK
                     // decides this exit and the plan ledger does not.
                     //
@@ -945,9 +1133,9 @@ public final class Agent {
                     // the leash's plan-ledger consult below is skipped, card
                     // 264's `unfinished` rename never applies, and run_end
                     // carries goal_met / goal_unmet / goal_untested instead.
-                    // A failing check then buys its continuation from the SAME
-                    // budget, through the same three decisions, so the bound
-                    // stays one number an operator can read (criterion 6).
+                    // A failing check then continues the run from the goal's
+                    // own counter (card 504): not the leash's budget, bounded
+                    // by the turn cap and by the same failure twice in a row.
                     //
                     // Card 380's steering read above comes first only on an
                     // end_turn below the cap, and there the goal decides only
@@ -981,16 +1169,21 @@ public final class Agent {
                                 emit, goalGate);
                         log.info("goal verdict {}", verdict.evidence());
                         if ("end_turn".equals(reason)) {
-                            Optional<String> carryOn = continuationForTheCheck(verdict, leash,
-                                    turn < maxTurns, productiveCalls, lastInputTokens, agentId,
-                                    emit);
+                            Optional<String> carryOn = continuationForTheCheck(verdict,
+                                    turn < maxTurns, maxTurns, productiveCalls, lastInputTokens,
+                                    agentId, emit);
                             if (carryOn.isPresent()) {
                                 // The check's own words, not the harness's
                                 // paraphrase of a failure it did not produce.
                                 appendUserText(messages, carryOn.get());
                                 continue;
                             }
-                            emit.accept(new RunEnd(runId, verdict.outcome().stopReason(), now()));
+                            // Card 504: a failed check on the last permitted
+                            // turn ends at the cap, and the cap keeps its name.
+                            boolean capped = verdict.outcome() == GoalVerdict.Outcome.FAILED
+                                    && turn >= maxTurns;
+                            emit.accept(new RunEnd(runId,
+                                    capped ? "max_turns" : verdict.outcome().stopReason(), now()));
                             return;
                         }
                         // max_tokens falls through to the exit below, which
@@ -1059,6 +1252,9 @@ public final class Agent {
                 // results — the one place the model is certain to read next turn.
                 List<ProviderContent> operatorNotes = new ArrayList<>();
                 boolean operatorEndedTheRun = false;
+                // Fix round 1 of card 504: schedule_wakeup tells the model the
+                // turn ends when it returns; this round is the turn's last.
+                boolean wakeupEndsTheTurn = false;
                 for (PToolCall call : toolCalls) {
                     if (operatorEndedTheRun) {
                         // Every call of the round still needs a result. An
@@ -1120,6 +1316,9 @@ public final class Agent {
                             outcome.durationMs(), outcome.gateWaitMs(), outcome.fileChange(), now()));
                     // Denial/error goes back to the model as a tool_result for self-correction.
                     results.add(new ToolResultContent(call.callId(), outcome.output(), isError));
+                    if (!isError && dev.spectroscope.core.loop.ScheduleWakeupTool.NAME.equals(call.name())) {
+                        wakeupEndsTheTurn = true;
+                    }
                     if (progress != null) {
                         java.util.Optional<ProgressGuard.Strike> failing =
                                 progress.observeResult(call.name(), call.input(), isError);
@@ -1139,6 +1338,14 @@ public final class Agent {
                 messages.add(new ProviderMessage(ProviderMessage.Role.USER, results));
                 if (operatorEndedTheRun) {
                     emit.accept(new RunEnd(runId, ProgressGuard.STOP_REASON, now()));
+                    return;
+                }
+                if (wakeupEndsTheTurn) {
+                    // The loop's next tick is armed (or the loop stopped): the
+                    // run ends here as a turn the model ended, and the wakeup
+                    // starts the next one. Measured live on 2026-10-12: without
+                    // this a model called schedule_wakeup 776 times in 22 minutes of one run.
+                    emit.accept(new RunEnd(runId, "end_turn", now()));
                     return;
                 }
             }
@@ -1163,58 +1370,74 @@ public final class Agent {
                 return;
             }
             emit.accept(new ErrorEvent(agentId, error.getMessage(), now()));
+            clearTheGoalAfter(error, goal, agentId, emit);
             emit.accept(new RunEnd(runId, "error", now()));
         }
     }
 
     /**
-     * Asks card 266's leash whether a failing check buys another turn, and puts
-     * the decision on the wire either way (card 267, criterion 6).
+     * Card 504, criterion 4: a context limit, an authentication, a billing or
+     * a model unavailable error clears the goal, with a {@code goal_check}
+     * line of outcome {@code cleared} for the chat. Every other error leaves
+     * the goal as it is.
      *
-     * <p>Every one of the three outcomes is a line, exactly as card 266 made
-     * them: a continuation nobody can count afterwards is the silence card 264
-     * was cut to end. The plan counts on that line come from the ledger this run
-     * wrote, because the reader of a {@code continuation} event has always been
-     * told how much of the plan was open — a goal does not take that away, it
-     * only stops the ledger from deciding.</p>
+     * @param error   what the run threw
+     * @param goal    the session's goal, or null
+     * @param agentId this agent's id
+     * @param emit    the run's sink
+     */
+    private void clearTheGoalAfter(RuntimeException error, SessionGoal goal, String agentId,
+                                   Consumer<RunEvent> emit) {
+        RunGoal stated = goal == null ? null : goal.stated();
+        if (stated == null) {
+            return;
+        }
+        Optional<String> reason = dev.spectroscope.core.goal.UnrecoverableError.classify(error);
+        if (reason.isEmpty()) {
+            return;
+        }
+        goal.clear(reason.get());
+        emit.accept(new RunEvent.GoalCheck(agentId, GOAL_CLEARED, stated.check() == null ? "" : stated.check(),
+                null, null, "", 0L, null,
+                "Goal cleared after an unrecoverable error (" + reason.get() + ")", now()));
+    }
+
+    /**
+     * Asks the goal's own counter whether a failing check buys another turn,
+     * and puts the decision on the wire either way (card 504, criterion 2).
+     *
+     * <p>The leash's {@code continuationBudget} is not consulted: a failed
+     * check continues the run until the check passes, the turn cap is reached
+     * or the same failure comes back unchanged. The plan counts on the line
+     * come from the ledger this run wrote, as card 266 made them.</p>
      *
      * @param verdict         what the check said
-     * @param leash           the run's leash, or null where nothing continues
-     * @param belowTheCap     false on the last permitted turn — consulting the
-     *                        leash there would record a continuation the run can
-     *                        never take, which is a line that lies
+     * @param belowTheCap     false on the last permitted turn, where a
+     *                        continuation could never be taken
+     * @param maxTurns        the run's turn cap, the bound the line names
      * @param productiveCalls clean tool calls this run, the work half of the
      *                        fingerprint
-     * @param inputTokens     what the last exchange cost, the floor of what this
-     *                        continuation would cost
+     * @param inputTokens     what the last exchange cost
      * @param agentId         the agent the decision belongs to
      * @param emit            the loop's event sink
      * @return the message to hand the model, or empty when the run ends here
      */
-    private Optional<String> continuationForTheCheck(GoalVerdict verdict, ContinuationLeash leash,
-                                                     boolean belowTheCap, int productiveCalls,
+    private Optional<String> continuationForTheCheck(GoalVerdict verdict, boolean belowTheCap,
+                                                     int maxTurns, int productiveCalls,
                                                      int inputTokens, String agentId,
                                                      Consumer<RunEvent> emit) {
-        if (verdict.outcome() != GoalVerdict.Outcome.FAILED || leash == null || !belowTheCap) {
-            // UNTESTED never continues: there is nothing to react to, and
-            // spending a turn on a broken thermometer is what criterion 3
-            // separates untested from failed to prevent.
+        if (verdict.outcome() != GoalVerdict.Outcome.FAILED || !belowTheCap) {
+            // UNTESTED never continues: there is nothing to react to.
             return Optional.empty();
         }
         RunEvent.Plan ownLedger = planWrittenThisRun ? lastPlan : null;
-        Optional<ContinuationLeash.Verdict> held = leash.considerFailedCheck(
-                ContinuationLeash.checkSignature(verdict.exitCode(), verdict.output(),
-                        productiveCalls),
-                verdict.asGuidance());
-        if (held.isEmpty()) {
-            return Optional.empty();
-        }
-        ContinuationLeash.Verdict decision = held.get();
-        emit.accept(new RunEvent.Continuation(agentId, decision.decision().wireName(),
-                decision.continuation(), decision.budget(), PlanVerdict.openSteps(ownLedger),
+        dev.spectroscope.core.goal.GoalContinuation.Decision decision = goalCounter.consider(
+                ContinuationLeash.checkSignature(verdict.exitCode(), verdict.output(), productiveCalls),
+                maxTurns);
+        emit.accept(new RunEvent.Continuation(agentId, decision.decision(),
+                decision.continuation(), decision.ceiling(), PlanVerdict.openSteps(ownLedger),
                 PlanVerdict.totalSteps(ownLedger), inputTokens, decision.evidence(), now()));
-        return decision.decision() == ContinuationLeash.Decision.CONTINUED
-                ? Optional.of(decision.message()) : Optional.empty();
+        return decision.continues() ? Optional.of(verdict.asGuidance()) : Optional.empty();
     }
 
     /**
@@ -1455,6 +1678,11 @@ public final class Agent {
         // Card 466: a tool of a switched-off group was never advertised; a
         // model that calls it anyway (from an earlier run's history) gets the
         // same answer as for a tool that does not exist, and the reason.
+        // Card 504: schedule_wakeup exists only while the session runs a loop.
+        if (dev.spectroscope.core.loop.ScheduleWakeupTool.NAME.equals(call.name()) && !loopActiveThisRun) {
+            return new GuardedResult("ERROR: unknown tool: " + call.name()
+                    + " (no loop runs in this session; the operator starts one with /loop)", 0, null);
+        }
         if (ToolGroup.switchedOff(call.name(), groupsOffThisRun)) {
             return new GuardedResult("ERROR: unknown tool: " + call.name() + " (its tool group \""
                     + ToolGroup.of(call.name()).map(ToolGroup::wireName).orElse("")
@@ -1639,7 +1867,7 @@ public final class Agent {
         // is what the browser's context ring and the CLI's meter show.
         RunGoal statedForGauge = options.goal() == null ? null : options.goal().stated();
         // Card 492: the ring reads the care paragraph the request carries.
-        String baseForGauge = options.systemPrompt() + careThisRun;
+        String baseForGauge = options.systemPrompt() + toolLinesThisRun + careThisRun;
         String systemForGauge = statedForGauge == null
                 ? baseForGauge
                 : baseForGauge + statedForGauge.promptSection();
@@ -2059,7 +2287,72 @@ public final class Agent {
     public Set<ToolGroup> toolGroupsOffNow() {
         java.util.function.Supplier<Set<ToolGroup>> reader = options.toolGroupsOff();
         Set<ToolGroup> off = reader == null ? null : reader.get();
+        // Card 503: agentMessaging off is the messaging group off, so the two
+        // tools leave the request and a call to one is refused the same way.
+        if (Boolean.FALSE.equals(agentMessaging)) {
+            Set<ToolGroup> with = new java.util.HashSet<>(off == null ? Set.of() : off);
+            with.add(ToolGroup.MESSAGING);
+            return Set.copyOf(with);
+        }
         return off == null || off.isEmpty() ? Set.of() : Set.copyOf(off);
+    }
+
+    /**
+     * Card 503: the {@code agentMessaging} setting the next run reads. The
+     * browser session hands it over before every prompt, so a saved change
+     * reaches the next run.
+     *
+     * @param setting false switches agent messaging off; null is the shipped on
+     */
+    public void setAgentMessaging(Boolean setting) {
+        this.agentMessaging = setting;
+    }
+
+    /**
+     * Card 504, test seam: the clock the goal's check in reads.
+     *
+     * @param clock milliseconds
+     */
+    void checkInClock(java.util.function.LongSupplier clock) {
+        this.checkInClock = clock;
+    }
+
+    /**
+     * Card 505: the background children of this agent's runs. The subagent
+     * manager hands them over before it starts a run; the loop reads them once
+     * when the run starts.
+     *
+     * @param children the children's side of the run, or null for none
+     */
+    public void backgroundChildren(BackgroundChildren children) {
+        this.backgroundChildren = children;
+    }
+
+    /**
+     * Card 503: the setting the current run read when it started, so a child
+     * spawned during the run takes the same one. Before the first run, the
+     * setting the next run will read.
+     *
+     * @return false when messaging is off for the run; null for the shipped on
+     */
+    public Boolean agentMessagingThisRun() {
+        Boolean read = agentMessagingThisRun;
+        return read != null ? read : agentMessaging;
+    }
+
+    /** Card 504: whether the session runs a loop, read once per run. */
+    private volatile java.util.function.BooleanSupplier loopActive = () -> false;
+    /** Card 504: what the current run read from {@link #loopActive}. */
+    private volatile boolean loopActiveThisRun;
+
+    /**
+     * Card 504: tells the agent how to ask whether its session runs a loop.
+     * The next run reads it once and offers {@code schedule_wakeup} only then.
+     *
+     * @param active the question, or null for never
+     */
+    public void loopActive(java.util.function.BooleanSupplier active) {
+        this.loopActive = active == null ? () -> false : active;
     }
 
     /**
@@ -2070,8 +2363,15 @@ public final class Agent {
      * @return the advertised specs, in registration order
      */
     public List<ToolSpec> toolSpecsForNextRun() {
-        return ToolGroup.visible(options.registry().specs(new Tool.RunFacts(readSharePercent())),
-                toolGroupsOffNow());
+        Set<String> notOffered = notOfferedNow();
+        return withoutTheLoop(ToolGroup.visible(options.registry().specs(new Tool.RunFacts(readSharePercent())),
+                toolGroupsOffNow()), loopActive.getAsBoolean()).stream()
+                .filter(spec -> !notOffered.contains(spec.name())).toList();
+    }
+
+    /** Card 547: the registry's tools that are not offered in this agent's folder now. */
+    private Set<String> notOfferedNow() {
+        return options.registry() == null ? Set.of() : options.registry().notOfferedIn(options.cwd());
     }
 
     /**
@@ -2153,11 +2453,33 @@ public final class Agent {
         return read > 0 ? read : readSharePercent();
     }
 
-    /** The registry's specs minus the groups this run switched off, each
-     *  described with what the run read when it started (card 493). */
+    /** The registry's specs minus the groups this run switched off and the
+     *  tools it does not offer in its folder (card 547), each described with
+     *  what the run read when it started (card 493). */
     private List<ToolSpec> visibleSpecs() {
-        return ToolGroup.visible(options.registry().specs(
-                new Tool.RunFacts(readSharePercentThisRun())), groupsOffThisRun);
+        List<ToolSpec> visible = withoutTheLoop(ToolGroup.visible(options.registry().specs(
+                new Tool.RunFacts(readSharePercentThisRun())), groupsOffThisRun), loopActiveThisRun);
+        Set<String> notOffered = notOfferedThisRun;
+        return notOffered.isEmpty()
+                ? visible
+                : visible.stream().filter(spec -> !notOffered.contains(spec.name())).toList();
+    }
+
+    /**
+     * Card 504: the specs without {@code schedule_wakeup} unless the session
+     * runs a loop, so a session without one sends the tools array it sent
+     * before the card.
+     *
+     * @param specs  the visible specs
+     * @param inLoop whether the loop runs
+     * @return the specs to advertise
+     */
+    private static List<ToolSpec> withoutTheLoop(List<ToolSpec> specs, boolean inLoop) {
+        if (inLoop) {
+            return specs;
+        }
+        return specs.stream().filter(spec -> !dev.spectroscope.core.loop.ScheduleWakeupTool.NAME.equals(spec.name()))
+                .toList();
     }
 
     /**

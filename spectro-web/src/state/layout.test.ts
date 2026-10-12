@@ -28,6 +28,7 @@ import {
   toggleRightPanel,
   toggleTrace,
   WIDTH_FIELDS,
+  setDockTabs,
 } from "./layout";
 import type { LayoutState, WidthField } from "./layout";
 
@@ -149,6 +150,9 @@ describe("layout store", () => {
 });
 
 describe("the dock panels (card 219, first cut)", () => {
+  // Card 517: a fresh store starts in tabs mode; these cases are side by side.
+  beforeEach(() => setDockTabs(false));
+
   it("starts with the roster open and everything else closed — today's face", () => {
     expect(__getState().dockAgents).toBe("open");
     for (const key of [
@@ -210,6 +214,9 @@ describe("the dock panels (card 219, first cut)", () => {
 });
 
 describe("the column arrangement travels with the modes (card 236)", () => {
+  // Card 517: a fresh store starts in tabs mode; these cases are side by side.
+  beforeEach(() => setDockTabs(false));
+
   it("starts with the roster alone in one column", () => {
     expect(__getState().dockColumns).toBe("agents~1~0.5");
   });

@@ -49,3 +49,28 @@ export function OpeningSurface(props: { lang: Lang; opening: SessionOpening; pro
     </div>
   );
 }
+
+/**
+ * Card 527 criterion 8: the same card and spinner while the speech model
+ * loads, over the composer, faded in after the same delay (opening.css).
+ * Card 528: Chat renders it only after the server's loading frame. With
+ * whisper-cli that frame comes on every press, because every process loads
+ * the model (683 to 2070 ms from the ready frame over 10 presses in card 527's
+ * live checks of 2026-10-11). With the resident whisper-server it comes on the
+ * first press and after the server stopped, not on the presses between.
+ *
+ * @param props the language and the model's file name
+ */
+export function SpeechModelOpening(props: { lang: Lang; model: string }) {
+  return (
+    <div className="opening-surface opening-surface--speech" role="status" aria-live="polite">
+      <div className="opening-card">
+        <span className="opening-spinner" aria-hidden="true" />
+        <div className="opening-text">
+          <span className="opening-line">{t(props.lang, "open.speechModel")}</span>
+          <span className="opening-title mono">{props.model}</span>
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -55,13 +55,15 @@ export function CodeGraphSheet(props: {
   status: CodeGraphStatus | null;
   sessionId: string | null;
   view: "build" | "failure";
+  /** The mode a menu row asked for (card 546); left out, update when a graph exists. */
+  mode?: "full" | "update";
   onClose: () => void;
 }) {
   const lang = useLang();
   const { status, sessionId, onClose } = props;
-  const [mode, setMode] = useState<"full" | "update">(defaultMode(status));
+  const suggested = props.mode ?? defaultMode(status);
+  const [mode, setMode] = useState<"full" | "update">(suggested);
   const [modeChosen, setModeChosen] = useState(false);
-  const suggested = defaultMode(status);
   const [provider, setProvider] = useState("");
   const [models, setModels] = useState<string[] | null>(null);
   const [model, setModel] = useState("");
@@ -143,6 +145,7 @@ export function CodeGraphSheet(props: {
   const running = status?.job?.state === "running";
   const backends = status?.backends ?? [];
   const modelOk = provider === "" || (models !== null && models.includes(model));
+  const title = t(lang, props.mode === "update" ? "cg.titleUpdate" : "cg.title");
   const canStart = installed && sessionId !== null && !running && !sending && modelOk;
 
   const start = async (): Promise<void> => {
@@ -172,11 +175,11 @@ export function CodeGraphSheet(props: {
         className="cg-sheet"
         role="dialog"
         aria-modal="true"
-        aria-label={t(lang, "cg.title")}
+        aria-label={title}
         onClick={(e) => e.stopPropagation()}
       >
         <header className="cg-head">
-          <h2 className="cg-title">{t(lang, "cg.title")}</h2>
+          <h2 className="cg-title">{title}</h2>
           <CloseButton onClose={onClose} label={t(lang, "common.close")} />
         </header>
         {folder !== null && <p className="cg-sub mono">{folder}</p>}

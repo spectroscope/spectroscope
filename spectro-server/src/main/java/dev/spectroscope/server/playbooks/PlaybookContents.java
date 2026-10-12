@@ -22,6 +22,7 @@ import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -73,22 +74,30 @@ public final class PlaybookContents {
 
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final Set<String> HOOK_FIELDS = Set.of("event", "matcher", "command", "timeoutSeconds");
-    private static final String HOOKS_PLACEHOLDER = "{hooks}";
+    /** The placeholder a hook command uses for the folder its scripts are installed into. */
+    static final String HOOKS_PLACEHOLDER = "{hooks}";
+    /** The placeholder a hook command uses for the workspace it is installed for (card 538). */
+    static final String PROJECT_PLACEHOLDER = "{project}";
 
     private final Path root;
     private final Path spectroHome;
+    /** The home folder: the parent of {@link #spectroHome}. */
+    private final Path userHome;
     private final Path projectSkills;
+    private final Path workspace;
     private final String id;
     private final Map<String, InstallLedger.Item> recorded = new HashMap<>();
     private final List<HookConfig> userHooks;
     private final List<Finding> findings = new ArrayList<>();
     private int promptChars;
 
-    private PlaybookContents(Path root, Path spectroHome, Path projectSkills, String id,
+    private PlaybookContents(Path root, Path spectroHome, Path projectSkills, Path workspace, String id,
                              Optional<InstallLedger.Install> installed, List<HookConfig> userHooks) {
         this.root = root;
         this.spectroHome = spectroHome;
+        this.userHome = spectroHome.getParent();
         this.projectSkills = projectSkills;
+        this.workspace = workspace;
         this.id = id;
         this.userHooks = userHooks;
         installed.ifPresent(i -> i.items().forEach(item -> recorded.put(key(item.kind(), item.source()), item)));
@@ -108,9 +117,30 @@ public final class PlaybookContents {
      */
     public static Preview preview(Path dir, Playbook playbook, Path spectroHome, Path projectSkills,
                                   InstallLedger ledger, String hooksOrigin) throws IOException {
+        return preview(dir, playbook, spectroHome, projectSkills, ledger, hooksOrigin, null);
+    }
+
+    /**
+     * Previews the contents of a playbook folder for a workspace: a hook command's {@code {project}}
+     * becomes that folder.
+     *
+     * @param dir           the playbook folder
+     * @param playbook      the playbook read from its {@code playbook.json}
+     * @param spectroHome   {@code ~/.spectro}
+     * @param projectSkills the launch directory's {@code .spectro/skills}
+     * @param ledger        the install ledger
+     * @param hooksOrigin   the settings layer whose hooks block is in force, or null
+     * @param workspace     the folder {@code {project}} stands for, or null when none is known; a hook
+     *                      that names {@code {project}} is then a finding
+     * @return the items, the hashes and the findings
+     * @throws IOException when the folder cannot be read
+     */
+    public static Preview preview(Path dir, Playbook playbook, Path spectroHome, Path projectSkills,
+                                  InstallLedger ledger, String hooksOrigin, Path workspace) throws IOException {
         Path root = dir.toRealPath();
         Path home = spectroHome.toAbsolutePath().normalize();
         PlaybookContents run = new PlaybookContents(root, home, projectSkills.toAbsolutePath().normalize(),
+                workspace == null ? null : workspace.toAbsolutePath().normalize(),
                 playbook.id(), ledger.find(playbook.id()), readUserHooks(home.resolve("settings.json")));
         Playbook.Contents c = playbook.contents();
         List<Item> items = new ArrayList<>();
@@ -228,7 +258,7 @@ public final class PlaybookContents {
     }
 
     /** The description of a command's frontmatter; empty when there is no closed frontmatter or no description. */
-    private static String frontmatterDescription(String raw) {
+    static String frontmatterDescription(String raw) {
         List<String> lines = List.of(raw.split("\\R", -1));
         int first = -1;
         for (int i = 0; i < lines.size(); i++) {
@@ -285,7 +315,16 @@ public final class PlaybookContents {
                 continue;
             }
             Path hookFolder = spectroHome.resolve("playbook-hooks").resolve(id);
+            List<HookTokens.Hit> credentials = HookTokens.scan(raw);
             for (int i = 0; i < tree.size(); i++) {
+                int index = i;
+                List<HookTokens.Hit> hits = credentials.stream().filter(h -> h.entry() == index).toList();
+                if (!hits.isEmpty()) {
+                    hits.forEach(h -> findings.add(new Finding(rel + "[" + index + "]"
+                            + (HOOK_FIELDS.contains(h.field()) ? "." + h.field() : ""),
+                            HookTokens.message(h) + ". A hook that matches a key pattern is not installed.")));
+                    continue;
+                }
                 hook(tree.get(i), rel, i, hookFolder, scripts, scriptsHash).ifPresent(out::add);
             }
         }
@@ -370,10 +409,18 @@ public final class PlaybookContents {
             findings.add(new Finding(at + ".event", unknownEvent.getMessage()));
             clean = false;
         }
+        if (clean) {
+            clean = commandFindings(at + ".command", command);
+        }
         if (!clean) {
             return Optional.empty();
         }
-        String resolved = command.replace(HOOKS_PLACEHOLDER, hookFolder.toString());
+        Map<String, String> values = new LinkedHashMap<>();
+        values.put(HOOKS_PLACEHOLDER, hookFolder.toString());
+        if (workspace != null) {
+            values.put(PROJECT_PLACEHOLDER, workspace.toString());
+        }
+        String resolved = HookCommands.substitute(command, values);
         HookConfig entry = new HookConfig(matcher, event, resolved, timeout);
         String sha = hookItemHash(ContentHash.hook(event, matcher, resolved, timeout), scriptsHash);
         String name = event + " " + (matcher == null || matcher.isBlank() ? "*" : matcher);
@@ -389,6 +436,56 @@ public final class PlaybookContents {
         }
         return Optional.of(new Item("hook", name, source, sha, state, "tool-calls",
                 resolved.getBytes(StandardCharsets.UTF_8).length, hookFolder.toString(), resolved, List.copyOf(scripts)));
+    }
+
+    /**
+     * The findings of a hook command before its placeholders are put back (card 538): a hidden entry
+     * of the home, a path that climbs above {@code {hooks}} or {@code {project}}, and a
+     * {@code {project}} with no workspace, or with one that is the root, the home or holds the home.
+     *
+     * @return whether the command is clean
+     */
+    private boolean commandFindings(String at, String command) {
+        String dot = HookCommands.homeDotFolder(command, userHome);
+        if (dot != null) {
+            findings.add(new Finding(at, "names " + dot + ", a hidden file or folder of the home. Such a hook "
+                    + "is not installed"));
+            return false;
+        }
+        for (String placeholder : List.of(HOOKS_PLACEHOLDER, PROJECT_PLACEHOLDER)) {
+            if (HookCommands.climbsAbove(command, placeholder)) {
+                findings.add(new Finding(at, "a path after " + placeholder + " leaves that folder with '..'. Such a hook "
+                        + "is not installed"));
+                return false;
+            }
+        }
+        if (!command.contains(PROJECT_PLACEHOLDER)) {
+            return true;
+        }
+        if (workspace == null) {
+            findings.add(new Finding(at, "names " + PROJECT_PLACEHOLDER
+                    + ", but no workspace is known to put in its place"));
+            return false;
+        }
+        if (holdsTheHome(workspace)) {
+            findings.add(new Finding(at, "names " + PROJECT_PLACEHOLDER + ", but the workspace is the file system "
+                    + "root, the home folder or a folder that holds the home folder. The app does not put such a "
+                    + "folder in its place"));
+            return false;
+        }
+        return true;
+    }
+
+    /** Whether {@code folder} is the home or holds it, the root included, in any spelling of either. */
+    private boolean holdsTheHome(Path folder) {
+        for (String w : HookCommands.spellings(folder)) {
+            for (String h : HookCommands.spellings(userHome)) {
+                if (Path.of(h).startsWith(Path.of(w))) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /** The hook entry a ledger item recorded, or null when it has none or it does not bind. */
@@ -471,9 +568,40 @@ public final class PlaybookContents {
                 continue;
             }
             String name = rel.startsWith("workflows/") ? rel.substring("workflows/".length()) : file.getFileName().toString();
-            out.add(new Item("workflow", name, rel, ContentHash.tree(walk), "not-run", "none", walk.bytes(), null, null, null));
+            String sha;
+            try {
+                sha = ContentHash.tree(walk);
+            } catch (IOException unreadable) {
+                // Card 506 fix round 1: one unreadable file leaves the list, not the preview.
+                findings.add(new Finding(rel, "not readable: " + unreadable.getClass().getSimpleName()));
+                continue;
+            }
+            boolean runnable = runnable(file);
+            out.add(new Item("workflow", name, rel, sha, runnable ? "runnable" : "not-run",
+                    runnable ? "runs" : "none", walk.bytes(), null, null, null));
         }
         return out;
+    }
+
+    /**
+     * Card 506: a regular file that reads as a step list runs in the session from the playbook
+     * module; a directory, a link, a file that cannot be read and anything else is listed and not run.
+     * A step list that starts a {@code worker} child is not run from the module either (fix round 2).
+     */
+    static boolean runnable(Path file) {
+        if (!Files.isRegularFile(file, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+            return false;
+        }
+        try (java.io.InputStream in = Files.newInputStream(file, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+            byte[] bytes = in.readNBytes(dev.spectroscope.core.playbook.WorkflowReader.MAX_FILE_BYTES + 1);
+            if (bytes.length > dev.spectroscope.core.playbook.WorkflowReader.MAX_FILE_BYTES) {
+                return false;
+            }
+            dev.spectroscope.core.playbook.Workflow w = dev.spectroscope.core.playbook.WorkflowReader.read(bytes).workflow();
+            return w != null && w.workerRoles().isEmpty();
+        } catch (IOException unreadable) {
+            return false;
+        }
     }
 
     // ---- shared ------------------------------------------------------------------------------

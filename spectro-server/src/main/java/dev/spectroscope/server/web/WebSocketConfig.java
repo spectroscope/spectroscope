@@ -1,10 +1,16 @@
 package dev.spectroscope.server.web;
 
 import dev.spectroscope.core.config.SpectroConfig;
+import dev.spectroscope.core.config.SttRunnerChoice;
+import dev.spectroscope.core.config.SttStreaming;
+import dev.spectroscope.core.tools.ToolPath;
 import dev.spectroscope.server.llm.HostedTranscriber;
 import dev.spectroscope.server.llm.LiveSttProtocol;
 import dev.spectroscope.server.llm.LiveSttSocketHandler;
+import dev.spectroscope.server.llm.LocalWhisperUpstream;
+import dev.spectroscope.server.llm.TranscribeController;
 import dev.spectroscope.server.llm.OpenAiLiveStt;
+import dev.spectroscope.server.llm.SpeechRunners;
 import dev.spectroscope.server.llm.SttRoute;
 import dev.spectroscope.server.browser.BrowserControlSocket;
 import dev.spectroscope.server.session.SpectroSocketHandler;
@@ -16,6 +22,7 @@ import dev.spectroscope.server.shell.ShellRegistry;
 import dev.spectroscope.server.shell.ShellSocketHandler;
 import dev.spectroscope.server.shell.Shells;
 
+import jakarta.annotation.PreDestroy;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.socket.config.annotation.EnableWebSocket;
@@ -86,7 +93,8 @@ public class WebSocketConfig implements WebSocketConfigurer {
                         ptyProvider::available, Shells::enabled))
                 .setAllowedOrigins("*");
         registry.addHandler(
-                        new LiveSttSocketHandler(WebSocketConfig::liveSttSetup, new OpenAiLiveStt()),
+                        LiveSttSocketHandler.withLocalRoute(WebSocketConfig::liveSttSetup, new OpenAiLiveStt(),
+                                localLiveStt()),
                         "/ws/stt")
                 .addInterceptors(new LocalOriginHandshakeInterceptor())
                 .setAllowedOrigins("*");
@@ -120,7 +128,47 @@ public class WebSocketConfig implements WebSocketConfigurer {
         SttRoute route = SttRoute.of(
                 SpectroConfig.load(SpectroConfig.Overrides.none()).sttProvider(),
                 !safeKey.isBlank());
-        return new LiveSttSocketHandler.Setup(route, safeKey, LiveSttProtocol.DEFAULT_MODEL);
+        java.nio.file.Path model = TranscribeController.configuredModelPath();
+        // Card 528: the program sttRunner resolves to has to be there.
+        SttRunnerChoice runner = runnerChoice();
+        boolean localReady = runner.ready() && java.nio.file.Files.isRegularFile(model);
+        return new LiveSttSocketHandler.Setup(route, safeKey, LiveSttProtocol.DEFAULT_MODEL,
+                new LiveSttSocketHandler.LocalSetup(localReady, model.getFileName().toString(),
+                        SpectroConfig.load(SpectroConfig.Overrides.none()).sttLanguage(),
+                        SttStreaming.STT_LOCAL_CHUNK_MS, runner.engine()));
+    }
+
+    /**
+     * What {@code sttRunner} resolves to right now (card 528).
+     *
+     * @return the choice against the programs installed
+     */
+    private static SttRunnerChoice runnerChoice() {
+        return SttRunnerChoice.resolve(SpectroConfig.load(SpectroConfig.Overrides.none()).sttRunner(),
+                ToolPath.locate("whisper-server"), ToolPath.locate("whisper-cli"));
+    }
+
+    /** Card 528: the resident whisper-server ends with the Spring context. */
+    @PreDestroy
+    public void stopSpeechServer() {
+        SpeechRunners.stopShared();
+    }
+
+    /**
+     * Live text on the local route (card 527): whisper over the open window
+     * every chunk step, with the model and the language read when a recording
+     * starts. Card 528: the runner too, so whisper-cli or the one resident
+     * whisper-server follows {@code sttRunner}.
+     *
+     * @return the local upstream
+     */
+    private static LocalWhisperUpstream localLiveStt() {
+        return LocalWhisperUpstream.perSession(
+                () -> new LocalWhisperUpstream.Settings(
+                        SpectroConfig.load(SpectroConfig.Overrides.none()).sttLanguage(),
+                        SttStreaming.STT_LOCAL_CHUNK_MS, SttStreaming.STT_LOCAL_WINDOW_MS,
+                        SttStreaming.STT_LOCAL_PAUSE_MS, SttStreaming.STT_LOCAL_SILENCE_RMS),
+                () -> SpeechRunners.shared().runnerFor(runnerChoice()));
     }
 
     /**

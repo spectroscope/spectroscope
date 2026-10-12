@@ -86,11 +86,28 @@ export interface LoadedPlaybook {
   dir: string;
 }
 
+/**
+ * The tabs of the playbook pane (card 525): today's view, one per kind of
+ * contents, the plugin import (card 526), the whole folder, and the
+ * Spectrolyzr page.
+ */
+export type PaneTab =
+  "playbook" | "skills" | "agents" | "hooks" | "commands" | "workflows" | "plugin" | "files" | "lyzr";
+
+/** The tab the pane shows and the folder picked in it; null shows the folder pinned to the workspace. */
+export interface PaneView {
+  tab: PaneTab;
+  picked: string | null;
+}
+
 const NO_FOLDERS: PlaybookFoldersState = { folders: [], active: null };
+const FIRST_VIEW: PaneView = { tab: "playbook", picked: null };
 
 let foldersState: PlaybookFoldersState = NO_FOLDERS;
 let loadedState: LoadedPlaybook | null = null;
+let paneState: PaneView = FIRST_VIEW;
 const folderListeners = new Set<() => void>();
+const paneListeners = new Set<() => void>();
 const loadedListeners = new Set<() => void>();
 
 function setFolders(next: PlaybookFoldersState): void {
@@ -111,6 +128,60 @@ function subscribeFolders(cb: () => void): () => void {
 function subscribeLoaded(cb: () => void): () => void {
   loadedListeners.add(cb);
   return () => void loadedListeners.delete(cb);
+}
+
+function setPane(next: PaneView): void {
+  paneState = next;
+  for (const l of paneListeners) l();
+}
+
+function subscribePane(cb: () => void): () => void {
+  paneListeners.add(cb);
+  return () => void paneListeners.delete(cb);
+}
+
+/** The tab and the folder the playbook pane shows (card 525). */
+export function usePaneView(): PaneView {
+  return useSyncExternalStore(
+    subscribePane,
+    () => paneState,
+    () => paneState,
+  );
+}
+
+/** The pane's tab and folder right now, for code outside a component. */
+export function paneView(): PaneView {
+  return paneState;
+}
+
+/**
+ * Show a tab of the pane. The pane disables its tabs while a draft or a file
+ * has unsaved changes, so this does not check.
+ *
+ * @param tab the tab
+ */
+export function showTab(tab: PaneTab): void {
+  if (paneState.tab !== tab) setPane({ ...paneState, tab });
+}
+
+/**
+ * Show a folder in the pane, on the tab it has.
+ *
+ * @param dir the registered folder
+ */
+export function pickFolder(dir: string): void {
+  if (paneState.picked !== dir) setPane({ ...paneState, picked: dir });
+}
+
+/**
+ * Show a folder on a tab: after a new playbook (the Skills tab) and after an
+ * imported ZIP (the Playbook tab).
+ *
+ * @param dir the registered folder
+ * @param tab the tab
+ */
+export function showFolder(dir: string, tab: PaneTab): void {
+  setPane({ tab, picked: dir });
 }
 
 /** The known playbook folders and the one pinned to the current workspace. */
@@ -270,10 +341,12 @@ export function toWebTopology(loaded: LoadedPlaybook): Topology {
   };
 }
 
-/** Test seam: forget the folders and the loaded playbook. */
+/** Test seam: forget the folders, the loaded playbook and the pane's tab and folder. */
 export function __resetPlaybooks(): void {
   foldersState = NO_FOLDERS;
   loadedState = null;
+  paneState = FIRST_VIEW;
   for (const l of folderListeners) l();
   for (const l of loadedListeners) l();
+  for (const l of paneListeners) l();
 }

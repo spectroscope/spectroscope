@@ -20,6 +20,8 @@
 // pictures are, which is the question — and a record often carries SEVERAL, so
 // every one of them is marked rather than only the first.
 
+import { pairSafeCut } from "../pairSafeCut";
+
 /** One line of the file, as the pane shows it. */
 export interface WindowLine {
   /** The number a reader counts to when opening the file — one-based. */
@@ -68,7 +70,7 @@ const NEIGHBOUR_CHARS = 240;
  *  and not so much that the shape is lost. */
 const AROUND_BLOB = 320;
 
-const clip = (s: string, n: number): string => (s.length <= n ? s : `${s.slice(0, n)}…`);
+const clip = (s: string, n: number): string => (s.length <= n ? s : `${pairSafeCut(s, n)}…`);
 
 /**
  * Cuts a line around EVERY blob it carries.
@@ -113,7 +115,7 @@ export function cutAroundBlob(line: string, number: number): TargetLine | null {
               : `…${gap.slice(-AROUND_BLOB)}`
             : gap.length <= AROUND_BLOB * 2
               ? gap
-              : `${gap.slice(0, AROUND_BLOB)}…${gap.slice(-AROUND_BLOB)}`,
+              : `${pairSafeCut(gap, AROUND_BLOB)}…${gap.slice(-AROUND_BLOB)}`,
       });
     }
     segments.push({ kind: "blob", chars: m[0].length });

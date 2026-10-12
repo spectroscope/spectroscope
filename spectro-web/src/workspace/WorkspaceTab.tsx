@@ -10,7 +10,7 @@ import { Markdown } from "../components/Markdown";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { hlLangForPath, tokenize } from "./highlight";
-import { fileUrl, formatBytes, previewKind, previewNoteKey } from "./preview";
+import { fileUrl, previewKind, previewNoteKey } from "./preview";
 import {
   closeAllFiles,
   closeFile,
@@ -23,76 +23,17 @@ import {
   type FileTabsState,
 } from "./fileTabs";
 import { SourceView } from "./SourceView";
+import { Tree, type FileNode } from "./FileBrowser";
 import { WS_SPLIT_KEY, clampSplitPct, readStoredSplit, splitPctFromPointer } from "./wsSplit";
 import type { WorkspaceInfo } from "../state/reducer";
-import { listableBeforeTheFirstRun, paneState, recordedWorkspace } from "./paneState";
+import { filesQuery, paneState, recordedWorkspace } from "./paneState";
+import { answered, askFor, emptyFetch, failed } from "./filesFetch";
 import { storedWorkspace } from "./storedFolder";
-import type { FetchOutcome } from "./paneState";
-
-interface FileNode {
-  name: string;
-  path: string;
-  dir: boolean;
-  size: number;
-  children: FileNode[];
-}
 
 interface FilesResponse {
   root: string;
   truncated: boolean;
   entries: FileNode[];
-}
-
-/** Tree indentation: base padding plus a step per depth level. */
-const INDENT_BASE_PX = 8;
-const INDENT_STEP_PX = 14;
-
-function Tree({
-  nodes,
-  depth,
-  open,
-  onToggle,
-  selected,
-  onSelect,
-}: {
-  nodes: FileNode[];
-  depth: number;
-  open: ReadonlySet<string>;
-  onToggle: (path: string) => void;
-  selected: string | null;
-  onSelect: (node: FileNode) => void;
-}) {
-  return (
-    <>
-      {nodes.map((node) => (
-        <div key={node.path}>
-          <button
-            type="button"
-            className={`ws-row${selected === node.path ? " ws-row--active" : ""}`}
-            style={{ paddingLeft: `${INDENT_BASE_PX + depth * INDENT_STEP_PX}px` }}
-            title={node.path}
-            onClick={() => (node.dir ? onToggle(node.path) : onSelect(node))}
-          >
-            <span className="ws-row-glyph" aria-hidden="true">
-              {node.dir ? (open.has(node.path) ? "▾" : "▸") : "·"}
-            </span>
-            <span className="ws-row-name">{node.name}</span>
-            {!node.dir && <span className="ws-row-size tabular">{formatBytes(node.size)}</span>}
-          </button>
-          {node.dir && open.has(node.path) && (
-            <Tree
-              nodes={node.children}
-              depth={depth + 1}
-              open={open}
-              onToggle={onToggle}
-              selected={selected}
-              onSelect={onSelect}
-            />
-          )}
-        </div>
-      ))}
-    </>
-  );
 }
 
 /** Read-only syntax highlighting for recognised languages; plain text otherwise. */
@@ -246,8 +187,6 @@ export function WorkspaceTab({
   canPickFolder?: boolean;
 }) {
   const lang = useLang();
-  const [tree, setTree] = useState<FilesResponse | null>(null);
-  const [outcome, setOutcome] = useState<FetchOutcome | null>(null);
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
   // Card 249: several files stay open as tabs; the active path doubles as the
   // tree's highlight. The fold lives in workspace/fileTabs.ts.
@@ -312,40 +251,37 @@ export function WorkspaceTab({
   // Before the first run there is no session, but there may still be a folder:
   // a configured workspace the announcement named and reported as existing.
   // The server names it again from its own config — the query carries no path.
-  const prospective = listableBeforeTheFirstRun(workspace);
-  // Auto-refresh dedupe (card 89): identical payloads never re-render the
-  // tree — the 5 s safety poll must not make the panel flicker.
-  const lastJson = useRef("");
+  // Card 520: a woken session whose folder is gone asks nothing; paneState
+  // says the folder is gone.
+  const query = filesQuery(workspace);
+  // Card 520: the answers, one query at a time (workspace/filesFetch.ts). A
+  // click from one woken session to the next starts from no answer, an answer
+  // for a query the pane left is dropped, and the dedupe that keeps the poll
+  // calm (card 89) is per query.
+  const [fetched, setFetched] = useState(() => askFor(emptyFetch<FilesResponse>(), query));
+  if (fetched.query !== query) setFetched(askFor(fetched, query));
+  const { tree, outcome } = fetched;
   const load = useCallback((): void => {
     // No session and no named folder, no request. The sessionless call used to
     // be answered with the server's own working directory; there is nothing to
     // ask for until one of the two exists.
-    if (sessionId === undefined && !prospective) {
-      setOutcome(null);
-      return;
-    }
-    const query = sessionId !== undefined ? `session=${encodeURIComponent(sessionId)}` : "scope=prospective";
+    if (query === null) return;
     fetch(`/api/files?${query}`)
       .then((r) => {
         if (!r.ok) {
-          setOutcome({ kind: "status", status: r.status });
+          setFetched((s) => failed(s, query, { kind: "status", status: r.status }));
           return null;
         }
         return r.json();
       })
       .then((res) => {
         if (res === null) return;
-        setOutcome({ kind: "ok" });
-        const next = JSON.stringify(res);
-        if (next !== lastJson.current) {
-          lastJson.current = next;
-          setTree(res as FilesResponse);
-        }
+        setFetched((s) => answered(s, query, JSON.stringify(res), res as FilesResponse));
       })
       // A throw is the network, not a status: a dead server and a folder that
       // does not exist yet are different things and must read differently.
-      .catch(() => setOutcome({ kind: "offline" }));
-  }, [sessionId, prospective]);
+      .catch(() => setFetched((s) => failed(s, query, { kind: "offline" })));
+  }, [query]);
 
   useEffect(load, [load]);
 

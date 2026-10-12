@@ -84,6 +84,104 @@ class SessionQuitSealTest {
         }
     }
 
+    /**
+     * Card 540: {@link QuitFlush#flush} counts what it did, one drain that
+     * finished and one it had to seal, and quits and seals the right ones.
+     */
+    @Test
+    void aFlushCountsTheDrainsThatFinishedAndTheOnesItSealed() {
+        FakeDrain finishes = new FakeDrain(true);
+        FakeDrain stuck = new FakeDrain(false);
+
+        QuitFlush.Flushed flushed = QuitFlush.flush(List.of(finishes, stuck), Duration.ofMillis(50));
+
+        assertThat(flushed.drained()).as("the drain that finished; " + flushed).isEqualTo(1);
+        assertThat(flushed.sealed()).as("the drain that did not; " + flushed).isEqualTo(1);
+        assertThat(finishes.quits).as("every drain is told to quit").isEqualTo(1);
+        assertThat(stuck.quits).as("every drain is told to quit").isEqualTo(1);
+        assertThat(finishes.seals).as("a drain that finished is not sealed").isZero();
+        assertThat(stuck.seals).as("a drain that did not finish is sealed once").isEqualTo(1);
+        assertThat(flushed.nanos()).as("the flush reports the time it took").isPositive();
+    }
+
+    /**
+     * Card 540: a quit cancels the run at once, so the drain can finish inside
+     * {@link QuitFlush#BOUND}. The child JVM test reads whether the drain finished
+     * under a bound of its own; this one pins that the cancel itself arrives
+     * inside the production bound. The time is read from the signal's own
+     * listener, which fires inside {@code cancel()}.
+     *
+     * <p>The cancel runs on a fresh virtual thread and fires the listeners inside
+     * {@code cancel()}. Measured on 2026-10-12 on this Mac in 24 runs of this test
+     * at load averages 6.7 to 164.8 before the run: 0 ms every time, at millisecond
+     * resolution (kanban/evidence/540/fix1-flush-distribution.txt). The bound is the
+     * production one, because a cancel that comes later leaves the drain no time.</p>
+     */
+    @Test
+    void aQuitCancelsTheRunInsideTheBound(@TempDir Path workspace) throws Exception {
+        try (ThinkingFloodBackend backend =
+                     new ThinkingFloodBackend(new ThinkingFloodBackend.Shape(0, 150, 90_000))) {
+            FakeSocket socket = new FakeSocket("ws-540-cancel", "ws://localhost/ws");
+            SessionConnection connection = session(workspace, backend.baseUrl(), socket);
+            try {
+                connection.onUserMessage("think it through", null);
+                awaitFrame(socket, "\"thinking_delta\"");
+                QuitFlush.Drain drain = connection.drain();
+                dev.spectroscope.core.CancelSignal signal = connection.runSignalForTest();
+                assertThat(drain).as("test premise: a run is in flight").isNotNull();
+                assertThat(signal).as("test premise: the run has a signal").isNotNull();
+                assertThat(signal.isCancelled()).as("test premise: nothing cancelled the run yet").isFalse();
+                java.util.concurrent.CountDownLatch cancelled = new java.util.concurrent.CountDownLatch(1);
+                signal.onCancel(cancelled::countDown);
+
+                long quitAt = System.nanoTime();
+                drain.quit();
+                boolean arrived = cancelled.await(QuitFlush.BOUND.toNanos(), TimeUnit.NANOSECONDS);
+                long millis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - quitAt);
+                System.out.println("card 540 cancel: the quit's cancel arrived " + (arrived ? "after " + millis
+                        + " ms" : "not within " + QuitFlush.BOUND.toMillis() + " ms"));
+
+                assertThat(arrived)
+                        .as("the quit cancels the run inside the bound, " + millis + " ms after quit()")
+                        .isTrue();
+                assertThat(signal.isCancelled()).as("the run's own signal says cancelled").isTrue();
+                assertThat(drain.awaitDrained(QuitFlush.BOUND.toNanos()))
+                        .as("the cancelled run ends, so its drain finishes").isTrue();
+            } finally {
+                connection.onClose();
+            }
+        }
+    }
+
+    /** A drain that finishes at once or never, and counts what the flush asked of it. */
+    private static final class FakeDrain implements QuitFlush.Drain {
+        private final boolean finishes;
+        private int quits;
+        private int seals;
+
+        FakeDrain(boolean finishes) {
+            this.finishes = finishes;
+        }
+
+        @Override
+        public void quit() {
+            quits++;
+        }
+
+        @Override
+        public boolean awaitDrained(long nanos) throws InterruptedException {
+            if (!finishes) {
+                TimeUnit.NANOSECONDS.sleep(nanos);
+            }
+            return finishes;
+        }
+
+        @Override
+        public void seal() {
+            seals++;
+        }
+    }
+
     @Test
     void aSealClosesAChildBeforeTheRunThatSpawnedIt(@TempDir Path workspace) throws Exception {
         HttpServer backend = spawningBackend();
@@ -143,7 +241,10 @@ class SessionQuitSealTest {
         assertThat(drain).as("test premise: a run is in flight").isNotNull();
         socket.costPerFrame(Duration.ofHours(1));
         Thread.sleep(300);
-        QuitFlush.flush(List.of(drain), Duration.ofMillis(300));
+        QuitFlush.Flushed flushed = QuitFlush.flush(List.of(drain), Duration.ofMillis(300));
+        assertThat(flushed.drained()).as("card 540: the stuck drain did not finish; " + flushed).isZero();
+        assertThat(flushed.sealed()).as("card 540: the flush counts the drain it sealed; " + flushed)
+                .isEqualTo(1);
     }
 
     /** Waits for one frame that carries every marker; the file holds that frame's event by then. */

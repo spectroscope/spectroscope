@@ -25,6 +25,7 @@ import { seedResumedLive, summarizeHistory } from "./state/resume";
 import { AppHeader } from "./components/AppHeader";
 import { Chat } from "./components/Chat";
 import { ChatV2 } from "./components/ChatV2";
+import { fetchPeerFrames, mergePeerFrames } from "./state/peerMessages";
 import { isFlipIntoV2, useChatView } from "./state/chatView";
 import type { ChatViewMode } from "./state/chatView";
 import { foldWork } from "./state/work";
@@ -115,6 +116,8 @@ import { fetchSettings, putSettings } from "./state/serverSettings";
 import { reasoningFrame, useReasoningChoice, wireChoice } from "./state/reasoning";
 import { useReasoningCapability } from "./components/ReasoningControl";
 import { SessionSet, type BatchInfo } from "./state/sessionSet";
+import { ResumeJoin } from "./state/resumeJoin";
+import { sentWrites } from "./state/sentWrites";
 import type { ChatCommandName } from "./state/chatCommands";
 import { openDecision, readOnlyKey, replayComposer } from "./state/sessionRows";
 import {
@@ -234,7 +237,14 @@ import {
   type ModeSwitchDeps,
 } from "./state/modeWork";
 import { storedCwdOf } from "./workspace/storedFolder";
-import { headerWorkspace, ownSessionIds, wakeWanted } from "./workspace/wakeChip";
+import {
+  dockWorkspace,
+  headerWorkspace,
+  ownSessionIds,
+  settleWake,
+  wakeFollowsScreen,
+  wokenWorkspace,
+} from "./workspace/wakeChip";
 
 interface ConnState {
   status: ConnectionStatus;
@@ -277,13 +287,17 @@ export function App() {
   // Cards 458 and 459: the sockets this page holds, one record each, and the
   // one in view. `live` and everything beside it below is that record's.
   const batchSink = useRef<(key: string, batch: RunEvent[], info: BatchInfo) => void>(() => {});
-  const busySink = useRef<(sessionId: string) => void>(() => {});
+  const busySink = useRef<(sessionId: string, woken: boolean) => void>(() => {});
+  const sentSink = useRef<(key: string, msg: ClientMessage) => void>(() => {});
   const [sessions] = useState(() => {
     const set = new SessionSet({
       mode: currentViewMode,
       traceWanted: currentLiveTraceWanted,
       onBatch: (key, batch, info) => batchSink.current(key, batch, info),
-      onBusy: (sessionId) => busySink.current(sessionId),
+      onBusy: (sessionId, woken) => busySink.current(sessionId, woken),
+      // Card 504, review round 2: every frame that reached a socket, the
+      // drain of a continued session included. The beacons ride here.
+      onSent: (key, msg) => sentSink.current(key, msg),
       // Card 459: the socket that carries the fleet frames went away, so the
       // roster is read again rather than trusted across the gap.
       onCarrierChange: () => fetchFleetRosterIn(currentViewMode()),
@@ -686,10 +700,24 @@ export function App() {
   };
   // A continuation the server refused (card 212): another socket already drives
   // that session. The record is gone (the set closed it); the session opens
-  // read-only, and the banner says why.
-  busySink.current = (sessionId: string): void => {
+  // read-only, and the banner says why. A refused wake (card 520) leaves the
+  // replay on screen as it is: it never left it.
+  busySink.current = (sessionId: string, woken: boolean): void => {
     setSessionBusy(sessionId);
-    void openSessionRef.current(sessionId);
+    if (!woken) void openSessionRef.current(sessionId);
+  };
+  // Leveling beacons for the acts the event stream cannot tell apart on its
+  // own: the core emits the same permission events for an allowlist
+  // auto-approval. They ride onSent (card 504, review round 2), where every
+  // frame that reached a socket passes: a gate answered from the window, the
+  // lab or a fleet, and the gear's mode on a stored session, which leaves
+  // through the drain of the record its resume opened.
+  // Card 504, last fix round: the gear's project-file write waits for its
+  // frame here too (state/sentWrites.ts), keyed by the record's session.
+  sentSink.current = (key: string, msg: ClientMessage): void => {
+    if (msg.type === "permission_response") beaconRef.current("gate");
+    if (msg.type === "set_permission_mode") beaconRef.current("permission-mode");
+    sentWrites.sent(sessions.slots().find((held) => held.key === key)?.sessionId ?? null, msg);
   };
   // Seed the roster from REST; live frames take over. Card 430, gate 5: only
   // where the fleets are open.
@@ -712,23 +740,11 @@ export function App() {
     if (!liveTraceWanted) sessions.updateAll((held) => stripLiveTrace(held.state, false));
   }, [liveTraceWanted, sessions]);
 
-  // The ONE place client frames leave the app: every outgoing ClientMessage
-  // goes to the record in view and is traced there (dir "out"), but only when
-  // it actually hit the wire (state/sessionSet.ts).
+  // Client frames for the record in view: each one goes to that record and is
+  // traced there (dir "out"), but only when it actually hit the wire
+  // (state/sessionSet.ts). The leveling beacons ride onSent (sentSink above).
   const sendClient = useCallback(
-    (msg: ClientMessage): boolean => {
-      const sent = sessions.sendClient(sessions.view().key, msg);
-      if (sent) {
-        // Leveling beacons ride here rather than in each component: this is the one
-        // place every client message passes, so a gate answered from the window, the
-        // lab or a fleet all report the same way, and a future sender gets it free.
-        // Both acts are things the event stream cannot tell apart on its own — the
-        // core emits the same permission events for an allowlist auto-approval.
-        if (msg.type === "permission_response") beaconRef.current("gate");
-        if (msg.type === "set_permission_mode") beaconRef.current("permission-mode");
-      }
-      return sent;
-    },
+    (msg: ClientMessage): boolean => sessions.sendClient(sessions.view().key, msg),
     [sessions],
   );
 
@@ -755,6 +771,25 @@ export function App() {
       return true;
     }
     return sessions.command(sessions.view().key, name);
+  };
+  // Card 504 fix round 2: /loop and /loop stop go to the session's own
+  // socket. A stored session on screen is continued first and sends the
+  // frame as its first, as a command does; sendClient alone would reach the
+  // socket in view, which does not hold that session. The hub and spoke fix
+  // round sends the goal's set_goal and its clear the same way, from the
+  // main chat and from the Lab; its review round 1 adds the gear's permission
+  // mode, tool groups and Local mode.
+  // Review round 2: a frame for a stored session whose resume is still
+  // fetching joins that resume (state/resumeJoin.ts), so two quick gear
+  // changes both arrive.
+  const sessionFrame = (frame: ClientMessage): boolean => {
+    if (replay !== null) {
+      if (!continuable) return false;
+      if (resumeJoin.join(replay.id, frame)) return true;
+      void resumeSession(replay.id, { frame });
+      return true;
+    }
+    return sendClient(frame);
   };
   const abort = (): void => {
     sessions.abort(sessions.view().key);
@@ -983,6 +1018,8 @@ export function App() {
   const navNonce = useRef(
     createNavNonce((ticket) => setOpening((o) => openingAfterIssue(o, ticket))),
   ).current;
+  // Card 504, review round 2: the gear frames a stored session's resume carries.
+  const resumeJoin = useRef(new ResumeJoin(navNonce.isCurrent)).current;
   // The last route string this app DISPATCHED — set synchronously before any
   // async work, never derived from app state (which lags a fetch and would let
   // the hashchange+popstate double-fire of one back-press through twice).
@@ -1071,8 +1108,9 @@ export function App() {
   ): Promise<void> => {
     const cause: NavCause = opts?.cause ?? "gesture";
     // Card 458: a session this page holds a socket to is selected, never opened
-    // a second time beside itself (card 208, criterion 7).
-    const held = sessions.findBySession(id);
+    // a second time beside itself (card 208, criterion 7). A wake is not such
+    // a chat (card 520): its session shows as the replay.
+    const held = sessions.findHeld(id);
     if (held !== undefined) {
       sessions.select(held.key);
       leaveToLiveCore();
@@ -1087,9 +1125,13 @@ export function App() {
       // Card 435: the events alone. The llm-wire index is asked for once the
       // chat has rendered (the effect on `archiveTrace` below): the chat does
       // not need it, and the trace merges it when its rows are built.
+      // Card 503: the session's agent messages from its sidecar, asked for at
+      // the same time. They are chat content, unlike the index card 435 holds
+      // back, and they are a few lines.
+      const peerFramesAsked = fetchPeerFrames(id);
       const res = await fetch(`/api/sessions/${encodeURIComponent(id)}/events`);
       if (!res.ok) throw new Error(String(res.status));
-      const events = (await res.json()) as RunEvent[];
+      const events = mergePeerFrames((await res.json()) as RunEvent[], await peerFramesAsked);
       if (!navNonce.isCurrent(ticket)) return; // a later navigation already won
       // Card 431: in slices that yield to the browser, so the window keeps
       // drawing and the sign counts; a later navigation stops it between two.
@@ -1651,9 +1693,16 @@ export function App() {
   // session_resume trace marker, then the context_info/usage jump.
   const resumeSession = async (
     id: string,
-    first: { text: string; attachments?: PendingAttachment[] } | { command: ChatCommandName },
+    first:
+      | { text: string; attachments?: PendingAttachment[] }
+      | { command: ChatCommandName }
+      | { frame: ClientMessage },
   ): Promise<void> => {
+    // Card 504, review round 2: the frames a resume of the same session still
+    // in flight holds are read before the new ticket outdates it.
+    const carried = resumeJoin.carried(id);
     const ticket = navNonce.issue();
+    resumeJoin.begin(id, ticket, "frame" in first ? [...carried, first.frame] : carried);
     setOpening({ ticket, sessionId: id, title: sessionTitleOf(id) }); // card 431, as in openSession
     try {
       // Card 430: the mode at the start decides the fold and whether the index
@@ -1663,18 +1712,29 @@ export function App() {
       // Same rule as openSession: the recorded exchanges are socket-only, so
       // the seeded history has none — the index restores them, and the new
       // socket's own llm_exchange frames simply append behind (fresh xids).
-      const [res, wire] = await Promise.all([
+      const [res, wire, peerFrames] = await Promise.all([
         fetch(`/api/sessions/${encodeURIComponent(id)}/events`),
         indexWanted(mode) ? fetchLlmWireIndex(id) : Promise.resolve([]),
+        // Card 503: the session's agent messages from its sidecar.
+        fetchPeerFrames(id),
       ]);
       if (!res.ok) throw new Error(String(res.status));
-      const events = (await res.json()) as RunEvent[];
-      if (!navNonce.isCurrent(ticket)) return; // a later navigation already won
+      const events = mergePeerFrames((await res.json()) as RunEvent[], peerFrames);
+      if (!navNonce.isCurrent(ticket)) {
+        // A later navigation already won: this resume's frames and the writes
+        // held for them go (state/sentWrites.ts).
+        for (const frame of resumeJoin.take(ticket)) sentWrites.drop(id, frame);
+        return;
+      }
       const folded = await foldResume(events, mode, {
         isCurrent: () => navNonce.isCurrent(ticket),
         onProgress: (done, total) => openProgress.report(ticket, done, total),
       });
-      if (folded === null) return; // a later navigation won during the fold
+      if (folded === null) {
+        // A later navigation won during the fold; same as above.
+        for (const frame of resumeJoin.take(ticket)) sentWrites.drop(id, frame);
+        return;
+      }
       let seeded = isOpen("trace", mode)
         ? recordResumeMarker(
             wire.length === 0 ? folded : { ...folded, trace: mergeLlmExchanges(folded.trace, wire) },
@@ -1697,7 +1757,14 @@ export function App() {
       // A record on its own socket with ?resume=<id>, the message in its queue.
       // Card 498: a session whose wake already holds a socket continues on
       // that one, with the same history and the same first message.
-      const firstOf = "command" in first ? { firstCommand: first.command } : { firstMessage: first };
+      const firstOf = {
+        ...("command" in first
+          ? { firstCommand: first.command }
+          : "frame" in first
+            ? {}
+            : { firstMessage: first }),
+        firstFrames: resumeJoin.take(ticket),
+      };
       const woken = sessions.slots().find((held) => held.woken && held.sessionId === id);
       if (woken !== undefined) {
         sessions.continueWoken(woken.key, { state: seedResumedLive(seeded), events, ...firstOf });
@@ -1719,7 +1786,10 @@ export function App() {
       commitUrl({ kind: "live", tab: tab === "chat" ? null : tab }, "apply");
     } catch {
       // Server unreachable or a bad status: stay in the replay view, nothing
-      // lost, and the sign over it goes.
+      // lost, and the sign over it goes. The frames this resume held go with
+      // it, or the next gear change would join a resume that is over, and so
+      // do the writes held for them (state/sentWrites.ts).
+      for (const frame of resumeJoin.take(ticket)) sentWrites.drop(id, frame);
       if (!navNonce.isCurrent(ticket)) return;
       setOpening(null);
     }
@@ -1743,24 +1813,26 @@ export function App() {
   // Card 498: the record a wake opened for the stored session on screen.
   const wokenSlot =
     replay === null ? undefined : allSlots.find((held) => held.woken && held.sessionId === replay.id);
+  // A wake belongs to the stored session on screen. Leaving it for another
+  // session, a new chat or the live view lets its socket go, and the server
+  // releases the session for every other window. A wake the server refused
+  // (session_busy) is not tried again while its banner stands.
+  const replayOnScreen = replay?.id ?? null;
+  const refusedOnScreen = replayOnScreen !== null && sessionBusy === replayOnScreen;
   // A click into the message box of a stored session wakes its folder on the
   // server: the chip's Finder, Terminal and code graph rows light up on the
   // answer, before anything is sent and without a model call.
   const wakeStored = (): void => {
-    if (replay === null) return;
-    const held = sessions.findBySession(replay.id) !== undefined;
-    if (!wakeWanted({ replayId: replay.id, continuable, held })) return;
-    sessions.open({ wake: replay.id });
+    wakeFollowsScreen(sessions, { replayId: replayOnScreen, continuable, refused: refusedOnScreen });
   };
-  // A wake belongs to the stored session on screen. Leaving it for another
-  // session, a new chat or the live view lets its socket go, and the server
-  // releases the session for every other window.
-  const replayOnScreen = replay?.id ?? null;
-  useEffect(() => {
-    for (const held of sessions.slots()) {
-      if (held.woken && held.sessionId !== replayOnScreen) sessions.close(held.key);
-    }
-  }, [replayOnScreen, sessions]);
+  // Card 520: the selection wakes it too. The replay landing on screen runs the
+  // same path once it has stayed there for WAKE_SETTLE_MS, so Files and
+  // Terminal reach the folder before anything is typed, and ten quick clicks
+  // wake the one session that stays.
+  useEffect(
+    () => settleWake(sessions, { replayId: replayOnScreen, continuable, refused: refusedOnScreen }),
+    [replayOnScreen, continuable, refusedOnScreen, sessions],
+  );
   const readOnlyNote =
     shownComposer !== null && shownComposer.kind === "readOnly"
       ? t(lang, readOnlyKey(shownComposer.reason))
@@ -1769,7 +1841,7 @@ export function App() {
   // socket left alone (card 459); any other one opens ready to continue.
   const selectSession = (id: string): void => {
     const decision = openDecision(id, { held: heldRows });
-    const held = decision.kind === "select" ? sessions.findBySession(id) : undefined;
+    const held = decision.kind === "select" ? sessions.findHeld(id) : undefined;
     if (held !== undefined) {
       sessions.select(held.key);
       returnToLive();
@@ -1933,6 +2005,10 @@ export function App() {
   }, []);
 
   const viewingLive = replay === null;
+  // Card 520: the dock reads the wake's answer for the stored session on
+  // screen, and then follows the refresh signal as a live session does.
+  const dockWoken =
+    !viewingLive && continuable && wokenWorkspace(replay.id, wokenSlot?.state.workspace ?? null) !== null;
 
   // Showing a tab IS the observation for the view-only criteria. The session id
   // travels with it because two of them are joins: the ladder only counts a
@@ -2757,6 +2833,9 @@ export function App() {
                 replay?.id ?? null,
               )}
               onStartPlaybook={(dir, hash) => sendClient({ type: "start_playbook", dir, hash })}
+              onStartWorkflow={(dir, file, hash, input) =>
+                sendClient({ type: "start_workflow", dir, file, hash, input, lang })
+              }
               wizard={
                 <ChunkBoundary>
                   <SpectrolyzrPage />
@@ -2887,11 +2966,13 @@ export function App() {
                     liveView: viewingLive,
                     onSend: send,
                     onCommand: command,
+                    onSessionFrame: sessionFrame,
                     onReturnToLive: returnToLive,
                     continuable,
                     onComposerFocus: wakeStored,
                     readOnlyNote,
                     exportId: canResume ? replay!.id : undefined,
+                    storedSessionId: canResume ? replay!.id : null,
                     // The sidecar link, only when the index answered non-empty
                     // for THIS session — an honest download offers no empty file.
                     // Card 430, owner call 8 at its default: light offers no sidecar link.
@@ -2907,6 +2988,9 @@ export function App() {
                     // Card 473: an answer opens its LLM exchange from the
                     // same session the trace's exchange rows read.
                     exchangeSessionId: llmWireSessionId,
+                    // Card 519: the exchange offers the faces the trace offers
+                    // for this session's origin.
+                    exchangeOrigin: traceOriginOf(replay?.kind, enteredFleet),
                     // Card 463: the model, the thinking level and the context
                     // ring sit under the composer, no longer in the header.
                     composerMeta: {
@@ -2986,12 +3070,18 @@ export function App() {
                       model={curModel}
                       thinking={thinking}
                       toolGroups={view.toolGroups}
-                      workspace={view.workspace}
+                      workspace={dockWorkspace({
+                        viewingLive,
+                        viewWorkspace: view.workspace,
+                        continuable,
+                        replayId: replay?.id ?? null,
+                        woken: wokenSlot?.state.workspace ?? null,
+                      })}
                       recordedCwd={shownRecordedCwd}
                       storedCwd={shownStoredCwd}
                       onPickFolder={viewingLive ? pickWorkspace : undefined}
                       canPickFolder={canPickWorkspace}
-                      fsRefreshSignal={viewingLive ? fsTick : undefined}
+                      fsRefreshSignal={viewingLive || dockWoken ? fsTick : undefined}
                       work={chatView === "v2" ? work : undefined}
                       sidecars={sidecars}
                       onOpenAgent={openSidecarAgent}
@@ -3074,12 +3164,15 @@ export function App() {
                 onComposerFocus={wakeStored}
                 readOnlyNote={readOnlyNote}
                 sendClient={sendClient}
+                onSessionFrame={sessionFrame}
                 /* Card 301: the dock's handover and file rows are clickable, and
                  they use the SAME seam the work panel and the fleet use — a
                  fourth way to reach a trace row would be a fourth thing to
                  keep in step. */
                 onFocusEvent={focusInTrace}
                 exchangeSessionId={llmWireSessionId}
+                liveStatus={viewingLive ? live : null}
+                storedSessionId={canResume ? replay!.id : null}
               />
             )
           ) : null}

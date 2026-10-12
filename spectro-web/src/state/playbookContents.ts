@@ -14,7 +14,8 @@
 import { useSyncExternalStore } from "react";
 
 export type ContentKind = "skill" | "command" | "hook" | "agent" | "workflow";
-export type ContentState = "new" | "same" | "source-changed" | "copy-changed" | "taken" | "not-run";
+export type ContentState =
+  "new" | "same" | "source-changed" | "copy-changed" | "taken" | "not-run" | "runnable";
 
 export interface ContentItem {
   kind: ContentKind;
@@ -153,7 +154,11 @@ export async function installContents(
 ): Promise<InstallAnswer> {
   let res: Response;
   try {
-    res = await fetch("/api/playbooks/contents/install", postInit({ dir, contentsHash, hooks }));
+    const body =
+      lastWorkspace === null
+        ? { dir, contentsHash, hooks }
+        : { dir, contentsHash, hooks, workspace: lastWorkspace };
+    res = await fetch("/api/playbooks/contents/install", postInit(body));
   } catch (error) {
     return unreachable(error);
   }

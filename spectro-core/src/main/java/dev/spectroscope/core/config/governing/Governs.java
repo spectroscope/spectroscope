@@ -186,6 +186,8 @@ public @interface Governs {
         MILLISECONDS,
         /** Seconds. */
         SECONDS,
+        /** Minutes (card 504: the goal's check in interval). */
+        MINUTES,
         /** A plain count of things. */
         COUNT,
         /** Per cent of something. */

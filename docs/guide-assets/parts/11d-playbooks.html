@@ -46,8 +46,8 @@ top of the folder:</p>
 </table>
 
 <p>The format also has places for <code>agents/</code>, <code>hooks/</code>,
-<code>commands/</code> and <code>workflows/</code>. The shipped playbook leaves them empty, and
-version 1 only reads the paths the <code>contents</code> list of <code>playbook.json</code>
+<code>commands/</code> and <code>workflows/</code>. The shipped playbook leaves the first three
+empty and ships two workflows (&ldquo;Running a workflow&rdquo; below), and version 1 only reads the paths the <code>contents</code> list of <code>playbook.json</code>
 names. The loader reads <code>playbook.json</code> and those files and nothing else, at most 1 MB
 per file and 200 files per folder, and only a folder you have registered. What the installation
 does with those entries is described under &ldquo;Installing what a playbook brings&rdquo;.</p>
@@ -60,7 +60,9 @@ choice is offered in the first question of a new window, and the mode switch at 
 changes it later. In learn and light the segment does not exist and its code is never
 requested.</p>
 
-<p>The Playbook segment has five parts.</p>
+<p>The segment has a row of tabs: Playbook, Skills, Agents, Hooks, Commands, Workflows, Plugin,
+Files and New. The section &ldquo;The bundle tabs&rdquo; below describes the tabs from Skills to
+Files, and New is Spectrolyzr. The Playbook tab has five parts.</p>
 
 <ul>
   <li><b>Folders.</b> The folders you have registered, kept in <code>~/.spectro/playbooks.json</code>.
@@ -185,8 +187,9 @@ you leave on the first option keeps the model of the shipped playbook. &ldquo;Ge
 writes a copy of the shipped spectro playbook into the folder, sets the model of each role you
 chose, and registers the folder. No project is written, and the playbook is pinned to no
 workspace. The folder then appears in the Playbook tab. The contents row of the loaded folder lists its
-skills, commands, hooks, agents and workflows, each with its hash. The shipped playbook declares
-no workflows, so the row shows none for a playbook made this way.</p>
+skills, commands, hooks, agents and workflows, each with its hash. A playbook made this way
+carries the two workflows of the shipped playbook, <code>fanout-review.json</code> and
+<code>fanout-research.json</code>, for every archetype, byte for byte as the pack ships them.</p>
 
 <h3 id="ch-playbooks-spectrolyzr-folder">The playbook folder</h3>
 
@@ -275,6 +278,69 @@ decision to <i>Review task</i> and set its outcome to <code>pass</code>. Drag th
 end <code>cancelled</code>. Press &ldquo;Save&rdquo;. The file gains one node and three
 arrows, one existing arrow now points at the new decision, and no other line differs.</p>
 
+<h2 id="ch-playbooks-bundle">The bundle tabs</h2>
+
+<p>A playbook folder carries more than <code>playbook.json</code>, and the tabs from Skills to
+Files show and edit the rest. Skills, Agents, Hooks, Commands and Workflows each list the
+entries of their kind in the <code>contents</code> of <code>playbook.json</code>. An entry is
+marked &ldquo;Listed&rdquo;, only on disk, or &ldquo;Listed but missing&rdquo;. &ldquo;List
+it&rdquo; adds an entry that is only on disk, and &ldquo;Remove&rdquo; takes an entry out of
+<code>contents</code> and deletes its files after a confirmation. Beside the list each tab
+shows a file browser of its folder. Files shows the whole folder. The tabs from Skills to
+Workflows and the Plugin tab stay disabled until a playbook is loaded; Files needs only a
+folder. The Workflows tab edits the files, and a workflow runs from the Workflows section of
+the Playbook tab.</p>
+
+<p>Select a file in a browser to edit it on the right. &ldquo;Save&rdquo; checks that the file
+did not change on disk after you opened it and offers &ldquo;Reload from disk&rdquo; when it
+did. Markdown and JSON files show a preview beside the text, and <code>playbook.json</code>
+opens the graph editor described in &ldquo;Editing a playbook&rdquo; above. While a file has unsaved changes, the
+other tabs are blocked. The editor opens UTF-8 text only. <code>playbook.json</code>,
+<code>LICENSE</code> and <code>PROVENANCE.md</code> belong to every playbook and cannot be
+deleted. The app reads a folder to six levels and 200 files; the tree says when the folder
+holds more. The app follows no symbolic link inside a playbook.</p>
+
+<p>The Skills tab imports skills. &ldquo;Import&rdquo; lists the skills installed on this
+machine and the skills of the catalogue, with a checkbox each. An imported skill keeps its
+licence, and <code>PROVENANCE.md</code> gets a line that names its source. Agents and Commands
+have &ldquo;New&rdquo; with a name field: a name holds letters, digits, <code>-</code> and
+<code>_</code> and starts with a letter or a digit, and an agent's type is explore, worker or
+research.</p>
+
+<p>The Hooks tab has &ldquo;Import hooks&rdquo;. It copies the hooks of your user settings into
+<code>hooks/hooks.json</code>, together with the scripts in your home folder that a command
+names, and replaces a <code>hooks.json</code> the playbook already has after it says so. A path
+in your workspace is written as <code>{project}</code>, and the install puts the working folder
+there. A hook that names a hidden file or folder in your home folder, such as
+<code>~/.ssh</code>, or a path that leaves the workspace with <code>..</code>, is left out, and
+the list marks it before you import. Other paths in your home folder are written with
+<code>~</code> where they start a word of the command. An import installs nothing: hooks reach
+your settings only through Install (next section).</p>
+
+<p>The Plugin tab lists the Claude Code plugins of your home folder, from the plugin cache and
+from the marketplaces, with the count of skills, agents, commands and hooks each one carries.
+&ldquo;Import&rdquo; copies the kinds you tick: the skills as one pack, the agents, the
+commands, and the hooks that run before or after a tool call. Agent fields and hook events the
+playbook format does not know are left out, and the report after the import lists them with
+the reason. MCP server definitions are never copied. A plugin without a <code>LICENSE</code> is
+not imported at all.</p>
+
+<p>&ldquo;Export&rdquo; saves the folder as <code>&lt;id&gt;.playbook.zip</code>, and the same
+folder always gives the same file. &ldquo;Import ZIP&rdquo; reads a bundle in the browser,
+shows its files and contents, and writes them into an empty folder you choose, which it then
+registers. The server checks every path and the playbook before anything lands, so a refusal
+leaves the folder empty. A bundle has exactly one top folder with a <code>playbook.json</code>
+in it. It is refused when it holds more than 200 files or more than 24 MB, an entry deeper
+than six levels, two entries for the same file, or a binary file outside <code>docs/</code> or
+larger than 2 MB. Export, Import ZIP and Install also refuse a hooks file in which a value
+matches one of the key patterns the recordings already redact, and name the line and the
+pattern. The check knows only these patterns: it does not find a password after a command
+option, for example.</p>
+
+<p>After Generate on the New tab with &ldquo;Playbook&rdquo; chosen, and after an import on the
+Plugin tab, the pane opens the Skills tab of the folder. After Import ZIP it opens the Playbook
+tab of the imported folder.</p>
+
 <h2 id="ch-playbooks-install">Installing what a playbook brings</h2>
 
 <p>A playbook can carry five kinds of content. The Playbook segment shows a Contents row with
@@ -291,7 +357,7 @@ why.</p>
   <tr><td>Commands</td><td><code>commands/</code>, one Markdown file per command</td><td>A one-file skill under the playbook's id, invoked in the message box as <code>/&lt;playbook id&gt;:&lt;name&gt;</code>, with the rest of the message as arguments.</td></tr>
   <tr><td>Hooks</td><td><code>hooks/</code>, a <code>hooks.json</code> and the scripts beside it</td><td>Entries appended to the <code>hooks</code> list of your user settings. The scripts are copied to <code>~/.spectro/playbook-hooks/</code>, in a folder named after the playbook id, and the placeholder <code>{hooks}</code> in a command becomes the path of that folder.</td></tr>
   <tr><td>Agents</td><td><code>agents/</code>, one Markdown file per agent with a name, a description, a type and a preamble</td><td>Nothing is copied. The agent file is listed with its hash and checked, and the install records that hash. A child step may name it as the role <code>agent:name</code>, and the run starts that child on the type and preamble of the agent file. The run does not start when the agent was never installed (&ldquo;agent not installed&rdquo;) or when the file is no longer the one that was installed (&ldquo;agent changed since install&rdquo;). The agent file cannot set a model, a permission or a tool list.</td></tr>
-  <tr><td>Workflows</td><td><code>workflows/</code>, script files</td><td>Listed with their hash and never copied. The product has no workflow runner, so a workflow file is not run.</td></tr>
+  <tr><td>Workflows</td><td><code>workflows/</code>, one JSON step list per file</td><td>Listed with their hash and never copied. A file that reads as a step list is &ldquo;runnable&rdquo; and runs in a session from the Workflows list (&ldquo;Running a workflow&rdquo;). Any other file is listed and is not run.</td></tr>
 </table>
 
 <p>Hooks have their own tick in the list, and it is off by default. A hook runs before the
@@ -473,10 +539,67 @@ that the session list does not read them. Both are removed when the session is d
   <code>check</code> (the check, its kind, the outcome, the loop count, a short detail),
   <code>nod</code> (the answer and how long it took), <code>privacy</code> (the provider asked
   about and the answer) and <code>playbook_end</code> (the stop reason, the result and the number
-  of steps). The sidecar answers which model served which step. Every string passes the same
+  of steps). A workflow run writes into the same sidecar: <code>workflow_start</code> (the
+  workflow, its file, its hash and how many characters you typed beside Run),
+  <code>workflow_step</code> (the step, its kind, the round, the children it started, whether it
+  succeeded and how long it took) and <code>workflow_end</code> (the stop reason, the result and
+  the number of steps). The sidecar answers which model served which step. Every string passes the same
   redaction as the other recordings, and the file stops growing at 16 MiB with a line that says
   so.</li>
 </ul>
+
+<h2 id="ch-playbooks-workflows">Running a workflow</h2>
+
+<p>A workflow is a short list of steps in one JSON file under <code>workflows/</code>, listed in
+the <code>contents</code> of <code>playbook.json</code>. The shipped playbook carries two. In
+<code>fanout-review.json</code> the chat prints the diff of the working folder, three reviewers read
+it at the same time for correctness, security and readability, and a summariser joins their
+findings into one review. The note you type beside Run goes to each reviewer and to the
+summariser. In <code>fanout-research.json</code> three explorers look for the answer
+to your question in the code, the documents and the tests, and a summariser answers from what
+they found. A file has a <code>name</code>, a <code>description</code> and <code>steps</code>, and
+a step is one of three kinds:</p>
+
+<ul>
+  <li><code>prompt</code> is one chat turn. Its template is sent as a message of this session, and
+  the answer of the turn is the step's answer.</li>
+  <li><code>fanout</code> starts one to four helpers, each with a role and a task, and optionally
+  a <code>join</code> with one more task for the summariser. The role is explore or worker.</li>
+  <li><code>end</code> ends the run, with an optional result label.</li>
+</ul>
+
+<p>A template may name <code>{{input}}</code> (the text you type beside Run),
+<code>{{previous}}</code> (the answer of the step before), <code>{{folder}}</code> (the working
+folder) and, in a join task only, <code>{{results}}</code> (what the helpers returned). Any other
+name is refused when the file is read. A step can repeat until its answer contains the text in
+<code>repeat_until</code>, and then it must carry <code>max_rounds</code>, from 1 to 10; a file
+without it is refused with the line the step starts on. A run whose step used up its rounds
+without the text stops as exhausted. A whole run has two ceilings, counted when the file is read.
+It starts at most 20 helper runs, and every round of a fan-out counts its helpers and its
+summariser. It runs at most 20 step runs, and every round of a prompt or fan-out step counts. A
+file over either ceiling is refused, and the finding names the step where the count passes it. The format has a JSON schema,
+<code>workflow.schema.json</code>, and it also reads the scenario shape of the Lab, where a step is
+written as the one key that names its kind.</p>
+
+<p>The Playbook tab lists the workflows of the loaded playbook under
+&ldquo;Workflows&rdquo;, each with its name, the start of its hash, a field &ldquo;Question or
+note for the workflow&rdquo; and &ldquo;Run&rdquo;. Run starts the workflow in the session that is
+open, and only when the file still has the hash the list shows. A workflow that starts a
+<code>worker</code> helper is listed and not run: a worker can write files, and a workflow starts
+without a confirmation sheet. A run holds the session like a
+playbook run, so a message typed meanwhile is refused with the usual note. The run shows in the
+chat. During a <code>fanout</code> step no model turn of the session is open: the run starts the
+helpers with <code>spawn_agents</code> in the background, waits for them and collects their
+results with <code>wait_agents</code>, then hands the joined results to one summariser helper.
+The summary is the last message of the run in the chat. While the helpers work, each status
+line they report appears in the chat, the session's status line in other sessions'
+<code>list_agents</code> shows the latest of them, and <code>list_agents</code> of this session
+lists the helpers. A helper can write to the run with <code>send_message</code> to
+<code>parent</code>, and its message appears in the chat. A helper cannot write to another
+helper: the summariser gets their results from the run. A message from another session that
+arrives during the fan-out waits for the next chat turn. A fan-out of three helpers and one
+summariser starts four helper runs on the provider. The run writes the sidecar records above and
+no file into the working folder; the helpers write only what their tasks name.</p>
 
 <h2 id="ch-playbooks-refused">What a playbook file may not carry</h2>
 
@@ -505,7 +628,8 @@ and a nested playbook are recognised and refused as not supported in version 1.<
   refused with the usual note that a run is active.</li>
   <li>You cannot place a box by hand. The graph carries no coordinates, and the layout engine
   decides where each box goes.</li>
-  <li>Workflow files are listed and not run, because the product has no workflow runner.
+  <li>A workflow file that is not a step list is listed and not run. A workflow has no split
+  and join of its own beyond the fan-out step, and a run starts only from the Workflows list.
   Hooks are written to your settings only when you tick them, and they apply to every
   session, not only to the runs of one playbook. A playbook is updated by removing it and
   installing it again.</li>

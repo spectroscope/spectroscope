@@ -921,3 +921,74 @@
   object-fit: contain;
   background: var(--shade);
 }
+
+/* Card 503: one agent message. A card in the reading column with the other
+   side, the time and the status on one line, the text below, and the
+   actions under it. Colour on the left rule only, as the error card does. */
+.msg-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--accent);
+  border-radius: var(--radius-card);
+  padding: var(--sp-2) var(--sp-3);
+  margin: 0 0 var(--sp-3);
+  animation: rise-in 200ms var(--ease) backwards;
+}
+.msg-block--sent {
+  border-left-color: var(--border-strong);
+}
+.msg-status--held {
+  border-left-color: var(--warn);
+}
+.msg-status--refused,
+.msg-status--dropped,
+.msg-status--denied,
+.msg-status--expired {
+  border-left-color: var(--error);
+}
+.msg-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  align-items: baseline;
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+}
+.msg-who {
+  color: var(--text);
+  font-weight: 600;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.msg-status {
+  margin-left: auto;
+}
+.msg-text {
+  font-size: var(--fs-13);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.msg-note {
+  margin: 0;
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+}
+.msg-actions {
+  display: flex;
+  gap: var(--sp-3);
+  font-size: var(--fs-13);
+}
+.msg-line-status {
+  color: var(--text-faint);
+}
+.msg-reply-chip {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+  padding: 0 0 var(--sp-1);
+}

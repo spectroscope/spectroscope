@@ -21,6 +21,7 @@ const java = (name: string): string =>
 const CONTROLLER = "spectro-server/src/main/java/dev/spectroscope/server/session/LiveSessionsController.java";
 const CONNECTION = "spectro-server/src/main/java/dev/spectroscope/server/session/SessionConnection.java";
 const REGISTRY = "spectro-server/src/main/java/dev/spectroscope/server/session/LiveSessions.java";
+const HANDLER = "spectro-server/src/main/java/dev/spectroscope/server/session/SpectroSocketHandler.java";
 
 const store = readFileSync(fileURLToPath(new URL("./liveSessions.ts", import.meta.url)), "utf8");
 
@@ -56,5 +57,22 @@ describe("the live-session seam", () => {
     // change in the same breath.
     expect(java(CONNECTION)).toContain("!liveSessions.claim(socket.getId(), resumeId)");
     expect(java(CONNECTION)).toContain("sendSessionBusy(resumeId)");
+  });
+
+  it("carries the five fields card 502 added to the row", () => {
+    // Positive half of the component walk above: the record must still have
+    // them, or the walk passes on a row that lost them.
+    const record = /record LiveSession\(([^)]*)\)/.exec(java(REGISTRY));
+    const fields = record![1].split(",").map((component) => component.trim().split(/\s+/)[1]);
+    for (const field of ["folder", "name", "statusLine", "face", "pid"]) {
+      expect(fields, `LiveSessions.LiveSession lost ${field}`).toContain(field);
+    }
+  });
+
+  it("names the two peer frames the connection sends and the one the handler reads", () => {
+    const frames = new Set([...java(CONNECTION).matchAll(/"type",\s*"([a-z_]+)"/g)].map((match) => match[1]));
+    expect(frames.has("peer_message")).toBe(true);
+    expect(frames.has("peer_roster")).toBe(true);
+    expect(java(HANDLER)).toContain('case "peer_message_decision"');
   });
 });

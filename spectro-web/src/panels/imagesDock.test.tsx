@@ -15,11 +15,15 @@ import { SCENARIOS } from "../scenario/registry";
 import { compile } from "../scenario/compile";
 import { initialState, reduce } from "../state/reducer";
 import type { GeneratedImage } from "../state/reducer";
-import { __getState, __resetForTests, openDockPanel, toggleRightPanel } from "../state/layout";
+import { __getState, __resetForTests, openDockPanel, setDockTabs, toggleRightPanel } from "../state/layout";
 import { imagesShown, revealImagesPanel, toggleImagesPanel } from "../state/imagesPanel";
 import { dict } from "../i18n/i18n";
 
-beforeEach(() => __resetForTests());
+// Card 517: a fresh store starts in tabs mode; this file is about side by side.
+beforeEach(() => {
+  __resetForTests();
+  setDockTabs(false);
+});
 
 /** What the old area rendered for the `imagegen` scenario on main: newest
  *  first, each card a link to the full-size file, the prompt as caption. */

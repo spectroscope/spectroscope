@@ -879,3 +879,48 @@
   transition: color var(--t-fast);
 }
 .brand-collapse:hover { color: var(--accent); }
+
+/* Card 503: a live session's folder and status line, under its name, and the
+   sessions other processes of this machine host, under the list. */
+.session-live-line {
+  display: block;
+  font-size: var(--fs-11);
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.peer-roster {
+  margin: var(--sp-3) 0 0;
+  padding: 0 var(--sp-2);
+}
+.peer-roster-head {
+  font-size: var(--fs-11);
+  color: var(--text-faint);
+  letter-spacing: var(--track-eyebrow);
+  text-transform: lowercase;
+  margin: 0 0 var(--sp-1);
+}
+.peer-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--sp-1);
+  font-size: var(--fs-12);
+  color: var(--text);
+  padding: var(--sp-1) 0;
+  min-width: 0;
+}
+.peer-row-face {
+  color: var(--text-dim);
+}
+.peer-row-line {
+  flex-basis: 100%;
+  font-size: var(--fs-11);
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}

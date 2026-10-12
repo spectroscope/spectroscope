@@ -330,6 +330,66 @@
     "explanation" : "The shipped subagentBudgetTokens: the spend, input plus output as its usage events report them, past which the harness cuts one child agent at its next turn. Ten million.\n\nCard 394. On 2026-09-23 four GLM children on Ollama spent 17,423,655 input tokens in about 340 s and handed back nothing; the 300 s wall clock of that release was the only thing that ended them, and card 372 has since raised that clock to two hours. The owner's words of 2026-09-24: the smaller agents must be able to work, and a middle ground has to be found.\n\nDATED SNAPSHOT, 2026-09-25, from outside this repo. Length: over 8,963 Claude Code subagent transcripts on the owner's machine a subagent makes a median of 16 round trips, p95 110, p99 173. Growth: the four children of 2026-09-23 added 480 to 1,217 input tokens of context per round trip (least-squares slope per child). Extended past their 340 s, those four lines reach ten million after 119, 140, 180 and 198 round trips, all above the p95 length; at the average rate each child showed over its 340 s, extended the same way, each would have reached it 491 to 1,165 s into its run instead of running for two hours. Both are extrapolations, not measurements. What the number does not do: four children of one spawn_agents call can still spend forty million together. The scripts and their output are in kanban/evidence/394/loop/ in the product home.\n\nCache reads and cache writes are reported apart and are not counted, as the child's running sum never counted them. A backend without a prompt cache reports the whole resent conversation as input, which is where the budget binds. No upper bound is enforced, for the reason DEFAULT_COMMAND_TIMEOUT_SECONDS gives."
   },
   {
+    "owner" : "dev.spectroscope.core.config.SttStreaming",
+    "field" : "STT_LOCAL_CHUNK_MS",
+    "value" : "2000",
+    "expression" : "2_000L",
+    "kind" : "FIXED",
+    "unit" : "MILLISECONDS",
+    "key" : "",
+    "explanation" : "How often whisper-cli runs over the open window while someone speaks. Chosen from a measurement on an Apple M4 Pro on 2026-10-11 (card 527, evidence measure/whisper-cli-per-window.json): one whisper-cli run with ggml-small.bin, model load included, took 444 to 953 ms over 40 runs on windows of 3 to 30 s, median 670 ms, at a load average of 21 to 29. Those windows held 18.8 s of speech and silence after it. A second measurement in the fix round of the same day used windows that hold speech from start to end (measure/whisper-cli-30s-speech.json): a 30 s window took 958 to 1042 ms over 5 runs, median 1000 ms, and a 20 s window 760 to 920 ms, at a load average of 46 to 72. The step is about twice the slowest full window, so a run normally ends well before the next one is due; a run that would overlap is skipped and counted, never queued. A slower machine skips more runs and shows words later; it does not fall behind without bound."
+  },
+  {
+    "owner" : "dev.spectroscope.core.config.SttStreaming",
+    "field" : "STT_LOCAL_PAUSE_MS",
+    "value" : "600",
+    "expression" : "600L",
+    "kind" : "UNEXAMINED",
+    "unit" : "MILLISECONDS",
+    "key" : "",
+    "explanation" : "How much quiet audio at the end of the window counts as a pause. A window closes early only when the run's text ends a sentence AND the last this many milliseconds are quiet, so a comma breath does not split a sentence. Not measured against real speakers and not tuned. In the synthetic test speech (macOS say, 100 ms frames, 2026-10-11) the quiet stretches between sentences were 200 to 400 ms, so no live check closed a window before the trailing 1.5 s of silence; a window close in the middle of a recording is unit tested only."
+  },
+  {
+    "owner" : "dev.spectroscope.core.config.SttStreaming",
+    "field" : "STT_LOCAL_SILENCE_RMS",
+    "value" : "0.02",
+    "expression" : "0.02",
+    "kind" : "UNEXAMINED",
+    "unit" : "RATIO",
+    "key" : "",
+    "explanation" : "The loudness under which the pause audio counts as quiet: the root mean square of the PCM16 samples as a share of full scale. 0.02 is about minus 34 dBFS. Measured only on the synthetic test speech of card 527 (macOS say, 20.3 s, 100 ms frames, 2026-10-11): the frames at or above 0.02 had a median of 0.18, the frames below it a maximum of 0.011. The noise floor of a real microphone was not measured."
+  },
+  {
+    "owner" : "dev.spectroscope.core.config.SttStreaming",
+    "field" : "STT_LOCAL_WINDOW_MS",
+    "value" : "30000",
+    "expression" : "30_000L",
+    "kind" : "FIXED",
+    "unit" : "MILLISECONDS",
+    "key" : "",
+    "explanation" : "The longest window one whisper-cli run covers. The window closes here with a final and the next one starts empty, so the audio a run reads, and with it the run's wall time, stops growing. A 30 s window of speech took a median of 1000 ms against 796 ms for 20 s (5 runs each, 2026-10-11, see STT_LOCAL_CHUNK_MS), so a full window ends inside one chunk step. Audio longer than 30 s was not measured."
+  },
+  {
+    "owner" : "dev.spectroscope.core.config.SttStreaming",
+    "field" : "STT_SERVER_IDLE_MS",
+    "value" : "1800000",
+    "expression" : "30L * 60L * 1000L",
+    "kind" : "FIXED",
+    "unit" : "MILLISECONDS",
+    "key" : "",
+    "explanation" : "How long a resident whisper-server stays up with nothing to do (card 528). The owner's number of 2026-10-11: the model loads on the first press behind the loading card, stays in memory for 30 minutes of idle time and loads again on the next press after that. Idle means no request in flight and none finished within this time. The process holds the model in memory while it runs: 487 MB of weights in the log of whisper-server 1.9.1 with ggml-small.bin, plus its buffers."
+  },
+  {
+    "owner" : "dev.spectroscope.core.config.SttStreaming",
+    "field" : "STT_WARMUP_TIMEOUT_MS",
+    "value" : "20000",
+    "expression" : "20_000L",
+    "kind" : "FIXED",
+    "unit" : "MILLISECONDS",
+    "key" : "",
+    "explanation" : "How long the browser waits for a live session to say it is ready before it gives up and leaves the microphone idle. On the local route ready comes after a warm up run of whisper-cli over one second of silence, which loads the model; whisper-cli loads it again on every run. Measured on 2026-10-11 with the model file already in the page cache: 441 to 609 ms over 5 standalone runs, and 683 to 2070 ms from the ready frame over 10 presses in the app's live checks, under load. A first load from disk after a restart was not measured; 20 s is the card's starting value."
+  },
+  {
     "owner" : "dev.spectroscope.core.copilot.CopilotAccount",
     "field" : "CLI_CACHE_MS",
     "value" : "30000",
@@ -458,6 +518,36 @@
     "unit" : "COUNT",
     "key" : "",
     "explanation" : "How many of the run's most recent messages the judge is shown."
+  },
+  {
+    "owner" : "dev.spectroscope.core.goal.GoalCheckIn",
+    "field" : "FIRST_INTERVAL_MS",
+    "value" : "1800000",
+    "expression" : "GOAL_CHECKIN_MINUTES * 60_000L",
+    "kind" : "ALIAS",
+    "unit" : "MILLISECONDS",
+    "key" : "",
+    "explanation" : "GOAL_CHECKIN_MINUTES in milliseconds."
+  },
+  {
+    "owner" : "dev.spectroscope.core.goal.GoalCheckIn",
+    "field" : "GOAL_CHECKIN_DOUBLINGS",
+    "value" : "2",
+    "expression" : "2",
+    "kind" : "FIXED",
+    "unit" : "COUNT",
+    "key" : "",
+    "explanation" : "How many times the interval doubles before it stays flat: 30, 60, 120, then 120 minutes."
+  },
+  {
+    "owner" : "dev.spectroscope.core.goal.GoalCheckIn",
+    "field" : "GOAL_CHECKIN_MINUTES",
+    "value" : "30",
+    "expression" : "30",
+    "kind" : "FIXED",
+    "unit" : "MINUTES",
+    "key" : "",
+    "explanation" : "The first check in interval, in minutes (concept AGENT-MESSAGING, Goal; the same 30 minutes Claude Code waits before its first goal check in)."
   },
   {
     "owner" : "dev.spectroscope.core.goal.GoalVerdict",
@@ -790,6 +880,76 @@
     "explanation" : "How long one listed step may be."
   },
   {
+    "owner" : "dev.spectroscope.core.loop.LoopDriver",
+    "field" : "MINUTE",
+    "value" : "60000",
+    "expression" : "60_000L",
+    "kind" : "FIXED",
+    "unit" : "MILLISECONDS",
+    "key" : "",
+    "explanation" : "The grid a wakeup lands on: the whole minute at or after its delay."
+  },
+  {
+    "owner" : "dev.spectroscope.core.loop.LoopLimits",
+    "field" : "KEEPALIVE_MISSES",
+    "value" : "1",
+    "expression" : "1",
+    "kind" : "FIXED",
+    "unit" : "COUNT",
+    "key" : "",
+    "explanation" : "Ticks in a row that may end without a wakeup before the loop ends as model_stopped."
+  },
+  {
+    "owner" : "dev.spectroscope.core.loop.LoopLimits",
+    "field" : "KEEPALIVE_SECONDS",
+    "value" : "1200",
+    "expression" : "1_200",
+    "kind" : "FIXED",
+    "unit" : "SECONDS",
+    "key" : "",
+    "explanation" : "The delay of the one fallback wakeup the harness arms when a tick ends without one."
+  },
+  {
+    "owner" : "dev.spectroscope.core.loop.LoopLimits",
+    "field" : "MAX_AGE_MS",
+    "value" : "604800000",
+    "expression" : "604_800_000L",
+    "kind" : "FIXED",
+    "unit" : "MILLISECONDS",
+    "key" : "",
+    "explanation" : "How long a loop lives from its start before it ends as aged_out: seven days."
+  },
+  {
+    "owner" : "dev.spectroscope.core.loop.LoopLimits",
+    "field" : "MAX_DELAY_SECONDS",
+    "value" : "3600",
+    "expression" : "3_600",
+    "kind" : "FIXED",
+    "unit" : "SECONDS",
+    "key" : "",
+    "explanation" : "The longest delay a wakeup may have; a longer one is cut to it."
+  },
+  {
+    "owner" : "dev.spectroscope.core.loop.LoopLimits",
+    "field" : "MIN_DELAY_SECONDS",
+    "value" : "60",
+    "expression" : "60",
+    "kind" : "FIXED",
+    "unit" : "SECONDS",
+    "key" : "",
+    "explanation" : "The shortest delay a wakeup may have; a shorter one is raised to it."
+  },
+  {
+    "owner" : "dev.spectroscope.core.loop.LoopLimits",
+    "field" : "TEXT_CAP",
+    "value" : "500",
+    "expression" : "500",
+    "kind" : "FIXED",
+    "unit" : "CHARACTERS",
+    "key" : "",
+    "explanation" : "The longest reason and prompt schedule_wakeup takes from the model, in characters (card 504 fix round 2): a longer reason is cut, a longer prompt is refused. The same 500 as a child's status line (BackgroundRun.STATUS_LINE_CAP)."
+  },
+  {
     "owner" : "dev.spectroscope.core.mcp.HttpSseTransport",
     "field" : "DEFAULT_TIMEOUT",
     "value" : "20",
@@ -880,6 +1040,306 @@
     "explanation" : "The whole write-off: the read bound plus the teardown tail. This — not DEFAULT_READ_TIMEOUT on its own — is the number a person waits for when a server spawns and never speaks, and it is the number chapter 18 of the user guide prints. Card 221 shipped a guide that promised the read bound alone and a TERM-ignoring server measured 22.4 s against it; a documented bound that the code can exceed is the exact failure that card exists to stop."
   },
   {
+    "owner" : "dev.spectroscope.core.peer.LiveRegistry",
+    "field" : "SOCKET_PATH_MAX",
+    "value" : "103",
+    "expression" : "103",
+    "kind" : "FOREIGN_CONTRACT",
+    "unit" : "BYTES",
+    "key" : "",
+    "explanation" : "The longest socket path the platform binds, in bytes (sun_path on macOS is 104 with the NUL)."
+  },
+  {
+    "owner" : "dev.spectroscope.core.peer.PeerLimits",
+    "field" : "AUTH_TIMEOUT_MS",
+    "value" : "5000",
+    "expression" : "5_000",
+    "kind" : "FIXED",
+    "unit" : "MILLISECONDS",
+    "key" : "",
+    "explanation" : "How long an endpoint waits for the auth frame of a new connection before it closes it."
+  },
+  {
+    "owner" : "dev.spectroscope.core.peer.PeerLimits",
+    "field" : "BUCKET_CAPACITY",
+    "value" : "30",
+    "expression" : "30",
+    "kind" : "FIXED",
+    "unit" : "COUNT",
+    "key" : "",
+    "explanation" : "Tokens in the per sender bucket at the inbox, and in the sender's own pacer."
+  },
+  {
+    "owner" : "dev.spectroscope.core.peer.PeerLimits",
+    "field" : "CHAIN_LENGTH",
+    "value" : "28",
+    "expression" : "28",
+    "kind" : "FIXED",
+    "unit" : "COUNT",
+    "key" : "",
+    "explanation" : "The longest hop chain a message may carry; one more is a runaway."
+  },
+  {
+    "owner" : "dev.spectroscope.core.peer.PeerLimits",
+    "field" : "CONNECT_RETRY_MS",
+    "value" : "50",
+    "expression" : "50",
+    "kind" : "FIXED",
+    "unit" : "MILLISECONDS",
+    "key" : "",
+    "explanation" : "How long a sender waits before it connects again when a live process refused the connect, as a full listen backlog does; the send timeout ends the retries."
+  },
+  {
+    "owner" : "dev.spectroscope.core.peer.PeerLimits",
+    "field" : "DUPLICATE_WINDOW_MS",
+    "value" : "30000",
+    "expression" : "30_000L",
+    "kind" : "FIXED",
+    "unit" : "MILLISECONDS",
+    "key" : "",
+    "explanation" : "How long the same words from the same sender count as a duplicate."
+  },
+  {
+    "owner" : "dev.spectroscope.core.peer.PeerLimits",
+    "field" : "HELD_EXPIRY_SECONDS",
+    "value" : "600",
+    "expression" : "600",
+    "kind" : "FIXED",
+    "unit" : "SECONDS",
+    "key" : "",
+    "explanation" : "How long a held message waits for Deliver or Decline before it expires."
+  },
+  {
+    "owner" : "dev.spectroscope.core.peer.PeerLimits",
+    "field" : "HOP_LIST_CAP",
+    "value" : "32",
+    "expression" : "32",
+    "kind" : "FIXED",
+    "unit" : "COUNT",
+    "key" : "",
+    "explanation" : "Hop ids the attribution block shows at most."
+  },
+  {
+    "owner" : "dev.spectroscope.core.peer.PeerLimits",
+    "field" : "IDLE_DEBOUNCE_MS",
+    "value" : "750",
+    "expression" : "750",
+    "kind" : "FIXED",
+    "unit" : "MILLISECONDS",
+    "key" : "",
+    "explanation" : "How long a session stays idle before its subscribers hear it (card 503)."
+  },
+  {
+    "owner" : "dev.spectroscope.core.peer.PeerLimits",
+    "field" : "IDLE_LIFETIME_MS",
+    "value" : "43200000",
+    "expression" : "43_200_000L",
+    "kind" : "FIXED",
+    "unit" : "MILLISECONDS",
+    "key" : "",
+    "explanation" : "How long an idle subscription waits for its one notice before it expires (card 503)."
+  },
+  {
+    "owner" : "dev.spectroscope.core.peer.PeerLimits",
+    "field" : "IDLE_OUTSTANDING_CAP",
+    "value" : "32",
+    "expression" : "32",
+    "kind" : "FIXED",
+    "unit" : "COUNT",
+    "key" : "",
+    "explanation" : "Idle subscriptions one session may hold open at once (card 503)."
+  },
+  {
+    "owner" : "dev.spectroscope.core.peer.PeerLimits",
+    "field" : "IDLE_TEXT_CAP",
+    "value" : "100",
+    "expression" : "100",
+    "kind" : "FIXED",
+    "unit" : "CHARACTERS",
+    "key" : "",
+    "explanation" : "Characters of the watched session's last text an idle notice quotes at most (card 503)."
+  },
+  {
+    "owner" : "dev.spectroscope.core.peer.PeerLimits",
+    "field" : "LINE_CAP_CHARS",
+    "value" : "1048576",
+    "expression" : "1_048_576",
+    "kind" : "FIXED",
+    "unit" : "CHARACTERS",
+    "key" : "",
+    "explanation" : "The longest frame line; a longer line closes the connection."
+  },
+  {
+    "owner" : "dev.spectroscope.core.peer.PeerLimits",
+    "field" : "LISTING_FOLDER_CAP",
+    "value" : "120",
+    "expression" : "120",
+    "kind" : "FIXED",
+    "unit" : "CHARACTERS",
+    "key" : "",
+    "explanation" : "Characters of a session's folder a listing prints at most, its end kept (card 503 fix round)."
+  },
+  {
+    "owner" : "dev.spectroscope.core.peer.PeerLimits",
+    "field" : "LISTING_LINE_CAP",
+    "value" : "100",
+    "expression" : "100",
+    "kind" : "FIXED",
+    "unit" : "CHARACTERS",
+    "key" : "",
+    "explanation" : "Characters of a status line, a face or a status a listing prints at most (card 503 fix round)."
+  },
+  {
+    "owner" : "dev.spectroscope.core.peer.PeerLimits",
+    "field" : "LISTING_ROWS_CAP",
+    "value" : "100",
+    "expression" : "100",
+    "kind" : "FIXED",
+    "unit" : "COUNT",
+    "key" : "",
+    "explanation" : "Rows one section of a listing shows before it says how many more there are (card 503)."
+  },
+  {
+    "owner" : "dev.spectroscope.core.peer.PeerLimits",
+    "field" : "NAME_SUFFIX_HEX",
+    "value" : "2",
+    "expression" : "2",
+    "kind" : "FIXED",
+    "unit" : "CHARACTERS",
+    "key" : "",
+    "explanation" : "Hex characters of the suffix of a derived session name."
+  },
+  {
+    "owner" : "dev.spectroscope.core.peer.PeerLimits",
+    "field" : "PROBE_TIMEOUT_MS",
+    "value" : "250",
+    "expression" : "250",
+    "kind" : "FIXED",
+    "unit" : "MILLISECONDS",
+    "key" : "",
+    "explanation" : "How long a listing waits for one socket to accept a connection."
+  },
+  {
+    "owner" : "dev.spectroscope.core.peer.PeerLimits",
+    "field" : "PROTOCOL",
+    "value" : "1",
+    "expression" : "1",
+    "kind" : "FIXED",
+    "unit" : "COUNT",
+    "key" : "",
+    "explanation" : "The protocol version a record states."
+  },
+  {
+    "owner" : "dev.spectroscope.core.peer.PeerLimits",
+    "field" : "QUEUE_CAP",
+    "value" : "64",
+    "expression" : "64",
+    "kind" : "FIXED",
+    "unit" : "COUNT",
+    "key" : "",
+    "explanation" : "Undelivered messages one session holds before the next is dropped."
+  },
+  {
+    "owner" : "dev.spectroscope.core.peer.PeerLimits",
+    "field" : "RECORD_MAX_BYTES",
+    "value" : "262144",
+    "expression" : "262_144",
+    "kind" : "FIXED",
+    "unit" : "BYTES",
+    "key" : "",
+    "explanation" : "A registry record larger than this is skipped unread."
+  },
+  {
+    "owner" : "dev.spectroscope.core.peer.PeerLimits",
+    "field" : "REFILL_PER_SECOND",
+    "value" : "0.5",
+    "expression" : "0.5",
+    "kind" : "FIXED",
+    "unit" : "RATIO",
+    "key" : "",
+    "explanation" : "Tokens the bucket regains per second."
+  },
+  {
+    "owner" : "dev.spectroscope.core.peer.PeerLimits",
+    "field" : "REF_HEX",
+    "value" : "6",
+    "expression" : "6",
+    "kind" : "FIXED",
+    "unit" : "CHARACTERS",
+    "key" : "",
+    "explanation" : "Hex characters of the ref a listing prints after a name (card 503)."
+  },
+  {
+    "owner" : "dev.spectroscope.core.peer.PeerLimits",
+    "field" : "RELAY_MARK_MIN_CHARS",
+    "value" : "3",
+    "expression" : "3",
+    "kind" : "FIXED",
+    "unit" : "CHARACTERS",
+    "key" : "",
+    "explanation" : "The shortest command, path or file name the relay rule matches against a peer's words (card 503)."
+  },
+  {
+    "owner" : "dev.spectroscope.core.peer.PeerLimits",
+    "field" : "ROSTER_POLL_MS",
+    "value" : "5000",
+    "expression" : "5_000",
+    "kind" : "FIXED",
+    "unit" : "MILLISECONDS",
+    "key" : "",
+    "explanation" : "How often a server lists the registry for its roster and for dead records."
+  },
+  {
+    "owner" : "dev.spectroscope.core.peer.PeerLimits",
+    "field" : "SELF_HOP_LIMIT",
+    "value" : "10",
+    "expression" : "10",
+    "kind" : "FIXED",
+    "unit" : "COUNT",
+    "key" : "",
+    "explanation" : "How often a hop chain may already name this session before the message is a loop."
+  },
+  {
+    "owner" : "dev.spectroscope.core.peer.PeerLimits",
+    "field" : "SEND_TIMEOUT_MS",
+    "value" : "5000",
+    "expression" : "5_000",
+    "kind" : "FIXED",
+    "unit" : "MILLISECONDS",
+    "key" : "",
+    "explanation" : "Connect and write time a sender allows one delivery."
+  },
+  {
+    "owner" : "dev.spectroscope.core.peer.PeerLimits",
+    "field" : "SUMMARY_CAP",
+    "value" : "200",
+    "expression" : "200",
+    "kind" : "FIXED",
+    "unit" : "CHARACTERS",
+    "key" : "",
+    "explanation" : "The longest summary a message carries; a longer one is cut, not refused (card 503)."
+  },
+  {
+    "owner" : "dev.spectroscope.core.peer.PeerLimits",
+    "field" : "TRACKED_SENDERS",
+    "value" : "256",
+    "expression" : "256",
+    "kind" : "FIXED",
+    "unit" : "COUNT",
+    "key" : "",
+    "explanation" : "Senders the guard keeps a bucket for; the oldest is forgotten past this."
+  },
+  {
+    "owner" : "dev.spectroscope.core.peer.PeerLimits",
+    "field" : "UNAUTHENTICATED_CAP",
+    "value" : "16",
+    "expression" : "16",
+    "kind" : "FIXED",
+    "unit" : "COUNT",
+    "key" : "",
+    "explanation" : "How many connections may wait to authenticate at one endpoint; a newer connection displaces the oldest waiting one."
+  },
+  {
     "owner" : "dev.spectroscope.core.permission.Allowlist",
     "field" : "TIER_MARK",
     "value" : "#",
@@ -888,6 +1348,56 @@
     "unit" : "NONE",
     "key" : "",
     "explanation" : "The separator between the tool segment and the tier qualifier."
+  },
+  {
+    "owner" : "dev.spectroscope.core.playbook.WorkflowReader",
+    "field" : "MAX_AGENTS",
+    "value" : "4",
+    "expression" : "SubagentManager.MAX_PARALLEL_CHILDREN",
+    "kind" : "ALIAS",
+    "unit" : "COUNT",
+    "key" : "",
+    "explanation" : "The most children one fan-out step starts: the spawn batch width, SubagentManager.MAX_PARALLEL_CHILDREN."
+  },
+  {
+    "owner" : "dev.spectroscope.core.playbook.WorkflowReader",
+    "field" : "MAX_CHILD_RUNS",
+    "value" : "20",
+    "expression" : "20",
+    "kind" : "FIXED",
+    "unit" : "COUNT",
+    "key" : "",
+    "explanation" : "The most child runs one workflow may start, counted at load: every round of a fan-out step starts its children and its summariser. Four rounds of the widest fan-out (four children and a summariser); the two shipped files start four each."
+  },
+  {
+    "owner" : "dev.spectroscope.core.playbook.WorkflowReader",
+    "field" : "MAX_FILE_BYTES",
+    "value" : "65536",
+    "expression" : "65_536",
+    "kind" : "FIXED",
+    "unit" : "BYTES",
+    "key" : "",
+    "explanation" : "The largest workflow file the loader reads. The two shipped files are under 4 kB each; a step list sixteen times that is no longer a step list a person reviews before pressing Run."
+  },
+  {
+    "owner" : "dev.spectroscope.core.playbook.WorkflowReader",
+    "field" : "MAX_ROUNDS_LIMIT",
+    "value" : "10",
+    "expression" : "10",
+    "kind" : "FIXED",
+    "unit" : "COUNT",
+    "key" : "",
+    "explanation" : "The most rounds a repeating step may ask for; every repeat needs a ceiling, as a playbook loop does."
+  },
+  {
+    "owner" : "dev.spectroscope.core.playbook.WorkflowReader",
+    "field" : "MAX_STEP_RUNS",
+    "value" : "20",
+    "expression" : "20",
+    "kind" : "FIXED",
+    "unit" : "COUNT",
+    "key" : "",
+    "explanation" : "The most step bodies one workflow may run, counted at load: one per prompt or fan-out step, every round counted. A prompt step is a whole chat turn of the session."
   },
   {
     "owner" : "dev.spectroscope.core.playbook.run.CommandCheck",
@@ -1230,6 +1740,46 @@
     "explanation" : "The fuse on ONE sibling read, the same one read_file has, and like read_file the read also has to fit the window share of ReadBudget (card 456).\n\nNot a policy about skills but about a turn: the fattest catalogue skill is 5.8 MB over 98 files, and one of them poured into the context would cost more than the whole body it belongs to.\n\nALIAS and not FIXED, and the two annotations that disagreed about this at the merge are worth recording. It is deliberately the same figure as ReadBudget.FUSE_BYTES: a skill's own file is read under the same bound as any other, so an operator cannot learn one ceiling and meet another. That makes it a restatement rather than an independent number, which is exactly what card 357's fourth class is for; classifying it FIXED would put a second number in the registry where there is one decision, and moving one without the other is the shape card 365 found in the two question-budget defaults."
   },
   {
+    "owner" : "dev.spectroscope.core.subagents.BackgroundRun",
+    "field" : "CHECK_IN_FIRST_MS",
+    "value" : "1800000",
+    "expression" : "dev.spectroscope.core.goal.GoalCheckIn.FIRST_INTERVAL_MS",
+    "kind" : "ALIAS",
+    "unit" : "MILLISECONDS",
+    "key" : "",
+    "explanation" : "How long a run with a goal waits at its end_turn before its first check in: card 504's governed GOAL_CHECKIN_MINUTES, in milliseconds."
+  },
+  {
+    "owner" : "dev.spectroscope.core.subagents.BackgroundRun",
+    "field" : "SETTLE_MS",
+    "value" : "30000",
+    "expression" : "30_000L",
+    "kind" : "FIXED",
+    "unit" : "MILLISECONDS",
+    "key" : "",
+    "explanation" : "How long a run's end waits for the children it cancelled before it ends anyway."
+  },
+  {
+    "owner" : "dev.spectroscope.core.subagents.BackgroundRun",
+    "field" : "STATUS_LINE_CAP",
+    "value" : "500",
+    "expression" : "500",
+    "kind" : "FIXED",
+    "unit" : "CHARACTERS",
+    "key" : "",
+    "explanation" : "Characters of a background child's status line the parent keeps and reads at most (card 505, fix round two); the rest is cut."
+  },
+  {
+    "owner" : "dev.spectroscope.core.subagents.BackgroundRun",
+    "field" : "WAIT_MAX_SECONDS",
+    "value" : "3600",
+    "expression" : "3_600",
+    "kind" : "FIXED",
+    "unit" : "SECONDS",
+    "key" : "",
+    "explanation" : "The longest wait a model may ask of wait_agents; a longer one is cut to it."
+  },
+  {
     "owner" : "dev.spectroscope.core.subagents.ChildBudget",
     "field" : "CEILING_MS",
     "value" : "1800000",
@@ -1348,6 +1898,46 @@
     "unit" : "COUNT",
     "key" : "questionsPerRun",
     "explanation" : "How many questions one run may ask when nobody configured it — the value the one-argument constructor hands over.\n\nA model that discovers it can stall a run by asking must not be able to loop, and that argument carries a BOUND, not an unreachable one; card 356 made this settable and card 365 chose the number from a census rather than from the concept's original guess of three.\n\nIt must equal SpectroConfig.DEFAULT_QUESTIONS_PER_RUN, and a test pins that. Two shipped defaults for one setting is a disagreement the operator can only find by hitting it: the configured path would allow nine while a tool built without config allowed three, and both would call themselves the default."
+  },
+  {
+    "owner" : "dev.spectroscope.core.tools.CodeGraphTool",
+    "field" : "MAX_BUDGET",
+    "value" : "4000",
+    "expression" : "4_000",
+    "kind" : "FIXED",
+    "unit" : "TOKENS",
+    "key" : "",
+    "explanation" : "The largest --budget a query may ask for, in graphify's tokens."
+  },
+  {
+    "owner" : "dev.spectroscope.core.tools.CodeGraphTool",
+    "field" : "MAX_OUTPUT_CHARS",
+    "value" : "16000",
+    "expression" : "16_000",
+    "kind" : "FIXED",
+    "unit" : "CHARACTERS",
+    "key" : "",
+    "explanation" : "How many characters of graphify's output one call returns. The largest budget the tool lets through (MAX_BUDGET tokens) printed 12,509 characters on the spectro graph, so this keeps one answer whole and still keeps a single call from filling the context window."
+  },
+  {
+    "owner" : "dev.spectroscope.core.tools.CodeGraphTool",
+    "field" : "MAX_TEXT_CHARS",
+    "value" : "500",
+    "expression" : "500",
+    "kind" : "FIXED",
+    "unit" : "CHARACTERS",
+    "key" : "",
+    "explanation" : "The longest question or node name the tool passes on."
+  },
+  {
+    "owner" : "dev.spectroscope.core.tools.CodeGraphTool",
+    "field" : "TIMEOUT_SECONDS",
+    "value" : "30",
+    "expression" : "30",
+    "kind" : "FIXED",
+    "unit" : "SECONDS",
+    "key" : "",
+    "explanation" : "The wall clock budget of one graphify call, in seconds. A query on the spectro repo's own graph (49 MB, 22,191 nodes) took 2.7 to 2.9 s on the owner's Mac on 2026-10-12, so ten times that is room for a slower machine."
   },
   {
     "owner" : "dev.spectroscope.core.tools.DefaultHttpFetcher",

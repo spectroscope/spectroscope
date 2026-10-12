@@ -8,7 +8,7 @@
       "tool" : "run_command",
       "tier" : "eval-execute",
       "tierSource" : "builtin",
-      "mapVersion" : "2026-09-01.1",
+      "mapVersion" : "2026-10-12.2",
       "decision" : "allow",
       "decidedBy" : "mode:auto"
     },
@@ -37,7 +37,7 @@
       "tool" : "run_command",
       "tier" : "eval-execute",
       "tierSource" : "builtin",
-      "mapVersion" : "2026-09-01.1",
+      "mapVersion" : "2026-10-12.2",
       "decision" : "allow",
       "decidedBy" : "mode:auto"
     },
@@ -67,7 +67,7 @@
       "tool" : "run_command",
       "tier" : "eval-execute",
       "tierSource" : "builtin",
-      "mapVersion" : "2026-09-01.1",
+      "mapVersion" : "2026-10-12.2",
       "decision" : "deny",
       "decidedBy" : "mode:readonly"
     },
@@ -96,7 +96,7 @@
       "tool" : "run_command",
       "tier" : "eval-execute",
       "tierSource" : "builtin",
-      "mapVersion" : "2026-09-01.1",
+      "mapVersion" : "2026-10-12.2",
       "decision" : "deny",
       "decidedBy" : "mode:readonly"
     },
@@ -126,7 +126,7 @@
       "tool" : "run_command",
       "tier" : "eval-execute",
       "tierSource" : "builtin",
-      "mapVersion" : "2026-09-01.1",
+      "mapVersion" : "2026-10-12.2",
       "decision" : "allow",
       "decidedBy" : "user"
     },
@@ -155,7 +155,7 @@
       "tool" : "run_command",
       "tier" : "eval-execute",
       "tierSource" : "builtin",
-      "mapVersion" : "2026-09-01.1",
+      "mapVersion" : "2026-10-12.2",
       "entry" : "run_command#eval-execute:echo*",
       "entryCeiling" : "eval-execute",
       "decision" : "allow",

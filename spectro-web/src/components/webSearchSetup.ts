@@ -10,32 +10,99 @@
 import { dockerOffer, type DockerOffer, type DockerStatus } from "./dockerOffer";
 import { t, type Lang } from "../i18n/i18n";
 
-/** The shipped setup, relative to the repository root. Pinned here because the
- *  command below is only true while this path exists; webSearchSetup.test.ts
- *  reads it off disk so a moved sample fails the suite instead of the user. */
+/** The shipped setup, relative to the repository root. The tests read the
+ *  installer off disk through this path, so a moved sample fails the suite. */
 export const SEARXNG_SAMPLE_PATH = "samples/09-searxng";
 
+/** The name the app serves the installer under, and the name `curl -O` saves. */
+export const SEARXNG_SCRIPT_NAME = "install-searxng.sh";
+
+/** The folder the offer makes for the script and the files it writes (the
+ *  compose file and searxng/settings.yml with the instance's secret), so they
+ *  never land in whatever folder the terminal happens to be in. */
+export const SEARXNG_FOLDER = "~/spectro-searxng";
+
+/** The route LocalSetupScriptController maps (card 531). Its Java test reads
+ *  this literal out of this file and holds it equal to the controller's. */
+export const SEARXNG_SCRIPT_ROUTE = "/local-setup/scripts/install-searxng.sh";
+
+/** A TCP port as `location.port` gives it: digits, 1 to 65535. Anything else
+ *  is dropped, so nothing but a port number reaches the printed line. */
+function portSegment(port: string): string {
+  if (!/^\d{1,5}$/.test(port)) return "";
+  const n = Number(port);
+  return n >= 1 && n <= 65535 ? `:${n}` : "";
+}
+
 /**
- * The command handed to an operator whose daemon is ready.
+ * Where the running app serves the installer.
  *
- * <p>It is not a `docker run` line. Stock SearXNG lists only `html` under
- * `search.formats` and answers HTTP 403 to every request for a format that is
- * not on that list (measured against the real image, 2026-08-13 and again on
- * 2026-09-26). Since card 448 web_search then reads the instance's HTML
- * results page, so the one-liner does answer, but that page's markup changes
- * between SearXNG releases and the JSON API's fields do not. The shipped
- * installer writes the settings file that turns `json` on, generates the
- * instance's secret key, and then waits for a real `format=json` query to come
- * back with results rather than for the port to open.</p>
+ * <p>127.0.0.1, because the server binds there (`server.address` in
+ * application.properties). The port is the one the page was served from; the
+ * caller passes `window.location.port`, never a value read from the query.</p>
  *
- * <p>Same shape as the Langfuse offer beside it, deliberately: the operator
- * gets a repository they can read before anything executes, and the script they
- * run is the same file the drift test here asserts against.</p>
+ * @param port the page's own port, "" for the protocol default
+ * @returns the absolute URL of the script
  */
-export const SEARXNG_INSTALL_COMMAND = [
-  "git clone --depth 1 https://github.com/spectroscope/spectroscope.git",
-  `cd spectroscope/${SEARXNG_SAMPLE_PATH} && ./install.sh`,
-].join("\n");
+export function searxngScriptUrl(port: string): string {
+  return `http://127.0.0.1${portSegment(port)}${SEARXNG_SCRIPT_ROUTE}`;
+}
+
+/** The run line. It names the folder, so it runs the script wherever the
+ *  terminal is, also after the download button saved the file elsewhere and
+ *  the operator moved it in (fix round 2 of card 531). The script writes its
+ *  files into the folder it is in. */
+export const SEARXNG_RUN_COMMAND = `bash ${SEARXNG_FOLDER}/${SEARXNG_SCRIPT_NAME}`;
+
+/**
+ * The first copy: make the folder, then download the script into it. It stops
+ * there, so the operator reads the script before {@link SEARXNG_RUN_COMMAND}
+ * runs it; one copy of all three lines ran it unread (fix round 2).
+ *
+ * @param port the page's own port, as for {@link searxngScriptUrl}
+ * @returns the two lines, joined with a newline
+ */
+export function searxngFetchCommand(port: string): string {
+  return [`mkdir -p ${SEARXNG_FOLDER} && cd ${SEARXNG_FOLDER}`, `curl -fsSLO ${searxngScriptUrl(port)}`].join(
+    "\n",
+  );
+}
+
+/**
+ * All the lines handed to an operator whose daemon is ready (card 531): the
+ * fetch and the run. The block shows them as two copies.
+ *
+ * <p>A folder, the download, the run. It is not a `docker run` line: stock
+ * SearXNG lists only `html` under `search.formats` and answers 403 to a JSON
+ * request, so the installer writes the settings file that turns `json` on,
+ * generates the instance's secret key, and waits for a real `format=json`
+ * answer. It is not a clone either: the app serves the installer, and the
+ * installer writes its compose file itself when none is beside it, so a DMG
+ * user needs no git. It is never a pipe into a shell: the file lands on disk
+ * first.</p>
+ *
+ * <p>The first line makes {@link SEARXNG_FOLDER} and moves into it, so the
+ * three files the script leaves behind land in one place on every run. There
+ * is no comment line: zsh, the macOS default shell, has interactive comments
+ * off and runs a pasted `#` line as a command. How to read the script before
+ * the run line is a sentence between the two blocks (`set.searxngRead`).</p>
+ *
+ * @param port the page's own port, as for {@link searxngScriptUrl}
+ * @returns the three lines, joined with newlines
+ */
+export function searxngInstallCommand(port: string): string {
+  return [searxngFetchCommand(port), SEARXNG_RUN_COMMAND].join("\n");
+}
+
+/** The Web search block's offer: the shared Docker offer plus, when the daemon
+ *  is ready, the run line and the script's URL for the download button. For
+ *  this block `command` is the fetch only. */
+export type SearxngOffer = DockerOffer & {
+  /** The run line, a copy of its own. Only ever set for "run". */
+  run?: string;
+  /** The installer's URL. Only ever set for "run", next to `command`. */
+  download?: string;
+};
 
 /**
  * Decide what the Web search block should offer for a Docker status.
@@ -48,12 +115,19 @@ export const SEARXNG_INSTALL_COMMAND = [
  * offering SearXNG, not Langfuse.
  *
  * @param status the server's answer, or null before it has arrived
- * @returns the offer; `href` only for "install", `command` only for "run"
+ * @param port   the page's own port, for the command and the download
+ * @returns the offer; `href` only for "install", `command`, `run` and `download` only for "run"
  */
-export function searxngOffer(status: DockerStatus | null | undefined): DockerOffer {
+export function searxngOffer(status: DockerStatus | null | undefined, port = ""): SearxngOffer {
   const shared = dockerOffer(status);
   if (shared.kind === "run") {
-    return { ...shared, messageKey: "set.searxngDockerReady", command: SEARXNG_INSTALL_COMMAND };
+    return {
+      ...shared,
+      messageKey: "set.searxngDockerReady",
+      command: searxngFetchCommand(port),
+      run: SEARXNG_RUN_COMMAND,
+      download: searxngScriptUrl(port),
+    };
   }
   if (shared.kind === "install") {
     return { ...shared, messageKey: "set.searxngDockerAbsent" };
@@ -74,6 +148,12 @@ export interface TierReading {
   detailKey: string;
   /** The address to interpolate, or "" for a tier that has none. */
   addr: string;
+  /** Dict key for a sentence the Settings block adds after the tier sentence,
+   *  or "". Only the scrape has one: where the setup script is (card 531). It
+   *  is a key of its own because the tier sentence is WebSearchTiers.describe()
+   *  word for word (WebSearchSentenceDriftTest), which the CLI doctor prints
+   *  unchanged. The doctor panel shows the tier sentence alone. */
+  hintKey: string;
 }
 
 /**
@@ -98,13 +178,31 @@ export interface TierReading {
 export function tierReading(tier: string, searxngUrl: string): TierReading {
   const known = (WEB_SEARCH_TIERS as readonly string[]).includes(tier);
   if (!known) {
-    return { labelKey: "", detailKey: "", addr: "" };
+    return { labelKey: "", detailKey: "", addr: "", hintKey: "" };
   }
   return {
     labelKey: tier === "duckduckgo" ? "set.tierLabelScrape" : "",
     detailKey: `set.tier.${tier}`,
     addr: tier === "searxng" ? searxngUrl : "",
+    hintKey: tier === "duckduckgo" ? "set.tierScrapeScript" : "",
   };
+}
+
+/**
+ * The sentence the Settings tier line adds after the tier sentence, or "".
+ *
+ * <p>The scrape's sentence points to the setup script in the block below the
+ * tier line, so it is shown only when that block offers the script, which is
+ * when Docker is ready on this machine. With Docker absent, stopped or remote
+ * the block offers something else, and a sentence about a script that is not
+ * there would send the reader looking for it.</p>
+ *
+ * @param reading the tier line's reading
+ * @param docker  the server's Docker status, or null before it answers
+ * @returns the dict key, or ""
+ */
+export function tierHintKey(reading: TierReading, docker: DockerStatus | null | undefined): string {
+  return reading.hintKey && searxngOffer(docker).kind === "run" ? reading.hintKey : "";
 }
 
 /** The `webSearch` block of /api/config as a READER needs it — the decision and
@@ -132,7 +230,7 @@ export interface WebSearchCheck {
   reading: TierReading;
 }
 
-const NO_READING: TierReading = { labelKey: "", detailKey: "", addr: "" };
+const NO_READING: TierReading = { labelKey: "", detailKey: "", addr: "", hintKey: "" };
 
 /**
  * Read the served answer for the calibration panel (card 223).

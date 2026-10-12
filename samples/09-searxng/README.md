@@ -55,7 +55,21 @@ Settings field also works and outranks the file, because a settings document
 outranks the environment layer under it.
 
 `SEARXNG_PORT=9999 ./install.sh` moves the port. `./install.sh --configure-only`
-writes the settings file and starts nothing.
+writes the compose and settings files and starts nothing.
+
+## Without a clone
+
+`install.sh` also runs alone. The app serves it as
+`/local-setup/scripts/install-searxng.sh`, and Settings › Web search shows two
+blocks to copy: the first makes the folder `~/spectro-searxng` and downloads
+the script into it, the second runs it, so you can read the file in between.
+The script writes every file into the folder it is in, whatever folder you run
+it from. When no `docker-compose.yml` is beside the script, it writes the one
+it carries, which has the same bytes as the file in this directory.
+`CiStackDriftTest` holds the two equal. A compose file that is already there is
+kept only when its one image is SearXNG pinned by digest; when that digest is
+not this script's, the script says so and keeps the file. Any other compose
+file belongs to another stack, and the script stops instead of starting it.
 
 ## What it is not
 

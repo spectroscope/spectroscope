@@ -203,7 +203,11 @@ function closeByHand(): void {
   if (layout.__getState().rightPanelOpen) layout.toggleRightPanel();
 }
 
-beforeEach(() => layout.__resetForTests());
+// Card 517: a fresh store starts in tabs mode; this file is about side by side.
+beforeEach(() => {
+  layout.__resetForTests();
+  layout.setDockTabs(false);
+});
 
 describe("the harness sees App.tsx's effects and can run one that opens the dock", () => {
   // The effect as it stood from 4580702 (2026-08-14) until card 402.

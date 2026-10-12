@@ -20,9 +20,14 @@ import {
   setDockColumnSplit,
   toggleDockCollapse,
   toggleDockPanel,
+  setDockTabs,
 } from "../state/layout";
 
-beforeEach(() => __resetForTests());
+// Card 517: a fresh store starts in tabs mode; this file is about side by side.
+beforeEach(() => {
+  __resetForTests();
+  setDockTabs(false);
+});
 
 const base = {
   agents: [],
@@ -213,6 +218,7 @@ describe("collapse hides, it does not unmount", () => {
     const open = render();
     expect(open).toContain('aria-expanded="true"');
     __resetForTests();
+    setDockTabs(false);
     toggleDockCollapse("agents");
     expect(render()).toContain('aria-expanded="false"');
   });

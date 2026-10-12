@@ -16,8 +16,18 @@ import type { Lang } from "../i18n/i18n";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { chooserFolder, chooserTitle } from "../workspace/chooserMode";
+import { announcedGone } from "../workspace/paneState";
 import { nextMenuIndex } from "../panels/headerPanelControls";
-import { openCodeGraphSheet } from "../codegraph/codeGraphStore";
+import { useCodeGraph } from "../codegraph/codeGraphStore";
+import { codeGraphRows, type CodeGraphRow } from "../codegraph/codeGraphModel";
+import { pressCodeGraphRow } from "../codegraph/CodeGraphHeaderStatus";
+
+/** The data-ws-extra id, label key and glyph of each code graph row (card 546). */
+export const CODE_GRAPH_EXTRA: Record<CodeGraphRow, string> = {
+  build: "codegraph",
+  show: "codegraphShow",
+  update: "codegraphUpdate",
+};
 
 /** The menu's rows, in Claude Code's order. */
 export const WORKSPACE_CHIP_ACTIONS = ["reveal", "copy", "change", "terminal"] as const;
@@ -58,18 +68,12 @@ export function chipActions(
 }
 
 /**
- * Card 498: the server names the session and reports the folder its record
- * carries as unavailable, which is what the wake of a stored session whose
- * folder was deleted answers. A folder that is merely not on disk yet is one
- * the first run will create, so that case does not count.
+ * Card 498: the wake of a stored session whose folder was deleted. The rule
+ * lives in workspace/paneState.ts, which the Files pane and the Terminal
+ * panel read as well (card 520).
  */
 export function folderGone(ws: WorkspaceInfo): boolean {
-  return (
-    typeof ws.sessionId === "string" &&
-    ws.sessionId !== "" &&
-    typeof ws.unavailable === "string" &&
-    ws.unavailable !== ""
-  );
+  return announcedGone(ws);
 }
 
 /**
@@ -143,7 +147,14 @@ export function menuShift(anchorLeft: number, popWidth: number, viewport: number
 const ROWS = "[data-ws-action]:not(:disabled), [data-ws-extra]:not(:disabled)";
 
 /** The glyphs, in a 16px box. */
-const GLYPHS: Record<WorkspaceChipAction | "folder" | "codegraph", ReactNode> = {
+const GLYPHS: Record<WorkspaceChipAction | "folder" | "codegraph" | "codegraphUpdate", ReactNode> = {
+  // The ⋮ menu's refresh glyph, so Update looks the same in both menus.
+  codegraphUpdate: (
+    <>
+      <path d="M13 8a5 5 0 1 1-1.5-3.6" />
+      <path d="M13 2.5v2.6h-2.6" />
+    </>
+  ),
   codegraph: (
     <>
       <circle cx="3.5" cy="4" r="1.5" />
@@ -178,7 +189,13 @@ const GLYPHS: Record<WorkspaceChipAction | "folder" | "codegraph", ReactNode> = 
   ),
 };
 
-function Glyph({ id, className }: { id: WorkspaceChipAction | "folder" | "codegraph"; className: string }) {
+function Glyph({
+  id,
+  className,
+}: {
+  id: WorkspaceChipAction | "folder" | "codegraph" | "codegraphUpdate";
+  className: string;
+}) {
   return (
     <svg
       className={className}
@@ -210,6 +227,8 @@ export function WorkspaceChip(props: {
   menuOpenForTest?: boolean;
 }) {
   const lang = useLang();
+  const { status: codeGraph, sessionId: codeGraphSession } = useCodeGraph();
+  const codeGraphMissing = codeGraph !== null && !codeGraph.installed;
   const [open, setOpen] = useState(props.menuOpenForTest === true);
   const [note, setNote] = useState<string | null>(null);
   const anchor = useRef<HTMLDivElement>(null);
@@ -340,25 +359,35 @@ export function WorkspaceChip(props: {
               </button>
             ))}
             <div className="hdr-menu-sep" role="separator" />
-            <button
-              type="button"
-              role="menuitem"
-              data-ws-extra="codegraph"
-              className="hdr-menu-row"
-              disabled={!codeGraphRowEnabled(props.workspace)}
-              title={
-                codeGraphRowEnabled(props.workspace)
-                  ? undefined
-                  : t(lang, folderGone(props.workspace) ? "wchip.notFound" : "wchip.needsSession")
-              }
-              onClick={() => {
-                setOpen(false);
-                openCodeGraphSheet("build");
-              }}
-            >
-              <Glyph id="codegraph" className="hdr-menu-icon" />
-              <span className="hdr-menu-label">{t(lang, "wchip.codegraph")}</span>
-            </button>
+            {codeGraphRows(codeGraph).map((row) => (
+              <button
+                key={row}
+                type="button"
+                role="menuitem"
+                data-ws-extra={CODE_GRAPH_EXTRA[row]}
+                className="hdr-menu-row"
+                disabled={!codeGraphRowEnabled(props.workspace)}
+                title={
+                  codeGraphRowEnabled(props.workspace)
+                    ? undefined
+                    : t(lang, folderGone(props.workspace) ? "wchip.notFound" : "wchip.needsSession")
+                }
+                onClick={() => {
+                  setOpen(false);
+                  pressCodeGraphRow(row, codeGraphSession);
+                }}
+              >
+                <Glyph id={row === "update" ? "codegraphUpdate" : "codegraph"} className="hdr-menu-icon" />
+                <span className="hdr-menu-label">
+                  {t(lang, `wchip.${CODE_GRAPH_EXTRA[row]}`)}
+                  {row !== "show" && codeGraphMissing && (
+                    <span className="hdr-menu-note">
+                      {t(lang, "hdr.menu.codegraphNote", { install: codeGraph?.install ?? "" })}
+                    </span>
+                  )}
+                </span>
+              </button>
+            ))}
           </div>
           {actions.some((a) => a.reason === "wchip.needsSession") && (
             <span className="ws-chip-note">{t(lang, "wchip.needsSession")}</span>

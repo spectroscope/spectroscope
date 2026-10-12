@@ -173,6 +173,266 @@ class CiStackDriftTest {
                 "ci/search and samples/09-searxng pin different searxng digests");
     }
 
+    /** The sample folder the app's Settings block and the Local Setup page offer. */
+    static final Path SAMPLE = LangfuseComposeDriftTest.repoRoot().resolve("samples/09-searxng");
+
+    /** The line that opens the compose heredoc in install.sh, and the line that closes it. */
+    static final String HEREDOC_OPEN = "cat > \"$compose_file\" <<'COMPOSE'";
+    static final String HEREDOC_CLOSE = "COMPOSE";
+
+    /**
+     * The compose file install.sh carries inside itself (card 531), as the
+     * bytes the heredoc writes: every line between the opening and the closing
+     * line, each with its newline. A quoted delimiter, so the shell expands
+     * nothing inside it.
+     */
+    static String heredocCompose() throws IOException {
+        List<String> lines = Files.readString(SAMPLE.resolve("install.sh")).lines().toList();
+        int open = -1;
+        for (int i = 0; i < lines.size() && open < 0; i++) {
+            open = lines.get(i).strip().equals(HEREDOC_OPEN) ? i : -1;
+        }
+        assertTrue(open >= 0, "install.sh carries no compose heredoc opened by: " + HEREDOC_OPEN);
+        int close = lines.subList(open + 1, lines.size()).indexOf(HEREDOC_CLOSE);
+        assertTrue(close >= 0, "the compose heredoc in install.sh is never closed");
+        StringBuilder body = new StringBuilder();
+        for (String line : lines.subList(open + 1, open + 1 + close)) {
+            body.append(line).append('\n');
+        }
+        return body.toString();
+    }
+
+    @Test
+    void theInstallerCarriesTheSampleComposeFileByteForByte() throws IOException {
+        // The app serves install.sh alone (card 531). When it runs without a
+        // docker-compose.yml beside it, it writes this heredoc, so the heredoc
+        // has to be the sample's file, and through it the ci/search pin.
+        String carried = heredocCompose();
+        assertEquals(Files.readString(SAMPLE.resolve("docker-compose.yml")), carried,
+                "the compose heredoc in install.sh differs from samples/09-searxng/docker-compose.yml");
+        Pattern pinned = Pattern.compile("searxng/searxng@sha256:([0-9a-f]{64})");
+        Matcher inHeredoc = pinned.matcher(carried);
+        Matcher inStack = pinned.matcher(Files.readString(CI.resolve("search/docker-compose.yml")));
+        assertTrue(inHeredoc.find(), "the compose heredoc must pin searxng by digest");
+        assertTrue(inStack.find(), "ci/search must pin searxng by digest");
+        assertEquals(inStack.group(1), inHeredoc.group(1),
+                "the compose heredoc in install.sh and ci/search pin different searxng digests");
+
+        // The image a kept compose file has to name (fix round 1) is the one
+        // the heredoc writes.
+        Matcher kept = Pattern.compile("(?m)^searxng_image=\"([^\"]+)\"$")
+                .matcher(Files.readString(SAMPLE.resolve("install.sh")));
+        assertTrue(kept.find(), "install.sh names no searxng_image=\"...\" to check a kept compose file against");
+        Matcher image = Pattern.compile("(?m)^\\s*image:\\s*(\\S+)$").matcher(carried);
+        assertTrue(image.find(), "the compose heredoc names no image");
+        assertEquals(image.group(1), kept.group(1),
+                "install.sh checks a kept compose file for a different image than the one it writes");
+    }
+
+    @Test
+    void theInstallerWritesItsComposeFileWhenNoneIsBesideIt(@TempDir Path work) throws Exception {
+        // A downloaded install.sh sits alone in a folder. Its configure step
+        // must leave the compose file beside it, with the sample's bytes, and
+        // the settings file with json on.
+        Path script = work.resolve("install-searxng.sh");
+        Files.copy(SAMPLE.resolve("install.sh"), script);
+        assertFalse(Files.exists(work.resolve("docker-compose.yml")));
+
+        Result configured = run(work, List.of("bash", script.toString(), "--configure-only"));
+        assertEquals(0, configured.exit(), configured.output());
+
+        Path written = work.resolve("docker-compose.yml");
+        assertTrue(Files.isRegularFile(written), "no docker-compose.yml was written:\n" + configured.output());
+        assertEquals(Files.readString(SAMPLE.resolve("docker-compose.yml")), Files.readString(written),
+                "the written compose file differs from the sample's");
+        String yaml = Files.readString(work.resolve("searxng/settings.yml"));
+        assertTrue(yaml.lines().anyMatch(l -> l.strip().equals("- json")), yaml);
+
+        // A second run keeps a compose file that is already there, edited or not.
+        Files.writeString(written, Files.readString(written) + "# edited by hand\n");
+        Result again = run(work, List.of("bash", script.toString(), "--configure-only"));
+        assertEquals(0, again.exit(), again.output());
+        assertTrue(Files.readString(written).endsWith("# edited by hand\n"),
+                "a re-run overwrote a compose file that was already there");
+        assertTrue(again.output().contains("keeping existing " + written),
+                "a kept compose file is kept without saying so:\n" + again.output());
+    }
+
+    @Test
+    void theInstallerRefusesAComposeFileItDidNotWrite(@TempDir Path work) throws Exception {
+        // The offer downloads the script into whatever folder the terminal is
+        // in. A docker-compose.yml there is somebody else's stack, and running
+        // `docker compose -f` on it would start that stack under this project
+        // name (review of card 531, fix round 1). A stub docker records every
+        // call and fails `up`, so a missing refusal ends fast and visibly.
+        Path script = work.resolve("install-searxng.sh");
+        Files.copy(SAMPLE.resolve("install.sh"), script);
+        String foreign = "services:\n  mydb:\n    image: postgres:16\n";
+        Path compose = work.resolve("docker-compose.yml");
+        Files.writeString(compose, foreign);
+        Path bin = Files.createDirectories(work.resolve("bin"));
+        Path calls = work.resolve("docker-calls.txt");
+        Path docker = bin.resolve("docker");
+        Files.writeString(docker, "#!/bin/sh\necho \"$*\" >> '" + calls + "'\n"
+                + "case \"$*\" in *' up '*) exit 1 ;; esac\nexit 0\n");
+        assertTrue(docker.toFile().setExecutable(true));
+
+        for (List<String> args : List.of(List.of("--configure-only"), List.<String>of())) {
+            List<String> command = new ArrayList<>(List.of("bash", script.toString()));
+            command.addAll(args);
+            Result refused = run(work, command, Map.of(
+                    "PATH", bin + ":" + System.getenv("PATH"),
+                    "HOME", work.resolve("home").toString(),
+                    "SEARXNG_PORT", "8399"));
+            assertNotEquals(0, refused.exit(), "a foreign compose file was accepted " + args + ":\n" + refused.output());
+            assertTrue(refused.output().contains(compose.toString()),
+                    "the refusal must name the file:\n" + refused.output());
+            assertTrue(refused.output().contains("folder of its own"),
+                    "the refusal must say where to run instead:\n" + refused.output());
+        }
+        assertEquals(foreign, Files.readString(compose), "the foreign compose file was changed");
+        assertFalse(Files.exists(work.resolve("searxng")), "settings were written beside a foreign stack");
+        String called = Files.exists(calls) ? Files.readString(calls) : "";
+        assertFalse(called.contains(" up "), "docker compose up ran on a foreign compose file:\n" + called);
+    }
+
+    /**
+     * Runs a lone copy of the installer, named as the app serves it, against a
+     * compose file it must refuse, once with {@code --configure-only} and once
+     * for a full run with a stub docker that records every call and fails
+     * {@code up}. Returns the output of the full run.
+     */
+    private static String assertRefused(Path work, String compose) throws Exception {
+        Path script = work.resolve("install-searxng.sh");
+        Files.copy(SAMPLE.resolve("install.sh"), script);
+        Path file = work.resolve("docker-compose.yml");
+        Files.writeString(file, compose);
+        Path bin = Files.createDirectories(work.resolve("bin"));
+        Path calls = work.resolve("docker-calls.txt");
+        Path docker = bin.resolve("docker");
+        Files.writeString(docker, "#!/bin/sh\necho \"$*\" >> '" + calls + "'\n"
+                + "case \"$*\" in *' up '*) exit 1 ;; esac\nexit 0\n");
+        assertTrue(docker.toFile().setExecutable(true));
+
+        String last = "";
+        for (List<String> args : List.of(List.of("--configure-only"), List.<String>of())) {
+            List<String> command = new ArrayList<>(List.of("bash", script.toString()));
+            command.addAll(args);
+            Result refused = run(work, command, Map.of(
+                    "PATH", bin + ":" + System.getenv("PATH"),
+                    "HOME", work.resolve("home").toString(),
+                    "SEARXNG_PORT", "8399"));
+            assertNotEquals(0, refused.exit(), "a foreign compose file was accepted " + args + ":\n" + refused.output());
+            assertTrue(refused.output().contains(file.toString()), "the refusal must name the file:\n" + refused.output());
+            assertTrue(refused.output().contains("folder of its own"),
+                    "the refusal must say where to run instead:\n" + refused.output());
+            last = refused.output();
+        }
+        assertEquals(compose, Files.readString(file), "the foreign compose file was changed");
+        assertFalse(Files.exists(work.resolve("searxng")), "settings were written beside a foreign stack");
+        String called = Files.exists(calls) ? Files.readString(calls) : "";
+        assertFalse(called.contains(" up "), "docker compose up ran on a foreign compose file:\n" + called);
+        return last;
+    }
+
+    @Test
+    void theImageNamedOnlyInACommentDoesNotMakeAComposeFileOurs(@TempDir Path work) throws Exception {
+        // Review of fix round 1: the keep rule was a substring grep, and a
+        // comment that quotes the pinned image passed it.
+        String pinned = heredocImage();
+        assertRefused(work, "# image: " + pinned + "\nservices:\n  mydb:\n    image: postgres:16\n");
+    }
+
+    @Test
+    void aComposeFileWithASecondServiceIsNotOurs(@TempDir Path work) throws Exception {
+        // The sample's own file plus one more service still starts that
+        // service under this script's project name.
+        String sample = Files.readString(SAMPLE.resolve("docker-compose.yml"));
+        assertRefused(work, sample + "  mydb:\n    image: postgres:16\n");
+        Path other = Files.createDirectories(work.resolve("built"));
+        assertRefused(other, sample + "  mine:\n    build: .\n");
+    }
+
+    @Test
+    void aComposeFileThisScriptWroteUnderAnOlderPinIsKeptAndSaysSo(@TempDir Path work) throws Exception {
+        // A digest bump is the normal upgrade, and the file an older copy of
+        // this script wrote is still this script's file.
+        String sample = Files.readString(SAMPLE.resolve("docker-compose.yml"));
+        String pinned = heredocImage();
+        String digest = pinned.substring(pinned.indexOf("@sha256:") + 8);
+        String older = "0".repeat(64);
+        assertNotEquals(older, digest);
+        String written = sample.replace(digest, older);
+        assertNotEquals(sample, written);
+
+        Path script = work.resolve("install-searxng.sh");
+        Files.copy(SAMPLE.resolve("install.sh"), script);
+        Path compose = work.resolve("docker-compose.yml");
+        Files.writeString(compose, written);
+        Result kept = run(work, List.of("bash", script.toString(), "--configure-only"),
+                Map.of("HOME", work.resolve("home").toString()));
+        assertEquals(0, kept.exit(), kept.output());
+        assertEquals(written, Files.readString(compose), "the older compose file was changed");
+        assertTrue(kept.output().contains("keeping existing " + compose), kept.output());
+        assertTrue(kept.output().contains(older) && kept.output().contains(digest),
+                "keeping an older pin must name both digests:\n" + kept.output());
+        assertFalse(kept.output().contains("another stack"), kept.output());
+    }
+
+    @Test
+    void theInstallerWritesEverythingBesideItselfFromAnyFolder(@TempDir Path root) throws Exception {
+        // The download button saves the script where the browser keeps
+        // downloads. Run from another folder, the compose file and the
+        // settings file with the instance's secret must still land together,
+        // beside the script, and nothing in the folder the shell is in.
+        Path folder = Files.createDirectories(root.resolve("spectro-searxng"));
+        Path elsewhere = Files.createDirectories(root.resolve("elsewhere"));
+        Path script = folder.resolve("install-searxng.sh");
+        Files.copy(SAMPLE.resolve("install.sh"), script);
+
+        Result configured = run(elsewhere, List.of("bash", script.toString(), "--configure-only"),
+                Map.of("HOME", root.resolve("home").toString()));
+        assertEquals(0, configured.exit(), configured.output());
+        assertTrue(Files.isRegularFile(folder.resolve("docker-compose.yml")), configured.output());
+        assertTrue(Files.isRegularFile(folder.resolve("searxng/settings.yml")), configured.output());
+        try (var left = Files.list(elsewhere)) {
+            assertEquals(List.of(), left.toList(), "the script wrote into the folder the shell was in");
+        }
+    }
+
+    @Test
+    void theInstallerCallsItselfByTheNameItHasOnDisk(@TempDir Path work) throws Exception {
+        // The app serves the file as install-searxng.sh. Its help, its
+        // messages and the compose file it writes must not send the reader to
+        // an install.sh that is not in their folder.
+        Path script = work.resolve("install-searxng.sh");
+        Files.copy(SAMPLE.resolve("install.sh"), script);
+
+        Result help = run(work, List.of("bash", script.toString(), "--help"));
+        assertEquals(0, help.exit(), help.output());
+        assertTrue(help.output().contains("bash install-searxng.sh --configure-only"), help.output());
+        assertFalse(help.output().contains("install.sh"), "--help names a file that is not there:\n" + help.output());
+
+        Result wrong = run(work, List.of("bash", script.toString(), "--nonsense"));
+        assertEquals(2, wrong.exit(), wrong.output());
+        assertTrue(wrong.output().startsWith("install-searxng.sh: "), wrong.output());
+
+        String foreign = assertRefused(Files.createDirectories(work.resolve("refused")),
+                "services:\n  mydb:\n    image: postgres:16\n");
+        assertFalse(foreign.contains("install.sh"), foreign);
+
+        for (String compose : List.of(Files.readString(SAMPLE.resolve("docker-compose.yml")), heredocCompose())) {
+            assertFalse(compose.contains("./install.sh"), "the compose file tells the reader to run ./install.sh");
+        }
+    }
+
+    /** The image line of the compose heredoc. */
+    private static String heredocImage() throws IOException {
+        Matcher image = Pattern.compile("(?m)^\\s*image:\\s*(\\S+)$").matcher(heredocCompose());
+        assertTrue(image.find(), "the compose heredoc names no image");
+        return image.group(1);
+    }
+
     @Test
     void bringingTheSearchStackUpWritesItsSettingsFirst() throws IOException {
         // Compose alone starts a container that answers the browser and gives
@@ -272,7 +532,8 @@ class CiStackDriftTest {
 
     @Test
     void theScriptsParse() throws Exception {
-        for (Path script : List.of(SWITCH, CI.resolve("search/generate-settings.sh"))) {
+        for (Path script : List.of(SWITCH, CI.resolve("search/generate-settings.sh"),
+                SAMPLE.resolve("install.sh"))) {
             Result parsed = run(CI, List.of("bash", "-n", script.toString()));
             assertEquals(0, parsed.exit(), "bash -n rejected " + script + ":\n" + parsed.output());
         }
@@ -282,8 +543,13 @@ class CiStackDriftTest {
     record Result(int exit, String output) {}
 
     private static Result run(Path cwd, List<String> command) throws Exception {
-        Process process = new ProcessBuilder(command).directory(cwd.toFile())
-                .redirectErrorStream(true).start();
+        return run(cwd, command, Map.of());
+    }
+
+    private static Result run(Path cwd, List<String> command, Map<String, String> env) throws Exception {
+        ProcessBuilder builder = new ProcessBuilder(command).directory(cwd.toFile()).redirectErrorStream(true);
+        builder.environment().putAll(env);
+        Process process = builder.start();
         String output = new String(process.getInputStream().readAllBytes());
         assertTrue(process.waitFor(60, TimeUnit.SECONDS), "the command hung:\n" + output);
         return new Result(process.exitValue(), output);

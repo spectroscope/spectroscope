@@ -255,3 +255,73 @@
     min-height: var(--pb-run-canvas-min);
   }
 }
+
+/* ---------- workflows (card 506) ----------
+   The workflow list under the contents row: one row per file with its name
+   and hash, a text field and Run for a step list. Tokens only. */
+.wf-hint,
+.wf-note {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+}
+.wf-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.wf-item {
+  border-left: 2px solid var(--border-strong);
+  padding-left: var(--sp-2);
+  min-width: 0;
+}
+.wf-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-1);
+}
+.wf-name {
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.wf-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+.wf-input {
+  flex: 1 1 220px;
+  min-width: 0;
+  font: inherit;
+  font-size: var(--fs-12);
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
+  padding: 5px 8px;
+}
+.wf-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.pb-pane .wf-run {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.pb-pane .wf-run:disabled {
+  color: var(--text-dim);
+  border-color: var(--border);
+  cursor: not-allowed;
+}
+.wf-notice {
+  margin: var(--sp-2) 0 0;
+  font-size: var(--fs-12);
+  color: var(--text);
+}

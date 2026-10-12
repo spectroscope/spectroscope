@@ -108,6 +108,46 @@ describe("a command from the composer", () => {
     expect(h.set.view().queue).toEqual([]);
   });
 
+  it("a loop frame can be the first thing a continued session sends, once (card 504, fix round 2)", () => {
+    const key = h.set.open({
+      resumeId: "20261009-120000-abcd",
+      firstFrames: [{ type: "set_loop", action: "stop" }],
+    });
+    const socket = h.sockets[h.sockets.length - 1];
+    expect(socket.sent).toEqual([]);
+
+    socket.status("open");
+
+    expect(socket.sent).toEqual([{ type: "set_loop", action: "stop" }]);
+    socket.status("closed");
+    socket.status("open");
+    expect(socket.sent, "sent once, not on every reconnect").toEqual([{ type: "set_loop", action: "stop" }]);
+    expect(h.set.view().key).toBe(key);
+  });
+
+  it("the goal's set_goal can be the first thing a continued session sends, once (card 504, hub and spoke fix round)", () => {
+    h.sockets[0].status("open");
+    const key = h.set.open({
+      resumeId: "20261009-120000-abcd",
+      firstFrames: [{ type: "set_goal", outcome: "the tests are green", check: "npm test" }],
+    });
+    const socket = h.sockets[h.sockets.length - 1];
+    expect(socket.resume).toBe("20261009-120000-abcd");
+    expect(socket.sent).toEqual([]);
+
+    socket.status("open");
+
+    expect(socket.sent).toEqual([{ type: "set_goal", outcome: "the tests are green", check: "npm test" }]);
+    socket.status("closed");
+    socket.status("open");
+    expect(socket.sent, "sent once, not on every reconnect").toEqual([
+      { type: "set_goal", outcome: "the tests are green", check: "npm test" },
+    ]);
+    expect(h.set.view().key).toBe(key);
+    expect(socket, "its own socket").not.toBe(h.sockets[0]);
+    expect(h.sockets[0].sent, "nothing on the socket that was in view").toEqual([]);
+  });
+
   it("can be the first thing a continued session sends, once its socket opens", () => {
     const key = h.set.open({ resumeId: "20261009-120000-abcd", firstCommand: "clear" });
     const socket = h.sockets[h.sockets.length - 1];

@@ -102,7 +102,9 @@ class AgentCareParagraphTest {
                 .cwd(Path.of("."))
                 .onPermission(request -> true)
                 .introspection(true)
-                .careParagraph(care);
+                .careParagraph(care)
+                // Card 503, owner decision 9: the fixture sets agentMessaging false.
+                .agentMessaging(false);
         if (off != null) {
             builder.toolGroupsOff(() -> off);
         }

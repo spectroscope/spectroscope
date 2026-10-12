@@ -108,6 +108,18 @@ class RedactionTest {
         }
     }
 
+    /**
+     * The rule names other readers ask for (card 538 refuses a hook command by them) are exactly the
+     * rules this table carries a reviewed vector for, in the order the rules fire.
+     */
+    @Test
+    void everyRuleNameHasAReviewedVectorAndTheListKeepsTheFiringOrder() {
+        assertEquals(new java.util.TreeSet<>(REVIEWED_CREDENTIALS.stream().map(Row::rule).toList()),
+                new java.util.TreeSet<>(Redaction.ruleNames()));
+        assertEquals(List.of("private-key", "anthropic-key", "openai-key"), Redaction.ruleNames().subList(0, 3));
+        assertEquals("iban", Redaction.ruleNames().get(Redaction.ruleNames().size() - 1));
+    }
+
     @Test
     void aStringARealCorpusCouldContainIsNotACredential() {
         for (String value : NEAR_MISSES) {

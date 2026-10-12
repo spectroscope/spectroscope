@@ -58,7 +58,8 @@ import { navActionRows, navSegmentRows, type NavSegmentId } from "./navRows";
 import { RunDot } from "./RunDot";
 import { storedRunState, type RunState } from "./runIndicator";
 import { deleteQuestion, heldRunState, mergeHeldRows, type HeldRow } from "../state/sessionRows";
-import { useLiveSessions } from "../state/liveSessions";
+import { liveLineOf, useLiveSessions, usePeerRoster } from "../state/liveSessions";
+import { PeerRoster } from "./PeerRoster";
 import { SessionListOptions } from "./SessionListOptions";
 import { rowParts, useDensity, type RowParts } from "../state/density";
 import { useFleets } from "../state/fleetStore";
@@ -151,6 +152,8 @@ export function Sidebar(props: {
   // Card 212: which sessions are live ON THIS SERVER, not merely on this page.
   // Pushed over the socket and polled underneath — see state/liveSessions.ts.
   const liveSessions = useLiveSessions();
+  // Card 503: the sessions of other processes on this machine.
+  const peerRoster = usePeerRoster();
   // The identity of the live SET, not of its run flags: the stored list has to
   // be refetched when a session appears or disappears (a fresh one has no row
   // in /api/sessions until its file exists), but a run merely starting inside
@@ -544,11 +547,16 @@ export function Sidebar(props: {
                         if (renaming !== null) finishRename(s, renaming, typed, by);
                       }}
                       suggesting={suggesting.has(s.id)}
+                      liveLine={(() => {
+                        const row = liveSessions.find((l) => l.id === s.id);
+                        return row === undefined ? undefined : liveLineOf(row);
+                      })()}
                     />
                   );
                 }}
               />
             </nav>
+            <PeerRoster lang={lang} rows={peerRoster} />
 
             {sessions !== null && sessions.length === 0 && !failed && (
               <p className="sidebar-note">{t(lang, "nav.none")}</p>
@@ -758,6 +766,8 @@ export function SessionRow(props: {
   onRename?: (typed: string | null, by: "key" | "blur") => void;
   /** Card 445: a suggestion for this row is on its way. */
   suggesting?: boolean;
+  /** Card 503: the folder and the status line of a live session. */
+  liveLine?: string;
 }) {
   const { s, parts, lang } = props;
   const shown = sessionDisplayTitle(s, lang);
@@ -807,6 +817,7 @@ export function SessionRow(props: {
               <span className="session-wait">{t(lang, "nav.waitingForModel")}</span>
             )}
           </span>
+          {props.liveLine !== undefined && <span className="session-live-line">{props.liveLine}</span>}
           {parts.meta && (
             <span className="session-meta session-meta-line tabular">
               <span className="session-facts">

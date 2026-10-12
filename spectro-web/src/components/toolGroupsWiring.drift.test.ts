@@ -29,7 +29,8 @@ describe("the tool groups in the composer gear", () => {
 
   it("ask the server to save, and never write a scope over REST themselves", () => {
     const body = gear.slice(gear.indexOf("const chooseToolGroups"), gear.indexOf("const onListKeyDown"));
-    expect(body).toContain("switchToolGroups(off, { sendClient, save: savesHere })");
+    // Card 504 hub and spoke review, round 1: on the session's own frame path.
+    expect(body).toContain("switchToolGroups(off, { sendClient: sendFrame, save: savesHere })");
     expect(body).not.toContain("putSettings(");
   });
 });

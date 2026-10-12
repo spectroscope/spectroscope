@@ -1,0 +1,1 @@
+{"mcpServers": {"fixture-skill-mcp-server": {"command": "node", "args": ["fixture-skill-mcp.js"]}}}

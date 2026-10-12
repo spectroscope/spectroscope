@@ -128,7 +128,8 @@ public class SpectroSocketHandler extends TextWebSocketHandler {
             case "question_response" -> connection.onQuestionResponse(
                     frame.path("callId").asText(), answersOf(frame.path("answers")),
                     frame.path("cancelled").asBoolean(false));
-            case "abort" -> connection.onAbort();
+            // Card 504: the stop button also ends the session's loop.
+            case "abort" -> connection.onStopFrame();
             // Card 261: the browser's liveness probe. Answered here on the
             // socket thread and NOT forwarded to the connection's run state —
             // the whole value of the probe is that a busy agent cannot delay it.
@@ -174,6 +175,17 @@ public class SpectroSocketHandler extends TextWebSocketHandler {
             // card 265 drew for question_response, and for the same reason.
             case "steering_message" ->                         // additive (card 380)
                     connection.onSteeringMessage(frame.path("text").asText(""));
+            // Card 502: the operator's Deliver or Decline on a message another
+            // agent sent while this session was idle and of another permission
+            // class. From a person at a browser, never from a model.
+            case "peer_message_decision" ->                    // additive (card 502)
+                    connection.onPeerMessageDecision(frame.path("msgId").asText(""),
+                            frame.path("deliver").asBoolean(false));
+            // Card 503: the operator's own message from the page, a Reply in
+            // the chat. From a person at a browser, never from a model.
+            case "send_peer_message" ->                        // additive (card 503)
+                    connection.onSendPeerMessage(frame.path("to").asText(null),
+                            frame.path("toSession").asText(null), frame.path("text").asText(""));
             // Card 471: the web chat's two commands. Their own frames rather
             // than a user_message with a slash in it, because a command never
             // reaches the model as a prompt; the composer decides from the
@@ -184,11 +196,19 @@ public class SpectroSocketHandler extends TextWebSocketHandler {
             // sheet showed; the connection refuses when the folder moved since.
             case "start_playbook" -> connection.onStartPlaybook(frame.path("dir").asText(""),
                     frame.path("hash").asText(""));
+            // Card 506: Run on a workflow of the playbook module, with the
+            // hash the module listed and the text typed beside it.
+            case "start_workflow" -> connection.onStartWorkflow(frame.path("dir").asText(""),  // additive (card 506)
+                    frame.path("file").asText(""), frame.path("hash").asText(""),
+                    frame.path("input").asText(""), frame.path("lang").asText("en"));
             // Card 498: a click into the message box of a stored session. Binds
             // the session to this socket and announces its folder; starts no
             // run and calls no model.
             case "wake_session" ->                             // additive (card 498)
                     connection.onWakeSession(frame.path("sessionId").asText(""));
+            // Card 504: /loop from the chat and Stop on the loop chip. From a
+            // person at a browser; the model paces a loop with schedule_wakeup.
+            case "set_loop" -> connection.onSetLoop(frame);   // additive (card 504)
             default -> connection.sendError("Unknown message type.");
         }
     }

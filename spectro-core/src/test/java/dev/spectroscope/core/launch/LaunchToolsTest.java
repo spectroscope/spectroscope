@@ -95,10 +95,9 @@ class LaunchToolsTest {
         return node;
     }
 
+    /** A free port, taken and released; card 540: free at every address, see {@link ClaimablePorts}. */
     private static int freePort() throws IOException {
-        try (ServerSocket socket = new ServerSocket(0)) {
-            return socket.getLocalPort();
-        }
+        return ClaimablePorts.free();
     }
 
     /**
@@ -620,24 +619,32 @@ class LaunchToolsTest {
         supervisor.close();
     }
 
-    /** Criterion 4: restart acts on the same entry by name and brings it back. */
+    /** Criterion 4: restart acts on the same entry by name and brings it back; card 540: and only on it. */
     @Test
     @EnabledOnOs({OS.MAC, OS.LINUX})
     void restartActsOnTheSameEntryByName(@TempDir Path project) throws Exception {
         int port = freePort();
+        int otherPort = freePort();
         Files.writeString(project.resolve("index.html"), "<h1>under test</h1>");
         writeLaunchFile(project, """
                 { "version": "0.0.1", "configurations": [
                   { "name": "web", "runtimeExecutable": "python3",
+                    "runtimeArgs": ["-m", "http.server", "%d"], "port": %d },
+                  { "name": "other", "runtimeExecutable": "python3",
                     "runtimeArgs": ["-m", "http.server", "%d"], "port": %d } ] }
-                """.formatted(port, port));
+                """.formatted(port, port, otherPort, otherPort));
         LaunchSupervisor supervisor = LaunchSupervisor.real();
         try {
             List<Tool> tools = new LaunchTools(supervisor, () -> new RecordingBrowser(true),
                     () -> fence(true)).all();
-            assertFalse(tool(tools, "launch_start")
-                    .execute(args(Map.of("name", "web")), context(project)).startsWith("ERROR:"));
+            String started = tool(tools, "launch_start")
+                    .execute(args(Map.of("name", "web")), context(project));
+            assertFalse(started.startsWith("ERROR:"), started);
+            String otherStarted = tool(tools, "launch_start")
+                    .execute(args(Map.of("name", "other")), context(project));
+            assertFalse(otherStarted.startsWith("ERROR:"), otherStarted);
             long first = supervisor.running("web").orElseThrow().pid();
+            long otherPid = supervisor.running("other").orElseThrow().pid();
 
             String said = tool(tools, "launch_restart")
                     .execute(args(Map.of("name", "web")), context(project));
@@ -645,6 +652,9 @@ class LaunchToolsTest {
             assertTrue(said.startsWith("Stopped web first."), said);
             long second = supervisor.running("web").orElseThrow().pid();
             assertFalse(first == second, "it really is a new process, " + first + " then " + second);
+            assertEquals(otherPid, supervisor.running("other").orElseThrow(
+                            () -> new AssertionError("the restart of web stopped other")).pid(),
+                    "the restart of web leaves the entry named other as it was");
         } finally {
             supervisor.close();
         }

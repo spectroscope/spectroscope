@@ -27,11 +27,25 @@ export const VIEW_MODE_KEY = "spectroscope:mode";
 
 /**
  * Card 455: the mark that the first-start mode screen was answered in this
- * origin. "1" when it was; anything else, and no value, reads as not yet. A
- * second key next to the mode word (owner decision of 2026-09-29), so the
- * desktop app and a browser each ask once, the way each keeps its own mode.
+ * origin. A second key next to the mode word (owner decision of 2026-09-29),
+ * so the desktop app and a browser each ask once, the way each keeps its own
+ * mode. Card 518: its value is the screen's generation; see below.
  */
 export const MODE_CHOSEN_KEY = "spectroscope:mode-chosen";
+
+/**
+ * Card 518: the generation of the mode screen. A choice stores this number as
+ * the mark's value, and only a stored value equal to it reads as chosen. Every
+ * origin that chose under card 455 stored "1", so it sees the screen once more
+ * and meets developer. To ask everybody again after a later change of the
+ * modes, raise the number.
+ */
+export const MODE_SCREEN_GENERATION = 2;
+
+/** Whether a stored mark is the current generation's. */
+function isCurrentMark(raw: string | null): boolean {
+  return raw === String(MODE_SCREEN_GENERATION);
+}
 
 interface Storage {
   get(key: string): string | null;
@@ -62,7 +76,7 @@ export function readViewMode(): ViewMode {
 /** Whether the mode screen was answered. A storage that throws reads as not yet. */
 export function readModeChosen(): boolean {
   try {
-    return storage.get(MODE_CHOSEN_KEY) === "1";
+    return isCurrentMark(storage.get(MODE_CHOSEN_KEY));
   } catch {
     return false;
   }
@@ -103,7 +117,7 @@ export function setViewMode(next: ViewMode): void {
 export function chooseViewMode(next: ViewMode): void {
   try {
     storage.set(VIEW_MODE_KEY, next);
-    storage.set(MODE_CHOSEN_KEY, "1");
+    storage.set(MODE_CHOSEN_KEY, String(MODE_SCREEN_GENERATION));
   } catch {
     /* a blocked storage: this window keeps the choice, the next load asks again */
   }
@@ -161,7 +175,7 @@ export function followOtherWindows(
 ): () => void {
   const onStorage = (event: Event): void => {
     const { key, newValue } = event as StorageEvent;
-    if (key === MODE_CHOSEN_KEY || key === null) adoptChosen(key !== null && newValue === "1");
+    if (key === MODE_CHOSEN_KEY || key === null) adoptChosen(key !== null && isCurrentMark(newValue));
     if (key !== VIEW_MODE_KEY && key !== null) return;
     adopt(asMode(key === null ? null : newValue));
   };

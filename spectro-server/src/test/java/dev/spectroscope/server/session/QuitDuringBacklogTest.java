@@ -29,10 +29,31 @@ import static org.assertj.core.api.Assertions.assertThat;
  * and the next resume rebuilt the conversation without them. So a real child
  * JVM ({@link QuitDuringBacklogChild}) builds a backlog and gets SIGTERM, the
  * signal the desktop sends on quit, and the file is read afterwards.</p>
+ *
+ * <p>Card 540: whether the drain finished or was sealed is read from what the
+ * child's quit hook counted ({@code flushed <drained> <sealed> <millis>}), not
+ * from this JVM's clock. The clock measured SIGTERM to process exit, which
+ * holds JVM teardown and reaping as well as the drain, and it went past the
+ * 3 s bound under load with every event in the file (card 498). The hook's own
+ * flush time, which leaves the teardown out, is held to that bound
+ * ({@link #HOOK_FLUSH_BOUND_MILLIS}).</p>
  */
 @Timeout(value = 120, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
 @EnabledOnOs({OS.MAC, OS.LINUX})
 class QuitDuringBacklogTest {
+
+    /**
+     * Card 540: the quit hook's flush of this backlog must end inside the
+     * production bound, {@link QuitFlush#BOUND}; past it, a real quit seals the
+     * drain and loses the queued events. The time is the hook's own, quit to last
+     * drain, so JVM teardown is not in it. Measured on 2026-10-11 and 2026-10-12
+     * on this Mac, 54 runs of this test (the {@code flushed} line of each run,
+     * kanban/evidence/540/fix1-flush-distribution.txt): 708 to 1771 ms at load
+     * averages 2.9 to 164.8 before the run, every run {@code flushed 1 0}. The
+     * bound is 1.7 times the slowest of them. A red here says a quit under that
+     * load would lose events, not that the test is slow.
+     */
+    static final long HOOK_FLUSH_BOUND_MILLIS = QuitFlush.BOUND.toMillis();
 
     @Test
     void aQuitDuringABacklogWritesEveryQueuedEventAndClosesTheRun(@TempDir Path workspace)
@@ -75,7 +96,8 @@ class QuitDuringBacklogTest {
 
             long quitAt = System.nanoTime();
             child.destroy(); // SIGTERM, what the desktop sends on quit
-            assertThat(child.waitFor(30, TimeUnit.SECONDS)).as("the child exits on SIGTERM").isTrue();
+            assertThat(child.waitFor(QuitDuringBacklogChild.REPORT_WAIT.toSeconds() + 30, TimeUnit.SECONDS))
+                    .as("the child exits on SIGTERM").isTrue();
             long quitMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - quitAt);
 
             int turns = QuitDuringBacklogChild.TURNS;
@@ -106,11 +128,19 @@ class QuitDuringBacklogTest {
             synchronized (output) {
                 childOutput = output.toString();
             }
+            // Card 540: the quit hook's line comes through a file. Over the pipe it did
+            // not arrive in seven runs of seven; a read after the exit said "Stream closed"
+            // (kanban/evidence/540, green-quit-first, green-quit-second, diag-quit-file).
+            Path flushedFile = workspace.resolve(QuitDuringBacklogChild.FLUSHED_FILE);
+            String flushed = java.nio.file.Files.exists(flushedFile)
+                    ? java.nio.file.Files.readString(flushedFile).strip()
+                    : "flushed (no file)";
             String report = "after the quit the file holds " + thinking.length() / 6 + " of "
                     + lines + " thinking lines, " + turnStarts + " of " + requests
                     + " turn starts and " + toolResults + " of " + calls + " tool results; the root"
-                    + " run is " + (rootClosed ? "closed" : "still open") + "; the child exited "
-                    + quitMillis + " ms after SIGTERM. Child output:\n" + childOutput;
+                    + " run is " + (rootClosed ? "closed" : "still open") + "; the quit hook says '"
+                    + flushed + "' (drained, sealed, ms); the child exited " + quitMillis
+                    + " ms after SIGTERM. Child output:\n" + childOutput;
             System.out.println("card 395 quit: " + report);
 
             assertThat(requests).as("test premise: the child reached the held request").isEqualTo(turns + 1);
@@ -122,10 +152,15 @@ class QuitDuringBacklogTest {
                     .isEqualTo(requests);
             assertThat(toolResults).as("every tool result is in the file; " + report).isEqualTo(calls);
             assertThat(rootClosed).as("the open run got its run_end in the file; " + report).isTrue();
-            assertThat(quitMillis)
-                    .as("the quit cancels the run, so its drain finishes before the bound instead of"
-                            + " being sealed at it; " + report)
-                    .isLessThan(QuitFlush.BOUND.toMillis());
+            assertThat(flushed)
+                    .as("the quit cancels the run, so its one drain finishes instead of being sealed"
+                            + " at the bound; " + report)
+                    .startsWith("flushed 1 0 ");
+            long hookMillis = Long.parseLong(flushed.split(" ")[3]);
+            assertThat(hookMillis)
+                    .as("the drain the quit cancelled finishes inside the production bound, "
+                            + HOOK_FLUSH_BOUND_MILLIS + " ms; " + report)
+                    .isLessThan(HOOK_FLUSH_BOUND_MILLIS);
 
             List<ProviderMessage> resumed = SessionStore.loadSession(sessionId);
             long resumedResults = resumed.stream()

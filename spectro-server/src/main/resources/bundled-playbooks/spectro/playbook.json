@@ -355,6 +355,6 @@
     "agents": [],
     "hooks": [],
     "commands": [],
-    "workflows": []
+    "workflows": ["workflows/fanout-research.json", "workflows/fanout-review.json"]
   }
 }

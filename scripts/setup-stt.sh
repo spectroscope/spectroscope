@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# setup-stt.sh — sets up local speech-to-text: whisper.cpp + the ggml-small model.
+# setup-stt.sh sets up local speech-to-text: whisper.cpp + the ggml-small model.
 # Two things, one of which the app can do for itself: the settings pane downloads
 # and verifies the model with the same digest this script pins.
 # Idempotent: a second run detects what is present and downloads nothing again.
@@ -48,12 +48,12 @@ verify_model() {
 # webm/opus recording with it. The browser does that conversion itself now
 # (card 187 step 5.4), so the app needs ONE binary, and whisper.cpp is MIT.
 # ffmpeg is still what the CLI's own `/voice` RECORDS with, which is a different
-# job the browser cannot do for it — so it is reported below and never required.
+# job the browser cannot do for it, so it is reported below and never required.
 OS="$(uname -s)"
 case "$OS" in
   Darwin)
     if ! command -v brew >/dev/null 2>&1; then
-      echo "ERROR: Homebrew missing (https://brew.sh) — install it first." >&2
+      echo "ERROR: Homebrew missing (https://brew.sh). Install it first." >&2
       exit 1
     fi
     if command -v whisper-cli >/dev/null 2>&1; then
@@ -96,4 +96,4 @@ else
   echo "Model downloaded and verified: $MODEL_FILE"
 fi
 
-echo "Setup done — /voice in the spectroscope CLI is ready to use."
+echo "Setup done. /voice in the spectroscope CLI is ready to use."

@@ -89,6 +89,110 @@ public final class SafeWalk {
         return new Walk(start, files, refused, bytes[0]);
     }
 
+    /**
+     * One entry of a {@link Tree}.
+     *
+     * @param rel  the path relative to the walked folder, with {@code /} separators
+     * @param dir  true for a folder
+     * @param size the size in bytes of a file, 0 for a folder
+     */
+    public record Entry(String rel, boolean dir, long size) {}
+
+    /**
+     * The bounded listing of a whole folder.
+     *
+     * @param root    the walked folder, a real path
+     * @param entries the folders and regular files found, in walk order
+     * @param refused one line per refusal, {@code "<rel>: <why>"}, sorted
+     * @param files   the regular files counted; one more than the cap when the cap was passed
+     * @param bytes   the sum of the sizes of the listed files
+     * @param capped  true when there were more files than the cap allows
+     * @param deeper  the folders at the depth limit that hold something that was not listed, in walk order
+     */
+    public record Tree(Path root, List<Entry> entries, List<String> refused, int files, long bytes,
+                       boolean capped, List<String> deeper) {
+        public Tree {
+            entries = List.copyOf(entries);
+            refused = List.copyOf(refused);
+            deeper = List.copyOf(deeper);
+        }
+
+        /** True when the listing is not the whole folder. */
+        public boolean truncated() {
+            return capped || !deeper.isEmpty();
+        }
+    }
+
+    /**
+     * Lists the whole folder {@code base} to {@code maxDepth} without following a link, with the
+     * rules of {@link #walk}: a symbolic link or a file that is neither regular nor a folder is a
+     * refusal and never an entry, and a linked folder is never entered. A folder at the depth limit
+     * is listed but not entered. The walk stops once it has seen one file more than
+     * {@code maxFiles}; that file is counted but not listed.
+     *
+     * @param base     the folder to list; its real path is the root of the listing
+     * @param maxDepth the deepest level listed, the base's children being level 1
+     * @param maxFiles the most files listed
+     */
+    public static Tree tree(Path base, int maxDepth, int maxFiles) throws IOException {
+        Path root = base.toRealPath();
+        List<Entry> entries = new ArrayList<>();
+        List<String> refused = new ArrayList<>();
+        int[] files = {0};
+        long[] bytes = {0};
+        boolean[] capped = {false};
+        List<String> deeper = new ArrayList<>();
+        Files.walkFileTree(root, EnumSet.noneOf(FileVisitOption.class), maxDepth, new SimpleFileVisitor<>() {
+            @Override
+            public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
+                if (!dir.equals(root)) {
+                    entries.add(new Entry(slashed(root.relativize(dir)), true, 0));
+                }
+                return FileVisitResult.CONTINUE;
+            }
+
+            @Override
+            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
+                String rel = slashed(root.relativize(file));
+                if (attrs.isSymbolicLink()) {
+                    refused.add(rel + ": a symbolic link");
+                } else if (attrs.isDirectory()) {
+                    entries.add(new Entry(rel, true, 0));
+                    if (!empty(file)) {
+                        deeper.add(rel);
+                    }
+                } else if (attrs.isRegularFile()) {
+                    files[0]++;
+                    if (files[0] > maxFiles) {
+                        capped[0] = true;
+                        return FileVisitResult.TERMINATE;
+                    }
+                    entries.add(new Entry(rel, false, attrs.size()));
+                    bytes[0] += attrs.size();
+                } else {
+                    refused.add(rel + ": not a regular file");
+                }
+                return FileVisitResult.CONTINUE;
+            }
+
+            @Override
+            public FileVisitResult visitFileFailed(Path file, IOException failure) {
+                refused.add(slashed(root.relativize(file)) + ": unreadable");
+                return FileVisitResult.CONTINUE;
+            }
+        });
+        refused.sort((a, b) -> Arrays.compareUnsigned(a.getBytes(UTF_8), b.getBytes(UTF_8)));
+        return new Tree(root, entries, refused, files[0], bytes[0], capped[0], deeper);
+    }
+
+    private static boolean empty(Path dir) {
+        try (var listing = Files.list(dir)) {
+            return listing.findAny().isEmpty();
+        } catch (IOException | java.io.UncheckedIOException unreadable) {
+            return false;
+        }
+    }
+
     private static Walk refusedWhole(Path start, String rel, String why) {
         return new Walk(start, List.of(), List.of(rel + ": " + why), 0);
     }

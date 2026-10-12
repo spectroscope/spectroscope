@@ -102,13 +102,27 @@ describe("what a written jsonl may contain", () => {
       // before the first message. A fact about this socket now; a file that
       // held it would claim a server that has since restarted.
       "wake_session",
+      // Card 502: agent messaging on the page's own screen (peer_message), the
+      // sessions of other processes now (peer_roster), and the page's answer to
+      // a held message (peer_message_decision). The record of a message is the
+      // agent_message line with role peer, which rides the union.
+      "peer_message",
+      "peer_roster",
+      "peer_message_decision",
+      // Card 503: the page's Reply from the chat, as the operator.
+      "send_peer_message",
+      // Card 504: the session's loop on the page, and the page's /loop and Stop.
+      "loop_info",
+      "set_loop",
     ]) {
       expect(NON_WIRE_TYPES.has(type), type).toBe(true);
     }
-    // Twenty-seven: eighteen, plus card 212's two, plus card 261's `pong`,
+    // Thirty: eighteen, plus card 212's two, plus card 261's `pong`,
     // card 267's `goal_info`, card 322's `workflow_state`, card 466's
     // `tool_groups_info`, card 471's `compaction_state`, card 493's
-    // `local_mode_info` and card 498's `wake_session`. The number is
+    // `local_mode_info`, card 498's `wake_session`, since card 502 the
+    // three agent messaging frames, card 503's `send_peer_message`, and
+    // card 504's `loop_info` and `set_loop`, thirty-three in all. The number is
     // asserted so the set cannot grow or shrink by accident — only on purpose,
     // with the reason written above.
     //
@@ -119,7 +133,7 @@ describe("what a written jsonl may contain", () => {
     // identical. The compiler had nothing to say either. This guard was the
     // only thing that noticed, which is the whole argument for keeping a bare
     // number in a test.
-    expect(NON_WIRE_TYPES.size).toBe(27);
+    expect(NON_WIRE_TYPES.size).toBe(33);
   });
 
   it("keeps a user turn read out of a transcript out of the download", () => {

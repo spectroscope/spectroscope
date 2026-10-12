@@ -12,25 +12,38 @@ import { read, stripComments } from "../testkit/source";
 
 const chat = stripComments(read("./Chat.tsx", import.meta.url));
 
-/** The body of `const submit = (): void => { ... }`. */
-function submitBody(): string {
-  const at = chat.indexOf("const submit = (): void => {");
-  if (at < 0) throw new Error("Chat.tsx no longer declares the submit function");
+/** The body of the function declared by `head`. */
+function bodyOf(head: string): string {
+  const at = chat.indexOf(head);
+  if (at < 0) throw new Error(`Chat.tsx no longer declares ${head}`);
   let depth = 0;
   for (let i = chat.indexOf("{", at); i < chat.length; i++) {
     if (chat[i] === "{") depth++;
     if (chat[i] === "}") depth--;
     if (depth === 0) return chat.slice(at, i + 1);
   }
-  throw new Error("submit is never closed");
+  throw new Error(`${head} is never closed`);
+}
+
+/** Card 527: the door is `sendText`, which submit and the voice send both call. */
+function submitBody(): string {
+  return bodyOf("const sendText = (written: string): void => {");
 }
 
 describe("the composer's submit", () => {
   it("asks composerSubmit about the draft before anything is sent", () => {
     const body = submitBody();
-    const decided = body.indexOf("composerSubmit(draft)");
+    const decided = body.indexOf("composerSubmit(written)");
     expect(decided, "the draft is decided by the pure rule").toBeGreaterThan(-1);
     expect(body.indexOf("props.onSend(")).toBeGreaterThan(decided);
+  });
+
+  it("leaves through sendText, for a typed draft and for a draft finished by voice (card 527)", () => {
+    const submit = bodyOf("const submit = (): void => {");
+    expect(submit).toContain("sendText(draft)");
+    expect(submit.indexOf("voice.finish()")).toBeGreaterThan(-1);
+    expect(submit.indexOf("sendText(", submit.indexOf("voice.finish()"))).toBeGreaterThan(-1);
+    expect(submit, "submit itself never calls onSend").not.toContain("props.onSend(");
   });
 
   it("hands a command to the command runner and returns before onSend", () => {
@@ -41,6 +54,17 @@ describe("the composer's submit", () => {
     const back = body.indexOf("return;", run);
     expect(run).toBeGreaterThan(command);
     expect(back).toBeGreaterThan(run);
+    expect(back).toBeLessThan(body.indexOf("props.onSend("));
+  });
+
+  it("sends /loop stop as the loop's stop frame and returns before onSend (card 504, fix round 1)", () => {
+    const body = submitBody();
+    const stop = body.indexOf('kind === "loopStop"');
+    expect(stop, "the submit knows /loop stop").toBeGreaterThan(-1);
+    const frame = body.indexOf("loopStopFrame()", stop);
+    expect(frame).toBeGreaterThan(stop);
+    const back = body.indexOf("return;", frame);
+    expect(back).toBeGreaterThan(frame);
     expect(back).toBeLessThan(body.indexOf("props.onSend("));
   });
 

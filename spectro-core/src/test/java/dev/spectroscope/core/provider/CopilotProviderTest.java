@@ -306,6 +306,7 @@ class CopilotProviderTest {
                 new PStop(PStop.StopReason.END_TURN)), second);
         assertEquals(1, runtime.requests("session.send").size(), "a tool result is not a new user message");
         assertEquals(1, runtime.requests("session.create").size(), "one runtime session for the whole turn");
+        awaitCount(delivered::size, 1);
         assertEquals("hi", delivered.getFirst().path("result").path("textResultForLlm").asText());
         assertEquals("success", delivered.getFirst().path("result").path("resultType").asText());
         assertTrue(runtime.scriptFailures().isEmpty(), runtime.scriptFailures().toString());
@@ -334,6 +335,7 @@ class CopilotProviderTest {
                 new ToolResultContent("toolu_9", "ERROR: no such file", true))));
         drain(provider.stream(ask(history, List.of(readFileSpec()), new CancelSignal())));
 
+        awaitCount(delivered::size, 1);
         JsonNode result = delivered.getFirst().path("result");
         assertEquals("failure", result.path("resultType").asText(), delivered.toString());
         assertEquals("ERROR: no such file", result.path("textResultForLlm").asText());
@@ -960,6 +962,7 @@ class CopilotProviderTest {
         String stranded = createParams(0).path("sessionId").asText();
         assertTrue(runtime.requests("session.detach").stream()
                 .anyMatch(d -> stranded.equals(d.path("sessionId").asText())), runtime.requests().toString());
+        awaitCount(delivered::size, 1);
         JsonNode failed = delivered.getFirst().path("result");
         assertEquals("error", failed.path("resultType").asText(), delivered.toString());
         assertEquals("the conversation was closed", failed.path("error").asText());
@@ -1052,6 +1055,7 @@ class CopilotProviderTest {
                 new TextContent("Operator: hurry up."))));
         drain(provider.stream(ask(history, List.of(readFileSpec()), new CancelSignal())));
 
+        awaitCount(delivered::size, 1);
         JsonNode result = delivered.getFirst().path("result");
         String text = result.path("textResultForLlm").asText();
         assertTrue(text.startsWith("an image of 10 by 10 pixels\n\n"), text);
@@ -1104,6 +1108,7 @@ class CopilotProviderTest {
         List<ProviderEvent> second = drain(provider.stream(ask(history, List.of(readFileSpec()), new CancelSignal())));
 
         assertEquals(new PStop(PStop.StopReason.END_TURN), second.getLast());
+        awaitCount(delivered::size, 2);
         assertEquals("ay", delivered.get("toolu_a").path("result").path("textResultForLlm").asText());
         assertEquals("bee", delivered.get("toolu_b").path("result").path("textResultForLlm").asText());
     }
@@ -1264,5 +1269,19 @@ class CopilotProviderTest {
         String everything() {
             return requests + " " + lines + " " + outcomes;
         }
+    }
+
+    /**
+     * The fake runtime records a delivered tool result on its own thread,
+     * after the provider's stream may already have ended; on a slow runner
+     * the list was still empty when the assertions read it (0.15.2 gate).
+     * Waits up to ten seconds for {@code n} entries, then fails.
+     */
+    private static void awaitCount(java.util.function.IntSupplier size, int n) throws InterruptedException {
+        long deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos();
+        while (size.getAsInt() < n && System.nanoTime() < deadline) {
+            Thread.sleep(10);
+        }
+        assertEquals(n, size.getAsInt(), "tool results the fake runtime recorded");
     }
 }

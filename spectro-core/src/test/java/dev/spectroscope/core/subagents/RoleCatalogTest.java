@@ -22,13 +22,13 @@ class RoleCatalogTest {
 
         RoleCatalog.RoleProfile explore = profiles.get(0);
         assertTrue(explore.readOnly());
-        assertEquals(List.of("list_dir", "read_file", "glob", "grep", "report_status"), explore.tools());
+        assertEquals(List.of("list_dir", "read_file", "glob", "grep", "report_status", "send_message", "list_agents"), explore.tools());
         assertTrue(RoleCatalog.parentTools().get(0).description().contains("glob"),
                 "spawn_agent description enumerates the explore read tools");
 
         RoleCatalog.RoleProfile worker = profiles.get(1);
         assertTrue(!worker.readOnly());
-        assertEquals(List.of("list_dir", "read_file", "glob", "grep", "write_file", "run_command", "use_skill", "report_status"),
+        assertEquals(List.of("list_dir", "read_file", "glob", "grep", "write_file", "run_command", "use_skill", "report_status", "send_message", "list_agents"),
                 worker.tools());
 
         RoleCatalog.RoleProfile buildPlan = profiles.stream()
@@ -62,7 +62,7 @@ class RoleCatalogTest {
         // The grant table of card 205, first row: the read set plus the three
         // web tools — never write_file, never run_command.
         assertEquals(List.of("list_dir", "read_file", "glob", "grep", "use_skill",
-                        "web_search", "web_fetch", "browse_page", "report_status"),
+                        "web_search", "web_fetch", "browse_page", "report_status", "send_message", "list_agents"),
                 research.tools());
         assertEquals("dev", research.kind());
         assertEquals("spectroscope:research", research.skill(),
@@ -103,9 +103,9 @@ class RoleCatalogTest {
         // carries the belt whole, so it is the one whose order nothing else
         // would catch.
         List<String> expected = new ArrayList<>(WIDE_BELT);
-        expected.add("report_status");
+        expected.addAll(List.of("report_status", "send_message", "list_agents"));
         assertEquals(expected, worker.tools(),
-                "the whole belt, in the face's own registration order, report_status last");
+                "the whole belt, in the face's own registration order, then report_status and card 503's two");
     }
 
     @Test
@@ -113,7 +113,7 @@ class RoleCatalogTest {
         RoleCatalog.RoleProfile explore = RoleCatalog.roleProfiles(WIDE_BELT).stream()
                 .filter(profile -> profile.type().equals("explore")).findFirst().orElseThrow();
 
-        assertEquals(List.of("list_dir", "read_file", "glob", "grep", "report_status"),
+        assertEquals(List.of("list_dir", "read_file", "glob", "grep", "report_status", "send_message", "list_agents"),
                 explore.tools());
         assertTrue(explore.readOnly());
         // The readable half: what the role gave up, named, out of the belt it was
@@ -157,7 +157,7 @@ class RoleCatalogTest {
                 .filter(profile -> profile.type().equals("research")).findFirst().orElseThrow();
 
         assertEquals(List.of("list_dir", "read_file", "glob", "grep", "use_skill",
-                        "web_search", "web_fetch", "browse_page", "report_status"),
+                        "web_search", "web_fetch", "browse_page", "report_status", "send_message", "list_agents"),
                 research.tools());
         assertTrue(research.withholds().contains("browser_navigate"),
                 "widening the belt must not turn the research role into a browser role: "

@@ -1,0 +1,62 @@
+{
+  "page": {
+    "title": "local setup",
+    "lead": "A fixture.",
+    "version": "0.0.1",
+    "needs": {}
+  },
+  "paths": {
+    "dmg": "DMG"
+  },
+  "platformNames": {
+    "mac": "macOS",
+    "linux": "Linux"
+  },
+  "sources": {
+    "S1": {
+      "url": "https://example.com/",
+      "says": "A fixture source.",
+      "fetched": "2026-10-11"
+    }
+  },
+  "levels": [
+    {
+      "id": 1,
+      "title": "one level",
+      "goal": "A fixture level."
+    }
+  ],
+  "plates": {},
+  "steps": [
+    {
+      "id": "1.1",
+      "level": 1,
+      "title": "one step",
+      "enables": "Nothing.",
+      "applies": [
+        "dmg"
+      ],
+      "platforms": [
+        "mac"
+      ],
+      "commands": {
+        "mac": [
+          {
+            "text": "echo fixture"
+          }
+        ]
+      },
+      "check": {
+        "mac": {
+          "text": "echo fixture",
+          "kind": "command",
+          "source": "S1"
+        }
+      },
+      "probe": null,
+      "script": null,
+      "shots": [],
+      "size": []
+    }
+  ]
+}

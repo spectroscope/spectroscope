@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://spectroscope.ai/schema/workflow.schema.json",
+  "title": "spectroscope workflow file",
+  "description": "A JSON step list in the playbook's workflows/ folder (card 506). This schema describes the canonical shape, one kind field per step. The loader also reads the scenario DSL's shape, where a step is written as the one key that names its kind, and WorkflowWriter converts between the two.",
+  "type": "object",
+  "required": ["name", "steps"],
+  "additionalProperties": false,
+  "properties": {
+    "name": { "type": "string", "minLength": 1 },
+    "description": { "type": "string" },
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "oneOf": [ { "$ref": "#/$defs/prompt" }, { "$ref": "#/$defs/fanout" }, { "$ref": "#/$defs/end" } ] },
+      "description": "The last step is the one end."
+    }
+  },
+  "$defs": {
+    "text": {
+      "description": "A template. It may name {{input}}, {{previous}} and {{folder}}; a join task also {{results}}.",
+      "oneOf": [
+        { "type": "string", "minLength": 1 },
+        {
+          "type": "object",
+          "required": ["en", "de"],
+          "additionalProperties": false,
+          "properties": { "en": { "type": "string", "minLength": 1 }, "de": { "type": "string", "minLength": 1 } }
+        }
+      ]
+    },
+    "role": { "enum": ["explore", "worker"] },
+    "maxRounds": { "type": "integer", "minimum": 1, "maximum": 10 },
+    "prompt": {
+      "type": "object",
+      "required": ["kind", "template"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "prompt" },
+        "id": { "type": "string" },
+        "template": { "$ref": "#/$defs/text" },
+        "repeat_until": { "type": "string" },
+        "max_rounds": { "$ref": "#/$defs/maxRounds" }
+      },
+      "dependentRequired": { "repeat_until": ["max_rounds"], "max_rounds": ["repeat_until"] }
+    },
+    "agent": {
+      "type": "object",
+      "required": ["task"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "description": "The scenario's name for the child; the run names children itself." },
+        "role": { "$ref": "#/$defs/role" },
+        "task": { "$ref": "#/$defs/text" },
+        "steps": { "type": "array", "description": "Recorded steps of a scenario child; kept and never run." }
+      }
+    },
+    "join": {
+      "type": "object",
+      "required": ["task"],
+      "additionalProperties": false,
+      "properties": {
+        "role": { "$ref": "#/$defs/role" },
+        "task": { "$ref": "#/$defs/text" }
+      }
+    },
+    "fanout": {
+      "type": "object",
+      "required": ["kind", "agents"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "fanout" },
+        "id": { "type": "string" },
+        "label": { "type": "string" },
+        "tool": { "type": "string", "description": "The scenario's tool name; kept and never called." },
+        "agents": { "type": "array", "minItems": 1, "maxItems": 4, "items": { "$ref": "#/$defs/agent" } },
+        "join": { "$ref": "#/$defs/join" },
+        "repeat_until": { "type": "string" },
+        "max_rounds": { "$ref": "#/$defs/maxRounds" }
+      },
+      "dependentRequired": { "repeat_until": ["max_rounds"], "max_rounds": ["repeat_until"] }
+    },
+    "end": {
+      "type": "object",
+      "required": ["kind"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "const": "end" },
+        "id": { "type": "string" },
+        "result": { "type": "string" }
+      }
+    }
+  }
+}

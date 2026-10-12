@@ -162,6 +162,49 @@ public class SkillCatalogue {
         return index().stream().filter(entry -> entry.id().equals(id)).findFirst();
     }
 
+    /**
+     * One file of a catalogue skill, as a playbook import copies it (card 523).
+     *
+     * @param rel    the path below the skill's own folder, with {@code /} separators
+     * @param source where the bytes come from
+     * @param bytes  the measured size
+     */
+    public record ShelfFile(String rel, StagedInstall.Source source, long bytes) {
+    }
+
+    /**
+     * The files of one catalogue skill, relative to its folder. An entry that is not on the shelf
+     * has none.
+     *
+     * @param entry the catalogue row, looked up by id
+     * @return the files, in catalogue order
+     */
+    public static List<ShelfFile> files(Entry entry) {
+        List<ShelfFile> out = new ArrayList<>();
+        for (FileRef file : shelf().filesByDir().getOrDefault(entry.dir(), List.of())) {
+            String rel = relativeAfter(file.rel(), entry.dir() + "/");
+            if (rel != null && !rel.isEmpty()) {
+                out.add(new ShelfFile(rel, new Shelved(file.resource()), file.bytes()));
+            }
+        }
+        return List.copyOf(out);
+    }
+
+    /**
+     * The LICENSE of a catalogue pack, or empty when the pack ships none that reads.
+     *
+     * @param pack the collection name of an entry
+     * @return the licence file, {@code rel} being {@code LICENSE}
+     */
+    public static Optional<ShelfFile> licence(String pack) {
+        Resource resource = new PathMatchingResourcePatternResolver()
+                .getResource("classpath:" + CATALOGUE + "/" + pack + "/" + LICENCE_FILE);
+        if (!resource.isReadable()) {
+            return Optional.empty();
+        }
+        return Optional.of(new ShelfFile(LICENCE_FILE, new Shelved(resource), sizeOf(resource)));
+    }
+
     private static Shelf shelf() {
         Shelf known = shelf;
         if (known == null) {

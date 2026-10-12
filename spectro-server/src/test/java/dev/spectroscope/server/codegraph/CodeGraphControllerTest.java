@@ -266,6 +266,10 @@ class CodeGraphControllerTest {
         String id = sessionWorkingIn(project);
 
         assertEquals(404, controller(FOUND).view(id, tickets.mint(id), local()).getStatusCode().value());
+        CodeGraphController.Status status =
+                (CodeGraphController.Status) controller(FOUND).status(id, local()).getBody();
+        assertFalse(status.graph().exists(), "Show must not be offered for a page the view refuses");
+        assertNull(status.graph().modifiedAt());
     }
 
     @Test
@@ -334,5 +338,43 @@ class CodeGraphControllerTest {
         recorded.put(stored, gone.toString());
         assertEquals(404, controller(FOUND).status(stored, local()).getStatusCode().value());
         assertFalse(Files.exists(gone), "a folder the record names but the disk lacks is not made");
+    }
+
+    /** A sparse graph.html of the given size: no real bytes are written. */
+    private static Path graphOfSize(Path dir, long bytes) throws IOException {
+        Path html = Files.createDirectories(dir.resolve("graphify-out")).resolve("graph.html");
+        try (java.io.RandomAccessFile file = new java.io.RandomAccessFile(html.toFile(), "rw")) {
+            file.setLength(bytes);
+        }
+        return html;
+    }
+
+    @Test
+    void aGraphPageAboveTheCapIsAbsentForStatusAndViewAlike(@TempDir Path dir) throws IOException {
+        // Card 546, fix round 1: the Show row is offered when status says the
+        // graph exists, so status and view must agree on a page too large to
+        // serve; before, status said exists and the press loaded a 404.
+        graphOfSize(dir, CodeGraphController.MAX_PAGE_BYTES + 1);
+        String id = sessionWorkingIn(dir);
+        CodeGraphController c = controller(FOUND);
+
+        CodeGraphController.Status status = (CodeGraphController.Status) c.status(id, local()).getBody();
+        assertNotNull(status);
+        assertFalse(status.graph().exists(), "a page the view refuses is no graph to show");
+        assertNull(status.graph().modifiedAt());
+        assertEquals(404, c.view(id, tickets.mint(id), local()).getStatusCode().value());
+    }
+
+    @Test
+    void aGraphPageExactlyAtTheCapStillCounts(@TempDir Path dir) throws IOException {
+        graphOfSize(dir, CodeGraphController.MAX_PAGE_BYTES);
+        String id = sessionWorkingIn(dir);
+
+        CodeGraphController.Status status =
+                (CodeGraphController.Status) controller(FOUND).status(id, local()).getBody();
+
+        assertNotNull(status);
+        assertTrue(status.graph().exists());
+        assertEquals(64L * 1024 * 1024, CodeGraphController.MAX_PAGE_BYTES, "the cap the two tests stand on");
     }
 }

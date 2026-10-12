@@ -7,6 +7,7 @@ import {
   walkStep,
   type ComposerChord,
   type WalkState,
+  voiceSubmit,
 } from "./composerKeys";
 
 /** A keydown with nothing pressed and the caret at the end of `value`. */
@@ -311,5 +312,41 @@ describe("what the counter above the box reads", () => {
   it("counts the frozen list, so it cannot disagree with the text in the box", () => {
     const one = walkStep(atDraft(), "back", [{ text: "only" }], "");
     expect(recallReadout(one.state)).toEqual({ kind: "at", position: 1, total: 1 });
+  });
+});
+
+describe("Enter and Send while the microphone is on (card 527)", () => {
+  it("Enter while recording means finish the recording, then send", () => {
+    expect(voiceSubmit("recording")).toBe("finish-then-send");
+  });
+
+  it("Enter while the last words are being transcribed waits for them too", () => {
+    expect(voiceSubmit("transcribing")).toBe("finish-then-send");
+  });
+
+  it("a second Enter while finishing does nothing, so the message leaves once", () => {
+    expect(voiceSubmit("finishing")).toBe("wait");
+  });
+
+  it("Enter while the speech model loads waits, so no recording starts after a send", () => {
+    expect(voiceSubmit("warming")).toBe("wait");
+  });
+
+  it("with the microphone off Enter sends as it always did", () => {
+    expect(voiceSubmit("idle")).toBe("send");
+  });
+
+  it("Enter with an empty draft is still a send for the key rule; the call site decides", () => {
+    const chord = {
+      key: "Enter",
+      shiftKey: false,
+      altKey: false,
+      metaKey: false,
+      ctrlKey: false,
+      value: "",
+      selectionStart: 0,
+      selectionEnd: 0,
+    };
+    expect(composerKeyAction(chord)).toBe("send");
   });
 });

@@ -10,7 +10,7 @@ import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { requestCodeGraphOpen } from "../state/browserOpen";
 import { openDockPanel, openRightPanel } from "../state/layout";
-import { headerView, shortTime, type HeaderView } from "./codeGraphModel";
+import { headerView, shortTime, type CodeGraphRow, type HeaderView } from "./codeGraphModel";
 import { openCodeGraphSheet, useCodeGraph } from "./codeGraphStore";
 import "../styles/codegraph.css";
 
@@ -33,6 +33,20 @@ export function pressChip(view: HeaderView, sessionId: string | null): void {
     return;
   }
   if (view.kind === "ready" && sessionId !== null) openGraphInBrowser(sessionId);
+}
+
+/**
+ * What a code graph row of the ⋮ menu or the folder chip does (card 546).
+ * "Show" takes the chip's own path: the panel sends open_code_graph and the
+ * server builds the address and the ticket. "Update" and "Build" open the
+ * sheet on their mode.
+ */
+export function pressCodeGraphRow(row: CodeGraphRow, sessionId: string | null): void {
+  if (row === "show") {
+    if (sessionId !== null) openGraphInBrowser(sessionId);
+    return;
+  }
+  openCodeGraphSheet("build", row === "update" ? "update" : "full");
 }
 
 export function CodeGraphHeaderStatus() {

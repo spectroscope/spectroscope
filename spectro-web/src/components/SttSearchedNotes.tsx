@@ -44,3 +44,78 @@ export function SttSearchedNotes({
     </>
   );
 }
+
+/** Card 528: what runs whisper for live text on the local route. */
+export interface SttRunnerState {
+  /** The `sttRunner` setting: auto, cli or server. */
+  configured?: string | null;
+  /** What a recording runs now: server or cli. */
+  running?: string | null;
+  /** The resident whisper-server's loopback port while it runs, else null. */
+  port?: number | null;
+  /** Whether the resident whisper-server is up with the model loaded. */
+  up?: boolean | null;
+  /** True when the setting asks for the server and whisper-server is missing. */
+  fallback?: boolean | null;
+}
+
+/** The part of `/api/stt/status` about live text on the local route (card 527). */
+export interface SttLocalLive {
+  available?: boolean | null;
+  chunkMs?: number | null;
+  windowMs?: number | null;
+  /** Card 528: the runner, its port and whether the server is up. */
+  runner?: SttRunnerState | null;
+}
+
+/**
+ * Card 528: which program runs whisper for live text, and whether the resident
+ * whisper-server is up. Silent against an older server that does not say.
+ *
+ * @param runner the status's `localLive.runner`
+ * @param lang the interface language
+ * @returns the note, or null
+ */
+export function SttRunnerNote({ runner, lang }: { runner: SttRunnerState | null | undefined; lang: Lang }) {
+  if (runner === null || runner === undefined || typeof runner.running !== "string") return null;
+  let line: string;
+  if (runner.running === "server") {
+    line =
+      runner.up === true && typeof runner.port === "number"
+        ? t(lang, "set.sttRunnerState.up", { port: String(runner.port) })
+        : t(lang, "set.sttRunnerState.down");
+  } else {
+    line = t(lang, runner.fallback === true ? "set.sttRunnerState.fallback" : "set.sttRunnerState.cli");
+  }
+  return <p className="settings-note">{line}</p>;
+}
+
+/**
+ * Card 527: whether the local route writes along live, and how often a whisper
+ * run covers what was said so far. Silent when the local route cannot stream,
+ * and against an older server that does not report it.
+ *
+ * @param localLive the status's `localLive`
+ * @param wanted whether live text is switched on in this browser
+ * @param lang the interface language
+ * @returns the note, or null
+ */
+export function SttLocalLiveNote({
+  localLive,
+  wanted,
+  lang,
+}: {
+  localLive: SttLocalLive | null | undefined;
+  wanted: boolean;
+  lang: Lang;
+}) {
+  if (localLive?.available !== true || typeof localLive.chunkMs !== "number") return null;
+  const seconds = String(localLive.chunkMs / 1000);
+  return (
+    <p className="settings-note">
+      {t(lang, wanted ? "set.sttLocalLive.on" : "set.sttLocalLive.off", {
+        s: lang === "de" ? seconds.replace(".", ",") : seconds,
+      })}
+    </p>
+  );
+}

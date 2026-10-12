@@ -116,6 +116,12 @@ class RenderAllTest {
         assertEquals(0, run("--out", tmp.resolve("b").toString(), "--language", "python").exit());
         Map<String, String> first = bytesOf(tmp.resolve("a"));
         assertTrue(first.size() > 30, "a real tree was written: " + first.size());
+        for (String variant : List.of("cli-full", "library-full", "service-full")) {
+            for (String workflow : List.of("fanout-research.json", "fanout-review.json")) {
+                assertTrue(first.containsKey(variant + "/playbook/workflows/" + workflow),
+                        "card 506: the identity covers " + variant + " " + workflow);
+            }
+        }
         assertEquals(first, bytesOf(tmp.resolve("b")));
     }
 

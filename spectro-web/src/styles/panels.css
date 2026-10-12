@@ -858,6 +858,8 @@
 .context-window { margin: 2px 0 0; font-size: var(--fs-12); color: var(--text-faint); }
 /* Card 377: where the run compacts, under a headline that now names the window. */
 .context-compacts { margin: 2px 0 0; font-size: var(--fs-12); color: var(--text-faint); }
+/* Card 521: said when the run learned no window, so the share above reads as one of the fallback. */
+.context-unknown { margin: 2px 0 0; font-size: var(--fs-12); color: var(--text-faint); }
 .context-ring-mark { opacity: 0.75; }
 
 .context-parts { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; column-gap: var(--sp-3); row-gap: 2px; margin: var(--sp-3) 0; font-size: var(--fs-12); }

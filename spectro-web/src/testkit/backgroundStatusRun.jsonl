@@ -1,0 +1,33 @@
+{"type":"run_start","runId":"bba4ca24-b5b8-416e-97c8-4aa357b170e3","agentId":"main","prompt":"go","workspace":".","ts":1791745426781}
+{"type":"turn_start","agentId":"main","turn":1,"ts":1791745426781}
+{"type":"tool_call","agentId":"main","callId":"p1","name":"spawn_agents","input":{"background":true,"agents":[{"type":"explore","task":"task A"},{"type":"explore","task":"task B"}]},"ts":1791745426781}
+{"type":"agent_spawn","agentId":"explore-1","parentId":"main","task":"task A","ts":1791745426781}
+{"type":"agent_message","from":"main","to":"explore-1","role":"task","state":"submitted","text":"task A","ts":1791745426781}
+{"type":"agent_spawn","agentId":"explore-2","parentId":"main","task":"task B","ts":1791745426781}
+{"type":"agent_message","from":"main","to":"explore-2","role":"task","state":"submitted","text":"task B","ts":1791745426781}
+{"type":"tool_result","agentId":"main","callId":"p1","output":"Started 2 children in the background: explore-1 (explore), explore-2 (explore). They run on this chat's slots; their status lines and results reach you as messages at your next step. Ask one how far it is with send_message, list them with list_agents, and collect their results with wait_agents. If your turn ends while they still run, the run waits for them.","isError":false,"durationMs":0,"ts":1791745426781}
+{"type":"turn_start","agentId":"main","turn":2,"ts":1791745426781}
+{"type":"run_start","runId":"bbc76cfb-f592-4773-8093-6bd94f596c62","agentId":"explore-1","parentId":"main","prompt":"task A","workspace":".","ts":1791745426781}
+{"type":"turn_start","agentId":"explore-1","turn":1,"ts":1791745426781}
+{"type":"run_start","runId":"3a899156-99ea-443d-8e75-e853214590c2","agentId":"explore-2","parentId":"main","prompt":"task B","workspace":".","ts":1791745426781}
+{"type":"turn_start","agentId":"explore-2","turn":1,"ts":1791745426781}
+{"type":"tool_call","agentId":"explore-1","callId":"a1","name":"report_status","input":{"message":"reading the parser"},"ts":1791745426781}
+{"type":"agent_message","from":"explore-1","to":"main","role":"status","state":"working","text":"reading the parser","ts":1791745426782}
+{"type":"tool_result","agentId":"explore-1","callId":"a1","output":"ok","isError":false,"durationMs":0,"ts":1791745426782}
+{"type":"turn_start","agentId":"explore-1","turn":2,"ts":1791745426782}
+{"type":"text_delta","agentId":"explore-1","text":"the parser has two callers","ts":1791745426782}
+{"type":"run_end","runId":"bbc76cfb-f592-4773-8093-6bd94f596c62","stopReason":"end_turn","ts":1791745426782}
+{"type":"agent_message","from":"explore-1","to":"main","role":"result","state":"completed","text":"[explore-1] result (tokens: 0 in / 0 out):\nthe parser has two callers","ts":1791745426782}
+{"type":"tool_call","agentId":"main","callId":"p2","name":"list_dir","input":{},"ts":1791745426793}
+{"type":"tool_result","agentId":"main","callId":"p2","output":"ERROR: unknown tool: list_dir","isError":true,"durationMs":0,"ts":1791745426793}
+{"type":"turn_start","agentId":"main","turn":3,"ts":1791745426793}
+{"type":"agent_message","from":"explore-1","to":"main","role":"peer","state":"received","text":"Status of explore-1: reading the parser","label":"a81ecaed-4797-474b-9254-8af44088a199","ts":1791745426793}
+{"type":"agent_message","from":"explore-1","to":"main","role":"peer","state":"received","text":"Result of explore-1 (completed):\n[explore-1] result (tokens: 0 in / 0 out):\nthe parser has two callers","label":"a3f4912a-d400-4d63-973b-4d74004ef5ff","ts":1791745426793}
+{"type":"text_delta","agentId":"main","text":"waiting for B","ts":1791745426794}
+{"type":"text_delta","agentId":"explore-2","text":"B found the test","ts":1791745426994}
+{"type":"run_end","runId":"3a899156-99ea-443d-8e75-e853214590c2","stopReason":"end_turn","ts":1791745426994}
+{"type":"agent_message","from":"explore-2","to":"main","role":"result","state":"completed","text":"[explore-2] result (tokens: 0 in / 0 out):\nB found the test","ts":1791745426994}
+{"type":"agent_message","from":"explore-2","to":"main","role":"peer","state":"received","text":"Result of explore-2 (completed):\n[explore-2] result (tokens: 0 in / 0 out):\nB found the test","label":"0dfc7f0c-755b-41d1-b137-376f63ffd741","ts":1791745426994}
+{"type":"turn_start","agentId":"main","turn":4,"ts":1791745426995}
+{"type":"text_delta","agentId":"main","text":"both in","ts":1791745426995}
+{"type":"run_end","runId":"bba4ca24-b5b8-416e-97c8-4aa357b170e3","stopReason":"end_turn","ts":1791745426995}

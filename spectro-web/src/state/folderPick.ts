@@ -12,13 +12,13 @@ import { useEffect, useSyncExternalStore } from "react";
 import { t } from "../i18n/i18n";
 import { useLang } from "./lang";
 
-/** The fields that carry a Choose button, each with a note of its own. */
-export type PickSlot = "pane" | "lyzrDir" | "lyzrPlaybook";
+/** The fields that carry a Choose button, each with a note of its own; pbImport is the bundle import's target (card 524). */
+export type PickSlot = "pane" | "lyzrDir" | "lyzrPlaybook" | "pbImport";
 
 /** The i18n key of a slot's note, or null for none. */
 type NoteKey = "pick.busy" | "pick.paste" | null;
 
-let notes: Record<PickSlot, NoteKey> = { pane: null, lyzrDir: null, lyzrPlaybook: null };
+let notes: Record<PickSlot, NoteKey> = { pane: null, lyzrDir: null, lyzrPlaybook: null, pbImport: null };
 const listeners = new Set<() => void>();
 
 function setNote(slot: PickSlot, key: NoteKey): void {
@@ -73,6 +73,6 @@ export function usePickNote(slot: PickSlot): string | null {
 
 /** Test seam: clear every note. */
 export function __resetFolderPick(): void {
-  notes = { pane: null, lyzrDir: null, lyzrPlaybook: null };
+  notes = { pane: null, lyzrDir: null, lyzrPlaybook: null, pbImport: null };
   for (const l of listeners) l();
 }

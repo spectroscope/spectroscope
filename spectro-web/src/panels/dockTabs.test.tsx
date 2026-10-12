@@ -59,9 +59,9 @@ function renderDock(extra: Record<string, unknown> = {}): string {
 }
 
 describe("a switch with two positions (criterion 1)", () => {
-  it("defaults to side by side: owner call 1, answered 2026-09-29", () => {
-    expect(DEFAULT_LAYOUT.dockTabs).toBe(false);
-    expect(__getState().dockTabs).toBe(false);
+  it("defaults to tabs on a new installation: card 517, owner 2026-10-11", () => {
+    expect(DEFAULT_LAYOUT.dockTabs).toBe(true);
+    expect(__getState().dockTabs).toBe(true);
   });
 
   it("is kept per browser and read at hydration, before the first render", () => {
@@ -105,9 +105,11 @@ describe("a switch with two positions (criterion 1)", () => {
     expect(sw).toContain('type="checkbox"');
     expect(sw).toContain(`title="${dict["dock.tabsTitle"].en}"`);
     expect(sw).toContain(`>${dict["dock.tabs"].en}<`);
-    expect(sw).not.toContain("checked");
-    setDockTabs(true);
-    expect(renderDock()).toMatch(/<label class="dock-tabs-switch"[^>]*>[\s\S]*?checked=""/);
+    expect(sw).toContain('checked=""');
+    setDockTabs(false);
+    const off = renderDock().match(/<label class="dock-tabs-switch"[^>]*>[\s\S]*?<\/label>/)?.[0] ?? "";
+    expect(off).toContain('type="checkbox"');
+    expect(off).not.toContain("checked");
   });
 });
 
@@ -198,6 +200,10 @@ describe("tabs mode: exactly one panel while the dock is open (criterion 2)", ()
 });
 
 describe("side by side is unchanged (criterion 3)", () => {
+  // Card 517: a fresh store starts in tabs mode, so the side by side cases
+  // below set their own starting point.
+  beforeEach(() => setDockTabs(false));
+
   it("opening a panel adds it beside the others", () => {
     openDockPanel("files");
     openDockPanel("plan");
@@ -214,6 +220,10 @@ describe("side by side is unchanged (criterion 3)", () => {
 });
 
 describe("switching keeps what it can (criterion 4)", () => {
+  // Card 517: a fresh store starts in tabs mode, so the side by side cases
+  // below set their own starting point.
+  beforeEach(() => setDockTabs(false));
+
   it("side by side to tabs keeps the panel that had focus", () => {
     openDockPanel("files");
     openDockPanel("plan");

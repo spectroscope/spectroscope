@@ -293,6 +293,17 @@ import java.util.function.Function;
  *                              in that folder starts with the switch on and
  *                              knows what switching off removes. Ships empty:
  *                              the switch is off
+ * @param sttRunner             card 528: what runs whisper on the local live
+ *                              route. {@code cli} runs whisper-cli once per
+ *                              chunk and loads the model every time;
+ *                              {@code server} keeps one whisper-server with the
+ *                              model loaded; {@code auto} takes the server when
+ *                              whisper-server is installed. Ships {@code auto}
+ * @param agentMessaging        card 503: whether agents message each other.
+ *                              On, a session offers send_message and
+ *                              list_agents and takes messages from other
+ *                              sessions; off, both tools leave the request and
+ *                              the process refuses every message. Ships on
  */
 public record SpectroConfig(
         String provider,
@@ -365,7 +376,97 @@ public record SpectroConfig(
         // Card 493: the read share. Appended last, same rule.
         @LocalModeKnob int readSharePercent,
         // Card 493: what the Local mode switch wrote. Appended last, same rule.
-        List<String> localModeKeys) {
+        List<String> localModeKeys,
+        // Card 528: auto, cli or server. Appended last, same rule.
+        String sttRunner,
+        // Card 503: agent messaging on or off. Appended last, same rule.
+        boolean agentMessaging) {
+
+    /** Compat: the v0.15.1 arity, which knew no speech runner (card 528)
+     *  and no agent messaging switch (card 503).
+     *  Every caller that built a config positionally against v0.15.1, and
+     *  every older compat below that delegates to that arity, keeps compiling
+     *  and gets the shipped {@code auto} and the shipped messaging on.
+     *
+     * @param provider              the LLM backend
+     * @param model                 the model id
+     * @param baseUrl               the legacy provider address
+     * @param compactionThreshold   input-token level that triggers compaction
+     * @param permissionMode        ask / auto / readonly
+     * @param autoApprove           the allowlist rules
+     * @param imageProvider         the image backend
+     * @param thinking              TRUE requests the reasoning stream
+     * @param mcpServers            the configured MCP servers
+     * @param maxRetries            provider retries
+     * @param promptCaching         TRUE asks the provider to cache the prompt
+     * @param hooks                 the configured shell hooks
+     * @param workspace             the workspace directory
+     * @param logLevel              file-diagnostics level
+     * @param imageModel            the image model id
+     * @param sttModel              the transcription model id
+     * @param sttProvider           auto / local / openai
+     * @param sttLanguage           auto or a language code
+     * @param chromeBinary          the browser binary
+     * @param otlpEndpoint          the trace endpoint
+     * @param otlpBasicAuth         the trace credentials
+     * @param ollamaBaseUrl         ollama's address
+     * @param lmstudioBaseUrl       LM Studio's address
+     * @param searxngUrl            the SearXNG instance
+     * @param allowLocalhost        TRUE lets the net fence dial loopback
+     * @param headlessMcp           TRUE mounts MCP servers in unattended runs
+     * @param progressGuardWrites   identical-write count that speaks
+     * @param progressGuardFailures failing-call count that speaks
+     * @param progressGuardPlanTurns planless turns that speak
+     * @param continuationBudget    continuations per run
+     * @param maxTurns              the runaway-loop brake
+     * @param llamacppBaseUrl       llama.cpp's address
+     * @param questionsPerRun       the ask budget
+     * @param maxQuestionOptions    options per question
+     * @param maxQuestionChars      characters per question
+     * @param commandTimeoutSeconds the shell budget per run_command call
+     * @param chatReserveWidth      pixels of chat the dock may never take
+     * @param dockMaxWidth          the dock's ceiling
+     * @param maxTokens             the completion budget
+     * @param subagentBudgetSeconds the child run budget floor
+     * @param rtkFilter             the rtk proxy switch
+     * @param subagentBudgetTokens  a child agent's token budget
+     * @param desktopNotifications  the cron end notification switch
+     * @param toolResultElision     the switch that leaves old, large tool results out
+     * @param toolGroupsOff         the switched-off tool groups
+     * @param sessionsPerChat       the session count of one chat
+     * @param careParagraph         the care paragraph switch
+     * @param readSharePercent      the read share
+     * @param localModeKeys         what the Local mode switch wrote */
+    public SpectroConfig(String provider, String model, String baseUrl,
+                         Integer compactionThreshold, String permissionMode,
+                         List<String> autoApprove, String imageProvider, boolean thinking,
+                         List<McpServerConfig> mcpServers, int maxRetries, boolean promptCaching,
+                         List<HookConfig> hooks, String workspace, String logLevel,
+                         String imageModel, String sttModel, String sttProvider,
+                         String sttLanguage, String chromeBinary, String otlpEndpoint,
+                         String otlpBasicAuth, String ollamaBaseUrl, String lmstudioBaseUrl,
+                         String searxngUrl, boolean allowLocalhost, boolean headlessMcp,
+                         int progressGuardWrites, int progressGuardFailures,
+                         int progressGuardPlanTurns, int continuationBudget, int maxTurns,
+                         String llamacppBaseUrl, int questionsPerRun, int maxQuestionOptions,
+                         int maxQuestionChars, int commandTimeoutSeconds, int chatReserveWidth,
+                         int dockMaxWidth, int maxTokens, int subagentBudgetSeconds,
+                         String rtkFilter, int subagentBudgetTokens,
+                         String desktopNotifications, String toolResultElision,
+                         List<String> toolGroupsOff, Integer sessionsPerChat, String careParagraph,
+                         int readSharePercent, List<String> localModeKeys) {
+        this(provider, model, baseUrl, compactionThreshold, permissionMode, autoApprove,
+                imageProvider, thinking, mcpServers, maxRetries, promptCaching, hooks, workspace,
+                logLevel, imageModel, sttModel, sttProvider, sttLanguage, chromeBinary,
+                otlpEndpoint, otlpBasicAuth, ollamaBaseUrl, lmstudioBaseUrl, searxngUrl,
+                allowLocalhost, headlessMcp, progressGuardWrites, progressGuardFailures,
+                progressGuardPlanTurns, continuationBudget, maxTurns, llamacppBaseUrl,
+                questionsPerRun, maxQuestionOptions, maxQuestionChars, commandTimeoutSeconds,
+                chatReserveWidth, dockMaxWidth, maxTokens, subagentBudgetSeconds, rtkFilter,
+                subagentBudgetTokens, desktopNotifications, toolResultElision, toolGroupsOff,
+                sessionsPerChat, careParagraph, readSharePercent, localModeKeys,
+                DEFAULT_STT_RUNNER, DEFAULT_AGENT_MESSAGING);
+    }
 
     /** Compat: the v0.14.4 arity, which knew no session count per chat
      *  (card 490). Every caller that built a config positionally against
@@ -446,7 +547,7 @@ public record SpectroConfig(
                 chatReserveWidth, dockMaxWidth, maxTokens, subagentBudgetSeconds, rtkFilter,
                 subagentBudgetTokens, desktopNotifications, toolResultElision, toolGroupsOff,
                 null, DEFAULT_CARE_PARAGRAPH, DEFAULT_READ_SHARE_PERCENT,
-                List.of());
+                List.of(), DEFAULT_STT_RUNNER, DEFAULT_AGENT_MESSAGING);
     }
 
     /** Compat: the arity main had before cards 476, 467 and 466, which knew
@@ -524,7 +625,7 @@ public record SpectroConfig(
                 commandTimeoutSeconds, chatReserveWidth, dockMaxWidth, maxTokens,
                 subagentBudgetSeconds, rtkFilter, subagentBudgetTokens,
                 DEFAULT_DESKTOP_NOTIFICATIONS, DEFAULT_TOOL_RESULT_ELISION, List.of(), null,
-                DEFAULT_CARE_PARAGRAPH, DEFAULT_READ_SHARE_PERCENT, List.of());
+                DEFAULT_CARE_PARAGRAPH, DEFAULT_READ_SHARE_PERCENT, List.of(), DEFAULT_STT_RUNNER, DEFAULT_AGENT_MESSAGING);
     }
 
     /** Compat: the pre-card-394 arity, which knew no token budget for a child.
@@ -1374,6 +1475,28 @@ public record SpectroConfig(
     /** {@code sttLanguage}'s known values — "auto" lets the model detect; a code
      *  pins dictation to one language on BOTH transcription routes. */
     public static final Set<String> KNOWN_STT_LANGUAGES = Set.of("auto", "de", "en");
+
+    /** {@code sttRunner} auto: whisper-server when it is installed, whisper-cli
+     *  otherwise (card 528). */
+    public static final String STT_RUNNER_AUTO = "auto";
+
+    /** {@code sttRunner} cli: one whisper-cli process per chunk, the model
+     *  loaded by every process (card 527). */
+    public static final String STT_RUNNER_CLI = "cli";
+
+    /** {@code sttRunner} server: one whisper-server on a loopback port keeps the
+     *  model loaded (card 528). */
+    public static final String STT_RUNNER_SERVER = "server";
+
+    /** {@code sttRunner}'s known values: the single source for the load-time
+     *  check and {@link SettingsWriter}'s write-time check. */
+    public static final Set<String> KNOWN_STT_RUNNERS =
+            Set.of(STT_RUNNER_AUTO, STT_RUNNER_CLI, STT_RUNNER_SERVER);
+
+    /** The shipped {@code sttRunner}: auto. What auto picks is
+     *  {@link SttStreaming#STT_RUNNER_AUTO_PICK}, chosen by measurement. */
+    @Governs(kind = Governs.Kind.SETTABLE, unit = Governs.Unit.NONE, key = "sttRunner")
+    public static final String DEFAULT_STT_RUNNER = STT_RUNNER_AUTO;
     static final Set<String> KNOWN_LOG_LEVELS =
             Set.of("error", "warn", "info", "debug", "trace");
     /** {@code permissionMode}'s known values in the order the mode switch
@@ -1488,6 +1611,10 @@ public record SpectroConfig(
     @Governs(kind = Governs.Kind.SETTABLE, unit = Governs.Unit.NONE, key = "careParagraph")
     public static final String DEFAULT_CARE_PARAGRAPH = CARE_PARAGRAPH_OFF;
 
+    /** The shipped {@code agentMessaging}: on, the owner's word of 2026-10-10
+     *  ("aktiviere das per Default"). Card 503. */
+    public static final boolean DEFAULT_AGENT_MESSAGING = true;
+
     /** The shipped {@code readSharePercent} (card 493): the value of
      *  {@link dev.spectroscope.core.tools.ReadBudget#WINDOW_SHARE_PERCENT},
      *  read from it so the two cannot disagree. */
@@ -1586,7 +1713,7 @@ public record SpectroConfig(
                 commandTimeoutSeconds, chatReserveWidth, dockMaxWidth, maxTokens,
                 subagentBudgetSeconds, value, subagentBudgetTokens, desktopNotifications,
                 toolResultElision, toolGroupsOff, sessionsPerChat, careParagraph,
-                readSharePercent, localModeKeys);
+                readSharePercent, localModeKeys, sttRunner, agentMessaging);
     }
 
     /**
@@ -1615,7 +1742,7 @@ public record SpectroConfig(
                 commandTimeoutSeconds, chatReserveWidth, dockMaxWidth, maxTokens,
                 subagentBudgetSeconds, rtkFilter, subagentBudgetTokens, value,
                 toolResultElision, toolGroupsOff, sessionsPerChat, careParagraph,
-                readSharePercent, localModeKeys);
+                readSharePercent, localModeKeys, sttRunner, agentMessaging);
     }
 
     /**
@@ -1647,7 +1774,7 @@ public record SpectroConfig(
                 commandTimeoutSeconds, chatReserveWidth, dockMaxWidth, maxTokens,
                 subagentBudgetSeconds, rtkFilter, subagentBudgetTokens, desktopNotifications,
                 toolResultElision, value, sessionsPerChat, careParagraph,
-                readSharePercent, localModeKeys);
+                readSharePercent, localModeKeys, sttRunner, agentMessaging);
     }
 
     private static final ObjectMapper JSON = new ObjectMapper();
@@ -2134,6 +2261,8 @@ public record SpectroConfig(
         validateKnown("careParagraph", base.careParagraph(),
                 KNOWN_CARE_PARAGRAPH_VALUES,
                 CARE_PARAGRAPH_ON + ", " + CARE_PARAGRAPH_OFF);
+        validateKnown("sttRunner", base.sttRunner(), KNOWN_STT_RUNNERS,
+                STT_RUNNER_AUTO + ", " + STT_RUNNER_CLI + ", " + STT_RUNNER_SERVER);
 
         // Local providers without an explicitly set model: use sensible local defaults
         // instead of the Claude id.
@@ -2161,7 +2290,8 @@ public record SpectroConfig(
                         base.subagentBudgetTokens(), base.desktopNotifications(),
                         base.toolResultElision(), base.toolGroupsOff(),
                         base.sessionsPerChat(), base.careParagraph(),
-                        base.readSharePercent(), base.localModeKeys());
+                        base.readSharePercent(), base.localModeKeys(),
+                        base.sttRunner(), base.agentMessaging());
             }
         }
         return base;
@@ -2254,7 +2384,11 @@ public record SpectroConfig(
             new FieldProbe("careParagraph", p -> p.careParagraph),
             // Card 493, appended last, same rule.
             new FieldProbe("readSharePercent", p -> p.readSharePercent),
-            new FieldProbe("localModeKeys", p -> p.localModeKeys));
+            new FieldProbe("localModeKeys", p -> p.localModeKeys),
+            // Card 528, appended last, same rule.
+            new FieldProbe("sttRunner", p -> p.sttRunner),
+            // Card 503, appended last, same rule.
+            new FieldProbe("agentMessaging", p -> p.agentMessaging));
 
     /** The provenance probes' field names, in {@link #FIELD_PROBES} order — for
      *  the reflective pin only: {@code KnownKeysDriftTest} holds the probe list
@@ -2689,7 +2823,7 @@ public record SpectroConfig(
                 commandTimeoutSeconds, chatReserveWidth, dockMaxWidth, maxTokens,
                 subagentBudgetSeconds, rtkFilter, subagentBudgetTokens, desktopNotifications,
                 toolResultElision, toolGroupsOff, sessionsPerChat, careParagraph,
-                readSharePercent, localModeKeys);
+                readSharePercent, localModeKeys, sttRunner, agentMessaging);
     }
 
     /** Whether {@code provider} is a selectable LLM backend — the single source
@@ -3727,6 +3861,10 @@ public record SpectroConfig(
         public Integer readSharePercent;
         // Card 493: the keys the Local mode switch wrote, by name.
         public List<String> localModeKeys;
+        // Card 528: auto, cli or server.
+        public String sttRunner;
+        // Card 503: agent messaging on or off.
+        public Boolean agentMessaging;
         // Jackson deserializes the Claude-Desktop-shaped object here; the key is the
         // server name (folded in by toServerList). LinkedHashMap preserves order.
         // A layer that defines mcpServers replaces the whole block below it — the
@@ -3805,6 +3943,8 @@ public record SpectroConfig(
             out.readSharePercent = Optional.ofNullable(higher.readSharePercent).orElse(readSharePercent);
             // Card 493: a whole list, like toolGroupsOff.
             out.localModeKeys = Optional.ofNullable(higher.localModeKeys).orElse(localModeKeys);
+            out.sttRunner = Optional.ofNullable(higher.sttRunner).orElse(sttRunner);
+            out.agentMessaging = Optional.ofNullable(higher.agentMessaging).orElse(agentMessaging);
             // Whole-block replacement: the higher layer's mcpServers, if it defines one
             // at all, replaces this layer's block wholesale.
             out.mcpServers = Optional.ofNullable(higher.mcpServers).orElse(mcpServers);
@@ -3876,7 +4016,9 @@ public record SpectroConfig(
                     Optional.ofNullable(sessionsPerChat).orElse(DEFAULTS.sessionsPerChat()),
                     Optional.ofNullable(careParagraph).orElse(DEFAULTS.careParagraph()),
                     Optional.ofNullable(readSharePercent).orElse(DEFAULTS.readSharePercent()),
-                    Optional.ofNullable(localModeKeys).orElse(DEFAULTS.localModeKeys()));
+                    Optional.ofNullable(localModeKeys).orElse(DEFAULTS.localModeKeys()),
+                    Optional.ofNullable(sttRunner).orElse(DEFAULTS.sttRunner()),
+                    Optional.ofNullable(agentMessaging).orElse(DEFAULTS.agentMessaging()));
         }
 
         /**

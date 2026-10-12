@@ -48,8 +48,25 @@ class DoctorVoiceLineTest {
         DoctorCommand.Line line = DoctorCommand.voiceInputLine(found(), MODEL, true, "settings");
 
         assertEquals(DoctorCommand.Kind.PASS, line.kind());
-        assertEquals("voice input: whisper-cli + ggml-small.bin ready (source: settings) (/voice)",
-                line.message());
+        assertEquals("voice input: whisper-cli + ggml-small.bin ready (source: settings) (/voice);"
+                + " live text in the app every 2 s (chunk step 2000 ms)", line.message());
+    }
+
+    @Test
+    void theReadyLineNamesTheChunkStepOfLocalLiveText() {
+        // Card 527: the local route writes along live, and the doctor says how
+        // often a whisper run covers the open window.
+        DoctorCommand.Line line = DoctorCommand.voiceInputLine(found(), MODEL, true, "default");
+
+        assertTrue(line.message().contains("chunk step "
+                + dev.spectroscope.core.config.SttStreaming.STT_LOCAL_CHUNK_MS + " ms"), line.message());
+    }
+
+    @Test
+    void aMissingWhisperSaysNothingAboutLiveText() {
+        DoctorCommand.Line line = DoctorCommand.voiceInputLine(missing(), MODEL, true, "default");
+
+        assertTrue(!line.message().contains("chunk step"), line.message());
     }
 
     @Test
@@ -61,5 +78,39 @@ class DoctorVoiceLineTest {
         assertTrue(line.message().contains("model (source: default) missing"), line.message());
         assertFalse(line.message().contains("/usr/sbin"),
                 "the folder list is for a missing binary only: " + line.message());
+    }
+
+    private static final ToolPath.Lookup SERVER =
+            new ToolPath.Lookup("whisper-server", "/opt/homebrew/bin/whisper-server", SEARCHED);
+    private static final ToolPath.Lookup NO_SERVER = new ToolPath.Lookup("whisper-server", null, SEARCHED);
+
+    @Test
+    void theRunnerLineNamesTheResidentServerTheAppStartsOnTheLoopback() {
+        // Card 528 criterion 4.
+        DoctorCommand.Line line = DoctorCommand.voiceRunnerLine("auto", SERVER, found());
+
+        assertEquals(DoctorCommand.Kind.INFO, line.kind());
+        assertEquals("voice runner: sttRunner auto runs whisper-server (/opt/homebrew/bin/whisper-server);"
+                + " the app starts it on 127.0.0.1 and a free port on the first press, keeps the model"
+                + " loaded and stops it after 30 idle minutes; its port and whether it is up are in"
+                + " /api/stt/status of the running app", line.message());
+    }
+
+    @Test
+    void theRunnerLineSaysWhisperCliLoadsTheModelOnEveryPress() {
+        DoctorCommand.Line line = DoctorCommand.voiceRunnerLine("cli", SERVER, found());
+
+        assertEquals("voice runner: sttRunner cli runs whisper-cli (/opt/homebrew/bin/whisper-cli);"
+                + " the model loads on every press", line.message());
+    }
+
+    @Test
+    void theRunnerLineSaysWhyWhisperCliRunsWhenTheServerIsMissing() {
+        DoctorCommand.Line line = DoctorCommand.voiceRunnerLine("server", NO_SERVER, found());
+
+        assertTrue(line.message().startsWith("voice runner: sttRunner server runs whisper-cli"), line.message());
+        assertTrue(line.message().contains("whisper-server missing (searched " + String.join(", ", SEARCHED) + ")"),
+                line.message());
+        assertTrue(line.message().contains("brew install whisper-cpp"), line.message());
     }
 }

@@ -73,3 +73,4 @@ docs/guide-assets/demo-home/.spectro/sessions-index.json
 # ones are tracked, everything the run adds is byproduct (see demo-home/README.md)
 docs/guide-assets/demo-home/.spectro/llm-wire/
 docs/guide-assets/demo-home/spectro-demo/
+docs/local-setup/.webp-cache/

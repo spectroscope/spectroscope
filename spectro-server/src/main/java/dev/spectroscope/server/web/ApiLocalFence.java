@@ -119,6 +119,12 @@ public class ApiLocalFence implements Filter {
         if ("/api/analyze".equals(path)) {
             return AnalyzeController.MAX_BODY_BYTES;
         }
+        if ("/api/playbooks/write".equals(path)) {
+            return dev.spectroscope.server.playbooks.PlaybookController.MAX_WRITE_BODY_BYTES;
+        }
+        if ("/api/playbooks/import".equals(path)) {
+            return dev.spectroscope.server.playbooks.PlaybookController.MAX_IMPORT_BODY_BYTES;
+        }
         return Long.MAX_VALUE;
     }
 

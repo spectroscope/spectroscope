@@ -30,7 +30,7 @@ public final class PlaybookRecorder implements AutoCloseable {
     @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.BYTES)
     public static final long DEFAULT_CEILING_BYTES = 16L * 1024 * 1024;
     public static final Set<String> TYPES = Set.of("playbook_start", "step_start", "step_end", "check", "nod",
-            "privacy", "playbook_end");
+            "privacy", "playbook_end", "workflow_start", "workflow_step", "workflow_end");
     private static final Pattern SESSION_ID = Pattern.compile("[A-Za-z0-9][A-Za-z0-9-]*");
     private static final Pattern RUN_ID = Pattern.compile("[0-9a-f]{12}");
     private static final ObjectMapper JSON = new ObjectMapper();

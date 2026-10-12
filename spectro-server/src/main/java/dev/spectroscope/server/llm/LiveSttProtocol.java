@@ -46,6 +46,38 @@ public final class LiveSttProtocol {
     /** The default live model, measured present in the account's model list. */
     public static final String DEFAULT_MODEL = "gpt-live-transcribe";
 
+    /** Where the local route's runs happen, named on the llm-wire record the
+     *  way the batch route names it. */
+    public static final String LOCAL_URL = "process://whisper-cli";
+
+    /**
+     * Where the local route's runs happen, by program (card 528). The port of a
+     * resident whisper-server is not named: the record is a file on disk.
+     *
+     * @param engine {@code whisper-cli} or {@code whisper-server}
+     * @return {@code process://} and the program
+     */
+    public static String localUrl(String engine) {
+        return "process://" + (engine == null || engine.isBlank() ? "whisper-cli" : engine);
+    }
+
+    /** The rate whisper.cpp reads, and so the rate the browser captures at
+     *  for the local route. */
+    public static final int LOCAL_RATE = 16_000;
+
+    /** A chunk run's answer: the open window's text so far. */
+    public static final String LOCAL_PARTIAL = "spectro.local.partial";
+
+    /** A window closed on a sentence end or at its cap; the recording goes on. */
+    public static final String LOCAL_WINDOW = "spectro.local.window";
+
+    /** The last run after the commit: the transcript of the last window. */
+    public static final String LOCAL_FINAL = "spectro.local.final";
+
+    /** The warm up loads the speech model, so the browser shows the loading
+     *  card until ready (card 528). Not sent when the model is resident. */
+    public static final String LOCAL_LOADING = "spectro.local.loading";
+
     private static final ObjectMapper JSON = new ObjectMapper();
 
     private LiveSttProtocol() {
@@ -58,8 +90,17 @@ public final class LiveSttProtocol {
         READY,
         /** A guess, to be shown faded and replaced. */
         PARTIAL,
+        /** A guess that REPLACES everything shown for the open window: the
+         *  local route runs whisper over the whole window every step, so each
+         *  answer is the window's text so far, not a delta (card 527). */
+        REPLACE,
+        /** The transcript of a window that closed while the speaker goes on:
+         *  final for that window, and the recording continues (card 527). */
+        WINDOW,
         /** The transcript, which replaces every partial before it. */
         FINAL,
+        /** The local route loads its speech model before ready (card 528). */
+        LOADING,
         /** The far side refused something, with a sentence. */
         ERROR,
         /** A real event with nothing in it for a composer. */
@@ -116,6 +157,80 @@ public final class LiveSttProtocol {
         return frame.toString();
     }
 
+    /**
+     * The handshake for the local route (card 527). Same shape as the hosted
+     * one so the record reads alike, with the facts that are true here: 16 kHz,
+     * the model file, the dictation language and the chunk step.
+     *
+     * @param modelFile the whisper model's file name
+     * @param language the {@code sttLanguage} setting
+     * @param chunkMs how often a run covers the open window
+     * @return the frame, ready to send
+     */
+    public static String localSessionUpdate(String modelFile, String language, long chunkMs) {
+        return localSessionUpdate(modelFile, language, chunkMs, "whisper-cli");
+    }
+
+    /**
+     * The local handshake with the program that runs whisper (card 528).
+     *
+     * @param modelFile the whisper model's file name
+     * @param language the {@code sttLanguage} setting
+     * @param chunkMs how often a run covers the open window
+     * @param engine {@code whisper-cli} or {@code whisper-server}
+     * @return the frame, ready to send
+     */
+    public static String localSessionUpdate(String modelFile, String language, long chunkMs, String engine) {
+        ObjectNode frame = JSON.createObjectNode();
+        frame.put("type", "session.update");
+        ObjectNode session = frame.putObject("session");
+        session.put("type", "transcription");
+        ObjectNode format = session.putObject("audio").putObject("input").putObject("format");
+        format.put("type", "audio/pcm");
+        format.put("rate", LOCAL_RATE);
+        session.put("engine", engine == null || engine.isBlank() ? "whisper-cli" : engine);
+        session.put("model", modelFile == null ? "" : modelFile);
+        session.put("language", language == null || language.isBlank() ? "auto" : language);
+        session.put("chunkMs", chunkMs);
+        return frame.toString();
+    }
+
+    /**
+     * One answer of the local route.
+     *
+     * @param type {@link #LOCAL_PARTIAL}, {@link #LOCAL_WINDOW} or {@link #LOCAL_FINAL}
+     * @param text what whisper heard in the window
+     * @param chunk the run's number in this session, from 1
+     * @param durationMs the run's wall time, model load included
+     * @param audioMs how much audio the run covered
+     * @param skipped how many steps were skipped so far because a run was in flight
+     * @return the frame, as the record keeps it
+     */
+    public static String localResult(String type, String text, int chunk, long durationMs,
+            long audioMs, int skipped) {
+        ObjectNode frame = JSON.createObjectNode();
+        frame.put("type", type);
+        frame.put("text", text == null ? "" : text);
+        frame.put("chunk", chunk);
+        frame.put("durationMs", durationMs);
+        frame.put("audioMs", audioMs);
+        frame.put("skipped", skipped);
+        return frame.toString();
+    }
+
+    /**
+     * The local route's loading frame (card 528).
+     *
+     * @param engine the program that loads the model
+     * @return the frame, as the record keeps it
+     */
+    public static String localLoading(String engine) {
+        ObjectNode frame = JSON.createObjectNode();
+        frame.put("type", LOCAL_LOADING);
+        frame.put("engine", engine == null ? "" : engine);
+        return frame.toString();
+    }
+
     /** The frame that says the speaker let go of the button. */
     public static String commit() {
         return "{\"type\":\"input_audio_buffer.commit\"}";
@@ -135,6 +250,18 @@ public final class LiveSttProtocol {
         String type = frame.path("type").asText("");
         if (type.equals("session.updated")) {
             return new Incoming(Kind.READY, null);
+        }
+        if (type.equals(LOCAL_PARTIAL)) {
+            return new Incoming(Kind.REPLACE, frame.path("text").asText(""));
+        }
+        if (type.equals(LOCAL_WINDOW)) {
+            return new Incoming(Kind.WINDOW, frame.path("text").asText(""));
+        }
+        if (type.equals(LOCAL_FINAL)) {
+            return new Incoming(Kind.FINAL, frame.path("text").asText(""));
+        }
+        if (type.equals(LOCAL_LOADING)) {
+            return new Incoming(Kind.LOADING, frame.path("engine").asText(""));
         }
         if (type.endsWith("input_audio_transcription.delta")) {
             return new Incoming(Kind.PARTIAL, frame.path("delta").asText(""));

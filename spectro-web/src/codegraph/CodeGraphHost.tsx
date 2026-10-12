@@ -7,18 +7,21 @@
 
 import { useEffect } from "react";
 import { fetchCodeGraphStatus, pollDelay } from "./codeGraphModel";
-import { closeCodeGraphSheet, setCodeGraphStatus, useCodeGraph } from "./codeGraphStore";
+import {
+  closeCodeGraphSheet,
+  loadCodeGraphSession,
+  setCodeGraphStatus,
+  useCodeGraph,
+} from "./codeGraphStore";
 import { CodeGraphSheet } from "./CodeGraphSheet";
 
 export function CodeGraphHost(props: { sessionId: string | null }) {
   const sessionId = props.sessionId;
-  const { status, sheet, refresh } = useCodeGraph();
+  const { status, sheet, sheetMode, refresh } = useCodeGraph();
 
   useEffect(() => {
     let live = true;
-    void fetchCodeGraphStatus(sessionId).then((next) => {
-      if (live) setCodeGraphStatus(sessionId, next);
-    });
+    void loadCodeGraphSession(sessionId, () => live);
     return () => {
       live = false;
     };
@@ -40,5 +43,13 @@ export function CodeGraphHost(props: { sessionId: string | null }) {
   }, [delay, status, sessionId]);
 
   if (sheet === null) return null;
-  return <CodeGraphSheet status={status} sessionId={sessionId} view={sheet} onClose={closeCodeGraphSheet} />;
+  return (
+    <CodeGraphSheet
+      status={status}
+      sessionId={sessionId}
+      view={sheet}
+      mode={sheetMode ?? undefined}
+      onClose={closeCodeGraphSheet}
+    />
+  );
 }

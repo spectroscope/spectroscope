@@ -94,6 +94,54 @@ export function listableBeforeTheFirstRun(announcement: WorkspaceAnnouncement | 
 }
 
 /**
+ * Card 498: the server names the session and reports the folder its record
+ * carries as unavailable, which is what the wake of a stored session whose
+ * folder was deleted answers. A folder that is merely not on disk yet is one
+ * the first run will create, so that case does not count. The header chip
+ * reads this rule; the dock reads {@link recordedFolderGone}.
+ *
+ * @param announcement a workspace_info frame
+ * @return true when the session's recorded folder is gone
+ */
+export function announcedGone(announcement: WorkspaceAnnouncement): boolean {
+  return (
+    typeof announcement.sessionId === "string" &&
+    announcement.sessionId !== "" &&
+    typeof announcement.unavailable === "string" &&
+    announcement.unavailable !== ""
+  );
+}
+
+/**
+ * The woken session's recorded folder is gone and no folder stands in for it
+ * (card 520). A resumed session that ran on in a fallback folder also names
+ * the gone one, but its frame is resolved and its fallback is listed and
+ * opened as before; only the unresolved answer of a wake counts here.
+ *
+ * @param announcement a workspace_info frame
+ * @return true when the Files pane and the Terminal panel have no folder
+ */
+export function recordedFolderGone(announcement: WorkspaceAnnouncement): boolean {
+  return !announcement.resolved && announcedGone(announcement);
+}
+
+/**
+ * The query the Files pane sends to GET /api/files, or null for no request.
+ *
+ * A session lists its own folder, and before any run a named folder that
+ * exists lists as the first run's. A session whose recorded folder is gone
+ * (card 520) asks nothing: there is nothing to list, and the pane says so.
+ *
+ * @param announcement the workspace the pane shows, or null
+ * @return "session=<id>", "scope=prospective", or null
+ */
+export function filesQuery(announcement: WorkspaceAnnouncement | null): string | null {
+  if (announcement === null || recordedFolderGone(announcement)) return null;
+  if (announcement.sessionId !== undefined) return `session=${encodeURIComponent(announcement.sessionId)}`;
+  return listableBeforeTheFirstRun(announcement) ? "scope=prospective" : null;
+}
+
+/**
  * The workspace an IMPORTED run recorded, as a display-only pane (card 291).
  *
  * An import replays somebody else's session: no workspace_info frame ever
@@ -144,6 +192,16 @@ export function paneState(
   // Nothing announced at all: nothing to say beyond what will happen.
   if (announcement === null) {
     return pending(null, lang);
+  }
+
+  // Card 520: a woken session whose recorded folder is gone. Nothing was asked
+  // and nothing is promised for a first run.
+  if (recordedFolderGone(announcement)) {
+    return {
+      kind: "pending",
+      path: announcement.unavailable ?? announcement.path ?? null,
+      message: de ? "diesen ordner gibt es nicht mehr" : "this folder is gone",
+    };
   }
 
   // Nothing resolved yet. Where no folder is named, or the named one is not on

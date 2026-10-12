@@ -15,6 +15,7 @@
 
 import type { RunEvent } from "../events";
 import { foldWork, type WorkItem } from "./work";
+import { pairSafeCut } from "../pairSafeCut";
 
 /** The whole digest never exceeds this — well under the server's 60k bound. */
 export const DIGEST_CAP_CHARS = 24_000;
@@ -43,7 +44,7 @@ export interface RunDigest {
 function capped(text: string, cap: number): { text: string; cut: boolean } {
   const oneLine = text.replace(/\s+/g, " ").trim();
   if (oneLine.length <= cap) return { text: oneLine, cut: false };
-  return { text: `${oneLine.slice(0, cap - 1)}…`, cut: true };
+  return { text: `${pairSafeCut(oneLine, cap - 1)}…`, cut: true };
 }
 
 /** Milliseconds -> a stable, unit-honest span label ("5s", "3m20s", "2h5m"). */
@@ -191,7 +192,7 @@ export function buildRunDigest(events: readonly RunEvent[]): RunDigest {
   let text = lines.join("\n");
   if (text.length > DIGEST_CAP_CHARS) {
     const marker = `\n[digest cut at ${DIGEST_CAP_CHARS} chars]`;
-    text = text.slice(0, DIGEST_CAP_CHARS - marker.length) + marker;
+    text = pairSafeCut(text, DIGEST_CAP_CHARS - marker.length) + marker;
     truncated = true;
   }
 

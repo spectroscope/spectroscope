@@ -71,7 +71,7 @@ if (MODE !== "fresh") {
   await ctx.addInitScript(() => {
     try {
       localStorage.setItem("spectroscope:mode", "learn");
-      localStorage.setItem("spectroscope:mode-chosen", "1");
+      localStorage.setItem("spectroscope:mode-chosen", "2");
     } catch {}
   });
 }
