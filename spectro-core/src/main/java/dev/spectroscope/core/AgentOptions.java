@@ -89,7 +89,7 @@ import java.util.List;
  *                            more than a few turns old and above a size leaves
  *                            the outgoing request as a one-line stub, while the
  *                            history and the session file keep it whole. Null
- *                            is the shipped value, on
+ *                            is the shipped value, off (card 600)
  * @param toolGroupsOff       card 466: the tool groups the operator switched off
  *                            for this session, read once at the start of every
  *                            run. A switched-off group is left out of the
@@ -118,6 +118,21 @@ import java.util.List;
  * @param agentMessaging      card 503: the settings key of the same name. False
  *                            adds the messaging tool group to the groups every
  *                            run leaves out. Null is the shipped on
+ * @param peerReadOnSend      card 594: TRUE counts a message from the peer
+ *                            inbox as read only once the request that carries
+ *                            it went out, dialled through the request's tap or
+ *                            answered by the model. A run that ends before puts
+ *                            it back into the inbox, whose close hands it back
+ *                            to its sender. A helper sets it, because its
+ *                            history ends with it; null keeps the read at the
+ *                            turn start, for an agent whose next run still
+ *                            carries its history
+ * @param introspectionTexts  card 593: FALSE leaves the texts of the three
+ *                            context parts off every {@code context_info} this
+ *                            agent emits and keeps their character counts; null
+ *                            or TRUE sends the texts. The child builder sets it
+ *                            off, so a helper reports its sizes each turn while
+ *                            the main agent and the CLI keep the texts
  */
 public record AgentOptions(LlmProvider provider, String systemPrompt, ToolRegistry registry,
                            Path cwd, PermissionBroker onPermission, String agentId, String parentId,
@@ -138,7 +153,154 @@ public record AgentOptions(LlmProvider provider, String systemPrompt, ToolRegist
                            String careParagraph,
                            Integer readSharePercent,
                            dev.spectroscope.core.peer.PeerInbox peerInbox,
-                           Boolean agentMessaging) {
+                           Boolean agentMessaging,
+                           Boolean peerReadOnSend,
+                           Boolean introspectionTexts) {
+
+    /** Compat: the arity of card 594, which knew no text switch (card 593).
+     *  A caller without one keeps the texts on every {@code context_info}.
+     *
+     * @param provider the component of the same name
+     * @param systemPrompt the component of the same name
+     * @param registry the component of the same name
+     * @param cwd the component of the same name
+     * @param onPermission the component of the same name
+     * @param agentId the component of the same name
+     * @param parentId the component of the same name
+     * @param initialMessages the component of the same name
+     * @param providerName the component of the same name
+     * @param maxTokens the component of the same name
+     * @param compactionThreshold the component of the same name
+     * @param introspection the component of the same name
+     * @param thinking the component of the same name
+     * @param hooks the component of the same name
+     * @param llmWire the component of the same name
+     * @param latency the component of the same name
+     * @param progressGuard the component of the same name
+     * @param maxTurns the component of the same name
+     * @param continuationLeash the component of the same name
+     * @param goal the component of the same name
+     * @param steering the component of the same name
+     * @param rtkFilter the component of the same name
+     * @param sessionWindow the component of the same name
+     * @param toolResultElision the component of the same name
+     * @param toolGroupsOff the component of the same name
+     * @param sessionsPerChat the component of the same name
+     * @param careParagraph the component of the same name
+     * @param readSharePercent the component of the same name
+     * @param peerInbox the component of the same name
+     * @param agentMessaging the component of the same name
+     * @param peerReadOnSend the component of the same name
+     */
+    public AgentOptions(LlmProvider provider,
+                        String systemPrompt,
+                        ToolRegistry registry,
+                        Path cwd,
+                        PermissionBroker onPermission,
+                        String agentId,
+                        String parentId,
+                        List<ProviderMessage> initialMessages,
+                        String providerName,
+                        Integer maxTokens,
+                        Integer compactionThreshold,
+                        Boolean introspection,
+                        Boolean thinking,
+                        HookRunner hooks,
+                        LlmWireRecorder llmWire,
+                        dev.spectroscope.core.provider.ExchangeLatency latency,
+                        dev.spectroscope.core.progress.ProgressGuard progressGuard,
+                        Integer maxTurns,
+                        dev.spectroscope.core.loop.ContinuationLeash continuationLeash,
+                        dev.spectroscope.core.goal.SessionGoal goal,
+                        dev.spectroscope.core.steering.SteeringInbox steering,
+                        dev.spectroscope.core.tools.RtkFilter rtkFilter,
+                        dev.spectroscope.core.session.SessionWindow sessionWindow,
+                        String toolResultElision,
+                        java.util.function.Supplier<java.util.Set<ToolGroup>> toolGroupsOff,
+                        Integer sessionsPerChat,
+                        String careParagraph,
+                        Integer readSharePercent,
+                        dev.spectroscope.core.peer.PeerInbox peerInbox,
+                        Boolean agentMessaging,
+                        Boolean peerReadOnSend) {
+        this(provider, systemPrompt, registry, cwd, onPermission, agentId, parentId, initialMessages,
+                providerName, maxTokens, compactionThreshold, introspection, thinking, hooks, llmWire,
+                latency, progressGuard, maxTurns, continuationLeash, goal, steering, rtkFilter,
+                sessionWindow, toolResultElision, toolGroupsOff, sessionsPerChat, careParagraph,
+                readSharePercent, peerInbox, agentMessaging, peerReadOnSend, null);
+    }
+
+    /** Compat: the arity before card 594, which read a peer message at the
+     *  turn start, and knew no text switch (card 593). A caller without the
+     *  two keeps that read and the texts.
+     *
+     * @param provider the component of the same name
+     * @param systemPrompt the component of the same name
+     * @param registry the component of the same name
+     * @param cwd the component of the same name
+     * @param onPermission the component of the same name
+     * @param agentId the component of the same name
+     * @param parentId the component of the same name
+     * @param initialMessages the component of the same name
+     * @param providerName the component of the same name
+     * @param maxTokens the component of the same name
+     * @param compactionThreshold the component of the same name
+     * @param introspection the component of the same name
+     * @param thinking the component of the same name
+     * @param hooks the component of the same name
+     * @param llmWire the component of the same name
+     * @param latency the component of the same name
+     * @param progressGuard the component of the same name
+     * @param maxTurns the component of the same name
+     * @param continuationLeash the component of the same name
+     * @param goal the component of the same name
+     * @param steering the component of the same name
+     * @param rtkFilter the component of the same name
+     * @param sessionWindow the component of the same name
+     * @param toolResultElision the component of the same name
+     * @param toolGroupsOff the component of the same name
+     * @param sessionsPerChat the component of the same name
+     * @param careParagraph the component of the same name
+     * @param readSharePercent the component of the same name
+     * @param peerInbox the component of the same name
+     * @param agentMessaging the component of the same name
+     */
+    public AgentOptions(LlmProvider provider,
+                        String systemPrompt,
+                        ToolRegistry registry,
+                        Path cwd,
+                        PermissionBroker onPermission,
+                        String agentId,
+                        String parentId,
+                        List<ProviderMessage> initialMessages,
+                        String providerName,
+                        Integer maxTokens,
+                        Integer compactionThreshold,
+                        Boolean introspection,
+                        Boolean thinking,
+                        HookRunner hooks,
+                        LlmWireRecorder llmWire,
+                        dev.spectroscope.core.provider.ExchangeLatency latency,
+                        dev.spectroscope.core.progress.ProgressGuard progressGuard,
+                        Integer maxTurns,
+                        dev.spectroscope.core.loop.ContinuationLeash continuationLeash,
+                        dev.spectroscope.core.goal.SessionGoal goal,
+                        dev.spectroscope.core.steering.SteeringInbox steering,
+                        dev.spectroscope.core.tools.RtkFilter rtkFilter,
+                        dev.spectroscope.core.session.SessionWindow sessionWindow,
+                        String toolResultElision,
+                        java.util.function.Supplier<java.util.Set<ToolGroup>> toolGroupsOff,
+                        Integer sessionsPerChat,
+                        String careParagraph,
+                        Integer readSharePercent,
+                        dev.spectroscope.core.peer.PeerInbox peerInbox,
+                        Boolean agentMessaging) {
+        this(provider, systemPrompt, registry, cwd, onPermission, agentId, parentId, initialMessages,
+                providerName, maxTokens, compactionThreshold, introspection, thinking, hooks, llmWire,
+                latency, progressGuard, maxTurns, continuationLeash, goal, steering, rtkFilter,
+                sessionWindow, toolResultElision, toolGroupsOff, sessionsPerChat, careParagraph,
+                readSharePercent, peerInbox, agentMessaging, null, null);
+    }
 
     /** Compat: the arity before card 503, which knew no agent messaging
      *  switch. A caller without one gets the shipped on.
@@ -202,7 +364,7 @@ public record AgentOptions(LlmProvider provider, String systemPrompt, ToolRegist
                         String careParagraph,
                         Integer readSharePercent,
                         dev.spectroscope.core.peer.PeerInbox peerInbox) {
-        this(provider, systemPrompt, registry, cwd, onPermission, agentId, parentId, initialMessages, providerName, maxTokens, compactionThreshold, introspection, thinking, hooks, llmWire, latency, progressGuard, maxTurns, continuationLeash, goal, steering, rtkFilter, sessionWindow, toolResultElision, toolGroupsOff, sessionsPerChat, careParagraph, readSharePercent, peerInbox, null);
+        this(provider, systemPrompt, registry, cwd, onPermission, agentId, parentId, initialMessages, providerName, maxTokens, compactionThreshold, introspection, thinking, hooks, llmWire, latency, progressGuard, maxTurns, continuationLeash, goal, steering, rtkFilter, sessionWindow, toolResultElision, toolGroupsOff, sessionsPerChat, careParagraph, readSharePercent, peerInbox, null, null);
     }
 
     /** Compat: the arity of v0.15.1, which knew no peer inbox (card 502).
@@ -645,10 +807,12 @@ public record AgentOptions(LlmProvider provider, String systemPrompt, ToolRegist
         private dev.spectroscope.core.steering.SteeringInbox steering; // nullable, never steered
         private dev.spectroscope.core.tools.RtkFilter rtkFilter; // nullable, rewrites nothing
         private dev.spectroscope.core.session.SessionWindow sessionWindow; // nullable, sets nothing
-        private String toolResultElision; // nullable, the shipped "on"
+        private String toolResultElision; // nullable, the shipped "off"
         private java.util.function.Supplier<java.util.Set<ToolGroup>> toolGroupsOff; // nullable, nothing off
         private dev.spectroscope.core.peer.PeerInbox peerInbox; // nullable, reads no messages
         private Boolean agentMessaging; // nullable, the shipped on
+        private Boolean peerReadOnSend; // nullable, reads a peer message at the turn start
+        private Boolean introspectionTexts; // nullable, the texts ride
         private Integer sessionsPerChat; // nullable, no count per chat
         private String careParagraph; // nullable, the shipped "off"
         private Integer readSharePercent; // nullable, the shipped 25
@@ -689,6 +853,11 @@ public record AgentOptions(LlmProvider provider, String systemPrompt, ToolRegist
         /** per-turn context introspection.
          *  @param value true to emit the chars/4 {@code context_info} estimate each turn */
         public Builder introspection(boolean value) { this.introspection = value; return this; }
+        /** Card 593: whether the three context parts carry their texts.
+         *  @param value false sends the character counts only; true, or the
+         *               builder left alone, sends the texts as before
+         *  @return this builder */
+        public Builder introspectionTexts(boolean value) { this.introspectionTexts = value; return this; }
         /** The model's reasoning stream.
          *  @param value true to request thinking deltas from the provider */
         public Builder thinking(boolean value) { this.thinking = value; return this; }
@@ -777,7 +946,7 @@ public record AgentOptions(LlmProvider provider, String systemPrompt, ToolRegist
         /**
          * Card 467: whether old, large tool results leave the outgoing request.
          *
-         * @param value {@code "on"}, {@code "off"}, or null for the shipped on
+         * @param value {@code "on"}, {@code "off"}, or null for the shipped off
          * @return this builder
          */
         public Builder toolResultElision(String value) {
@@ -830,6 +999,15 @@ public record AgentOptions(LlmProvider provider, String systemPrompt, ToolRegist
             return this;
         }
 
+        /** Card 594: whether a peer message counts as read only once the
+         *  request that carries it went out.
+         *  @param value TRUE for a helper, whose history ends with it; null reads at the turn start
+         *  @return this builder */
+        public Builder peerReadOnSend(Boolean value) {
+            this.peerReadOnSend = value;
+            return this;
+        }
+
         /** Freezes the wiring.
          *  @return the immutable options record as configured so far */
         public AgentOptions build() {
@@ -838,7 +1016,7 @@ public record AgentOptions(LlmProvider provider, String systemPrompt, ToolRegist
                     introspection, thinking, hooks, llmWire, latency, progressGuard,
                     maxTurns, continuationLeash, goal, steering, rtkFilter, sessionWindow,
                     toolResultElision, toolGroupsOff, sessionsPerChat, careParagraph,
-                    readSharePercent, peerInbox, agentMessaging);
+                    readSharePercent, peerInbox, agentMessaging, peerReadOnSend, introspectionTexts);
         }
     }
 }

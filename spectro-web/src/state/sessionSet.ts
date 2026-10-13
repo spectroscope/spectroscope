@@ -16,9 +16,10 @@ import type { ClientMessage, RunEvent } from "../events";
 import type { PendingAttachment } from "../components/AttachmentPreview";
 import { connect as realConnect } from "../transport/ws";
 import type { Connection, ConnectionStatus, ConnectOptions } from "../transport/ws";
-import { initialState, type UiState } from "./reducer";
+import { initialState, noteSent, type UiState } from "./reducer";
 import { foldLiveBatch, recordLiveOutgoing } from "./modeWork";
 import { commandFrame, type ChatCommandName } from "./chatCommands";
+import { asTypedCommand } from "./typedCommand";
 import { enqueue, removeQueued, type QueuedMessage } from "./sendQueue";
 import { initialSteering, noteFrame, routeSubmit, type SteeringState } from "./steering";
 import { readSessionBusy } from "./liveSessions";
@@ -58,7 +59,7 @@ export interface SessionSlot {
   /** Card 498: opened by a wake and not continued yet. Out of the rail, out
    *  of view, until the first message adopts it (continueWoken). */
   readonly woken: boolean;
-  /** Live check 0.15.3 D6: the text of the user_message that left and whose
+  /** Live check D6 (card 557): the text of the user_message that left and whose
    *  run has not started, or null. The server can ask the backend for its
    *  window for seconds before run_start; the chat shows the message and
    *  Stop meanwhile. */
@@ -472,7 +473,11 @@ export class SessionSet {
     const sent = record.connection?.send(msg) === true;
     if (sent) {
       this.deps.onSent?.(key, msg);
-      const state = recordLiveOutgoing(record.slot.state, msg, this.deps.mode(), this.deps.traceWanted());
+      // Card 576: noted in every mode; the trace row only where the trace is open.
+      const state = noteSent(
+        recordLiveOutgoing(record.slot.state, msg, this.deps.mode(), this.deps.traceWanted()),
+        msg,
+      );
       if (state !== record.slot.state) this.patch(key, { state });
       if (msg.type === "user_message" && !record.slot.used) this.patch(key, { used: true });
     }
@@ -549,7 +554,8 @@ export class SessionSet {
    * @return false when the socket is not open; nothing is kept for later
    */
   command(key: string, name: ChatCommandName): boolean {
-    return this.sendClient(key, commandFrame(name));
+    // Card 576: the composer's /compact and /clear, so a typed command.
+    return this.sendClient(key, asTypedCommand(commandFrame(name)));
   }
 
   /** The stop button: "stopping" shows only for a frame that reached a running socket. */

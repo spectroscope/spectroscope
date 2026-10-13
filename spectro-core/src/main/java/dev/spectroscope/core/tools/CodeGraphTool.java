@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import dev.spectroscope.core.CancelSignal;
+import dev.spectroscope.core.codegraph.CodeGraphBackend;
 import dev.spectroscope.core.config.governing.Governs;
 
 import java.io.File;
@@ -21,6 +22,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
 
@@ -33,11 +35,21 @@ import java.util.regex.Pattern;
  * the call's own folder. Every refusal is a tool result the model can act on;
  * nothing here throws into the loop. What graphify prints is data, like a file
  * read.</p>
+ *
+ * <p>Card 587: the program and its graph file come from the
+ * {@link CodeGraphBackend} the {@code codeGraphBackend} setting names. The
+ * argument vectors are graphify's, the only backend today. Fix round: the
+ * backend is asked for the folder of each call, so a folder's own setting
+ * reaches the tool, and whether the folder has a graph is the backend's one
+ * rule ({@link CodeGraphBackend#lookup}).</p>
  */
 public final class CodeGraphTool implements Tool {
 
     /** The graphify version whose help {@code CodeGraphHelpDriftTest} holds the command lines against. */
     public static final String PINNED_VERSION = "0.9.67";
+
+    /** The tool's name, as the model calls it. */
+    public static final String NAME = "code_graph";
 
     /** The five actions, in the order the schema lists them. */
     public static final List<String> ACTIONS = List.of("query", "path", "explain", "affected", "god_nodes");
@@ -62,6 +74,26 @@ public final class CodeGraphTool implements Tool {
     /** The largest {@code --budget} a query may ask for, in graphify's tokens. */
     @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.TOKENS)
     public static final int MAX_BUDGET = 4_000;
+
+    /** The smallest {@code --budget} a query may ask for, in graphify's tokens; the skill names the same range. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.TOKENS)
+    public static final int MIN_BUDGET = 100;
+
+    /** The fewest steps back {@code affected} may look; the skill names the same range. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.COUNT)
+    public static final int MIN_DEPTH = 1;
+
+    /** The most steps back {@code affected} may look; the skill names the same range. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.COUNT)
+    public static final int MAX_DEPTH = 6;
+
+    /** The fewest nodes {@code god_nodes} may list; the skill names the same range. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.COUNT)
+    public static final int MIN_TOP = 1;
+
+    /** The most nodes {@code god_nodes} may list; the skill names the same range. */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.COUNT)
+    public static final int MAX_TOP = 50;
 
     /**
      * The line a run that offers the tool adds to its system prompt. Tool
@@ -123,6 +155,24 @@ public final class CodeGraphTool implements Tool {
     }
 
     /**
+     * Card 587: whether a folder can be asked, and why not.
+     * {@link CodeGraphTool#offeredIn} is {@link #READY}; the {@code /graph ask}
+     * refusal names the other four.
+     */
+    public enum Availability {
+        /** The program is installed and the folder has its graph. */
+        READY,
+        /** There is no folder to look in. */
+        NO_FOLDER,
+        /** The backend's program is not on the tool PATH. */
+        NOT_INSTALLED,
+        /** The folder has no graph yet. */
+        NO_GRAPH,
+        /** The folder's graph resolves to a file outside it. */
+        OUTSIDE
+    }
+
+    /**
      * A parse result: a request, or the sentence that refuses it.
      *
      * @param request the request, null when refused
@@ -131,34 +181,89 @@ public final class CodeGraphTool implements Tool {
     public record Parsed(Request request, String refusal) {
     }
 
-    private final Supplier<Optional<String>> graphify;
+    private final Function<Path, CodeGraphBackend> backends;
+    private final Function<CodeGraphBackend, Optional<String>> programs;
     private final Runner runner;
 
-    /** The shipped tool: graphify found on the tool PATH, run as a real process. */
+    /** The shipped tool on graphify: found on the tool PATH, run as a real process. */
     public CodeGraphTool() {
-        this(CodeGraphTool::locateGraphify,
+        this(CodeGraphBackend.GRAPHIFY);
+    }
+
+    /**
+     * Card 587: the tool on one backend, whatever the folder.
+     *
+     * @param backend the program and the files it reads
+     */
+    public CodeGraphTool(CodeGraphBackend backend) {
+        this(folder -> backend);
+    }
+
+    /**
+     * Card 587, fix round: the tool on the backend each folder uses, asked on
+     * every call ({@code CodeGraphSetting.backendFor} in production).
+     *
+     * @param backends the backend of a folder; the folder may be null
+     */
+    public CodeGraphTool(Function<Path, CodeGraphBackend> backends) {
+        this(backends, backend -> locate(backend.binary()),
                 processRunner(Duration.ofSeconds(TIMEOUT_SECONDS), MAX_OUTPUT_CHARS));
     }
 
     /**
-     * The seam: where graphify is, and how it runs.
+     * The seam on graphify: where it is, and how it runs.
      *
      * @param graphify the absolute path of graphify, empty when it is not installed
      * @param runner   runs one argument vector
      */
     public CodeGraphTool(Supplier<Optional<String>> graphify, Runner runner) {
-        this.graphify = graphify;
+        this(CodeGraphBackend.GRAPHIFY, graphify, runner);
+    }
+
+    /**
+     * The seam on one backend: where its program is, and how it runs.
+     *
+     * @param backend the program and the files it reads
+     * @param binary  the program's absolute path, empty when it is not installed
+     * @param runner  runs one argument vector
+     */
+    public CodeGraphTool(CodeGraphBackend backend, Supplier<Optional<String>> binary, Runner runner) {
+        this(folder -> backend, ignored -> binary.get(), runner);
+    }
+
+    /**
+     * The seam: the backend of a folder, where a backend's program is, and how
+     * it runs.
+     *
+     * @param backends the backend of a folder; the folder may be null
+     * @param programs a backend's program as an absolute path, empty when it is not installed
+     * @param runner   runs one argument vector
+     */
+    public CodeGraphTool(Function<Path, CodeGraphBackend> backends,
+                         Function<CodeGraphBackend, Optional<String>> programs, Runner runner) {
+        this.backends = backends;
+        this.programs = programs;
         this.runner = runner;
     }
 
-    private static Optional<String> locateGraphify() {
-        ToolPath.Lookup lookup = ToolPath.locate("graphify");
+    private static Optional<String> locate(String binary) {
+        ToolPath.Lookup lookup = ToolPath.locate(binary);
         return lookup.isFound() ? Optional.of(lookup.found()) : Optional.empty();
+    }
+
+    /**
+     * Card 587, fix round: the backend a folder uses, as this tool asks it.
+     *
+     * @param folder the folder, or null
+     * @return its backend
+     */
+    public CodeGraphBackend backendFor(Path folder) {
+        return backends.apply(folder);
     }
 
     @Override
     public String name() {
-        return "code_graph";
+        return NAME;
     }
 
     @Override
@@ -166,10 +271,11 @@ public final class CodeGraphTool implements Tool {
         return "Asks the code graph of this folder (graphify-out/graph.json, built by graphify) a question "
                 + "about structure. Read only. Try it before reading many files to find callers, a path "
                 + "between two parts or what a change affects. Actions: query (a question in words; "
-                + "optional dfs for depth first and budget in tokens, 100 to " + MAX_BUDGET + "), path "
-                + "(the shortest path between the nodes from and to), explain (one node name and its "
-                + "neighbors), affected (what depends on the node name; optional depth 1 to 6), "
-                + "god_nodes (the most connected nodes; optional top 1 to 50). Node names are class, "
+                + "optional dfs for depth first and budget in tokens, " + MIN_BUDGET + " to " + MAX_BUDGET
+                + "), path (the shortest path between the nodes from and to), explain (one node name and its "
+                + "neighbors), affected (what depends on the node name; optional depth " + MIN_DEPTH + " to "
+                + MAX_DEPTH + "), god_nodes (the most connected nodes; optional top " + MIN_TOP + " to " + MAX_TOP
+                + "). Node names are class, "
                 + "function or file names as the graph knows them. The answer is graphify's text output, "
                 + "at most " + MAX_OUTPUT_CHARS + " characters.";
     }
@@ -187,15 +293,15 @@ public final class CodeGraphTool implements Tool {
         properties.putObject("dfs").put("type", "boolean")
                 .put("description", "query: depth first instead of breadth first");
         properties.putObject("budget").put("type", "integer")
-                .put("description", "query: the most tokens of answer, 100 to " + MAX_BUDGET);
+                .put("description", "query: the most tokens of answer, " + MIN_BUDGET + " to " + MAX_BUDGET);
         properties.putObject("from").put("type", "string").put("description", "path: the start node");
         properties.putObject("to").put("type", "string").put("description", "path: the end node");
         properties.putObject("name").put("type", "string")
                 .put("description", "explain and affected: the node name");
         properties.putObject("depth").put("type", "integer")
-                .put("description", "affected: how many steps back, 1 to 6");
+                .put("description", "affected: how many steps back, " + MIN_DEPTH + " to " + MAX_DEPTH);
         properties.putObject("top").put("type", "integer")
-                .put("description", "god_nodes: how many nodes, 1 to 50");
+                .put("description", "god_nodes: how many nodes, " + MIN_TOP + " to " + MAX_TOP);
         schema.putArray("required").add("action");
         return schema;
     }
@@ -211,51 +317,69 @@ public final class CodeGraphTool implements Tool {
     }
 
     /**
-     * Offered only when graphify is installed and the folder has a graph that
-     * stays inside it.
+     * Offered only when the folder's backend is installed and the folder has a
+     * graph that stays inside it.
      *
      * @param cwd the run's folder
      * @return true when a call could reach graphify and a graph
      */
     @Override
     public boolean offeredIn(Path cwd) {
-        if (cwd == null || graphify.get().isEmpty()) {
-            return false;
+        return availability(cwd) == Availability.READY;
+    }
+
+    /**
+     * Card 587: whether a folder can be asked, and why not.
+     *
+     * @param cwd the folder, or null
+     * @return the first reason it cannot, or {@link Availability#READY}
+     */
+    public Availability availability(Path cwd) {
+        if (cwd == null) {
+            return Availability.NO_FOLDER;
         }
         try {
-            return graphIn(cwd) instanceof Found;
+            CodeGraphBackend backend = backends.apply(cwd);
+            if (programs.apply(backend).isEmpty()) {
+                return Availability.NOT_INSTALLED;
+            }
+            CodeGraphBackend.Lookup graph = backend.lookup(cwd);
+            return graph instanceof CodeGraphBackend.Found ? Availability.READY
+                    : graph instanceof CodeGraphBackend.Outside ? Availability.OUTSIDE : Availability.NO_GRAPH;
         } catch (RuntimeException e) {
-            return false;
+            return Availability.NO_GRAPH;
         }
     }
 
     @Override
     public String execute(JsonNode input, ToolContext context) {
         try {
-            Optional<String> binary = graphify.get();
+            Path cwd = context.cwd();
+            CodeGraphBackend backend = backends.apply(cwd);
+            Optional<String> binary = programs.apply(backend);
             if (binary.isEmpty()) {
-                return "ERROR: graphify is not on the PATH of the spectroscope server, so there is no code "
-                        + "graph to ask. It is installed with `uv tool install graphifyy`. Answer from the "
-                        + "files instead (grep, glob, read_file).";
+                return "ERROR: " + backend.binary() + " is not on the PATH of the spectroscope server, so there "
+                        + "is no code graph to ask. It is installed with `" + backend.install() + "`. Answer from "
+                        + "the files instead (grep, glob, read_file).";
             }
             Parsed parsed = parse(input);
             if (parsed.refusal() != null) {
                 return "ERROR: " + parsed.refusal();
             }
-            Path cwd = context.cwd();
-            GraphLookup graph = graphIn(cwd);
-            if (graph instanceof Missing) {
-                return "ERROR: this folder has no code graph yet (graphify-out/graph.json). The person can "
-                        + "build it with the Build code graph row in the header menu, or it is built with "
-                        + "`graphify update " + cwd + "`. Until then answer from the files (grep, glob, "
-                        + "read_file).";
+            CodeGraphBackend.Lookup graph = backend.lookup(cwd);
+            if (graph instanceof CodeGraphBackend.Missing) {
+                return "ERROR: this folder has no code graph yet (" + slashed(backend.graphFile()) + " and "
+                        + slashed(backend.pageFile()) + "). The "
+                        + "person can build it with /graph build or the Build code graph row in the header "
+                        + "menu, or it is built with `" + backend.binary() + " update " + cwd + "`. Until then "
+                        + "answer from the files (grep, glob, read_file).";
             }
-            if (graph instanceof Outside outside) {
-                return "ERROR: graphify-out/graph.json resolves to " + outside.real()
+            if (graph instanceof CodeGraphBackend.Outside outside) {
+                return "ERROR: the code graph of this folder resolves to " + outside.real()
                         + ", which is outside this folder, so it is not read. Ask the person to rebuild "
                         + "the graph inside the folder.";
             }
-            Found found = (Found) graph;
+            CodeGraphBackend.Found found = (CodeGraphBackend.Found) graph;
             List<String> argv = argv(binary.get(), parsed.request(), found.graph());
             Outcome outcome = runner.run(argv, found.root(), context.signal());
             return render(outcome);
@@ -307,7 +431,7 @@ public final class CodeGraphTool implements Tool {
                     if (input.path("dfs").asBoolean(false)) {
                         flags.add("--dfs");
                     }
-                    number(input, "budget", 100, MAX_BUDGET, flags);
+                    number(input, "budget", MIN_BUDGET, MAX_BUDGET, flags);
                 }
                 case "path" -> {
                     words.add(text(input, "from"));
@@ -316,9 +440,9 @@ public final class CodeGraphTool implements Tool {
                 case "explain" -> words.add(text(input, "name"));
                 case "affected" -> {
                     words.add(text(input, "name"));
-                    number(input, "depth", 1, 6, flags);
+                    number(input, "depth", MIN_DEPTH, MAX_DEPTH, flags);
                 }
-                case "god_nodes" -> number(input, "top", 1, 50, flags);
+                case "god_nodes" -> number(input, "top", MIN_TOP, MAX_TOP, flags);
                 default -> {
                     return refuse("unknown action \"" + action + "\". The actions are "
                             + String.join(", ", ACTIONS) + ".");
@@ -398,34 +522,9 @@ public final class CodeGraphTool implements Tool {
 
     // ---- the graph -----------------------------------------------------------
 
-    private sealed interface GraphLookup permits Found, Missing, Outside {
-    }
-
-    private record Found(Path root, Path graph) implements GraphLookup {
-    }
-
-    private record Missing() implements GraphLookup {
-    }
-
-    private record Outside(Path real) implements GraphLookup {
-    }
-
-    /** The folder's graph, resolved through every link and kept inside the resolved folder. */
-    private static GraphLookup graphIn(Path cwd) {
-        try {
-            Path root = cwd.toRealPath();
-            Path candidate = root.resolve("graphify-out").resolve("graph.json");
-            if (!Files.exists(candidate)) {
-                return new Missing();
-            }
-            Path real = candidate.toRealPath();
-            if (!real.startsWith(root)) {
-                return new Outside(real);
-            }
-            return Files.isRegularFile(real) ? new Found(root, real) : new Missing();
-        } catch (IOException e) {
-            return new Missing();
-        }
+    /** A relative path with forward slashes, as the messages print it on every platform. */
+    private static String slashed(Path relative) {
+        return relative.toString().replace(File.separatorChar, '/');
     }
 
     // ---- the real process ----------------------------------------------------

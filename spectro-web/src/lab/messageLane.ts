@@ -194,6 +194,9 @@ export function messageLanes(events: readonly RunEvent[], upto?: number): Messag
 
   prefix.forEach((e, at) => {
     if (e.type !== "agent_message") return;
+    // Card 594: a message that came back unread is the harness's line about
+    // the message, not a handover by the helper; the sent record drew it once.
+    if (e.role === "peer" && e.state === "returned") return;
     if (e.role === "peer" && e.label != null && e.label !== "") {
       if (peerSeen.has(e.label)) return;
       peerSeen.add(e.label);

@@ -42,7 +42,32 @@ final class ContextDescriber {
      * @return the complete introspection payload the "System-Kontext" tab renders
      */
     static ContextInfo describe(SpectroConfig boot, Path cwd) {
-        SkillLibrary skills = SkillLibrary.load(SkillLibrary.defaultRoots(cwd));
+        return describe(boot, cwd, codeGraphTool(cwd));
+    }
+
+    /**
+     * Card 587, fix round (I4): the code graph tool this view describes, on the
+     * one resolver every reader asks, with the server's working directory as
+     * the start folder.
+     *
+     * @param cwd the start folder
+     * @return the tool
+     */
+    static dev.spectroscope.core.tools.CodeGraphTool codeGraphTool(Path cwd) {
+        return new dev.spectroscope.core.tools.CodeGraphTool(
+                folder -> dev.spectroscope.core.codegraph.CodeGraphSetting.backendFor(cwd, folder));
+    }
+
+    /**
+     * The seam: the view with the code graph tool handed in.
+     *
+     * @param boot      the boot config
+     * @param cwd       the working directory
+     * @param codeGraph the code graph tool the view describes
+     * @return the payload
+     */
+    static ContextInfo describe(SpectroConfig boot, Path cwd, dev.spectroscope.core.tools.CodeGraphTool codeGraph) {
+        SkillLibrary installed = SkillLibrary.load(SkillLibrary.defaultRoots(cwd));
         // The endpoint is stateless (no session), so the prompt names the
         // configured workspace or the per-session pattern — the live prompt
         // substitutes the real folder (see SessionConnection.buildAgentOnce).
@@ -77,6 +102,15 @@ final class ContextDescriber {
         String workspaceShown = configuredWorkspace != null
                 ? configuredWorkspace.toString()
                 : Path.of(System.getProperty("java.io.tmpdir"), "spectroscope-ws") + "/<session-id>";
+        // Card 587, fix round (M10): the app's code-graph skill joins the
+        // listing while the folder has a graph, as it joins the session's.
+        boolean graphed = codeGraph.offeredIn(configuredWorkspace);
+        SkillLibrary skills = installed;
+        if (graphed) {
+            List<dev.spectroscope.core.skills.Skill> listed = new ArrayList<>(installed.skills());
+            listed.add(dev.spectroscope.core.codegraph.CodeGraphSkill.skill());
+            skills = SkillLibrary.of(listed);
+        }
         String systemPrompt = RoleCatalog.BASE_SYSTEM_PROMPT + workspaceShown
                 + SpectroConfig.loadProjectMd(cwd) + SpectroConfig.loadAgentsMd(configuredWorkspace)
                 + skills.systemPromptSection();
@@ -84,10 +118,9 @@ final class ContextDescriber {
         // Card 547: code_graph follows the standard set on both faces, as
         // SessionConnection registers it.
         List<Tool> standardTools = new ArrayList<>(StandardTools.all(config.commandTimeoutSeconds()));
-        dev.spectroscope.core.tools.CodeGraphTool codeGraph = new dev.spectroscope.core.tools.CodeGraphTool();
         standardTools.add(codeGraph);
         // The line the loop adds to a run that offers the tool in this folder.
-        if (codeGraph.offeredIn(configuredWorkspace)) {
+        if (graphed) {
             systemPrompt = systemPrompt + "\n\n" + codeGraph.systemPromptLine();
         }
         List<String> mcpServerNames = config.mcpServers().stream()

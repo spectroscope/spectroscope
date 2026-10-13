@@ -21,13 +21,34 @@
 // which reads the drawing and the contents beside the frame (readSheetExtras)
 // inside this chunk, so the entry never loads this module.
 //
+// Card 584: the server asks every provider for its model list before the
+// sheet opens. Each row that runs on a model (the steps, and the review
+// checks in their own rows) names why the playbook's model does not serve,
+// a rejected key with its HTTP status and where the key came from, and has a
+// model picker: the playbook's model as the default, then the models of every
+// provider whose list answered, local providers only for a private row. Start
+// stays disabled while a row has no model that serves, and a line above it
+// names those rows. A pick holds for this run only; Start sends the picks and
+// the server checks them again (state/playbookPicks.ts).
+//
 // Styles: styles/playbook-run.css, imported by app.css.
 
 import { useEffect, useState } from "react";
-import { t } from "../i18n/i18n";
+import { t, type Lang } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { loadContents, type ContentsPreview } from "../state/playbookContents";
-import type { StartPreview } from "../state/playbookRuns";
+import {
+  applyPick,
+  blockingRows,
+  offersFor,
+  pickValue,
+  reasonLines,
+  rowServes,
+  startPicks,
+  type Pick,
+  type Picks,
+} from "../state/playbookPicks";
+import type { ModelCheck, ModelOffer, StartPreview, StepPlan } from "../state/playbookRuns";
 import type { PlaybookConfirm } from "../state/playbookChat";
 import { ContentsList } from "./ContentsList";
 import type { PlaybookDoc } from "./editor/doc";
@@ -38,6 +59,13 @@ const SOURCE_KEY = {
   playbook: "pb.run.skillPlaybook",
   missing: "pb.run.skillMissing",
 } as const;
+
+/** The privacy column's word; an unknown value is shown as it came. */
+function privacyWord(lang: Lang, privacy: string): string {
+  if (privacy === "private") return t(lang, "pb.run.private");
+  if (privacy === "cheap") return t(lang, "pb.run.cheap");
+  return privacy;
+}
 
 /** `sha256:` and the first 12 hex characters of the digest. */
 function shortHash(hash: string): string {
@@ -125,6 +153,84 @@ function ContentsSection({ contents }: { contents: ContentsPreview }) {
   );
 }
 
+/** One row of the table: a step, a review check, or both halves of a step. */
+interface SheetRow {
+  id: string;
+  name: string;
+  /** The step's plan; absent for a review check. */
+  step?: StepPlan;
+  /** Card 584: whether a model serves; absent on a server before the card. */
+  check?: ModelCheck;
+}
+
+/** The rows in node order: the server's model rows when it sends them, else the steps. */
+function sheetRows(preview: StartPreview): SheetRow[] {
+  if (preview.models === undefined)
+    return preview.steps.map((step) => ({ id: step.id, name: step.name, step }));
+  return preview.models.map((check) => ({
+    id: check.node,
+    name: check.name,
+    step: preview.steps.find((s) => s.id === check.node),
+    check,
+  }));
+}
+
+/** Fix round (review N8): whether a row has a pick of its own that serves. */
+function pickServes(check: ModelCheck, pick: Pick | undefined, offers: ModelOffer[]): boolean {
+  return pick !== undefined && rowServes(check, pick, offers);
+}
+
+/**
+ * Card 584: what a row says about its model and its picker. Called as a
+ * function, so the sheet's own state holds the picks.
+ */
+function modelPick(
+  lang: Lang,
+  check: ModelCheck,
+  pick: Pick | undefined,
+  offers: ModelOffer[],
+  onPick: (check: ModelCheck, value: string) => void,
+) {
+  const picked = pick !== undefined && pickServes(check, pick, offers);
+  return (
+    <>
+      {pick === undefined &&
+        reasonLines(check).map((line) => (
+          <span key={line.key} className="pb-run-why" data-why={check.reason ?? "fallback"}>
+            {t(lang, line.key, line.vars)}
+          </span>
+        ))}
+      <label className="pb-run-pick">
+        <span className="pb-run-pick-label">{t(lang, "pb.run.pickLabel")}</span>
+        <select
+          className="provider-select pb-run-pick-select"
+          data-pick={check.node}
+          value={pickValue(pick)}
+          onChange={(e) => onPick(check, e.target.value)}
+        >
+          <option value="">
+            {t(lang, "pb.run.pickDefault", { provider: check.provider, model: check.model })}
+          </option>
+          {offersFor(check, offers).map((o) => (
+            <optgroup key={o.provider} label={o.provider}>
+              {o.models.map((m) => (
+                <option key={m} value={`${o.provider}|${m}`}>
+                  {m}
+                </option>
+              ))}
+            </optgroup>
+          ))}
+        </select>
+      </label>
+      {picked && (
+        <span className="pb-run-picked">
+          {t(lang, "pb.run.picked", { provider: pick.provider, model: pick.model })}
+        </span>
+      )}
+    </>
+  );
+}
+
 export function PlaybookStartSheet(props: {
   /** The saved document of the folder; null draws no graph. */
   doc: PlaybookDoc | null;
@@ -133,11 +239,24 @@ export function PlaybookStartSheet(props: {
   prompt?: string;
   /** What the folder brings, read with the preview; null draws no contents section. */
   contents: ContentsPreview | null;
-  onStart: () => void;
+  /** Card 584, fix round (review N7): Start was sent and the server has not answered yet. */
+  starting?: boolean;
+  /** Card 584, fix round: why the server did not start the run, shown above Start. */
+  refusal?: string | null;
+  /** Card 584: the picks that serve, by node id; empty when nothing was picked. */
+  onStart: (picks: Picks) => void;
   onClose: () => void;
 }) {
-  const { doc, preview, contents, onStart, onClose } = props;
+  const { doc, preview, contents, onStart, onClose, starting = false, refusal = null } = props;
   const lang = useLang();
+  // Card 584: the picks belong to the preview they were made on; a new
+  // confirmation starts without any.
+  const [held, setHeld] = useState<{ of: StartPreview; picks: Picks }>({ of: preview, picks: {} });
+  const picks = held.of === preview ? held.picks : {};
+  const offers = preview.offers ?? [];
+  const onPick = (check: ModelCheck, value: string): void =>
+    setHeld({ of: preview, picks: applyPick(picks, check, value, offers) });
+  const blocked = blockingRows(preview, picks);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -183,37 +302,49 @@ export function PlaybookStartSheet(props: {
                   </tr>
                 </thead>
                 <tbody>
-                  {preview.steps.map((s) => (
-                    <tr data-step={s.id} key={s.id}>
-                      <td className="pb-cell-name">{s.name}</td>
+                  {sheetRows(preview).map(({ id, name, step, check }) => (
+                    <tr
+                      data-step={id}
+                      key={id}
+                      data-serves={
+                        check === undefined ? undefined : String(rowServes(check, picks[id], offers))
+                      }
+                    >
+                      <td className="pb-cell-name">{name}</td>
                       <td>
                         <span className="pb-model">
-                          <span>{t(lang, s.performer === "child" ? "pb.child" : "pb.chat")}</span>
-                          {s.role !== null && s.role !== "" && (
-                            <span className="pb-meta-line pb-mono">{s.role}</span>
+                          <span>
+                            {step === undefined
+                              ? t(lang, "pb.run.review")
+                              : t(lang, step.performer === "child" ? "pb.child" : "pb.chat")}
+                          </span>
+                          {step !== undefined && step.role !== null && step.role !== "" && (
+                            <span className="pb-meta-line pb-mono">{step.role}</span>
                           )}
                         </span>
                       </td>
                       <td>
                         <span className="pb-model">
-                          <span className="pb-mono">{s.choice}</span>
+                          <span className="pb-mono">{step?.choice ?? check?.choice}</span>
                           <span className="pb-meta-line pb-mono">
-                            {s.provider} {s.model}
+                            {step?.provider ?? check?.provider} {step?.model ?? check?.model}
                           </span>
-                          <span className={`pb-state pb-state--${s.providerState}`}>
-                            {s.providerKind} · {s.providerState}
-                          </span>
+                          {step !== undefined &&
+                            !(check !== undefined && pickServes(check, picks[id], offers)) && (
+                              <span className={`pb-state pb-state--${step.providerState}`}>
+                                {step.providerKind} · {step.providerState}
+                              </span>
+                            )}
+                          {check !== undefined && modelPick(lang, check, picks[id], offers, onPick)}
                         </span>
                       </td>
-                      <td data-privacy={s.privacy}>
-                        {s.privacy === "private"
-                          ? t(lang, "pb.run.private")
-                          : s.privacy === "cheap"
-                            ? t(lang, "pb.run.cheap")
-                            : s.privacy}
+                      <td data-privacy={step?.privacy ?? check?.privacy}>
+                        {privacyWord(lang, step?.privacy ?? check?.privacy ?? "")}
                       </td>
-                      <td className="pb-mono">{s.permission}</td>
-                      <td data-nod={String(s.nod)}>{t(lang, s.nod ? "pb.yes" : "pb.no")}</td>
+                      <td className="pb-mono">{step?.permission ?? ""}</td>
+                      <td data-nod={step === undefined ? undefined : String(step.nod)}>
+                        {step === undefined ? "" : t(lang, step.nod ? "pb.yes" : "pb.no")}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -272,16 +403,26 @@ export function PlaybookStartSheet(props: {
         </div>
 
         <footer className="pb-sheet-foot">
+          {refusal !== null && refusal !== "" && (
+            <p className="pb-run-start-refused" role="alert">
+              {t(lang, "pb.run.startRefused", { reason: refusal })}
+            </p>
+          )}
+          {blocked.length > 0 && (
+            <p className="pb-run-blocked" role="status">
+              {t(lang, "pb.run.blocked", { steps: blocked.map((m) => m.name).join(", ") })}
+            </p>
+          )}
           <button type="button" className="pb-run-close" onClick={onClose}>
             {t(lang, "pb.run.close")}
           </button>
           <button
             type="button"
             className="pb-run-start"
-            disabled={preview.refusals.length > 0}
-            onClick={onStart}
+            disabled={refused || blocked.length > 0 || starting}
+            onClick={() => onStart(startPicks(preview, picks))}
           >
-            {t(lang, "pb.run.start")}
+            {t(lang, starting ? "pb.run.starting" : "pb.run.start")}
           </button>
         </footer>
       </div>
@@ -296,13 +437,13 @@ export function PlaybookStartSheet(props: {
  *
  * @param props.confirm   the confirmation (UiState.playbookConfirm)
  * @param props.workspace the session's workspace, or null
- * @param props.onStart   sends start_playbook on the session's own route
+ * @param props.onStart   sends start_playbook on the session's own route, with the picks (card 584)
  * @param props.onClose   closes the sheet in the session's state
  */
 export function PlaybookChatSheet(props: {
   confirm: PlaybookConfirm;
   workspace: string | null;
-  onStart: () => void;
+  onStart: (picks: Picks) => void;
   onClose: () => void;
 }) {
   const { contents, doc } = useSheetExtras(props.confirm, props.workspace);
@@ -312,6 +453,8 @@ export function PlaybookChatSheet(props: {
       contents={contents}
       preview={props.confirm.preview}
       prompt={props.confirm.prompt}
+      starting={props.confirm.starting === true}
+      refusal={props.confirm.refusal ?? null}
       onStart={props.onStart}
       onClose={props.onClose}
     />

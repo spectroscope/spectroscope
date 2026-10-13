@@ -1,8 +1,9 @@
 // The "System-Kontext" tab: what goes to the LLM BEFORE any user message. It
 // fetches GET /api/context (the MAIN agent's assembled system prompt, tools,
 // skills, MCP servers + the subagent role profiles) and shows the context of the
-// agent SELECTED in the Agenten tab: main -> the full server context; a subagent
-// -> its role prompt (composed with its actual task) + tool profile.
+// agent the picker shows (card 593; the Agents tab sets the same choice): main
+// -> the full server context; a subagent -> its role prompt (composed with its
+// actual task) + tool profile.
 //
 // The endpoint is stateless (boot config), so a live provider/model/thinking
 // switch is overlaid from props — no refetch needed. A "Raw" button opens the
@@ -10,6 +11,8 @@
 
 import { useEffect, useState } from "react";
 import type { AgentInfo } from "../state/reducer";
+import type { ShownAgent } from "../state/shownAgent";
+import { AgentPicker } from "./AgentPicker";
 import { Markdown } from "./Markdown";
 import { t, type Lang } from "../i18n/i18n";
 import { useLang } from "../state/lang";
@@ -41,6 +44,19 @@ interface ContextInfo {
   provider: string;
   model: string;
   subagentProfiles: RoleProfile[];
+}
+
+/** What the model line falls back to when nothing names a model: the em dash glyph this line has always shown. */
+const NO_MODEL = "\u2014";
+
+/** The model line: a helper's own model when its run named one (card 593), else the session's model, else what the boot config says. */
+export function modelLineOf(
+  selected: AgentInfo | null,
+  model: string | undefined,
+  fetched: string | undefined,
+): string {
+  const own = selected !== null && selected.parentId !== null ? selected.model : undefined;
+  return own ?? model ?? fetched ?? NO_MODEL;
 }
 
 /** Map a roster agent to its role profile: dev tools carry a label (build_plan …);
@@ -110,12 +126,19 @@ function buildRawContextText(
 
 export function SystemContextTab({
   selected,
+  shown,
+  agents,
+  onPickAgent,
   provider,
   model,
   thinking,
   toolGroups = null,
 }: {
   selected: AgentInfo | null;
+  /** Card 593: the agent the agent views show, and the roster and pick of its picker. */
+  shown: ShownAgent;
+  agents: readonly AgentInfo[];
+  onPickAgent: (id: string | null) => void;
   provider?: string;
   model?: string;
   thinking: boolean;
@@ -155,8 +178,21 @@ export function SystemContextTab({
   }, [rawOpen]);
   useEffect(() => setRawOpen(false), [selected]);
 
-  if (error) return <p className="ctx-empty">{t(lang, "ctx.unavailable")}</p>;
-  if (fetched === null) return <p className="ctx-empty">{t(lang, "ws.loading")}</p>;
+  const picker = <AgentPicker agents={agents} shown={shown} onPick={onPickAgent} />;
+  if (error)
+    return (
+      <div className="ctx">
+        {picker}
+        <p className="ctx-empty">{t(lang, "ctx.unavailable")}</p>
+      </div>
+    );
+  if (fetched === null)
+    return (
+      <div className="ctx">
+        {picker}
+        <p className="ctx-empty">{t(lang, "ws.loading")}</p>
+      </div>
+    );
 
   // Card 466: what the model gets. A group switched off in the gear leaves the
   // main list and every child profile, as it leaves the request.
@@ -176,7 +212,7 @@ export function SystemContextTab({
 
   // Provider/model/thinking are overlaid from the live session (a switch wins).
   const shownProvider = provider ?? ctx.provider ?? "—";
-  const shownModel = model ?? ctx.model ?? "—";
+  const shownModel = modelLineOf(selected, model, fetched.model);
 
   const profile = isMain ? undefined : profileFor(selected!, ctx.subagentProfiles);
   const rawTitle = `${t(lang, "rp.context")} · ${isMain ? "main" : selected!.id}`;
@@ -190,6 +226,7 @@ export function SystemContextTab({
 
   return (
     <div className="ctx">
+      {picker}
       <div className="ctx-head">
         <p className="ctx-lead">
           {lang === "de" ? (

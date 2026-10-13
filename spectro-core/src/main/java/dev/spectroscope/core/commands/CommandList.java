@@ -20,10 +20,11 @@ import java.util.Optional;
  * <p>A row says how a command is typed ({@code name}, an optional
  * {@code sub}, {@code aliases}), where it works ({@code surfaces}), how the
  * picker treats it ({@code takesArgs}: written into the draft instead of
- * run), where it is listed ({@code group}, {@code developerOnly}) and its
- * one-line English help. German help lives in the web dictionary, keyed by
- * the row's {@code id}. A row whose {@code wired} is false reserves its name
- * for another card: no face dispatches it yet, and none lists it.</p>
+ * run), where it is listed ({@code group}, {@code developerOnly}), its
+ * one-line help and, for a command that takes words, its template
+ * ({@code usage}), both in English and German (card 588). A row whose
+ * {@code wired} is false reserves its name for another card: no face
+ * dispatches it yet, and none lists it.</p>
  */
 public final class CommandList {
 
@@ -37,7 +38,7 @@ public final class CommandList {
     /**
      * One command.
      *
-     * @param id            a stable key, unique in the list; the web's German help is {@code cmd.<id>.help}
+     * @param id            a stable key, unique in the list
      * @param name          the first word after the slash
      * @param aliases       other whole spellings without the slash, each one or two words
      * @param sub           the second word, or null for a command of one word
@@ -47,10 +48,13 @@ public final class CommandList {
      * @param developerOnly true when the web picker offers it in developer mode only; typing works everywhere
      * @param wired         false for a row another card will build; no face dispatches or lists it
      * @param help          the one-line help
+     * @param usage         card 588: how the command is written, such as {@code /graph ask <question>},
+     *                      or null for a command that takes no words
      */
     @JsonIgnoreProperties(ignoreUnknown = true)
     public record Command(String id, String name, List<String> aliases, String sub, boolean takesArgs,
-                          String group, String surfaces, boolean developerOnly, Boolean wired, Help help) {
+                          String group, String surfaces, boolean developerOnly, Boolean wired, Text help,
+                          Text usage) {
 
         /** @param aliases null reads as none; @param wired null reads as true */
         public Command {
@@ -74,9 +78,14 @@ public final class CommandList {
         }
     }
 
-    /** @param en the English help line */
+    /**
+     * A text in both languages: a row's help or its template (card 588).
+     *
+     * @param en the English text
+     * @param de the German text
+     */
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public record Help(String en) {
+    public record Text(String en, String de) {
     }
 
     /**

@@ -581,3 +581,69 @@ describe("claude code tool aliases (imported transcripts light the stations)", (
     expect(c.length).toBeLessThanOrEqual(22);
   });
 });
+
+// Card 586: the playbook runner's own lines (run_step, playbook_progress and its
+// plan) carry the agent id "playbook". It is the runner, not an agent: the map
+// draws no card for it, and the main loop does not move.
+describe("the playbook runner's lines (card 586)", () => {
+  const RUN = "abcdefabcdef";
+  const runnerLines: RunEvent[] = [
+    {
+      type: "run_step",
+      agentId: "playbook",
+      runId: RUN,
+      runKind: "playbook",
+      phase: "run_start",
+      name: "spectro",
+      nodes: [],
+      ts: T,
+    },
+    {
+      type: "playbook_progress",
+      agentId: "playbook",
+      runId: RUN,
+      phase: "start",
+      playbook: "spectro",
+      ts: T,
+    },
+    { type: "plan", agentId: "playbook", steps: [{ text: "[a] A", status: "pending" }], ts: T },
+    {
+      type: "run_step",
+      agentId: "playbook",
+      runId: RUN,
+      runKind: "playbook",
+      phase: "step_start",
+      node: "a",
+      name: "A",
+      kind: "step",
+      entry: 1,
+      performer: "chat",
+      ts: T,
+    },
+    {
+      type: "run_step",
+      agentId: "playbook",
+      runId: RUN,
+      runKind: "playbook",
+      phase: "run_end",
+      stopReason: "done",
+      ts: T,
+    },
+  ] as unknown as RunEvent[];
+
+  it("draw no card named playbook and leave the scene as it was", () => {
+    const before = play([runStart()]);
+    const after = play(runnerLines, before);
+    expect(after.subagents.map((c) => c.id)).not.toContain("playbook");
+    expect(after).toEqual(before);
+  });
+
+  it("a real helper beside them still gets its card", () => {
+    const after = play([
+      runStart(),
+      ...runnerLines,
+      { type: "agent_spawn", agentId: "worker-1", parentId: "main", task: "look", ts: T } as RunEvent,
+    ]);
+    expect(after.subagents.map((c) => c.id)).toEqual(["worker-1"]);
+  });
+});

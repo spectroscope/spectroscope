@@ -16,9 +16,10 @@ import { t } from "../i18n/i18n";
 import { initialState } from "../state/reducer";
 import type { ChatCommandName } from "../state/chatCommands";
 import { drive, type El, type Step } from "../testkit/driveComponent";
-import { __resetSkillList } from "../state/skillList";
+import { __resetSkillList, loadSkills } from "../state/skillList";
 import { __resetCommandList, __setCommandRows } from "../state/commandList";
 import { coreCommandRows } from "../testkit/commandRows";
+import { setViewMode } from "../state/viewMode";
 
 let sent: string[] = [];
 let ran: ChatCommandName[] = [];
@@ -467,5 +468,146 @@ describe("the gear's other session frames (card 504, hub and spoke review, round
     );
     pressAll(drive(gear, [ComposerGear], [openGear]));
     expect(direct).toEqual(EXPECTED);
+  });
+});
+
+// Card 588, fix round (I1, M4): with the caret inside the first two words of
+// a command draft, Enter sends the draft as it stands, as it did before card
+// 588, and never rewrites it. Driven through the real composer: the caret
+// moves through the field's select event and Enter through its key handler.
+describe("a command draft edited inside its first words", () => {
+  const frames: ClientMessage[] = [];
+  const withSession = (
+    <Chat
+      state={initialState}
+      liveView={true}
+      onSend={(text) => void sent.push(text)}
+      onCommand={(command) => {
+        ran.push(command);
+        return true;
+      }}
+      onSessionFrame={(frame) => {
+        frames.push(frame);
+        return true;
+      }}
+      onLocalLine={() => {}}
+      onReturnToLive={() => {}}
+      sendClient={() => true}
+    />
+  );
+
+  /** Moves the caret, as the field's select event reports it. */
+  const caretAt =
+    (at: number): Step =>
+    (tree) =>
+      (field(tree).props.onSelect as (e: { currentTarget: { selectionStart: number } }) => void)({
+        currentTarget: { selectionStart: at },
+      });
+
+  /** Presses Enter with the caret at `at`. */
+  const enterAt =
+    (at: number): Step =>
+    (tree) => {
+      const value = String(field(tree).props.value);
+      (field(tree).props.onKeyDown as (e: unknown) => void)({
+        key: "Enter",
+        shiftKey: false,
+        altKey: false,
+        metaKey: false,
+        ctrlKey: false,
+        nativeEvent: { isComposing: false },
+        currentTarget: { value, selectionStart: at, selectionEnd: at },
+        preventDefault: () => {},
+      });
+    };
+
+  // Round 2, N1: the skills a folder with a code graph has, loaded the way
+  // the picker loads them. `code-graph` matches every prefix of "graph", so a
+  // picker that offered skills for the first word would pick it.
+  beforeEach(async () => {
+    frames.length = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () =>
+          Promise.resolve({
+            skills: [
+              {
+                name: "code-graph",
+                folder: "code-graph",
+                pack: null,
+                description: "Ask the code graph.",
+                disabled: false,
+              },
+              {
+                name: "verification",
+                folder: "verification",
+                pack: null,
+                description: "Check it.",
+                disabled: false,
+              },
+            ],
+          }),
+      } as unknown as Response),
+    );
+    loadSkills();
+    await new Promise((r) => setTimeout(r, 0));
+  });
+
+  afterEach(() => {
+    setViewMode("learn");
+  });
+
+  for (const [where, at] of [
+    ["inside the subcommand", 8],
+    ["right after the first word's space", 7],
+    ["at the end of the first word", 6],
+    ["inside the first word", 3],
+    ["right after the slash", 1],
+  ] as const) {
+    it(`sends /graph ask with the caret ${where}`, () => {
+      const tree = drive(withSession, [Chat], [type("/graph ask who calls X"), caretAt(at), enterAt(at)]);
+      expect(frames).toEqual([{ type: "graph_ask", question: "who calls X" }]);
+      expect(sent, "never to the model as text").toEqual([]);
+      expect(field(tree).props.value, "the draft left whole").toBe("");
+    });
+  }
+
+  it("sends /playbook use with the caret inside use, in developer mode", () => {
+    setViewMode("developer");
+    const tree = drive(withSession, [Chat], [type("/playbook use spec-review"), caretAt(11), enterAt(11)]);
+    expect(field(tree).props.value, "accepted as /playbook use, not rewritten").toBe("");
+    expect(sent).toEqual([]);
+  });
+
+  it("runs a command of one word with the caret inside it, and writes no skill over it", () => {
+    const tree = drive(withSession, [Chat], [type("/graph"), caretAt(3), enterAt(3)]);
+    expect(field(tree).props.value, "accepted as /graph, which lists the subcommands").toBe("");
+    expect(sent).toEqual([]);
+  });
+
+  it("still completes a skill at the start of a draft that is no command", () => {
+    const tree = drive(withSession, [Chat], [type("/ver ask me"), caretAt(4), enterAt(4)]);
+    expect(String(field(tree).props.value), "premise: the skill list is still the picker's").toMatch(
+      /^\/verification /,
+    );
+    expect(sent).toEqual([]);
+  });
+
+  it("keeps the skills under the commands while the caret ends the draft", () => {
+    const tree = drive(withSession, [Chat], [type("/graph")]);
+    const names = tree
+      .filter((el) => String(el.props.className ?? "").includes("slash-name"))
+      .map((el) => String(el.props.children));
+    expect(names, "the command rows").toContain("/graph");
+    expect(names, "and the skill below them").toContain("code-graph");
+  });
+
+  it("still completes the subcommand when the caret ends the draft", () => {
+    const tree = drive(withSession, [Chat], [type("/graph a"), enterAt(8)]);
+    expect(field(tree).props.value, "premise: the picker still picks at the end").toBe("/graph ask ");
+    expect(frames).toEqual([]);
   });
 });

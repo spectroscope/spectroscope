@@ -33,6 +33,12 @@ export interface PlaybookConfirm {
   /** The prompt typed after /run-with-playbook, the run's task. */
   prompt: string;
   preview: StartPreview;
+  /** Card 584, fix round (review N7): Start was sent and the server has not answered yet. */
+  starting?: boolean;
+  /** Card 584, second fix round: the id the pending start asked with; only its refusal shows here. */
+  ask?: string;
+  /** Card 584, fix round: why the server did not start the run; null or absent when it did not refuse. */
+  refusal?: string | null;
 }
 
 const text = (v: unknown): string | null => (typeof v === "string" && v !== "" ? v : null);
@@ -65,6 +71,42 @@ export function pickOfLine(line: unknown, before: PlaybookPick | null): Playbook
   };
 }
 
+/**
+ * Card 584, fix round (review N7): the sheet once its Start left. It stays
+ * open until the run's start closes it (playbook_progress, phase start) or
+ * the server refuses this start (answerStart). The preview stays the same
+ * object, so the picks made on it stay too.
+ */
+export function markStarting(confirm: PlaybookConfirm, ask: string): PlaybookConfirm {
+  return { ...confirm, starting: true, ask, refusal: null };
+}
+
+let starts = 0;
+
+/** Card 584, second fix round: a fresh id for one start of the sheet, echoed by its refusal. */
+export function nextStartAsk(): string {
+  starts += 1;
+  return `start-${starts}`;
+}
+
+/**
+ * Card 584, second fix round: the sheet after a playbook_start_refused frame.
+ * Only the refusal of the start this sheet asked with counts: every Start
+ * takes a fresh id, so an error of something else, or the refusal of an
+ * earlier start, leaves it as it is.
+ *
+ * @param confirm the open sheet, or null
+ * @param frame the server's frame {ask, message}
+ * @returns the sheet with the reason and Start offered again, or the sheet unchanged
+ */
+export function answerStart(confirm: PlaybookConfirm | null, frame: unknown): PlaybookConfirm | null {
+  const f = frame as { ask?: unknown; message?: unknown };
+  if (confirm === null || typeof f.ask !== "string" || f.ask !== confirm.ask) {
+    return confirm;
+  }
+  return { ...confirm, starting: false, refusal: typeof f.message === "string" ? f.message : "" };
+}
+
 /** A playbook_confirm frame, or null when it cannot be read. */
 export function parsePlaybookConfirm(frame: unknown): PlaybookConfirm | null {
   const f = frame as { dir?: unknown; prompt?: unknown; preview?: unknown };
@@ -84,6 +126,8 @@ export interface ProgressLine {
   infoKey: string;
   infoVars: Record<string, string>;
   infoRefKey?: string;
+  /** Card 586: the run a start line opens; the chat links the line to it. */
+  runId?: string;
 }
 
 /** The model a step runs on, in one word group: "model (provider)". */
@@ -105,6 +149,8 @@ export function progressLine(line: unknown): ProgressLine | null {
     case "start": {
       const playbook = text(l.playbook) ?? "?";
       const task = text(l.task);
+      const runId = text(l.runId);
+      const run = runId === null ? {} : { runId };
       return task === null
         ? {
             kind: "info",
@@ -112,6 +158,7 @@ export function progressLine(line: unknown): ProgressLine | null {
             tone: "neutral",
             infoKey: "chat.pb.startNoTask",
             infoVars: { playbook },
+            ...run,
           }
         : {
             kind: "info",
@@ -119,6 +166,7 @@ export function progressLine(line: unknown): ProgressLine | null {
             tone: "neutral",
             infoKey: "chat.pb.start",
             infoVars: { playbook, task },
+            ...run,
           };
     }
     case "step": {
@@ -156,4 +204,58 @@ export function progressLine(line: unknown): ProgressLine | null {
     default:
       return null;
   }
+}
+
+/**
+ * Card 586: the chat line of a workflow run's run_step line. A workflow run has
+ * no playbook_progress, so its start and its end come from here; its steps and
+ * every line of a playbook run draw nothing here (the playbook keeps its own
+ * lines). The stop reason is put in words the way a playbook's end line does.
+ *
+ * @param line the session file line
+ * @returns the info line, or null for a line that draws none
+ */
+export function workflowLine(line: unknown): ProgressLine | null {
+  const l = line as Record<string, unknown>;
+  if (l.runKind !== "workflow") return null;
+  if (l.phase === "run_start") {
+    const name = text(l.name) ?? "?";
+    const task = text(l.task);
+    const runId = text(l.runId);
+    const run = runId === null ? {} : { runId };
+    return task === null
+      ? {
+          kind: "info",
+          text: `Workflow ${name} started`,
+          tone: "neutral",
+          infoKey: "chat.wf.startNoTask",
+          infoVars: { name },
+          ...run,
+        }
+      : {
+          kind: "info",
+          text: `Workflow ${name} started on: ${task}`,
+          tone: "neutral",
+          infoKey: "chat.wf.start",
+          infoVars: { name, task },
+          ...run,
+        };
+  }
+  if (l.phase === "run_end") {
+    const reason = text(l.stopReason) ?? "?";
+    const detail = text(l.detail);
+    const more = detail === null ? "" : ` ${detail}`;
+    const refKey = `pb.run.stop.${reason}`;
+    const known = dict[refKey] !== undefined;
+    const words = known ? dict[refKey].en : reason;
+    return {
+      kind: "info",
+      text: `The workflow ended: ${words}.${more}`,
+      tone: reason === "done" ? "neutral" : "warn",
+      infoKey: "chat.wf.end",
+      infoVars: known ? { more } : { more, ref: reason },
+      ...(known ? { infoRefKey: refKey } : {}),
+    };
+  }
+  return null;
 }

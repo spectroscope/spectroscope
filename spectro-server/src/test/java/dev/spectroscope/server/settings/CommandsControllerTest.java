@@ -41,10 +41,18 @@ class CommandsControllerTest {
             CommandList.Command c = CommandList.all().get(i);
             assertEquals(c.id(), row.path("id").asText(), "the order is the list's order");
             for (String field : List.of("id", "name", "aliases", "takesArgs", "group", "surfaces", "developerOnly",
-                    "wired", "help")) {
+                    "wired", "help", "usage")) {
                 assertTrue(row.has(field), c.id() + " lost " + field + " on the wire");
             }
             assertEquals(c.help().en(), row.path("help").path("en").asText());
+            // Card 588: the German help and the template ride the same answer.
+            assertEquals(c.help().de(), row.path("help").path("de").asText());
+            if (c.usage() == null) {
+                assertTrue(row.path("usage").isNull(), c.id() + ": a row without a template says so");
+            } else {
+                assertEquals(c.usage().en(), row.path("usage").path("en").asText());
+                assertEquals(c.usage().de(), row.path("usage").path("de").asText());
+            }
             assertEquals(c.wired(), row.path("wired").asBoolean());
         }
         JsonNode run = wire.findParents("id").stream().filter(r -> "run-with-playbook".equals(r.path("id").asText()))

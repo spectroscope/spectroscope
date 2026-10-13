@@ -6,7 +6,9 @@
 // the provider history, so they are deliberately NOT counted.
 
 import type { RunEvent } from "../events";
-import { windowTrace, type UiState } from "./reducer";
+import { foldLocalLine, windowTrace, type UiState } from "./reducer";
+import type { LocalLine } from "./pageCommands";
+import { cutOpenRuns } from "./runView";
 
 /**
  * The state a resumed session hands to the live socket.
@@ -37,7 +39,45 @@ export function seedResumedLive(folded: UiState): UiState {
   // that a session which fits comes back object for object, and its test asserts
   // identity rather than equality.
   const withoutAsks = folded.pendingAsks.length === 0 ? folded : { ...folded, pendingAsks: [] };
-  return windowTrace(withoutAsks);
+  // Card 586 (review I4): a run the history left without its run_end will not
+  // end; it is cut, so the continued chat's text and files stay out of it.
+  const runs = cutOpenRuns(withoutAsks.runs);
+  return windowTrace(runs === withoutAsks.runs ? withoutAsks : { ...withoutAsks, runs });
+}
+
+/**
+ * Card 577: the lines the page added to a stored session's chat while it was
+ * on screen (pageCommands.ts), for the resume that continues it. Only the
+ * session the resume continues gives its lines; another one on screen gives
+ * none.
+ *
+ * @param shown the stored session on screen, or null
+ * @param id    the session the resume continues
+ * @return its lines in the order they were added
+ */
+export function pageLinesOf(
+  shown: { id: string; pageLines?: readonly LocalLine[] } | null,
+  id: string,
+): readonly LocalLine[] {
+  return shown !== null && shown.id === id ? (shown.pageLines ?? []) : [];
+}
+
+/**
+ * Card 577: the resumed state with the stored chat's page lines after its
+ * history, each once and in order, folded as App folds them (foldLocalLine).
+ * The stored file never held them. Only the lines addLocalLine kept travel;
+ * another page-only turn, such as the line abandonResumeFrames adds when a
+ * model pick did not arrive, does not.
+ *
+ * @param resumed the state the resume folded from the stored file
+ * @param lines   the lines, from {@link pageLinesOf}
+ * @return the state, the same object when there are none
+ */
+export function withPageLines(resumed: UiState, lines: readonly LocalLine[]): UiState {
+  return lines.reduce(
+    (state, line) => foldLocalLine(state, line.text, { tone: line.tone, openPlaybook: line.openPlaybook }),
+    resumed,
+  );
 }
 
 export interface ResumeSummary {

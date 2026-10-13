@@ -38,7 +38,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * {@code Host}, and those headers are the whole test.</p>
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-        properties = {"server.address=127.0.0.1", "SPECTRO_HUB_PORT="})
+        properties = {"server.address=127.0.0.1", "SPECTRO_HUB_ENABLED=", "SPECTRO_HUB_PORT="})
 @Timeout(value = 30, unit = TimeUnit.SECONDS)
 class LiveSttSocketRegistrationTest {
 

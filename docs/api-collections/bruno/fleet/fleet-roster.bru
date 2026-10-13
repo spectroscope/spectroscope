@@ -11,7 +11,7 @@ get {
 }
 
 docs {
-  The fleet roster: {enabled, hubPort, nodes[]}. enabled:false with empty roster is a valid answer (hub is opt-in via SPECTRO_HUB_PORT).
+  The fleet roster: {enabled, hubPort, hub, nodes[]}. enabled:false with an empty roster is a valid answer (the hub is opt-in via SPECTRO_HUB_ENABLED). hub carries both settings as read (enabledSetting, portSetting), the port in use, and why the hub differs from what was written: note (port-privileged, port-invalid, port-app-range, port-server, default-taken, bind-failed, no-free-port, enabled-unreadable, setting-unreadable), reason (the bind error, or what could not be read) and message (one English sentence). A port under 1024, a port in 8080 to 8100, the server's own port or one that is not a number is never bound: the hub takes the first free loopback port from 7700 up. A written port that cannot open, or that another program already listens on, leaves the hub off; the server starts anyway.
   
   Fence: host. Loopback fence: the TCP peer must be loopback AND the Host header must be localhost/127.0.0.1/::1. A REST client passes automatically when it targets http://localhost:<port>. A LAN IP or rebound DNS name in the URL answers a blank 404.
   

@@ -215,10 +215,20 @@ describe("the calls that open the dock (card 402)", () => {
         // Automatic: the agent's own browser_action, at most once per run (card 241).
         "state/browserReveal.ts revealBrowserPanel openDockPanel",
         "state/browserReveal.ts revealBrowserPanel openRightPanel",
+        // Card 586: a run_step run_start opens the run panel, once per run id.
+        "state/runReveal.ts revealRunPanel openDockPanel",
+        // Card 586: the same reveal shows the dock the plan panel sits in.
+        "state/runReveal.ts revealRunPanel openRightPanel",
         // Card 472: a press on the code graph's "Graph ready" chip opens the
         // browser panel, where the graph page is sent.
         "codegraph/CodeGraphHeaderStatus.tsx openGraphInBrowser openDockPanel",
         "codegraph/CodeGraphHeaderStatus.tsx openGraphInBrowser openRightPanel",
+        // Card 586: a press on a run's document or file opens it in the Files panel.
+        "App.tsx onOpenRunPath openDockPanel",
+        "App.tsx onOpenRunPath openRightPanel",
+        // Card 586: the Playbook segment's "Runs of this session: open" shows the run wide.
+        "playbook/PlaybookPane.tsx onClick openDockPanel",
+        "playbook/PlaybookPane.tsx onClick openRightPanel",
         // A click on a work item inside the chat.
         "App.tsx onOpenWork openDockPanel",
         "App.tsx onOpenWork openRightPanel",

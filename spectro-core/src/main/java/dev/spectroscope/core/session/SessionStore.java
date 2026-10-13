@@ -1217,6 +1217,9 @@ public final class SessionStore {
             // Card 554: a playbook run's line belongs to the playbook's own
             // agent id, the one its plan already carries.
             case RunEvent.PlaybookProgress e -> e.agentId();
+            // Card 586: the run view's line carries the same agent id, for a
+            // playbook run and a workflow run alike.
+            case RunEvent.RunStep e -> e.agentId();
             // Card 554: a pick belongs to the session, not to one agent.
             case RunEvent.PlaybookPicked e -> null;
             // Card 337: a human's hand on the play button. There is no agent to

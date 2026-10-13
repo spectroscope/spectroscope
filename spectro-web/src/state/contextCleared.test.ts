@@ -108,7 +108,7 @@ describe("a context_cleared event in the ring", () => {
     );
 
     expect(html, "the ring is drawn").toContain("context-wrap");
-    const pct = Number(/aria-label="Context (\d+) percent full/.exec(html)?.[1]);
+    const pct = Number(/aria-label="Context of Main agent, (\d+) percent full/.exec(html)?.[1]);
     expect(pct, "3,000 of a 100,000 threshold").toBe(3);
   });
 

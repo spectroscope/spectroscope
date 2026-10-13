@@ -64,6 +64,7 @@ final class FakeCopilotRuntime implements AutoCloseable {
     private volatile boolean closed;
     private volatile boolean failModels;
     private final Set<String> held = ConcurrentHashMap.newKeySet();
+    private final Map<String, String> refuseNext = new ConcurrentHashMap<>();
     private final AtomicLong clientsGone = new AtomicLong();
 
     FakeCopilotRuntime() throws IOException {
@@ -101,6 +102,21 @@ final class FakeCopilotRuntime implements AutoCloseable {
      */
     FakeCopilotRuntime hold(String method) {
         held.add(method);
+        return this;
+    }
+
+    /** Answers requests of {@code method} again, from the next one on; one already held stays unanswered. */
+    FakeCopilotRuntime release(String method) {
+        held.remove(method);
+        return this;
+    }
+
+    /**
+     * Answers the next request of {@code method} with a JSON-RPC error, as a
+     * runtime that refuses it (an unknown model, a limit) does. Card 583.
+     */
+    FakeCopilotRuntime refuseNext(String method, String message) {
+        refuseNext.put(method, message);
         return this;
     }
 
@@ -220,10 +236,11 @@ final class FakeCopilotRuntime implements AutoCloseable {
         if (held.contains(method)) {
             return; // kept on record, never answered
         }
-        if ("models.list".equals(method) && failModels) {
+        String refusal = refuseNext.remove(method);
+        if (refusal != null || ("models.list".equals(method) && failModels)) {
             ObjectNode error = NODES.objectNode();
             error.put("code", -32603);
-            error.put("message", "not signed in");
+            error.put("message", refusal != null ? refusal : "not signed in");
             ObjectNode response = NODES.objectNode();
             response.put("jsonrpc", "2.0");
             response.set("id", message.get("id"));
@@ -254,9 +271,13 @@ final class FakeCopilotRuntime implements AutoCloseable {
                 Thread t = new Thread(() -> {
                     sleep(20);
                     Turn turn = new Turn(target);
-                    abortTail.accept(turn);
-                    turn.event("abort", object(Map.of("reason", "user_initiated")));
-                    turn.event("session.idle", object(Map.of("aborted", true)));
+                    try {
+                        abortTail.accept(turn);
+                        turn.event("abort", object(Map.of("reason", "user_initiated")));
+                        turn.event("session.idle", object(Map.of("aborted", true)));
+                    } catch (UncheckedIOException died) {
+                        // the tail made the runtime die (card 583): nothing more to send
+                    }
                 }, "fake-copilot-abort");
                 t.setDaemon(true);
                 t.start();

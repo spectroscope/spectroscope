@@ -140,6 +140,14 @@ export interface StateGraphViewProps {
   view: StateGraphViewState;
   onView: (next: StateGraphViewState) => void;
   onLoadFile?: (graph: string, state: string | null, source: string) => void;
+  /** Card 586: a name per node id. A node's card shows `nodeLabels[id]` when
+   *  given, else the label of the graph file. The labels go in before the
+   *  layout, so a box is as wide as the name it carries. */
+  nodeLabels?: Record<string, string>;
+  /** Card 586: false leaves the document's keys (space, the arrows, Home and
+   *  End) alone. The wide run view draws a run's graph beside the chat and is
+   *  not the State graph segment the keys belong to. Default true. */
+  keys?: boolean;
 }
 
 export function StateGraphView({
@@ -149,6 +157,8 @@ export function StateGraphView({
   view,
   onView,
   onLoadFile,
+  nodeLabels,
+  keys = true,
 }: StateGraphViewProps) {
   const lang = useLang();
   const { orientation, cursor, picked } = view;
@@ -165,7 +175,14 @@ export function StateGraphView({
   const fileRef = useRef<HTMLInputElement>(null);
 
   const run = useMemo(() => readStateGraphRun(graphJsonl, stateJsonl), [graphJsonl, stateJsonl]);
-  const laid = useMemo(() => layoutStateGraph(run.topology, orientation), [run.topology, orientation]);
+  const topology = useMemo(() => {
+    if (nodeLabels === undefined) return run.topology;
+    return {
+      ...run.topology,
+      nodes: run.topology.nodes.map((n) => ({ ...n, label: nodeLabels[n.id] ?? n.label })),
+    };
+  }, [run.topology, nodeLabels]);
+  const laid = useMemo(() => layoutStateGraph(topology, orientation), [topology, orientation]);
 
   // null cursor = the whole run, which is how the view opens: the reader is
   // looking at a finished record, not watching it arrive. Clamped, because the
@@ -224,7 +241,9 @@ export function StateGraphView({
   // The keyboard, scoped by mounting: the listener exists only while this pane
   // is on screen (App unmounts the whole arm off "stategraph"), so it can
   // never fire in another segment. Bound once; state is read through refs.
+  // Card 586: a view drawn with keys off binds nothing.
   useEffect(() => {
+    if (!keys) return;
     const onKey = (e: KeyboardEvent): void => {
       const el = e.target as HTMLElement | null;
       // The export sheet is a dialog OVER the view: while focus is inside it,
@@ -259,7 +278,7 @@ export function StateGraphView({
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [patch]);
+  }, [patch, keys]);
 
   const flowNodes: FlowNode[] = useMemo(
     () =>
@@ -321,17 +340,22 @@ export function StateGraphView({
             {t(lang, "sg.vertical")}
           </button>
           <StateGraphExport run={run} laid={laid} upto={upto} source={source} />
-          <button type="button" onClick={() => fileRef.current?.click()}>
-            {t(lang, "sg.load")}
-          </button>
-          <input
-            ref={fileRef}
-            type="file"
-            multiple
-            accept=".jsonl"
-            hidden
-            onChange={(e) => openFiles(e.target.files)}
-          />
+          {/* Card 586: Load only where a loaded file has somewhere to go. */}
+          {onLoadFile !== undefined && (
+            <>
+              <button type="button" onClick={() => fileRef.current?.click()}>
+                {t(lang, "sg.load")}
+              </button>
+              <input
+                ref={fileRef}
+                type="file"
+                multiple
+                accept=".jsonl"
+                hidden
+                onChange={(e) => openFiles(e.target.files)}
+              />
+            </>
+          )}
         </div>
       </header>
 

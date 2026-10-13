@@ -8,7 +8,9 @@
 import { describe, expect, it } from "vitest";
 import type { ClientMessage } from "../events";
 import { createNavNonce } from "./appRouter";
+import { confirmPlaybookFrame, loopStopFrame } from "./chatCommands";
 import { ResumeJoin } from "./resumeJoin";
+import { asTypedCommand, isTypedCommand } from "./typedCommand";
 
 const MODE: ClientMessage = { type: "set_permission_mode", mode: "auto" };
 const GROUPS: ClientMessage = { type: "set_tool_groups_off", groups: ["web"], save: false };
@@ -76,5 +78,35 @@ describe("ResumeJoin", () => {
     const join = new ResumeJoin(nonce.isCurrent);
     expect(join.join("A", MODE)).toBe(false);
     expect(join.carried("A")).toEqual([]);
+  });
+});
+
+// Card 576, second review finding 1: the tag of a command typed in the
+// composer lives on the frame object (typedCommand.ts), so a resume must hand
+// on the objects it holds, not copies.
+describe("a typed command's frame in a resume", () => {
+  it("is taken as the same object, the one that joined included", () => {
+    const nonce = createNavNonce();
+    const join = new ResumeJoin(nonce.isCurrent);
+    const first = asTypedCommand(confirmPlaybookFrame(""));
+    const joined = asTypedCommand(loopStopFrame());
+    const ticket = startResume(join, nonce, "A", first);
+    expect(join.join("A", joined)).toBe(true);
+    const taken = join.take(ticket);
+    expect(taken).toHaveLength(2);
+    expect(taken[0]).toBe(first);
+    expect(taken[1]).toBe(joined);
+    expect(taken.map(isTypedCommand)).toEqual([true, true]);
+  });
+
+  it("is carried into a later resume of the same session as the same object", () => {
+    const nonce = createNavNonce();
+    const join = new ResumeJoin(nonce.isCurrent);
+    const typed = asTypedCommand(confirmPlaybookFrame(""));
+    startResume(join, nonce, "A", typed);
+    const second = startResume(join, nonce, "A");
+    const taken = join.take(second);
+    expect(taken).toHaveLength(1);
+    expect(taken[0]).toBe(typed);
   });
 });

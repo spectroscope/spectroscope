@@ -2,11 +2,12 @@
 //
 // Each cycle is one root run with a child agent under it, and together the
 // cycles carry every event type the reducer folds: the wire frames of the
-// RunEvent union, the socket-only frames (provider_info, workspace_info,
+// RunEvent union (card 586's run_step among them), the socket-only frames (provider_info, workspace_info,
 // permission_mode_info, tool_groups_info, local_mode_info, otlp_export, and
 // card 502's peer_message, peer_roster and peer_message_decision, card 503's send_peer_message, and card
 // 504's goal_info, loop_info and set_loop, card 554's playbook_info and
-// playbook_confirm, card 558's session_items) and the import-only ones (user_message,
+// playbook_confirm, card 558's session_items, card 584's playbook_start_refused) and card 593's sizes-only child context_info
+// and the import-only ones (user_message,
 // tool_result_detail, workflow_state, attachment_image, agent_detail). Which
 // types those are is read off reducer.ts by the test that uses this, so a type
 // the reducer learns later turns that test red until it is added here.
@@ -142,6 +143,51 @@ function cycle(c: number, ts: number): Array<Record<string, unknown>> {
         refusals: [],
       },
     });
+    // Card 586: one run of the run view, a chat step from its start to its end.
+    const viewRun = {
+      type: "run_step",
+      agentId: "playbook",
+      runId: `ar${c.toString(16).padStart(10, "0")}`,
+      runKind: "playbook",
+    };
+    const classify = { node: "classify", name: "Classify", kind: "step", entry: 1 };
+    const input = `Classify the task.\n\nTask: task ${c}`;
+    push({
+      ...viewRun,
+      phase: "run_start",
+      name: "spectro",
+      task: `task ${c}`,
+      nodes: [{ id: "classify", name: "Classify", kind: "step" }],
+    });
+    push({
+      ...viewRun,
+      phase: "step_start",
+      ...classify,
+      performer: "chat",
+      provider: "ollama",
+      model: "qwen2.5:7b",
+      input,
+      inputChars: input.length,
+      reads: [{ doc: "ticket" }],
+    });
+    push({
+      ...viewRun,
+      phase: "step_end",
+      ...classify,
+      status: "done",
+      durationMs: 1200,
+      output: "approved",
+      outputChars: 8,
+      documents: [{ doc: "spec", path: ".superpowers/spec.md", change: "created" }],
+    });
+    push({
+      ...viewRun,
+      phase: "run_end",
+      stopReason: "done",
+      result: "approved",
+      durationMs: 1500,
+    });
+    push({ type: "playbook_start_refused", ask: `start-${c}`, message: "no model answers" } as never);
     push({
       type: "playbook_progress",
       agentId: "playbook",
@@ -257,8 +303,42 @@ function cycle(c: number, ts: number): Array<Record<string, unknown>> {
   push({ type: "agent_spawn", agentId: child, parentId: root, task: `sub task ${c}` });
   push({ type: "agent_detail", agentId: child, model: "child-model", launched: c % 2 === 0 });
   push({ type: "run_start", runId: `${run}-child`, agentId: child, parentId: root, prompt: `sub ${c}` });
+  // Card 593: a helper reports the sizes of its parts, never their texts.
+  push({
+    type: "context_info",
+    agentId: child,
+    turn: 1,
+    messages: 2,
+    estimatedTokens: 60,
+    threshold: 100_000,
+    thresholdSource: "fallback",
+    parts: [
+      { label: "system prompt", chars: 120, estTokens: 30 },
+      { label: "tool schemas", chars: 40, estTokens: 10 },
+      { label: "conversation", chars: 80, estTokens: 20 },
+    ],
+  });
   push({ type: "text_delta", agentId: child, text: "child says" });
   push({ type: "agent_message", from: root, to: child, role: "user", state: "submitted", text: "go on" });
+  // Card 503 and 594: a message to the child, read by it or handed back unread.
+  push({
+    type: "agent_message",
+    from: root,
+    to: child,
+    role: "peer",
+    state: "sent",
+    text: `status ${c}?`,
+    label: `m${c}`,
+  });
+  push({
+    type: "agent_message",
+    from: child,
+    to: root,
+    role: "peer",
+    state: c % 2 === 0 ? "received" : "returned",
+    text: c % 2 === 0 ? `status ${c}?` : `[Delivery notice] Your message to ${child} was not delivered.`,
+    label: `m${c}`,
+  });
   push({ type: "usage", agentId: child, inputTokens: 30, outputTokens: 10 });
   push({ type: "run_end", runId: `${run}-child`, stopReason: "end_turn" });
   push({

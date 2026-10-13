@@ -277,6 +277,21 @@ in your own terminal. A replayed scenario fleet offers neither the bar's
 <code>+</code> nor the rail's dock button — there is no hub behind it to
 dock into.</p>
 
+<p><strong>The hub.</strong> The hub is off until you turn it on, with
+the switch in the settings under Fleet or with
+<code>SPECTRO_HUB_ENABLED=true</code> (<code>on</code>, <code>yes</code>
+and <code>1</code> work too). It listens on loopback port 7700, and
+<code>SPECTRO_HUB_PORT</code> sets another port from 1024 up. The hub never
+binds a port under 1024 (it needs admin rights), a port in 8080 to 8100 (the
+app's own server runs there) or the server's own port; it takes the first
+free port from 7700 instead. If another program already
+listens on the port you set, on any address, the hub stays off and the app
+starts anyway. The fleet settings, the doctor and the server log name the
+port the hub took, or the reason it is off. A
+<code>SPECTRO_HUB_PORT</code> without the switch also turns the hub on.
+Both values are read at start, so a change takes effect after a
+restart.</p>
+
 <p><strong>Stop.</strong> A connected agent card carries a
 <code>&#x2297;</code> button that sends a stop to the node over the hub.
 Best-effort, and it says so: the click confirms the verb was sent, not
@@ -305,6 +320,6 @@ I/O, so its face is treated as sensitively as the ability to spawn.</p></div>
 
 <p>A fleet is still not an object anyone creates. No endpoint makes one,
 and the only path to one is spawning a node into a hub that is already
-running behind two variables that both default to off. The message verb
+running behind two switches that both default to off. The message verb
 makes an existing fleet talkable; it does not make a fleet easier to
 have.</p>

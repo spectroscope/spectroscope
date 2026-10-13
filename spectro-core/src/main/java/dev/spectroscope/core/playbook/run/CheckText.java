@@ -19,8 +19,7 @@ public final class CheckText {
     public static String describe(Playbook p, Playbook.Decision d) {
         Playbook.Check c = p.checks().get(d.check());
         String what = switch (c.kind()) {
-            case "sections" -> names(p, c.documents()) + " has the sections "
-                    + String.join(", ", sectionsOf(p, c.documents())) + ", each with text";
+            case "sections" -> sections(p, c);
             case "open_items" -> names(p, c.documents()) + " has no unchecked boxes";
             case "command" -> "the command " + CommandCheck.substitute(c.run(), p.vars()) + " exits 0";
             case "review" -> "a reviewer answers " + String.join(" or ", labels(c));
@@ -50,6 +49,13 @@ public final class CheckText {
 
     static List<String> labels(Playbook.Check c) {
         return c.labels().isEmpty() ? List.of("pass", "fail") : c.labels();
+    }
+
+    /** The sections and, with the first as the example, the two forms a section may take (card 596). */
+    private static String sections(Playbook p, Playbook.Check c) {
+        List<String> sections = sectionsOf(p, c.documents());
+        String what = names(p, c.documents()) + " has the sections " + String.join(", ", sections) + ", each with text";
+        return sections.isEmpty() ? what : what + " (" + DocumentChecks.forms(sections.get(0)) + ")";
     }
 
     private static String names(Playbook p, List<String> ids) {

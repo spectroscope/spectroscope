@@ -13,6 +13,9 @@ export type FileView = "rendered" | "source";
 export interface FileTab {
   path: string;
   view: FileView;
+  /** Card 586: where the bytes come from when not /api/file, such as the run's
+   *  document route for a document under a dot folder. */
+  url?: string;
 }
 
 export interface FileTabsState {
@@ -33,8 +36,10 @@ export function emptyFileTabs(): FileTabsState {
  * Open a path: an already-open file is focused, a new one appends and takes
  * focus. At the cap the OLDEST inactive tab makes room — refusing the click
  * would read as a broken tree.
+ *
+ * @param url card 586: where a new tab reads the file from, when not /api/file
  */
-export function openFile(state: FileTabsState, path: string): FileTabsState {
+export function openFile(state: FileTabsState, path: string, url?: string): FileTabsState {
   if (state.active === path) return state;
   if (state.tabs.some((tab) => tab.path === path)) return { ...state, active: path };
   let tabs = state.tabs;
@@ -42,7 +47,8 @@ export function openFile(state: FileTabsState, path: string): FileTabsState {
     const oldest = tabs.find((tab) => tab.path !== state.active);
     tabs = tabs.filter((tab) => tab !== oldest);
   }
-  return { tabs: [...tabs, { path, view: "rendered" }], active: path };
+  const tab: FileTab = url === undefined ? { path, view: "rendered" } : { path, view: "rendered", url };
+  return { tabs: [...tabs, tab], active: path };
 }
 
 /** Focus an open tab; unknown paths are ignored. */

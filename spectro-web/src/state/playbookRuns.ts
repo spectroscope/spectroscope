@@ -1,7 +1,6 @@
 // The web half of a playbook run (card 482): the start preview the
-// confirmation sheet shows, the runs of a session from the sidecar, and the
-// graph file of one run that the run view draws. The server owns all three;
-// this file only asks.
+// confirmation sheet shows and the graph file of one run that the wide run
+// view draws (card 586). The server owns both; this file only asks.
 
 /** One step as the confirmation shows it (PlaybookStartPreview.StepPlan). */
 export interface StepPlan {
@@ -19,6 +18,34 @@ export interface StepPlan {
   nod: boolean;
 }
 
+/** Card 584: whether a node that runs on a model has one that serves (PlaybookStartPreview.ModelCheck). */
+export interface ModelCheck {
+  node: string;
+  name: string;
+  kind: "step" | "review";
+  choice: string;
+  privacy: string;
+  /** The playbook's primary model. */
+  provider: string;
+  model: string;
+  serves: boolean;
+  /** A fallback that serves in place of the primary, else null. */
+  viaProvider: string | null;
+  viaModel: string | null;
+  /** Null when it serves; else one word for why the primary does not. */
+  reason: string | null;
+  httpStatus: number | null;
+  /** For a rejected key only: where the key came from, never the key. */
+  keySource: "environment" | "saved" | null;
+}
+
+/** Card 584: a provider whose model list answered in the sheet's check (PlaybookStartPreview.ModelOffer). */
+export interface ModelOffer {
+  provider: string;
+  kind: string;
+  models: string[];
+}
+
 /** What the server answers before a run starts. */
 export interface StartPreview {
   dir: string;
@@ -30,22 +57,10 @@ export interface StartPreview {
   skills: { name: string; source: "playbook" | "missing" }[];
   commands: string[];
   refusals: string[];
-}
-
-/** One run of a session, read from its sidecar. */
-export interface PlaybookRunRow {
-  run: string;
-  playbook: string;
-  startedAt: number;
-  /** Null while the run has no end in the sidecar. */
-  stopReason: string | null;
-  /** The label of the end the path reached; null while open or when the run stopped before an end. */
-  result: string | null;
-  live: boolean;
-  graph: string;
-  /** Card 554: what the run was asked, the prompt after /run-with-playbook;
-   *  null for a run started without one, absent on a server before the field. */
-  task?: string | null;
+  /** Card 584: one row per node that runs on a model; absent on a server before the card. */
+  models?: ModelCheck[];
+  /** Card 584: the models of every provider whose list answered; absent on a server before the card. */
+  offers?: ModelOffer[];
 }
 
 /**
@@ -59,17 +74,6 @@ export async function fetchStartPreview(dir: string, workspace: string): Promise
   const res = await fetch(`/api/playbooks/start-preview?${q.toString()}`);
   if (!res.ok) throw new Error(`start preview ${res.status}`);
   return (await res.json()) as StartPreview;
-}
-
-/**
- * The playbook runs of a session in the order they started; empty when the
- * server refuses or knows none.
- *
- * @param sessionId the session id
- */
-export async function fetchRuns(sessionId: string): Promise<PlaybookRunRow[]> {
-  const res = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/playbook-runs`);
-  return res.ok ? ((await res.json()) as PlaybookRunRow[]) : [];
 }
 
 /**

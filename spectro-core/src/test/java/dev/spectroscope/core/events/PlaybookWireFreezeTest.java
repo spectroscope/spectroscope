@@ -20,6 +20,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * ({@code playbook_picked}, criterion 8e).
  * Both are written to the session file so a replay shows them. Every other
  * component stays frozen, and the lists below stay exact.</p>
+ *
+ * <p>Card 586 adds one more record in the same additive way: {@code run_step},
+ * the line the run view beside the chat reads, with its two value records
+ * {@code RunNode} and {@code RunDoc}.</p>
  */
 class PlaybookWireFreezeTest {
 
@@ -35,7 +39,7 @@ class PlaybookWireFreezeTest {
                 "Usage", "RunEnd", "ErrorEvent", "ImageGenerated", "ContextInfo", "WindowOverride", "AgentMessage",
                 "Plan", "BrowserAction", "HookDecision", "ImagesWithheld", "QuestionAsked", "QuestionAnswered",
                 "NoProgress", "ProgressIntervention", "Continuation", "GoalCheck", "SettingsIgnored",
-                "LaunchOutcome", "SteeringMessage", "ContextCleared", "PlaybookProgress", "PlaybookPicked"), permitted);
+                "LaunchOutcome", "SteeringMessage", "ContextCleared", "PlaybookProgress", "PlaybookPicked", "RunStep"), permitted);
     }
 
     @Test
@@ -47,6 +51,13 @@ class PlaybookWireFreezeTest {
                 "stopReason", "result", "detail", "ts"), components(RunEvent.PlaybookProgress.class));
         // Card 554, integrator decision b: an explicit "No playbook" pick.
         assertEquals(List.of("dir", "name", "none", "ts"), components(RunEvent.PlaybookPicked.class));
+        // Card 586: the run view's line.
+        assertEquals(List.of("agentId", "runId", "runKind", "phase", "name", "task", "nodes", "node", "kind", "entry",
+                "performer", "role", "provider", "model", "picked", "input", "inputChars", "reads", "round",
+                "maxRounds", "status", "durationMs", "childId", "children", "output", "outputChars", "documents",
+                "label", "error", "stopReason", "result", "detail", "ts", "workspaceFingerprint"), components(RunEvent.RunStep.class));
+        assertEquals(List.of("id", "name", "kind"), components(RunEvent.RunNode.class));
+        assertEquals(List.of("doc", "path", "change"), components(RunEvent.RunDoc.class));
         assertEquals(List.of("agentId", "steps", "ts"), components(RunEvent.Plan.class));
         assertEquals(List.of("text", "status"), components(RunEvent.PlanStep.class));
         assertEquals(List.of("from", "to", "role", "state", "text", "label", "ts"), components(RunEvent.AgentMessage.class));

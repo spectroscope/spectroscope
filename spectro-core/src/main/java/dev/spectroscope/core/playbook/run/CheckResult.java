@@ -6,10 +6,21 @@ import java.util.stream.Collectors;
 /**
  * What a check answered.
  *
- * @param label  the outcome label, or null when the check produced none
- * @param detail what a person reads in the sidecar
+ * @param label   the outcome label, or null when the check produced none
+ * @param detail  what a person reads in the sidecar
+ * @param childId card 586: the child a review check ran, for the run view; null when no child ran
  */
-public record CheckResult(String label, String detail) {
+public record CheckResult(String label, String detail, String childId) {
+
+    /**
+     * A result no child produced.
+     *
+     * @param label  the outcome label, or null when the check produced none
+     * @param detail what a person reads in the sidecar
+     */
+    public CheckResult(String label, String detail) {
+        this(label, detail, null);
+    }
 
     public static CheckResult pass(String detail) {
         return new CheckResult("pass", detail);

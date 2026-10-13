@@ -49,6 +49,24 @@ class PeerInboxTest {
     }
 
     @Test
+    void messagesPutBackGoFirstInTheirOrderAndAClosedInboxHandsThemToItsHook() {
+        // Card 594: a helper's turn took them for a request that never went out.
+        PeerInbox inbox = new PeerInbox();
+        List<PeerEnvelope> handedBack = new ArrayList<>();
+        inbox.onUnread(handedBack::addAll);
+        inbox.open();
+        inbox.submit(message("arrived later"));
+        inbox.putBack(List.of(message("taken first"), message("taken second")));
+        assertEquals(List.of("taken first", "taken second", "arrived later"),
+                inbox.take().stream().map(PeerEnvelope::text).toList());
+        assertEquals(List.of(), handedBack, "an open inbox keeps them");
+        inbox.close();
+        inbox.putBack(List.of(message("taken last")));
+        assertEquals(List.of("taken last"), handedBack.stream().map(PeerEnvelope::text).toList(),
+                "a closed inbox hands them to its hook at once");
+    }
+
+    @Test
     void closingHandsBackWhatTheRunDidNotRead() {
         PeerInbox inbox = new PeerInbox();
         List<PeerEnvelope> handedBack = new ArrayList<>();

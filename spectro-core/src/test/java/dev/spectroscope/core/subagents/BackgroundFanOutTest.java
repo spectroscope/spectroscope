@@ -75,6 +75,30 @@ class BackgroundFanOutTest {
         final Map<String, List<ProviderRequest>> childRequests = new ConcurrentHashMap<>();
         final AtomicInteger atModel = new AtomicInteger();
         final AtomicInteger mostAtModel = new AtomicInteger();
+        /** Card 594: when true, the window question fails, so a run that starts now fails before its first turn. */
+        volatile boolean windowFails;
+        /** Card 594, review probe R1: the next window question waits until a stop interrupts it. */
+        volatile boolean holdNextWindow;
+        /** Opens when the held window question is asked. */
+        final CountDownLatch windowAsked = new CountDownLatch(1);
+
+        @Override
+        public int contextWindow() {
+            if (windowFails) {
+                throw new IllegalStateException("the window question failed");
+            }
+            if (holdNextWindow) {
+                holdNextWindow = false;
+                windowAsked.countDown();
+                try {
+                    Thread.sleep(20_000);
+                } catch (InterruptedException stopped) {
+                    // As OllamaProvider asks it: an interrupted question learns nothing.
+                }
+                return 0;
+            }
+            return 0;
+        }
 
         Script parentSays(Function<ProviderRequest, List<ProviderEvent>> turn) {
             parent.add(turn);
@@ -227,8 +251,13 @@ class BackgroundFanOutTest {
 
         Chat(LlmProvider provider, SubagentConfig.Builder config, long runBudgetMs, SessionGoal goal,
              Integer maxTurns, boolean inboxWired, UnaryOperator<MessagingSeat> seatAround) {
+            this(provider, config, runBudgetMs, goal, maxTurns, inboxWired, seatAround, List.of(listDir()));
+        }
+
+        Chat(LlmProvider provider, SubagentConfig.Builder config, long runBudgetMs, SessionGoal goal,
+             Integer maxTurns, boolean inboxWired, UnaryOperator<MessagingSeat> seatAround, List<Tool> childBelt) {
             this.manager = new SubagentManager(config.provider(provider).cwd(Path.of(".")).parentAgentId("main")
-                    .onPermission(request -> true).baseTools(List.of(listDir())).build(), runBudgetMs);
+                    .onPermission(request -> true).baseTools(childBelt).build(), runBudgetMs);
             manager.tools().forEach(registry::register);
             MessagingTools.forSeat(seatAround.apply(
                             new SessionSeat(() -> null, () -> "s", () -> manager, () -> true, "main")))
@@ -935,8 +964,8 @@ class BackgroundFanOutTest {
                 })
                 .parentSays(tool("p1", "spawn_agents", TWO_IN_BACKGROUND))
                 .parentSays(request -> {
-                    // A child reads no message before it is working (the refusal says to send again
-                    // once list_agents shows it working), and its thread may not have started yet.
+                    // explore-2 works before the question leaves, so it answers from a later turn.
+                    // A message sent before a child works waits for its first turn (card 581, below).
                     await("explore-2 working", () -> chat.get().manager.backgroundSnapshotForTests()
                             .contains("explore-2=working"));
                     return tool("p2", "send_message", "{\"to\":\"explore-2\",\"message\":\"status?\"}");
@@ -1323,6 +1352,1289 @@ class BackgroundFanOutTest {
         release.countDown();
         runner.join(20_000);
         assertEquals(3, script.parentRequests.size(), "spawn, wait, answer: three requests in all");
+    }
+
+    // ── card 581: a message to a child that is not working yet waits ──────
+
+    private static PToolCall call(String id, String name, String input) {
+        return new PToolCall(id, name, json(input));
+    }
+
+    /** One parent turn that calls these tools in order. */
+    private static List<ProviderEvent> tools(PToolCall... calls) {
+        List<ProviderEvent> turn = new ArrayList<>(List.of(calls));
+        turn.add(new PStop(PStop.StopReason.TOOL_USE));
+        return turn;
+    }
+
+    /**
+     * The lock of the chat's slot pool. Held on the parent's loop thread, it
+     * parks every child it spawns in {@code SessionSlots.acquire}, short of
+     * its slot: spawned, listed, not working, the state the card saw. This
+     * relies on {@code acquire} taking the lock also when no count is set.
+     */
+    private static java.util.concurrent.locks.ReentrantLock slotLock(SubagentManager manager) {
+        try {
+            java.lang.reflect.Field pool = SubagentManager.class.getDeclaredField("slots");
+            pool.setAccessible(true);
+            java.lang.reflect.Field lock = SessionSlots.class.getDeclaredField("lock");
+            lock.setAccessible(true);
+            return (java.util.concurrent.locks.ReentrantLock) lock.get(pool.get(manager));
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError(e);
+        }
+    }
+
+    /** The listing line of one agent. */
+    private static String rowOf(String listing, String name) {
+        return listing.lines().filter(line -> line.strip().startsWith(name + " [")).findFirst()
+                .orElseThrow(() -> new AssertionError("no row for " + name + " in:\n" + listing));
+    }
+
+    private static final String STATUS_TO_EXPLORE_2 = "{\"to\":\"explore-2\",\"message\":\"status?\"}";
+
+    /**
+     * The card's turn: spawn_agents and send_message together, no slot limit.
+     * The children's threads have started and are parked on the slot pool's
+     * lock (see {@link #slotLock}) when the message leaves, so neither works
+     * yet. The message waits in explore-2's inbox and its first turn reads it.
+     * {@link #aBackgroundChildTakesAMessageBeforeItsThreadHasStarted} holds
+     * the threads back before they start instead.
+     */
+    @Test
+    void aMessageSentInTheTurnThatStartsTheChildWaitsAndItsFirstTurnReadsIt() {
+        AtomicReference<Chat> chat = new AtomicReference<>();
+        AtomicReference<java.util.concurrent.locks.ReentrantLock> held = new AtomicReference<>();
+        Script script = new Script()
+                .parentSays(request -> {
+                    java.util.concurrent.locks.ReentrantLock lock = slotLock(chat.get().manager);
+                    lock.lock();
+                    held.set(lock);
+                    return tools(call("p1", "spawn_agents", TWO_IN_BACKGROUND),
+                            call("p2", "send_message", STATUS_TO_EXPLORE_2),
+                            call("p3", "list_agents", "{}"));
+                })
+                .parentSays(request -> {
+                    held.get().unlock();
+                    return tool("p4", "wait_agents", "{}");
+                })
+                .parentSays(text("done"));
+        chat.set(chat(script));
+        List<RunEvent> events = chat.get().run(new CancelSignal());
+
+        List<String> turnOne = results(script.parentRequests.get(1));
+        String sent = turnOne.get(1);
+        assertTrue(sent.startsWith("Sent \"status?\" to explore-2"), sent);
+        String listing = turnOne.get(2);
+        assertTrue(rowOf(listing, "explore-2").contains(" · starting · "), listing);
+        assertFalse(listing.contains("slot"), "no slot limit holds a child of this chat: " + listing);
+        assertTrue(history(script.childRequests.get("task B").getFirst()).contains("status?"),
+                "explore-2 reads the message in its first turn");
+        assertFalse(history(script.childRequests.get("task A").getFirst()).contains("status?"),
+                "and only explore-2 reads it");
+        int sentAt = peerRecord(events, "status?", "sent");
+        int receivedAt = peerRecord(events, "status?", "received");
+        assertTrue(sentAt >= 0 && receivedAt > sentAt, "sent at " + sentAt + ", received at " + receivedAt);
+    }
+
+    /**
+     * The inbox exists when spawn_agents returns, before the children's
+     * threads run at all: the threads are held until the parent's next turn.
+     */
+    @Test
+    void aBackgroundChildTakesAMessageBeforeItsThreadHasStarted() {
+        List<Runnable> notStarted = new CopyOnWriteArrayList<>();
+        Script script = new Script()
+                .parentSays(tools(call("p1", "spawn_agents", TWO_IN_BACKGROUND),
+                        call("p2", "send_message", STATUS_TO_EXPLORE_2),
+                        call("p3", "list_agents", "{}")))
+                .parentSays(request -> {
+                    notStarted.forEach(body -> Thread.ofVirtual().start(body));
+                    return tool("p4", "wait_agents", "{}");
+                })
+                .parentSays(text("done"));
+        Chat chat = chat(script);
+        chat.manager.backgroundStarterForTests((name, body) -> notStarted.add(body));
+        List<RunEvent> events = chat.run(new CancelSignal());
+
+        assertEquals(2, notStarted.size(), "both children were held");
+        List<String> turnOne = results(script.parentRequests.get(1));
+        assertTrue(turnOne.get(1).startsWith("Sent \"status?\" to explore-2"), turnOne.get(1));
+        assertTrue(rowOf(turnOne.get(2), "explore-2").contains(" · starting · "), turnOne.get(2));
+        assertTrue(history(script.childRequests.get("task B").getFirst()).contains("status?"),
+                "explore-2 reads the message in its first turn");
+        int sentAt = peerRecord(events, "status?", "sent");
+        int receivedAt = peerRecord(events, "status?", "received");
+        assertTrue(sentAt >= 0 && receivedAt > sentAt, "sent at " + sentAt + ", received at " + receivedAt);
+    }
+
+    /**
+     * A real slot limit: explore-2 waits behind explore-1's slot. The message
+     * waits too, the listing names the slot, and explore-2's first turn reads
+     * the message once explore-1 has given its slot back.
+     */
+    @Test
+    void aMessageToAChildTheSlotLimitHoldsWaitsAndItsFirstTurnReadsItOnceTheSlotIsFree() {
+        CountDownLatch releaseA = new CountDownLatch(1);
+        Script script = new Script()
+                .child("task A", (request, n) -> {
+                    hold(releaseA, request);
+                    return text("A done");
+                })
+                .parentSays(tools(call("p1", "spawn_agents", TWO_IN_BACKGROUND),
+                        call("p2", "send_message", STATUS_TO_EXPLORE_2),
+                        call("p3", "list_agents", "{}")))
+                .parentSays(request -> {
+                    releaseA.countDown();
+                    return tool("p4", "wait_agents", "{}");
+                })
+                .parentSays(text("done"));
+        Chat chat = new Chat(script, SubagentConfig.builder().sessionsPerChat(2), 30_000, null, null, true);
+        chat.parent.setSessionsPerChat(2);
+        List<RunEvent> events = chat.run(new CancelSignal());
+
+        List<String> turnOne = results(script.parentRequests.get(1));
+        String sent = turnOne.get(1);
+        assertTrue(sent.startsWith("Sent \"status?\" to explore-2"), sent);
+        assertTrue(rowOf(turnOne.get(2), "explore-2").contains(" · waiting for a slot · "), turnOne.get(2));
+        assertTrue(history(script.childRequests.get("task B").getFirst()).contains("status?"),
+                "explore-2 reads the message in its first turn");
+        int waiting = indexOf(events, e -> e instanceof RunEvent.AgentMessage m && "explore-2".equals(m.from())
+                && "status".equals(m.role()) && "submitted".equals(m.state()));
+        int receivedAt = peerRecord(events, "status?", "received");
+        int sentAt = peerRecord(events, "status?", "sent");
+        assertTrue(waiting >= 0 && receivedAt > waiting,
+                "explore-2 waited for its slot, then read it: waiting at " + waiting + ", received at " + receivedAt);
+        assertTrue(sentAt >= 0 && receivedAt > sentAt, "sent at " + sentAt + ", received at " + receivedAt);
+    }
+
+    /**
+     * The same limit, and the parent asks only once explore-2 has shown
+     * itself waiting for its slot: the message still waits for its first turn.
+     */
+    @Test
+    void aMessageSentWhileTheChildShowsItWaitsForItsSlotWaitsForItsFirstTurn() {
+        CountDownLatch releaseA = new CountDownLatch(1);
+        CountDownLatch shownWaiting = new CountDownLatch(1);
+        Script script = new Script()
+                .child("task A", (request, n) -> {
+                    hold(releaseA, request);
+                    return text("A done");
+                })
+                .parentSays(tool("p1", "spawn_agents", TWO_IN_BACKGROUND))
+                .parentSays(request -> {
+                    hold(shownWaiting, request);
+                    return tools(call("p2", "send_message", STATUS_TO_EXPLORE_2), call("p3", "list_agents", "{}"));
+                })
+                .parentSays(request -> {
+                    releaseA.countDown();
+                    return tool("p4", "wait_agents", "{}");
+                })
+                .parentSays(text("done"));
+        Chat chat = new Chat(script, SubagentConfig.builder().sessionsPerChat(2), 30_000, null, null, true);
+        chat.parent.setSessionsPerChat(2);
+        List<RunEvent> events = new ArrayList<>();
+        try (EventStream stream = chat.manager.run(chat.parent, "go", new RunOptions(new CancelSignal(), null))) {
+            for (RunEvent event : stream) {
+                events.add(event);
+                if (event instanceof RunEvent.AgentMessage m && "explore-2".equals(m.from())
+                        && "status".equals(m.role()) && "submitted".equals(m.state())) {
+                    shownWaiting.countDown();
+                }
+            }
+        }
+
+        List<String> turnTwo = results(script.parentRequests.get(2));
+        assertTrue(turnTwo.get(1).startsWith("Sent \"status?\" to explore-2"), turnTwo.toString());
+        assertTrue(rowOf(turnTwo.get(2), "explore-2").contains(" · waiting for a slot · "), turnTwo.get(2));
+        assertTrue(history(script.childRequests.get("task B").getFirst()).contains("status?"),
+                "explore-2 reads the message in its first turn");
+    }
+
+    /**
+     * The operator's reply from the page reaches a blocking child that waits
+     * for its slot the same way: it waits in its inbox and the child's first
+     * turn reads it.
+     */
+    @Test
+    void anOperatorsMessageToABlockingChildThatWaitsForItsSlotWaitsAndItsFirstTurnReadsIt() {
+        CountDownLatch releaseA = new CountDownLatch(1);
+        Script script = new Script()
+                .child("task A", (request, n) -> {
+                    hold(releaseA, request);
+                    return text("A done");
+                })
+                .parentSays(tool("p1", "spawn_agents",
+                        "{\"agents\":[{\"type\":\"explore\",\"task\":\"task A\"},{\"type\":\"explore\",\"task\":\"task B\"}]}"))
+                .parentSays(text("both done"));
+        Chat chat = new Chat(script, SubagentConfig.builder().sessionsPerChat(2), 30_000, null, null, true);
+        chat.parent.setSessionsPerChat(2);
+        String childB = null;
+        MessagingSeat.Sent sent = null;
+        try (EventStream stream = chat.manager.run(chat.parent, "go", new RunOptions(new CancelSignal(), null))) {
+            for (RunEvent event : stream) {
+                if (event instanceof RunEvent.AgentSpawn spawn && "task B".equals(spawn.task())) {
+                    childB = spawn.agentId();
+                }
+                if (event instanceof RunEvent.AgentMessage m && "status".equals(m.role())
+                        && "submitted".equals(m.state()) && m.from().equals(childB)) {
+                    // Task B waits behind task A's slot, which task A keeps until it is released here.
+                    sent = chat.manager.sendFromOperator(childB, "hello from the page", null);
+                    releaseA.countDown();
+                }
+            }
+        }
+        assertTrue(sent != null && sent.ok(), "the reply left: " + sent);
+        assertTrue(history(script.childRequests.get("task B").getFirst()).contains("hello from the page"),
+                "task B reads the reply in its first turn");
+    }
+
+    @Test
+    void aMessageToABackgroundChildThatHasEndedIsRefusedAsEnded() {
+        Script script = new Script()
+                .parentSays(tool("p1", "spawn_agents",
+                        "{\"background\":true,\"agents\":[{\"type\":\"explore\",\"task\":\"task A\"}]}"))
+                .parentSays(tool("p2", "wait_agents", "{}"))
+                .parentSays(tool("p3", "send_message", "{\"to\":\"explore-1\",\"message\":\"one more thing\"}"))
+                .parentSays(text("done"));
+        chat(script).run(new CancelSignal());
+
+        assertEquals("ERROR: Not sent: explore-1 has ended; collect its result with wait_agents.",
+                lastResult(script.parentRequests.get(3)));
+    }
+
+    @Test
+    void aMessageToABlockingChildThatHasEndedIsRefusedAsEnded() {
+        Script script = new Script()
+                .parentSays(tool("p1", "spawn_agents", "{\"agents\":[{\"type\":\"explore\",\"task\":\"task A\"}]}"))
+                .parentSays(tool("p2", "send_message", "{\"to\":\"explore-1\",\"message\":\"one more thing\"}"))
+                .parentSays(text("done"));
+        chat(script).run(new CancelSignal());
+
+        assertEquals("ERROR: Not sent: explore-1 has ended and reads no more messages.",
+                lastResult(script.parentRequests.get(2)));
+    }
+
+    @Test
+    void aMessageToAChildThatDoesNotExistIsRefusedAsUnknown() {
+        Script script = new Script()
+                .parentSays(tools(call("p1", "spawn_agents",
+                                "{\"background\":true,\"agents\":[{\"type\":\"explore\",\"task\":\"task A\"}]}"),
+                        call("p2", "send_message", "{\"to\":\"explore-7\",\"message\":\"anyone?\"}")))
+                .parentSays(tool("p3", "wait_agents", "{}"))
+                .parentSays(text("done"));
+        chat(script).run(new CancelSignal());
+
+        assertEquals("ERROR: Not sent: no agent named 'explore-7' is reachable; call list_agents to see who is"
+                + " reachable now.", results(script.parentRequests.get(1)).get(1));
+    }
+
+    /**
+     * A child that ends while it still waits for its slot never ran: its
+     * address leaves with it, and a later message is refused as to a child
+     * that has ended.
+     */
+    @Test
+    void aChildThatEndsBeforeItsSlotCameFreeLeavesNoAddressBehind() {
+        Script script = new Script()
+                .child("task A", (request, n) -> {
+                    hold(new CountDownLatch(1), request);
+                    return List.of(new PStop(PStop.StopReason.ABORTED));
+                })
+                .parentSays(tools(call("p1", "spawn_agents", TWO_IN_BACKGROUND),
+                        call("p2", "send_message", STATUS_TO_EXPLORE_2)))
+                .parentSays(text("out of turns"));
+        Chat chat = new Chat(script, SubagentConfig.builder().sessionsPerChat(2), 30_000, null, 2, true);
+        chat.parent.setSessionsPerChat(2);
+        List<RunEvent> events = chat.run(new CancelSignal());
+
+        assertTrue(results(script.parentRequests.get(1)).get(1).startsWith("Sent \"status?\" to explore-2"),
+                results(script.parentRequests.get(1)).toString());
+        String resultB = messages(events, "result").stream().filter(m -> "explore-2".equals(m.from()))
+                .findFirst().orElseThrow().text();
+        assertTrue(resultB.endsWith("while it waited for a free slot."), resultB);
+        assertFalse(script.childRequests.containsKey("task B"), "explore-2 never reached the model");
+        assertFalse(chat.manager.isChild("explore-2"), "its address left with it");
+        assertTrue(chat.manager.inboxOf("explore-2") == null, "and its inbox");
+        MessagingSeat.Sent late = chat.manager.sendFromOperator("explore-2", "late", null);
+        assertEquals("Not sent: explore-2 has ended and reads no more messages.", late.error());
+    }
+
+    // ── card 581 fix round: every registration leaves; step children too ──
+
+    /** The child inboxes and slot tickets the manager still holds. */
+    @SuppressWarnings("unchecked")
+    private static String registrations(SubagentManager manager) {
+        try {
+            java.lang.reflect.Field inboxes = SubagentManager.class.getDeclaredField("childInboxes");
+            java.lang.reflect.Field tickets = SubagentManager.class.getDeclaredField("childTickets");
+            inboxes.setAccessible(true);
+            tickets.setAccessible(true);
+            return "inboxes=" + ((Map<String, ?>) inboxes.get(manager)).size()
+                    + " tickets=" + ((Map<String, ?>) tickets.get(manager)).size();
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError(e);
+        }
+    }
+
+    private static SessionSlots slotsOf(SubagentManager manager) {
+        try {
+            java.lang.reflect.Field pool = SubagentManager.class.getDeclaredField("slots");
+            pool.setAccessible(true);
+            return (SessionSlots) pool.get(manager);
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError(e);
+        }
+    }
+
+    private static boolean waitingStatus(RunEvent event, String child) {
+        return event instanceof RunEvent.AgentMessage m && child.equals(m.from()) && "status".equals(m.role())
+                && "submitted".equals(m.state());
+    }
+
+    private static final SubagentManager.StepChild STEP = new SubagentManager.StepChild(AgentType.EXPLORE,
+            "task S", "task S", "playbook:s1", null);
+
+    /** A step whose sink fails on the spawn record leaves no address: nobody would read a message to it. */
+    @Test
+    void aStepWhoseSinkFailsOnTheSpawnRecordLeavesNoAddressBehind() {
+        Chat chat = chat(new Script());
+        RuntimeException thrown = null;
+        try {
+            chat.manager.runStep(STEP, event -> {
+                if (event instanceof RunEvent.AgentSpawn) {
+                    throw new IllegalStateException("sink closed");
+                }
+            }, new CancelSignal());
+        } catch (RuntimeException e) {
+            thrown = e;
+        }
+        assertTrue(thrown != null && "sink closed".equals(thrown.getMessage()), "premise: the sink threw");
+        assertEquals("inboxes=0 tickets=0", registrations(chat.manager));
+        assertFalse(chat.manager.isChild("explore-1"));
+        assertFalse(chat.manager.sendFromOperator("explore-1", "hello?", null).ok(),
+                "a reply to it is refused, not queued for nobody");
+    }
+
+    /** A step whose sink fails on the waiting record leaves no address either. */
+    @Test
+    void aStepWhoseSinkFailsOnTheWaitingRecordLeavesNoAddressBehind() {
+        Chat chat = new Chat(new Script(), SubagentConfig.builder().sessionsPerChat(2), 30_000, null, null, true);
+        SessionSlots slots = slotsOf(chat.manager);
+        SessionSlots.Ticket blocker = slots.enqueue();
+        assertTrue(slots.acquire(blocker, () -> SessionCount.of(2), new CancelSignal()), "premise: the slot is held");
+        RuntimeException thrown = null;
+        try {
+            chat.manager.runStep(STEP, event -> {
+                if (waitingStatus(event, "explore-1")) {
+                    throw new IllegalStateException("sink closed");
+                }
+            }, new CancelSignal());
+        } catch (RuntimeException e) {
+            thrown = e;
+        } finally {
+            slots.release();
+        }
+        assertTrue(thrown != null && "sink closed".equals(thrown.getMessage()), "premise: the sink threw");
+        assertEquals("inboxes=0 tickets=0", registrations(chat.manager));
+    }
+
+    /**
+     * A playbook step child that waits for the chat's only slot takes the
+     * operator's reply, and its first turn reads it.
+     */
+    @Test
+    void aStepChildThatWaitsForItsSlotReadsTheOperatorsMessageInItsFirstTurn() throws Exception {
+        Script script = new Script();
+        Chat chat = new Chat(script, SubagentConfig.builder().sessionsPerChat(2), 30_000, null, null, true);
+        SessionSlots slots = slotsOf(chat.manager);
+        SessionSlots.Ticket blocker = slots.enqueue();
+        assertTrue(slots.acquire(blocker, () -> SessionCount.of(2), new CancelSignal()), "premise: the slot is held");
+        CountDownLatch waiting = new CountDownLatch(1);
+        AtomicReference<SubagentManager.StepResult> result = new AtomicReference<>();
+        Thread step = Thread.ofVirtual().start(() -> result.set(chat.manager.runStep(STEP, event -> {
+            if (waitingStatus(event, "explore-1")) {
+                waiting.countDown();
+            }
+        }, new CancelSignal())));
+        assertTrue(waiting.await(20, TimeUnit.SECONDS), "the step child shows it waits for its slot");
+        MessagingSeat.Sent sent = chat.manager.sendFromOperator("explore-1", "hello step", null);
+        slots.release();
+        step.join(20_000);
+
+        assertTrue(sent.ok(), "the reply left: " + sent);
+        assertFalse(result.get().failed(), result.get().outcome());
+        assertTrue(history(script.childRequests.get("task S").getFirst()).contains("hello step"),
+                "the step child reads the reply in its first turn");
+        assertEquals("inboxes=0 tickets=0", registrations(chat.manager));
+    }
+
+    /**
+     * A background child whose thread cannot be started leaves no address, no
+     * ticket and no child the run would wait for; the spawn call fails.
+     */
+    @Test
+    void aBackgroundChildWhoseThreadCannotStartLeavesNothingBehind() {
+        Script script = new Script().parentSays(tool("p1", "spawn_agents", TWO_IN_BACKGROUND));
+        Chat chat = new Chat(script, SubagentConfig.builder().sessionsPerChat(3), 30_000, null, null, true);
+        chat.parent.setSessionsPerChat(3);
+        chat.manager.backgroundStarterForTests((name, body) -> {
+            throw new IllegalStateException("no thread for " + name);
+        });
+        long started = System.nanoTime();
+        List<RunEvent> events = chat.run(new CancelSignal());
+        long tookMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
+
+        assertEquals("error", stopReason(events), "the spawn call failed the run");
+        assertEquals("inboxes=0 tickets=0", registrations(chat.manager));
+        assertEquals(0, chat.manager.slotsQueued(), "no ticket of the batch is left in line");
+        assertFalse(chat.manager.isChild("explore-1"));
+        assertTrue(tookMs < BackgroundRun.SETTLE_MS, "the run's end waited for no child: " + tookMs + " ms");
+        assertTrue(messages(events, "result").stream().anyMatch(m -> "explore-1".equals(m.from())
+                && "failed".equals(m.state()) && m.text().contains("did not start")), events.toString());
+    }
+
+    /**
+     * A background child whose agent cannot be built fails inside
+     * executeChild after its slot and before its run. Its address leaves on
+     * that way out too: no spawn site releases a background child.
+     */
+    @Test
+    void aBackgroundChildWhoseAgentCannotBeBuiltLeavesNoAddressBehind() {
+        Tool broken = new Tool() {
+            public String name() { throw new IllegalStateException("broken belt"); }
+            public String description() { return "fake"; }
+            public JsonNode inputSchema() { return JSON.createObjectNode(); }
+            public boolean needsPermission() { return false; }
+            public String execute(JsonNode input, ToolContext context) { return "ok"; }
+        };
+        Script script = new Script()
+                .parentSays(tool("p1", "spawn_agents",
+                        "{\"background\":true,\"agents\":[{\"type\":\"explore\",\"task\":\"task A\"}]}"))
+                .parentSays(tool("p2", "wait_agents", "{}"))
+                .parentSays(text("done"));
+        Chat chat = new Chat(script, SubagentConfig.builder(), 30_000, null, null, true, UnaryOperator.identity(),
+                List.of(broken));
+        List<RunEvent> events = chat.run(new CancelSignal());
+
+        String result = messages(events, "result").getFirst().text();
+        assertTrue(result.startsWith("ERROR: [explore-1] unexpected failure: broken belt"), result);
+        assertEquals("inboxes=0 tickets=0", registrations(chat.manager));
+        assertFalse(chat.manager.isChild("explore-1"));
+    }
+
+    // ── card 594: a message to a helper that ends unread comes back ───────
+
+    private static final String ONE_IN_BACKGROUND =
+            "{\"background\":true,\"agents\":[{\"type\":\"explore\",\"task\":\"task A\"}]}";
+
+    private static final String STATUS_TO_EXPLORE_1 = "{\"to\":\"explore-1\",\"message\":\"status?\"}";
+
+    /** The one message of the run that came back to its sender. */
+    private static RunEvent.AgentMessage theOnlyReturned(List<RunEvent> events) {
+        List<RunEvent.AgentMessage> back = messages(events, "peer").stream()
+                .filter(m -> "returned".equals(m.state())).toList();
+        assertEquals(1, back.size(), "one message came back: " + messages(events, "peer"));
+        return back.getFirst();
+    }
+
+    /** The msg id the sent record of {@code text} carries. */
+    private static String sentMsgId(List<RunEvent> events, String text) {
+        return messages(events, "peer").stream().filter(m -> "sent".equals(m.state()) && text.equals(m.text()))
+                .findFirst().orElseThrow(() -> new AssertionError("no sent record of " + text)).label();
+    }
+
+    /**
+     * The reason a returned line names, read from the child's own result record
+     * and trimmed the way SubagentManager.howItEnded trims it: the first line of
+     * the ERROR string without the prefix, the child's id and the closing period.
+     */
+    private static String reasonOf(List<RunEvent> events, String child) {
+        String result = messages(events, "result").stream().filter(m -> child.equals(m.from())).findFirst()
+                .orElseThrow(() -> new AssertionError("no result record of " + child)).text();
+        String tag = "ERROR: [" + child + "] ";
+        assertTrue(result.startsWith(tag), "premise: " + child + " ended with an error: " + result);
+        return result.substring(tag.length()).lines().findFirst().orElse("").replaceFirst("\\.$", "");
+    }
+
+    /** A child belt whose tool cannot name itself, so a child's agent cannot be built. */
+    private static Tool brokenBelt() {
+        return new Tool() {
+            public String name() { throw new IllegalStateException("broken belt"); }
+            public String description() { return "fake"; }
+            public JsonNode inputSchema() { return JSON.createObjectNode(); }
+            public boolean needsPermission() { return false; }
+            public String execute(JsonNode input, ToolContext context) { return "ok"; }
+        };
+    }
+
+    /**
+     * The card's scenario: explore-1 and explore-2 on one free slot, a message
+     * to explore-2 while it waits for its slot, and a stop before explore-2
+     * starts. The message comes back from explore-2 to the parent under the
+     * sent record's msg_id, and the model reads the same line at the start of
+     * its next run.
+     */
+    @Test
+    void aMessageToAChildStoppedBeforeItsSlotComesBackAndTheModelReadsTheSameLine() {
+        CancelSignal stop = new CancelSignal();
+        Script script = new Script();
+        script.child("task A", (request, n) -> {
+                    hold(new CountDownLatch(1), request);
+                    return List.of(new PStop(PStop.StopReason.ABORTED));
+                })
+                .parentSays(tools(call("p1", "spawn_agents", TWO_IN_BACKGROUND),
+                        call("p2", "send_message", STATUS_TO_EXPLORE_2)))
+                .parentSays(request -> {
+                    Thread.ofVirtual().start(() -> {
+                        await("explore-1 at the model", () -> script.atModel.get() == 1);
+                        stop.cancel();
+                    });
+                    return tool("p3", "wait_agents", "{}");
+                })
+                .parentSays(text("noted"));
+        Chat chat = new Chat(script, SubagentConfig.builder().sessionsPerChat(2), 30_000, null, null, true);
+        chat.parent.setSessionsPerChat(2);
+        List<RunEvent> events = chat.run(stop);
+        // The stopped run may still ask once more, with the stop already set; the next run starts here.
+        int nextRun = script.parentRequests.size();
+        chat.run(new CancelSignal());
+
+        assertTrue(script.parentRequests.size() > nextRun, "premise: the next run asked the model");
+        assertTrue(results(script.parentRequests.get(1)).get(1).startsWith("Sent \"status?\" to explore-2"),
+                "premise: the message was taken: " + results(script.parentRequests.get(1)));
+        assertFalse(script.childRequests.containsKey("task B"), "premise: explore-2 never reached the model");
+        assertEquals(-1, peerRecord(events, "status?", "received"), "premise: nobody read the message");
+        RunEvent.AgentMessage back = theOnlyReturned(events);
+        assertEquals("explore-2", back.from());
+        assertEquals("main", back.to());
+        assertEquals(sentMsgId(events, "status?"), back.label(), "it names the message it hands back");
+        String reason = reasonOf(events, "explore-2");
+        assertTrue(reason.endsWith("while it waited for a free slot"), "premise: it ended waiting: " + reason);
+        assertTrue(back.text().contains("explore-2") && back.text().contains("status?")
+                && back.text().contains("(" + reason + ")"), "the line names how explore-2 ended: " + back.text());
+        assertTrue(indexOf(events, e -> e == back) > peerRecord(events, "status?", "sent"),
+                "the message comes back after it was sent");
+        assertTrue(history(script.parentRequests.get(nextRun)).contains(back.text()),
+                "the model reads the same line at its next turn");
+    }
+
+    /**
+     * The operator's reply to a blocking child that waits for its slot, and a
+     * stop before the child starts. The reply comes back to the operator; the
+     * model sent nothing and reads nothing about it.
+     */
+    @Test
+    void anOperatorsMessageToABlockingChildStoppedBeforeItsSlotComesBackToTheOperator() {
+        CancelSignal stop = new CancelSignal();
+        Script script = new Script()
+                .child("task A", (request, n) -> {
+                    hold(new CountDownLatch(1), request);
+                    return List.of(new PStop(PStop.StopReason.ABORTED));
+                })
+                .parentSays(tool("p1", "spawn_agents",
+                        "{\"agents\":[{\"type\":\"explore\",\"task\":\"task A\"},{\"type\":\"explore\",\"task\":\"task B\"}]}"));
+        Chat chat = new Chat(script, SubagentConfig.builder().sessionsPerChat(2), 30_000, null, null, true);
+        chat.parent.setSessionsPerChat(2);
+        List<RunEvent> events = new ArrayList<>();
+        String childB = null;
+        MessagingSeat.Sent sent = null;
+        try (EventStream stream = chat.manager.run(chat.parent, "go", new RunOptions(stop, null))) {
+            for (RunEvent event : stream) {
+                events.add(event);
+                if (event instanceof RunEvent.AgentSpawn spawn && "task B".equals(spawn.task())) {
+                    childB = spawn.agentId();
+                }
+                if (sent == null && childB != null && waitingStatus(event, childB)) {
+                    sent = chat.manager.sendFromOperator(childB, "hello from the page", null);
+                    stop.cancel();
+                }
+            }
+        }
+
+        assertTrue(sent != null && sent.ok(), "premise: the reply was taken: " + sent);
+        assertFalse(script.childRequests.containsKey("task B"), "premise: the child never reached the model");
+        RunEvent.AgentMessage back = theOnlyReturned(events);
+        assertEquals(childB, back.from());
+        assertEquals("operator", back.to());
+        assertEquals(sent.msgId(), back.label(), "it names the reply it hands back");
+        assertTrue(back.text().contains("hello from the page")
+                && back.text().contains("while it waited for a free slot"), back.text());
+        assertFalse(back.text().contains("Do not wait for a reply"),
+                "the operator's line gives the model no advice: " + back.text());
+        assertEquals(List.of(), chat.inbox.takeNotices(), "the model sent nothing and reads nothing about it");
+    }
+
+    /**
+     * A background child whose thread cannot start, with the operator's reply
+     * already in its inbox: the reply comes back, naming "did not start".
+     */
+    @Test
+    void anOperatorsMessageToABackgroundChildThatDidNotStartComesBack() {
+        Script script = new Script().parentSays(tool("p1", "spawn_agents", ONE_IN_BACKGROUND));
+        Chat chat = chat(script);
+        AtomicReference<MessagingSeat.Sent> sent = new AtomicReference<>();
+        chat.manager.backgroundStarterForTests((name, body) -> {
+            // The page saw the spawn record and replied before the thread failed to start.
+            sent.set(chat.manager.sendFromOperator("explore-1", "are you there?", null));
+            throw new IllegalStateException("no thread for " + name);
+        });
+        List<RunEvent> events = chat.run(new CancelSignal());
+
+        assertTrue(sent.get() != null && sent.get().ok(), "premise: the reply was taken: " + sent.get());
+        RunEvent.AgentMessage back = theOnlyReturned(events);
+        assertEquals("explore-1", back.from());
+        assertEquals("operator", back.to());
+        assertEquals(sent.get().msgId(), back.label());
+        assertTrue(back.text().contains("are you there?") && back.text().contains("did not start"), back.text());
+    }
+
+    /**
+     * A background child whose agent cannot be built fails after its slot and
+     * before its first turn. The model's message comes back, and the model
+     * reads the line in the turn after wait_agents.
+     */
+    @Test
+    void aMessageToAChildWhoseAgentCannotBeBuiltComesBackAndTheModelReadsIt() {
+        List<Runnable> held = new CopyOnWriteArrayList<>();
+        Script script = new Script()
+                .parentSays(tools(call("p1", "spawn_agents", ONE_IN_BACKGROUND),
+                        call("p2", "send_message", STATUS_TO_EXPLORE_1)))
+                .parentSays(request -> {
+                    held.forEach(body -> Thread.ofVirtual().start(body));
+                    return tool("p3", "wait_agents", "{}");
+                })
+                .parentSays(text("done"));
+        Chat chat = new Chat(script, SubagentConfig.builder(), 30_000, null, null, true, UnaryOperator.identity(),
+                List.of(brokenBelt()));
+        chat.manager.backgroundStarterForTests((name, body) -> held.add(body));
+        List<RunEvent> events = chat.run(new CancelSignal());
+
+        assertTrue(results(script.parentRequests.get(1)).get(1).startsWith("Sent \"status?\" to explore-1"),
+                "premise: the message was taken: " + results(script.parentRequests.get(1)));
+        RunEvent.AgentMessage back = theOnlyReturned(events);
+        assertEquals("explore-1", back.from());
+        assertEquals("main", back.to());
+        assertTrue(back.text().contains("status?") && back.text().contains("unexpected failure: broken belt"),
+                back.text());
+        assertTrue(history(script.parentRequests.get(2)).contains(back.text()),
+                "the model reads the same line after wait_agents");
+    }
+
+    /**
+     * A background child whose run fails while it starts: its own loop closes
+     * its inbox before the first turn, with the model's message unread. The
+     * message comes back, and the model reads it after wait_agents.
+     */
+    @Test
+    void aMessageToAChildWhoseRunFailsBeforeItsFirstTurnComesBack() {
+        List<Runnable> held = new CopyOnWriteArrayList<>();
+        Script script = new Script();
+        script.parentSays(request -> {
+                    script.windowFails = true; // the parent's run asked already; a run that starts now fails
+                    return tools(call("p1", "spawn_agents", ONE_IN_BACKGROUND),
+                            call("p2", "send_message", STATUS_TO_EXPLORE_1));
+                })
+                .parentSays(request -> {
+                    held.forEach(body -> Thread.ofVirtual().start(body));
+                    return tool("p3", "wait_agents", "{}");
+                })
+                .parentSays(text("done"));
+        Chat chat = chat(script);
+        chat.manager.backgroundStarterForTests((name, body) -> held.add(body));
+        List<RunEvent> events = chat.run(new CancelSignal());
+
+        assertTrue(results(script.parentRequests.get(1)).get(1).startsWith("Sent \"status?\" to explore-1"),
+                "premise: the message was taken: " + results(script.parentRequests.get(1)));
+        assertFalse(script.childRequests.containsKey("task A"), "premise: explore-1 sent no request");
+        assertEquals(-1, peerRecord(events, "status?", "received"), "premise: it never read the message");
+        RunEvent.AgentMessage back = theOnlyReturned(events);
+        assertEquals("explore-1", back.from());
+        assertTrue(back.text().contains("status?") && back.text().contains("returned no final text"), back.text());
+        assertTrue(history(script.parentRequests.get(2)).contains(back.text()),
+                "the model reads the same line after wait_agents");
+    }
+
+    /**
+     * A playbook step child that waits for the chat's only slot takes the
+     * operator's reply, and the step is stopped before the child ever runs.
+     * The reply comes back on the step's own stream.
+     */
+    @Test
+    void anOperatorsMessageToAStepChildThatNeverRanComesBackOnTheStepsStream() throws Exception {
+        Chat chat = new Chat(new Script(), SubagentConfig.builder().sessionsPerChat(2), 30_000, null, null, true);
+        SessionSlots slots = slotsOf(chat.manager);
+        SessionSlots.Ticket blocker = slots.enqueue();
+        assertTrue(slots.acquire(blocker, () -> SessionCount.of(2), new CancelSignal()), "premise: the slot is held");
+        CancelSignal stepStop = new CancelSignal();
+        List<RunEvent> stepEvents = new CopyOnWriteArrayList<>();
+        CountDownLatch waiting = new CountDownLatch(1);
+        AtomicReference<SubagentManager.StepResult> result = new AtomicReference<>();
+        MessagingSeat.Sent sent;
+        try {
+            Thread step = Thread.ofVirtual().start(() -> result.set(chat.manager.runStep(STEP, event -> {
+                stepEvents.add(event);
+                if (waitingStatus(event, "explore-1")) {
+                    waiting.countDown();
+                }
+            }, stepStop)));
+            assertTrue(waiting.await(20, TimeUnit.SECONDS), "the step child shows it waits for its slot");
+            sent = chat.manager.sendFromOperator("explore-1", "hello step", null);
+            stepStop.cancel();
+            step.join(20_000);
+        } finally {
+            slots.release();
+        }
+
+        assertTrue(sent.ok(), "premise: the reply was taken: " + sent);
+        assertTrue(result.get().outcome().endsWith("while it waited for a free slot."), result.get().outcome());
+        RunEvent.AgentMessage back = theOnlyReturned(stepEvents);
+        assertEquals("explore-1", back.from());
+        assertEquals("operator", back.to());
+        assertEquals(sent.msgId(), back.label());
+        assertTrue(back.text().contains("hello step"), back.text());
+        assertEquals(List.of(), chat.inbox.takeNotices(), "the model sent nothing and reads nothing about it");
+    }
+
+    /**
+     * A working child that is stopped while the parent's message waits for its
+     * next turn: its own loop ends without reading it, and the message comes
+     * back.
+     */
+    @Test
+    void aMessageToAWorkingChildThatIsStoppedBeforeItsNextTurnComesBack() {
+        CancelSignal stop = new CancelSignal();
+        Script script = new Script();
+        script.child("task A", (request, n) -> {
+                    hold(new CountDownLatch(1), request);
+                    return List.of(new PStop(PStop.StopReason.ABORTED));
+                })
+                .parentSays(tool("p1", "spawn_agents", ONE_IN_BACKGROUND))
+                .parentSays(request -> {
+                    await("explore-1 at the model", () -> script.atModel.get() == 1);
+                    return tool("p2", "send_message", STATUS_TO_EXPLORE_1);
+                })
+                .parentSays(request -> {
+                    Thread.ofVirtual().start(stop::cancel);
+                    return tool("p3", "wait_agents", "{}");
+                });
+        Chat chat = chat(script);
+        List<RunEvent> events = chat.run(stop);
+        // The stopped run may still ask once more, with the stop already set; the next run starts here.
+        int nextRun = script.parentRequests.size();
+        chat.run(new CancelSignal());
+
+        assertTrue(lastResult(script.parentRequests.get(2)).startsWith("Sent \"status?\" to explore-1"),
+                "premise: the message was taken: " + lastResult(script.parentRequests.get(2)));
+        assertEquals(1, script.childRequests.get("task A").size(), "premise: explore-1 was in its first turn");
+        assertEquals(-1, peerRecord(events, "status?", "received"), "premise: it never read the message");
+        RunEvent.AgentMessage back = theOnlyReturned(events);
+        assertEquals("explore-1", back.from());
+        assertTrue(back.text().contains("status?") && back.text().contains("(" + reasonOf(events, "explore-1") + ")"),
+                "the line names how explore-1 ended: " + back.text());
+        assertTrue(script.parentRequests.size() > nextRun, "premise: the next run asked the model");
+        assertTrue(history(script.parentRequests.get(nextRun)).contains(back.text()),
+                "the model reads the same line at its next turn");
+    }
+
+    /**
+     * Criterion 2: a message the helper read never comes back, and a message
+     * to it after it ended is refused as ended, as before.
+     */
+    @Test
+    void aMessageTheHelperReadNeverComesBackAndALaterOneIsRefusedAsEnded() {
+        List<Runnable> held = new CopyOnWriteArrayList<>();
+        Script script = new Script()
+                .parentSays(tools(call("p1", "spawn_agents", ONE_IN_BACKGROUND),
+                        call("p2", "send_message", STATUS_TO_EXPLORE_1)))
+                .parentSays(request -> {
+                    held.forEach(body -> Thread.ofVirtual().start(body));
+                    return tool("p3", "wait_agents", "{}");
+                })
+                .parentSays(tool("p4", "send_message", "{\"to\":\"explore-1\",\"message\":\"one more thing\"}"))
+                .parentSays(text("done"));
+        Chat chat = chat(script);
+        chat.manager.backgroundStarterForTests((name, body) -> held.add(body));
+        List<RunEvent> events = chat.run(new CancelSignal());
+
+        assertTrue(history(script.childRequests.get("task A").getFirst()).contains("status?"),
+                "premise: explore-1 read the message in its first turn");
+        assertTrue(peerRecord(events, "status?", "received") >= 0, "premise: its loop recorded it as read");
+        assertTrue(messages(events, "peer").stream().noneMatch(m -> "returned".equals(m.state())),
+                "a message the helper read never comes back: " + messages(events, "peer"));
+        assertEquals("ERROR: Not sent: explore-1 has ended; collect its result with wait_agents.",
+                lastResult(script.parentRequests.get(3)));
+        assertEquals(List.of(), chat.inbox.takeNotices(), "the model reads no line about either message");
+    }
+
+    // ── card 594 fix round 1: a message is read once its request goes out ──
+
+    /**
+     * Review 1, I1 (probe R1): the stop lands while the helper, holding its
+     * slot, asks for its context window, so its first turn starts with the
+     * stop set and its request never goes out. The message that turn took
+     * comes back, and no received record claims it was read.
+     */
+    @Test
+    void aMessageToAChildStoppedAfterItsSlotBeforeItsFirstTurnComesBack() {
+        CancelSignal stop = new CancelSignal();
+        List<Boolean> stoppedAtRequest = new CopyOnWriteArrayList<>();
+        Script script = new Script();
+        script.child("task A", (request, n) -> {
+                    stoppedAtRequest.add(request.signal() != null && request.signal().isCancelled());
+                    return List.of(new PStop(PStop.StopReason.ABORTED));
+                })
+                .parentSays(request -> {
+                    script.holdNextWindow = true; // the child starts after this turn and waits in its window question
+                    return tools(call("p1", "spawn_agents", ONE_IN_BACKGROUND),
+                            call("p2", "send_message", STATUS_TO_EXPLORE_1));
+                })
+                .parentSays(request -> {
+                    Thread.ofVirtual().start(() -> {
+                        try {
+                            script.windowAsked.await(20, TimeUnit.SECONDS);
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                        }
+                        stop.cancel();
+                    });
+                    return tool("p3", "wait_agents", "{}");
+                });
+        Chat chat = chat(script);
+        List<RunEvent> events = chat.run(stop);
+
+        assertTrue(results(script.parentRequests.get(1)).get(1).startsWith("Sent \"status?\" to explore-1"),
+                "premise: the message was taken: " + results(script.parentRequests.get(1)));
+        assertEquals(0L, script.windowAsked.getCount(), "premise: explore-1 held its slot and asked its window");
+        assertEquals(List.of(true), stoppedAtRequest, "premise: its first request was made with the stop set");
+        assertEquals(-1, peerRecord(events, "status?", "received"), "a request that never went out read nothing");
+        RunEvent.AgentMessage back = theOnlyReturned(events);
+        assertEquals("explore-1", back.from());
+        assertTrue(back.text().contains("status?"), back.text());
+    }
+
+    /**
+     * Review 1, I1 (probe R3): a working helper is stopped while one of its
+     * tools runs. Its next turn starts with the stop set and its request never
+     * goes out, so the message that waited for that turn comes back.
+     */
+    @Test
+    void aMessageToAChildStoppedInsideAToolCallComesBack() {
+        CancelSignal stop = new CancelSignal();
+        CountDownLatch inTool = new CountDownLatch(1);
+        List<Boolean> stoppedAtRequest = new CopyOnWriteArrayList<>();
+        Tool blocking = new Tool() {
+            public String name() { return "list_dir"; }
+            public String description() { return "fake"; }
+            public JsonNode inputSchema() { return JSON.createObjectNode(); }
+            public boolean needsPermission() { return false; }
+            public String execute(JsonNode input, ToolContext context) {
+                inTool.countDown();
+                long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
+                while (!context.signal().isCancelled() && System.nanoTime() < until) {
+                    try {
+                        Thread.sleep(10);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                }
+                return "ok";
+            }
+        };
+        Script script = new Script();
+        script.child("task A", (request, n) -> {
+                    if (n == 1) {
+                        return tool("c1", "list_dir", "{}");
+                    }
+                    stoppedAtRequest.add(request.signal() != null && request.signal().isCancelled());
+                    return List.of(new PStop(PStop.StopReason.ABORTED));
+                })
+                .parentSays(tool("p1", "spawn_agents", ONE_IN_BACKGROUND))
+                .parentSays(request -> {
+                    await("explore-1 inside its tool call", () -> inTool.getCount() == 0);
+                    return tool("p2", "send_message", STATUS_TO_EXPLORE_1);
+                })
+                .parentSays(request -> {
+                    Thread.ofVirtual().start(stop::cancel);
+                    return tool("p3", "wait_agents", "{}");
+                });
+        Chat chat = new Chat(script, SubagentConfig.builder(), 30_000, null, null, true, UnaryOperator.identity(),
+                List.of(blocking));
+        List<RunEvent> events = chat.run(stop);
+
+        assertTrue(lastResult(script.parentRequests.get(2)).startsWith("Sent \"status?\" to explore-1"),
+                "premise: the message was taken: " + lastResult(script.parentRequests.get(2)));
+        assertEquals(List.of(true), stoppedAtRequest, "premise: the turn after the tool asked with the stop set");
+        assertEquals(-1, peerRecord(events, "status?", "received"), "a request that never went out read nothing");
+        RunEvent.AgentMessage back = theOnlyReturned(events);
+        assertEquals("explore-1", back.from());
+        assertTrue(back.text().contains("status?"), back.text());
+    }
+
+    /**
+     * The stop lands after the helper's turn took the message and handed its
+     * request to the provider, before the provider dialled it or answered.
+     * The request never went out, so the message comes back.
+     */
+    @Test
+    void aMessageInARequestTheStopEndsBeforeItGoesOutComesBack() {
+        CancelSignal stop = new CancelSignal();
+        List<Runnable> held = new CopyOnWriteArrayList<>();
+        Script script = new Script()
+                .child("task A", (request, n) -> {
+                    stop.cancel(); // the provider holds the request; nothing was dialled or answered
+                    return List.of(new PStop(PStop.StopReason.ABORTED));
+                })
+                .parentSays(tools(call("p1", "spawn_agents", ONE_IN_BACKGROUND),
+                        call("p2", "send_message", STATUS_TO_EXPLORE_1)))
+                .parentSays(request -> {
+                    held.forEach(body -> Thread.ofVirtual().start(body));
+                    return tool("p3", "wait_agents", "{}");
+                });
+        Chat chat = chat(script);
+        chat.manager.backgroundStarterForTests((name, body) -> held.add(body));
+        List<RunEvent> events = chat.run(stop);
+
+        assertTrue(history(script.childRequests.get("task A").getFirst()).contains("status?"),
+                "premise: the turn put the message into the request it handed over");
+        assertEquals(-1, peerRecord(events, "status?", "received"), "a request that never went out read nothing");
+        RunEvent.AgentMessage back = theOnlyReturned(events);
+        assertEquals("explore-1", back.from());
+        assertTrue(back.text().contains("status?"), back.text());
+    }
+
+    /**
+     * The other side of the line: once the provider dialled the request that
+     * carries the message, the message counts as read, even when the stop then
+     * ends the turn before any answer.
+     */
+    @Test
+    void aMessageInARequestThatWentOutIsReadEvenWhenTheStopEndsTheTurn() {
+        CancelSignal stop = new CancelSignal();
+        List<Runnable> held = new CopyOnWriteArrayList<>();
+        AtomicReference<Boolean> dialled = new AtomicReference<>(false);
+        Script script = new Script()
+                .child("task A", (request, n) -> {
+                    if (request.tap() != null) {
+                        request.tap().begin(new dev.spectroscope.core.wire.LlmWireTap.WireRequest("script", "m",
+                                "http", "POST", "http://localhost/script", Map.of(), "bytes", "{}", 0L));
+                        dialled.set(true);
+                    }
+                    stop.cancel(); // dialled, then stopped before any answer
+                    return List.of(new PStop(PStop.StopReason.ABORTED));
+                })
+                .parentSays(tools(call("p1", "spawn_agents", ONE_IN_BACKGROUND),
+                        call("p2", "send_message", STATUS_TO_EXPLORE_1)))
+                .parentSays(request -> {
+                    held.forEach(body -> Thread.ofVirtual().start(body));
+                    return tool("p3", "wait_agents", "{}");
+                });
+        Chat chat = chat(script);
+        chat.manager.backgroundStarterForTests((name, body) -> held.add(body));
+        List<RunEvent> events = chat.run(stop);
+
+        assertTrue(history(script.childRequests.get("task A").getFirst()).contains("status?"),
+                "premise: the request carried the message");
+        assertTrue(dialled.get(), "premise: the provider dialled the request through its tap");
+        assertTrue(peerRecord(events, "status?", "received") >= 0, "the request went out, so the message was read");
+        assertTrue(messages(events, "peer").stream().noneMatch(m -> "returned".equals(m.state())),
+                "and it does not come back: " + messages(events, "peer"));
+    }
+
+    /**
+     * A request that went out and then failed in the provider still went out:
+     * the message counts as read and does not come back.
+     */
+    @Test
+    void aMessageInARequestThatWentOutIsReadEvenWhenTheProviderThenFails() {
+        List<Runnable> held = new CopyOnWriteArrayList<>();
+        AtomicReference<Boolean> dialled = new AtomicReference<>(false);
+        Script script = new Script()
+                .child("task A", (request, n) -> {
+                    if (request.tap() != null) {
+                        request.tap().begin(new dev.spectroscope.core.wire.LlmWireTap.WireRequest("script", "m",
+                                "http", "POST", "http://localhost/script", Map.of(), "bytes", "{}", 0L));
+                        dialled.set(true);
+                    }
+                    throw new IllegalStateException("the backend failed after the request went out");
+                })
+                .parentSays(tools(call("p1", "spawn_agents", ONE_IN_BACKGROUND),
+                        call("p2", "send_message", STATUS_TO_EXPLORE_1)))
+                .parentSays(request -> {
+                    held.forEach(body -> Thread.ofVirtual().start(body));
+                    return tool("p3", "wait_agents", "{}");
+                })
+                .parentSays(text("done"));
+        Chat chat = chat(script);
+        chat.manager.backgroundStarterForTests((name, body) -> held.add(body));
+        List<RunEvent> events = chat.run(new CancelSignal());
+
+        assertTrue(history(script.childRequests.get("task A").getFirst()).contains("status?"),
+                "premise: the request carried the message");
+        assertTrue(dialled.get(), "premise: the provider dialled the request through its tap");
+        assertTrue(peerRecord(events, "status?", "received") >= 0, "the request went out, so the message was read");
+        assertTrue(messages(events, "peer").stream().noneMatch(m -> "returned".equals(m.state())),
+                "and it does not come back: " + messages(events, "peer"));
+    }
+
+    /**
+     * Review 1, probe R2: the model and the operator both write to a helper
+     * that waits for its slot, and the helper is stopped before it starts.
+     * Each message comes back once, to its own sender, and the model reads
+     * only its own line, once.
+     */
+    @Test
+    void twoSendersToAChildStoppedBeforeItsSlotEachGetTheirOwnLineOnce() {
+        CancelSignal stop = new CancelSignal();
+        AtomicReference<Chat> chatRef = new AtomicReference<>();
+        AtomicReference<MessagingSeat.Sent> fromPage = new AtomicReference<>();
+        Script script = new Script();
+        script.child("task A", (request, n) -> {
+                    hold(new CountDownLatch(1), request);
+                    return List.of(new PStop(PStop.StopReason.ABORTED));
+                })
+                .parentSays(tools(call("p1", "spawn_agents", TWO_IN_BACKGROUND),
+                        call("p2", "send_message", STATUS_TO_EXPLORE_2)))
+                .parentSays(request -> {
+                    fromPage.set(chatRef.get().manager.sendFromOperator("explore-2", "hello from the page", null));
+                    Thread.ofVirtual().start(() -> {
+                        await("explore-1 at the model", () -> script.atModel.get() == 1);
+                        stop.cancel();
+                    });
+                    return tool("p3", "wait_agents", "{}");
+                })
+                .parentSays(text("noted"));
+        Chat chat = new Chat(script, SubagentConfig.builder().sessionsPerChat(2), 30_000, null, null, true);
+        chat.parent.setSessionsPerChat(2);
+        chatRef.set(chat);
+        List<RunEvent> events = chat.run(stop);
+        int nextRun = script.parentRequests.size();
+        chat.run(new CancelSignal());
+
+        assertTrue(fromPage.get() != null && fromPage.get().ok(), "premise: the page's reply was taken: "
+                + fromPage.get());
+        assertFalse(script.childRequests.containsKey("task B"), "premise: explore-2 never reached the model");
+        List<RunEvent.AgentMessage> back = messages(events, "peer").stream()
+                .filter(m -> "returned".equals(m.state())).toList();
+        assertEquals(2, back.size(), "both messages came back, once each: " + back);
+        RunEvent.AgentMessage toModel = back.stream().filter(m -> "main".equals(m.to())).findFirst().orElseThrow();
+        RunEvent.AgentMessage toPage = back.stream().filter(m -> "operator".equals(m.to())).findFirst().orElseThrow();
+        assertEquals(sentMsgId(events, "status?"), toModel.label());
+        assertEquals(fromPage.get().msgId(), toPage.label());
+        assertTrue(toModel.text().contains("status?") && toModel.text().contains("Do not wait"), toModel.text());
+        assertTrue(toPage.text().contains("hello from the page") && !toPage.text().contains("Do not wait"),
+                toPage.text());
+        String next = history(script.parentRequests.get(nextRun));
+        assertEquals(1, next.split(java.util.regex.Pattern.quote(toModel.text()), -1).length - 1,
+                "the model reads its own line once: " + next);
+        assertFalse(next.contains("hello from the page"), "the model reads nothing about the page's reply");
+    }
+
+    // ── card 594 fix round 1: failure paths around the return (review M7) ──
+
+    /** How many children still hold unread messages that no return took. */
+    @SuppressWarnings("unchecked")
+    private static int unreadLeft(SubagentManager manager) {
+        try {
+            java.lang.reflect.Field field = SubagentManager.class.getDeclaredField("unreadAtEnd");
+            field.setAccessible(true);
+            return ((Map<String, ?>) field.get(manager)).size();
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError(e);
+        }
+    }
+
+    /** Throws {@code failure} past the compiler, checked or not. */
+    @SuppressWarnings("unchecked")
+    private static <T extends Throwable> RuntimeException sneaky(Throwable failure) throws T {
+        throw (T) failure;
+    }
+
+    private static boolean returnedRecord(RunEvent event) {
+        return event instanceof RunEvent.AgentMessage m && "peer".equals(m.role()) && "returned".equals(m.state());
+    }
+
+    /**
+     * M7 a: a step child whose agent fails with a checked throwable, thrown
+     * past the compiler, still hands the waiting reply back, and that failure
+     * goes on up unchanged.
+     */
+    @Test
+    void aStepChildThatFailsWithACheckedThrowableHandsTheReplyBackAndKeepsTheFailure() {
+        Tool checked = new Tool() {
+            public String name() { throw BackgroundFanOutTest.<RuntimeException>sneaky(new java.io.IOException("checked belt")); }
+            public String description() { return "fake"; }
+            public JsonNode inputSchema() { return JSON.createObjectNode(); }
+            public boolean needsPermission() { return false; }
+            public String execute(JsonNode input, ToolContext context) { return "ok"; }
+        };
+        Chat chat = new Chat(new Script(), SubagentConfig.builder(), 30_000, null, null, true,
+                UnaryOperator.identity(), List.of(checked));
+        List<RunEvent> stepEvents = new CopyOnWriteArrayList<>();
+        Throwable thrown = null;
+        try {
+            chat.manager.runStep(STEP, event -> {
+                stepEvents.add(event);
+                if (event instanceof RunEvent.AgentSpawn) {
+                    chat.manager.sendFromOperator("explore-1", "hello step", null);
+                }
+            }, new CancelSignal());
+        } catch (Throwable e) {
+            thrown = e;
+        }
+
+        assertTrue(thrown instanceof java.io.IOException && "checked belt".equals(thrown.getMessage()),
+                "the original failure goes on up: " + thrown);
+        RunEvent.AgentMessage back = theOnlyReturned(stepEvents);
+        assertTrue(back.text().contains("hello step") && back.text().contains("unexpected failure"), back.text());
+        assertEquals(0, unreadLeft(chat.manager), "nothing is left behind");
+    }
+
+    /**
+     * M7 b: the step's sink fails on the waiting record and again on the
+     * returned line. The first failure goes on up with the second added to it.
+     */
+    @Test
+    void aSinkThatFailsAgainOnTheReturnedLineKeepsTheFirstFailure() {
+        Chat chat = new Chat(new Script(), SubagentConfig.builder().sessionsPerChat(2), 30_000, null, null, true);
+        SessionSlots slots = slotsOf(chat.manager);
+        SessionSlots.Ticket blocker = slots.enqueue();
+        assertTrue(slots.acquire(blocker, () -> SessionCount.of(2), new CancelSignal()), "premise: the slot is held");
+        List<RunEvent> offered = new CopyOnWriteArrayList<>();
+        Throwable thrown = null;
+        try {
+            chat.manager.runStep(STEP, event -> {
+                if (event instanceof RunEvent.AgentSpawn) {
+                    chat.manager.sendFromOperator("explore-1", "hello step", null);
+                }
+                if (waitingStatus(event, "explore-1")) {
+                    throw new IllegalStateException("sink closed on the waiting record");
+                }
+                if (returnedRecord(event)) {
+                    offered.add(event);
+                    throw new IllegalStateException("sink closed on the returned line");
+                }
+            }, new CancelSignal());
+        } catch (RuntimeException e) {
+            thrown = e;
+        } finally {
+            slots.release();
+        }
+
+        assertEquals(1, offered.size(), "premise: the returned line was offered to the sink");
+        assertTrue(thrown != null && "sink closed on the waiting record".equals(thrown.getMessage()),
+                "the first failure goes on up: " + thrown);
+        assertTrue(java.util.Arrays.stream(thrown.getSuppressed())
+                        .anyMatch(e -> "sink closed on the returned line".equals(e.getMessage())),
+                "with the second added to it");
+        assertEquals(0, unreadLeft(chat.manager), "nothing is left behind");
+    }
+
+    /**
+     * M7 b: two replies wait when the step is stopped before its child starts,
+     * and the sink fails on the first returned line only. The second line
+     * still reaches it, and the sink's failure goes on up.
+     */
+    @Test
+    void aSinkThatFailsOnOneReturnedLineStillGetsTheRest() {
+        Chat chat = new Chat(new Script(), SubagentConfig.builder().sessionsPerChat(2), 30_000, null, null, true);
+        SessionSlots slots = slotsOf(chat.manager);
+        SessionSlots.Ticket blocker = slots.enqueue();
+        assertTrue(slots.acquire(blocker, () -> SessionCount.of(2), new CancelSignal()), "premise: the slot is held");
+        CancelSignal stepStop = new CancelSignal();
+        List<String> offered = new CopyOnWriteArrayList<>();
+        Throwable thrown = null;
+        try {
+            chat.manager.runStep(STEP, event -> {
+                if (event instanceof RunEvent.AgentSpawn) {
+                    chat.manager.sendFromOperator("explore-1", "first reply", null);
+                    chat.manager.sendFromOperator("explore-1", "second reply", null);
+                }
+                if (waitingStatus(event, "explore-1")) {
+                    stepStop.cancel(); // stopped before the child starts
+                }
+                if (event instanceof RunEvent.AgentMessage m && returnedRecord(event)) {
+                    offered.add(m.text());
+                    if (offered.size() == 1) {
+                        throw new IllegalStateException("sink closed on the first line");
+                    }
+                }
+            }, stepStop);
+        } catch (RuntimeException e) {
+            thrown = e;
+        } finally {
+            slots.release();
+        }
+
+        assertEquals(2, offered.size(), "both lines were offered: " + offered);
+        assertTrue(offered.get(0).contains("first reply") && offered.get(1).contains("second reply"),
+                offered.toString());
+        assertTrue(thrown != null && "sink closed on the first line".equals(thrown.getMessage()),
+                "the sink's failure goes on up: " + thrown);
+        assertEquals(0, unreadLeft(chat.manager), "nothing is left behind");
+    }
+
+    /**
+     * M7 c: the step's sink fails on the task record, after the page saw the
+     * spawn record and replied. The reply comes back through the same sink,
+     * and the failure goes on up.
+     */
+    @Test
+    void aStepWhoseSinkFailsOnItsTaskRecordHandsTheReplyBack() {
+        Chat chat = chat(new Script());
+        List<RunEvent> stepEvents = new CopyOnWriteArrayList<>();
+        Throwable thrown = null;
+        try {
+            chat.manager.runStep(STEP, event -> {
+                if (event instanceof RunEvent.AgentSpawn) {
+                    chat.manager.sendFromOperator("explore-1", "hello step", null);
+                }
+                if (event instanceof RunEvent.AgentMessage m && "task".equals(m.role())) {
+                    throw new IllegalStateException("sink closed on the task record");
+                }
+                stepEvents.add(event);
+            }, new CancelSignal());
+        } catch (RuntimeException e) {
+            thrown = e;
+        }
+
+        assertTrue(thrown != null && "sink closed on the task record".equals(thrown.getMessage()),
+                "the failure goes on up: " + thrown);
+        RunEvent.AgentMessage back = theOnlyReturned(stepEvents);
+        assertTrue(back.text().contains("hello step") && back.text().contains("did not start"), back.text());
+        assertEquals(0, unreadLeft(chat.manager), "nothing is left behind");
+        assertEquals("inboxes=0 tickets=0", registrations(chat.manager));
+    }
+
+    /**
+     * M7 c: a blocking child's envelope fails on the task record, after the
+     * page saw the spawn record and replied. The reply comes back, and the
+     * spawn call fails as before.
+     */
+    @Test
+    void aBlockingChildWhoseEnvelopeFailsHandsTheReplyBack() {
+        Script script = new Script()
+                .parentSays(tool("p1", "spawn_agents", "{\"agents\":[{\"type\":\"explore\",\"task\":\"task A\"}]}"))
+                .parentSays(text("done"));
+        Chat chat = chat(script);
+        chat.manager.blockingSinkForTests(sink -> event -> {
+            if (event instanceof RunEvent.AgentMessage m && "task".equals(m.role())) {
+                throw new IllegalStateException("queue closed on the task record");
+            }
+            sink.accept(event);
+            if (event instanceof RunEvent.AgentSpawn) {
+                chat.manager.sendFromOperator("explore-1", "hello from the page", null);
+            }
+        });
+        List<RunEvent> events = chat.run(new CancelSignal());
+
+        RunEvent.AgentMessage back = theOnlyReturned(events);
+        assertTrue(back.text().contains("hello from the page") && back.text().contains("did not start"),
+                back.text());
+        assertTrue(lastResult(script.parentRequests.get(1)).contains("queue closed on the task record"),
+                "the spawn call fails as before: " + lastResult(script.parentRequests.get(1)));
+        assertEquals(0, unreadLeft(chat.manager), "nothing is left behind");
     }
 
 }

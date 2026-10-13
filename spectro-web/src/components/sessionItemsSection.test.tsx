@@ -67,6 +67,31 @@ describe("This session on the Skills and Commands page", () => {
     expect(html).not.toContain("<button");
   });
 
+  // Card 587, fix round (M10): the claim names every source the session reads,
+  // the skill built into the app among them, beside that skill's own row.
+  it("names the built-in skill among the sources it reads", () => {
+    const app = parseSessionItems({
+      playbook: null,
+      items: [
+        {
+          kind: "skill",
+          name: "code-graph",
+          plain: "code-graph",
+          source: "app",
+          namespace: "app",
+          description: "When to ask the code graph",
+        },
+      ],
+    }) as SessionItems;
+    for (const lang of ["en", "de"] as const) {
+      setLang(lang);
+      const html = renderToStaticMarkup(<SessionItemsSection items={app} />);
+      expect(html, lang).toContain(dict["skv.sessionClaim"][lang]);
+      expect(dict["skv.sessionClaim"][lang], lang).toContain(dict["slash.src.app"][lang]);
+      expect(html, lang).toContain(`data-source="app">${dict["slash.src.app"][lang]}</span>`);
+    }
+  });
+
   it("says when the session in view has sent no list", () => {
     const html = renderToStaticMarkup(<SessionItemsSection items={null} />);
     expect(html).toContain(dict["skv.sessionNone"].en);

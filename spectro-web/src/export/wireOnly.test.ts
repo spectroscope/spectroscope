@@ -119,6 +119,9 @@ describe("what a written jsonl may contain", () => {
       // and a run's record its playbook_progress lines, both in the union.
       "playbook_info",
       "playbook_confirm",
+      // Card 584: the server's refusal of one start of the sheet, by the id
+      // the start asked with. The record of the start is its error line.
+      "playbook_start_refused",
     ]) {
       expect(NON_WIRE_TYPES.has(type), type).toBe(true);
     }
@@ -129,7 +132,8 @@ describe("what a written jsonl may contain", () => {
     // three agent messaging frames, card 503's `send_peer_message`, and
     // card 504's `loop_info` and `set_loop`, thirty-three, and card 554's
     // `playbook_info` and `playbook_confirm`, thirty-five, and card 558's
-    // `session_items` and `get_session_items`, thirty-seven in all. The number is
+    // `session_items` and `get_session_items`, thirty-seven, and card 584's
+    // `playbook_start_refused`, thirty-eight in all. The number is
     // asserted so the set cannot grow or shrink by accident — only on purpose,
     // with the reason written above.
     //
@@ -140,7 +144,7 @@ describe("what a written jsonl may contain", () => {
     // identical. The compiler had nothing to say either. This guard was the
     // only thing that noticed, which is the whole argument for keeping a bare
     // number in a test.
-    expect(NON_WIRE_TYPES.size).toBe(37);
+    expect(NON_WIRE_TYPES.size).toBe(38);
   });
 
   it("keeps a user turn read out of a transcript out of the download", () => {

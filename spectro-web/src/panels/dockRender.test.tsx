@@ -22,6 +22,7 @@ import {
   toggleDockPanel,
   setDockTabs,
 } from "../state/layout";
+import { NO_SELECTION } from "../testkit/noSelection";
 
 // Card 517: a fresh store starts in tabs mode; this file is about side by side.
 beforeEach(() => {
@@ -31,7 +32,7 @@ beforeEach(() => {
 
 const base = {
   agents: [],
-  plan: null,
+  ...NO_SELECTION,
   onClose: () => {},
   thinking: true,
   workspace: null,

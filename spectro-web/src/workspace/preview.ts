@@ -39,6 +39,19 @@ export function fileUrl(path: string, sessionId?: string, prospective = false): 
   return `/api/file?path=${encodeURIComponent(path)}${root}`;
 }
 
+/**
+ * Card 586: a document a run recorded as written, read through the run's
+ * document route. It opens paths under dot folders, which /api/file refuses,
+ * and only the exact path the run's step_end lines name.
+ *
+ * @param sessionId the session whose file records the run
+ * @param runId the run that wrote the document
+ * @param path the workspace-relative path as the run recorded it
+ */
+export function runDocumentUrl(sessionId: string, runId: string, path: string): string {
+  return `/api/run-document?session=${encodeURIComponent(sessionId)}&run=${encodeURIComponent(runId)}&path=${encodeURIComponent(path)}`;
+}
+
 export function formatBytes(bytes: number): string {
   if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   if (bytes >= 1024) return `${Math.round(bytes / 1024)} kB`;

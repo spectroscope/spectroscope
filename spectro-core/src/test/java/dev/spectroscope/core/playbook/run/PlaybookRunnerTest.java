@@ -13,6 +13,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Function;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -22,6 +23,12 @@ class PlaybookRunnerTest {
     @TempDir Path tmp;
 
     static PlaybookRunner.Outcome run(Path tmp, String json, FakeHost host) throws IOException {
+        return run(tmp, json, host, line -> Optional.empty());
+    }
+
+    /** Card 586: a run whose host guard is the test's; a command check asks it before anything else. */
+    static PlaybookRunner.Outcome run(Path tmp, String json, FakeHost host, Function<String, Optional<String>> guard)
+            throws IOException {
         Path dir = Files.createDirectories(tmp.resolve("pb"));
         Files.writeString(dir.resolve("playbook.json"), json);
         Playbook p = PlaybookReader.read(json).playbook();
@@ -30,7 +37,7 @@ class PlaybookRunnerTest {
         PlaybookRunner.Setup setup = new PlaybookRunner.Setup(pinned, "abcdefabcdef",
                 tmp.resolve("s1.abcdefabcdef.graph.jsonl"), recorder, host.signal, "auto");
         return new PlaybookRunner(setup, host, StepChildOnGraphTest.manager(
-                new StepChildOnGraphTest.OneTurn("chat", "unused")), line -> Optional.empty()).run();
+                new StepChildOnGraphTest.OneTurn("chat", "unused")), guard).run();
     }
 
     static List<JsonNode> sidecar(Path tmp, String type) throws IOException {

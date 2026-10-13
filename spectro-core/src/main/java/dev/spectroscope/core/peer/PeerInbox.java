@@ -182,6 +182,29 @@ public final class PeerInbox {
         return unread;
     }
 
+    /**
+     * Card 594: messages a run took for a request that never went out go back
+     * to the front of the line, in the order they were taken, so a later turn
+     * or the inbox's close finds them unread. A closed inbox hands them to the
+     * unread hook at once.
+     *
+     * @param envelopes the messages, in the order they were taken
+     */
+    public void putBack(List<PeerEnvelope> envelopes) {
+        if (envelopes == null || envelopes.isEmpty()) {
+            return;
+        }
+        synchronized (this) {
+            if (open) {
+                for (int i = envelopes.size() - 1; i >= 0; i--) {
+                    waiting.addFirst(envelopes.get(i));
+                }
+                return;
+            }
+        }
+        unreadHook.accept(List.copyOf(envelopes));
+    }
+
     /** @return whether anything is in line */
     public synchronized boolean waiting() {
         return !waiting.isEmpty();

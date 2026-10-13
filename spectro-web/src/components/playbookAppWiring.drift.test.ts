@@ -25,7 +25,8 @@ import { foldLocalLine, initialState, type UiState } from "../state/reducer";
 import { noPlaybookFrame, setPlaybookFrame, startPlaybookFrame } from "../state/chatCommands";
 import { composerMoves, headerPlaybook } from "../state/playbookHost";
 import { headerWorkspace } from "../workspace/wakeChip";
-import type { PlaybookConfirm } from "../state/playbookChat";
+import { markStarting, type PlaybookConfirm } from "../state/playbookChat";
+import type { Picks } from "../state/playbookPicks";
 
 const APP = readFileSync(path.join(__dirname, "..", "App.tsx"), "utf8");
 const FILE = ts.createSourceFile("App.tsx", APP, ts.ScriptTarget.ES2022, true, ts.ScriptKind.TSX);
@@ -124,6 +125,8 @@ describe("the start sheet", () => {
     const updates: { key: string; next: UiState }[] = [];
     const scope = {
       startPlaybookFrame,
+      markStarting,
+      nextStartAsk: () => "start-1",
       slot: { key: "s1" },
       sessions: {
         update: (key: string, fn: (s: UiState) => UiState) =>
@@ -135,25 +138,54 @@ describe("the start sheet", () => {
       },
     };
     const close = evaluate<() => void>(constArrow("closePlaybookSheet"), scope);
-    const start = evaluate<(c: PlaybookConfirm) => void>(constArrow("startConfirmedPlaybook"), {
-      ...scope,
-      closePlaybookSheet: close,
-    });
+    const start = evaluate<(c: PlaybookConfirm, picks?: Picks) => void>(
+      constArrow("startConfirmedPlaybook"),
+      {
+        ...scope,
+        closePlaybookSheet: close,
+      },
+    );
     return { start, close, sent, updates };
   }
 
-  it("starts the run on the session's own route with the hash the sheet showed and the task, then closes", () => {
+  // Card 584, fix round (review N7): the sheet stays open, marked as starting,
+  // until the run's start closes it or the server's refusal shows in it.
+  it("starts the run on the session's own route with the hash the sheet showed and the task, and marks it starting", () => {
     const { start, sent, updates } = sheet(true);
-    start(CONFIRM);
+    start(CONFIRM, {});
     expect(sent).toEqual([
-      { type: "start_playbook", dir: "/pb/spectro", hash: "sha256:ab", prompt: "add a CSV export" },
+      {
+        type: "start_playbook",
+        dir: "/pb/spectro",
+        hash: "sha256:ab",
+        prompt: "add a CSV export",
+        ask: "start-1",
+      },
     ]);
-    expect(updates.map((u) => [u.key, u.next.playbookConfirm])).toEqual([["s1", null]]);
+    expect(updates.map((u) => [u.key, u.next.playbookConfirm])).toEqual([
+      ["s1", { ...CONFIRM, starting: true, ask: "start-1", refusal: null }],
+    ]);
+  });
+
+  // Card 584: the models picked per step in the sheet go with the start.
+  it("sends the picks of the sheet with the start", () => {
+    const { start, sent } = sheet(true);
+    start(CONFIRM, { write_plan: { provider: "ollama", model: "llama3:8b" } });
+    expect(sent).toEqual([
+      {
+        type: "start_playbook",
+        dir: "/pb/spectro",
+        hash: "sha256:ab",
+        prompt: "add a CSV export",
+        picks: { write_plan: { provider: "ollama", model: "llama3:8b" } },
+        ask: "start-1",
+      },
+    ]);
   });
 
   it("stays open when the start did not leave", () => {
     const { start, updates } = sheet(false);
-    start(CONFIRM);
+    start(CONFIRM, {});
     expect(updates).toEqual([]);
   });
 
@@ -161,7 +193,7 @@ describe("the start sheet", () => {
     expect(APP).toContain("const playbookSheet = viewingLive ? live.playbookConfirm : null;");
     expect(attributes("PlaybookChatSheet", "confirm")).toEqual(["{playbookSheet}"]);
     expect(attributes("PlaybookChatSheet", "onStart")).toEqual([
-      "{() => startConfirmedPlaybook(playbookSheet)}",
+      "{(picks) => startConfirmedPlaybook(playbookSheet, picks)}",
     ]);
     expect(attributes("PlaybookChatSheet", "onClose")).toEqual(["{closePlaybookSheet}"]);
   });

@@ -1,0 +1,10 @@
+[graphify extract] scanning /work/project
+[graphify extract] found 2 code, 0 docs, 0 papers, 0 images
+[graphify extract] AST extraction on 2 code files...
+[graphify extract] wrote /work/project/graphify-out/graph.json: 5 nodes, 7 edges, 2 communities
+[graphify extract] wrote /work/project/graphify-out/.graphify_analysis.json
+[graphify extract] next: run `graphify cluster-only /work/project` to generate GRAPH_REPORT.md and name communities
+Loading existing graph...
+Graph: 5 nodes, 7 edges
+Re-clustering...
+Done - 2 communities. GRAPH_REPORT.md, graph.json and graph.html updated.

@@ -29,6 +29,7 @@ import type { WorkspaceInfo } from "../state/reducer";
 import { filesQuery, paneState, recordedWorkspace } from "./paneState";
 import { answered, askFor, emptyFetch, failed } from "./filesFetch";
 import { storedWorkspace } from "./storedFolder";
+import { takeFileOpenRequest, useFileOpenRequest } from "../state/fileOpenRequest";
 
 interface FilesResponse {
   root: string;
@@ -60,22 +61,26 @@ function Preview({
   path,
   sessionId,
   prospective,
+  url,
 }: {
   path: string;
   sessionId?: string;
   prospective: boolean;
+  /** Card 586: the tab's own source, such as the run's document route. */
+  url?: string;
 }) {
   const lang = useLang();
   const kind = previewKind(path);
   const [text, setText] = useState<string | null>(null);
   const [error, setError] = useState<number | null>(null);
+  const src = url ?? fileUrl(path, sessionId, prospective);
 
   useEffect(() => {
     setText(null);
     setError(null);
     if (kind !== "text" && kind !== "markdown") return;
     let alive = true;
-    fetch(fileUrl(path, sessionId, prospective))
+    fetch(src)
       .then((r) => (r.ok ? r.text() : Promise.reject(new Error(String(r.status)))))
       .then((body) => {
         if (alive) setText(body);
@@ -86,24 +91,17 @@ function Preview({
     return () => {
       alive = false;
     };
-  }, [path, kind, sessionId, prospective]);
+  }, [kind, src]);
 
   if (kind === "html") {
     // The iframe sandbox plus the server's CSP sandbox header: scripts may
     // run, but in an opaque origin — no cookies, no /api, no parent access.
-    return (
-      <iframe
-        className="ws-frame"
-        sandbox="allow-scripts"
-        src={fileUrl(path, sessionId, prospective)}
-        title={path}
-      />
-    );
+    return <iframe className="ws-frame" sandbox="allow-scripts" src={src} title={path} />;
   }
   if (kind === "image") {
     return (
       <div className="ws-image">
-        <img src={fileUrl(path, sessionId, prospective)} alt={path} />
+        <img src={src} alt={path} />
       </div>
     );
   }
@@ -129,20 +127,24 @@ function SourcePane({
   path,
   sessionId,
   prospective,
+  url,
 }: {
   path: string;
   sessionId?: string;
   prospective: boolean;
+  /** Card 586: the tab's own source, such as the run's document route. */
+  url?: string;
 }) {
   const lang = useLang();
   const [text, setText] = useState<string | null>(null);
   const [error, setError] = useState<number | null>(null);
+  const src = url ?? fileUrl(path, sessionId, prospective);
 
   useEffect(() => {
     setText(null);
     setError(null);
     let alive = true;
-    fetch(fileUrl(path, sessionId, prospective))
+    fetch(src)
       .then((r) => (r.ok ? r.text() : Promise.reject(new Error(String(r.status)))))
       .then((body) => {
         if (alive) setText(body);
@@ -153,7 +155,7 @@ function SourcePane({
     return () => {
       alive = false;
     };
-  }, [path, sessionId, prospective]);
+  }, [src]);
 
   if (error !== null) {
     return <p className="ws-note">{t(lang, previewNoteKey(error, path))}</p>;
@@ -192,6 +194,17 @@ export function WorkspaceTab({
   // tree's highlight. The fold lives in workspace/fileTabs.ts.
   const [files, setFiles] = useState<FileTabsState>(emptyFileTabs);
   const selected = files.active;
+  // Card 586: a press on a run's document or file opens it here. The panel may
+  // mount in the same press, so the request waits for the first panel to take
+  // it; a panel of another session drops it.
+  const openRequest = useFileOpenRequest();
+  const openSeq = openRequest?.seq ?? 0;
+  useEffect(() => {
+    if (openRequest === null || !takeFileOpenRequest(openRequest.seq, workspace?.sessionId ?? null)) return;
+    setFiles((s) => openFile(s, openRequest.path, openRequest.url));
+    // Keyed by the request's seq alone: the same request is opened once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openSeq]);
 
   // Resizable tree/preview divider: `split` is the tree's % of the vertical space.
   const containerRef = useRef<HTMLDivElement>(null);
@@ -487,9 +500,14 @@ export function WorkspaceTab({
                   )}
                 </div>
                 {tab.view === "source" && sourceOffered(tab.path) ? (
-                  <SourcePane path={tab.path} sessionId={sessionId} prospective={beforeTheRun} />
+                  <SourcePane
+                    path={tab.path}
+                    sessionId={sessionId}
+                    prospective={beforeTheRun}
+                    url={tab.url}
+                  />
                 ) : (
-                  <Preview path={tab.path} sessionId={sessionId} prospective={beforeTheRun} />
+                  <Preview path={tab.path} sessionId={sessionId} prospective={beforeTheRun} url={tab.url} />
                 )}
               </div>
             ))}

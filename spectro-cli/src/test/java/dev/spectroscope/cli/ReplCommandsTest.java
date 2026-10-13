@@ -102,7 +102,11 @@ class ReplCommandsTest {
         }
         assertTrue(text.contains("/peer"), "card 554: /peer has its line");
         assertTrue(text.contains("/help, /commands"), "an alias is named beside its command");
-        assertFalse(text.contains("/codegraph"), "a row another card owns is not listed yet");
+        // Card 587: /graph is wired on the web, so the terminal names it under
+        // the web heading, its old names beside it.
+        int graph = lines.indexOf(lines.stream().filter(l -> l.strip().startsWith("/graph, /codegraph, /graphify"))
+                .findFirst().orElse("(no /graph line)"));
+        assertTrue(graph > web, "/graph and its aliases are listed under the web heading:\n" + text);
         assertFalse(text.contains("new file"), "the old /clear text is gone");
     }
 

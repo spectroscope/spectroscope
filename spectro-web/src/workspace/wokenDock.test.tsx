@@ -142,15 +142,17 @@ describe("the Files panel of a woken session", () => {
     expect(html).not.toContain(t("en", "ws.stored"));
   });
 
+  // Card 586 named the helper's answer filesWorkspace, because a run's document
+  // opens from the same session the Files panel shows.
   it("is wired from the dock helper in App, never from the replay's own state", () => {
     expect(APP).toMatch(
-      /<RightPanel\b[\s\S]*?workspace=\{dockWorkspace\(\{[\s\S]*?woken: wokenSlot\?\.state\.workspace \?\? null,[\s\S]*?\}\)\}/,
+      /const filesWorkspace = dockWorkspace\(\{[\s\S]*?woken: wokenSlot\?\.state\.workspace \?\? null,[\s\S]*?\}\);/,
     );
     const panel = APP.slice(
       APP.indexOf("<RightPanel"),
       APP.indexOf("recordedCwd=", APP.indexOf("<RightPanel")),
     );
-    expect(panel).toContain("workspace={dockWorkspace(");
+    expect(panel).toContain("workspace={filesWorkspace}");
     expect(panel).not.toContain("workspace={view.workspace}");
   });
 

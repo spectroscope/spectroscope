@@ -38,6 +38,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <p>A child is an {@link Agent} built in {@code SubagentManager}, from the
  * session's {@link SubagentConfig}. The switch reaches it through that config,
  * so an operator who turned the elision off turned it off for the tree.</p>
+ *
+ * <p>Card 600: the switch ships off, and a child follows it like the parent.</p>
  */
 @Timeout(value = 30, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
 class SubagentToolResultElisionTest {
@@ -133,13 +135,22 @@ class SubagentToolResultElisionTest {
     }
 
     @Test
-    void aChildStubsItsOwnOldReadWhenTheSessionLeavesTheElisionOn() {
-        ParentAndChild provider = runWith(null);
+    void aChildStubsItsOwnOldReadWhenTheSwitchIsOn() {
+        ParentAndChild provider = runWith("on");
 
         assertEquals(10, provider.childRequests.size(), "premise: the child ran ten turns");
         assertEquals(FILE, sent(provider.childRequests.get(1), "k1"), "premise: turn 2 read it whole");
         assertFalse(sent(provider.childRequests.getLast(), "k1").contains("LINE-OF-A-BIG-FILE"),
                 "the child resent a read nine turns old in full");
+    }
+
+    @Test
+    void aChildSendsEveryResultWholeWhenNothingIsSet() {
+        ParentAndChild provider = runWith(null);
+
+        assertEquals(10, provider.childRequests.size(), "premise: the child ran ten turns");
+        assertEquals(FILE, sent(provider.childRequests.getLast(), "k1"),
+                "card 600: the switch ships off and the child stubbed anyway");
     }
 
     @Test

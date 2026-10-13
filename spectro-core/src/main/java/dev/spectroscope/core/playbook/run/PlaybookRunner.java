@@ -19,6 +19,8 @@ import dev.spectroscope.core.subagents.AgentType;
 import dev.spectroscope.core.subagents.SubagentManager;
 
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -53,13 +55,39 @@ public final class PlaybookRunner {
      * @param task        what the owner asked the run to do (card 554); every step prompt names
      *                    it, the run start records it; null or blank when the run was started
      *                    without one
+     * @param picks       card 584: the model the owner picked in the start sheet per node id, for
+     *                    this run only; a picked node runs on its pick without fallbacks. Checked
+     *                    by {@link ModelPicks#refusal} before the run starts; empty for none
      */
     public record Setup(PinnedPlaybook pinned, String runId, Path graphFile, PlaybookRecorder recorder,
-                        CancelSignal signal, String sessionMode, String task) {
+                        CancelSignal signal, String sessionMode, String task,
+                        Map<String, Playbook.ModelRef> picks) {
 
-        /** @param task the task as typed; blank reads as none and leaves the step prompts as they were */
+        /**
+         * The setup as the run reads it.
+         *
+         * @param task  the task as typed; blank reads as none and leaves the step prompts as they were
+         * @param picks the picks; null reads as none, and the run holds its own copy
+         */
         public Setup {
             task = task == null || task.isBlank() ? null : task.strip();
+            picks = picks == null ? Map.of() : Map.copyOf(picks);
+        }
+
+        /**
+         * The card 554 shape: a run with a task and no picks.
+         *
+         * @param pinned      the bytes this run holds
+         * @param runId       12 hex characters
+         * @param graphFile   where the engine writes the lifecycle
+         * @param recorder    the session's sidecar
+         * @param signal      the run's signal; Stop cancels it
+         * @param sessionMode the session's permission mode at start, for the sidecar
+         * @param task        what the owner asked the run to do, or null
+         */
+        public Setup(PinnedPlaybook pinned, String runId, Path graphFile, PlaybookRecorder recorder,
+                     CancelSignal signal, String sessionMode, String task) {
+            this(pinned, runId, graphFile, recorder, signal, sessionMode, task, Map.of());
         }
 
         /**
@@ -98,6 +126,7 @@ public final class PlaybookRunner {
     private final Set<String> cloudConfirmed = new HashSet<>();
     private final AtomicInteger calls = new AtomicInteger();
     private final AtomicInteger ran = new AtomicInteger();
+    private final RunSteps lines;
     private boolean privateRan;
 
     public PlaybookRunner(Setup setup, PlaybookHost host, SubagentManager manager,
@@ -108,21 +137,59 @@ public final class PlaybookRunner {
         this.manager = manager;
         this.hostRefusal = hostRefusal;
         this.ends = PlaybookWalk.endIds(p);
+        this.lines = new RunSteps(setup.runId(), "playbook");
         PlaybookWalk.forwardPath(p).forEach(id -> status.put(id, "pending"));
     }
 
     /** @return 12 lower hex characters, the engine's own run id shape */
     public static String newRunId() {
-        return UUID.randomUUID().toString().replace("-", "").substring(0, 12);
+        String hex = UUID.randomUUID().toString().replace("-", "");
+        return hex.substring(0, 12);
     }
 
     /**
+     * The refusals of a run without picks.
+     *
      * @param pinned the pinned playbook
      * @param canAsk whether a person can answer here
      * @param kindOf provider kind by name, without a request
      * @return every reason this playbook may not start; empty when it may
      */
     public static List<String> refusals(PinnedPlaybook pinned, boolean canAsk, Function<String, String> kindOf) {
+        return refusals(pinned, canAsk, kindOf, Map.of());
+    }
+
+    /**
+     * Card 584: the refusals of a run with picks. A private step is refused
+     * on the provider it runs on in this run: its pick when it has one.
+     *
+     * @param pinned the pinned playbook
+     * @param canAsk whether a person can answer here
+     * @param kindOf provider kind by name, without a request
+     * @param picks  this run's picks by node id
+     * @return every reason this playbook may not start; empty when it may
+     */
+    public static List<String> refusals(PinnedPlaybook pinned, boolean canAsk, Function<String, String> kindOf,
+                                        Map<String, Playbook.ModelRef> picks) {
+        return collect(pinned, canAsk, kindOf, picks == null ? Map.of() : picks);
+    }
+
+    /**
+     * Card 584: the refusals the start sheet lists, every one but a private
+     * step on a cloud provider. The sheet names that one on the step's row,
+     * where a pick of a local model lifts it.
+     *
+     * @param pinned the pinned playbook
+     * @param canAsk whether a person can answer here
+     * @return every reason a model pick cannot lift; empty when there is none
+     */
+    public static List<String> refusalsBesideModels(PinnedPlaybook pinned, boolean canAsk) {
+        return collect(pinned, canAsk, null, Map.of());
+    }
+
+    /** The refusals; the private step rule only when {@code kindOf} is given. */
+    private static List<String> collect(PinnedPlaybook pinned, boolean canAsk, Function<String, String> kindOf,
+                                        Map<String, Playbook.ModelRef> picks) {
         Playbook p = pinned.playbook();
         List<String> out = new ArrayList<>();
         pinned.missingSkills().forEach(name -> out.add("skill not found: " + name));
@@ -132,9 +199,14 @@ public final class PlaybookRunner {
                 if ("extended".equals(s.permission())) {
                     out.add(s.id() + ": a playbook may not set permission extended");
                 }
-                if ("private".equals(s.privacy()) && "cloud".equals(kindOf.apply(p.models().get(s.model()).primary().provider()))) {
-                    out.add(s.id() + ": a private step may not run on the cloud provider "
-                            + p.models().get(s.model()).primary().provider());
+                Playbook.ModelRef ref = ModelPicks.choiceOf(p, s.id(), s.model(), picks).primary();
+                if (kindOf != null && "private".equals(s.privacy())) {
+                    if ("cloud".equals(kindOf.apply(ref.provider()))) {
+                        out.add(s.id() + ": a private step may not run on the cloud provider " + ref.provider());
+                    } else if (ModelResolver.cloudModel(ref)) {
+                        out.add(s.id() + ": a private step may not run on the cloud model " + ref.provider() + " "
+                                + ref.model());
+                    }
                 }
                 if (s.nod() && !canAsk) {
                     out.add(s.id() + ": nobody can approve the handover here");
@@ -177,51 +249,88 @@ public final class PlaybookRunner {
         return g;
     }
 
-    /** @return how the run ended; never throws */
+    /**
+     * @return how the run ended. A throw outside the graph (from the host or
+     *         the sidecar) goes on to the caller after the run's run_end line.
+     */
     public Outcome run() {
         long began = System.currentTimeMillis();
-        Playbook.ModelRef chatBefore = host.chatModel();
-        Map<String, Object> start = new LinkedHashMap<>();
-        start.put("run", setup.runId());
-        start.put("playbook", p.id());
-        start.put("dir", setup.pinned().dir().toString());
-        start.put("hash", setup.pinned().hash());
-        start.put("mode", setup.sessionMode());
-        start.put("chat", Map.of("provider", chatBefore.provider(), "model", chatBefore.model()));
-        if (setup.task() != null) {
-            start.put("task", setup.task());
-        }
-        setup.recorder().record("playbook_start", start);
-        host.emit(RunEvent.PlaybookProgress.started(AGENT_ID, setup.runId(), p.name(), setup.task(),
-                System.currentTimeMillis()));
-        List<String> refused = refusals(setup.pinned(), host.asker() != null, host::kindOf);
-        if (!refused.isEmpty()) {
-            return end(RunStop.REFUSED, null, String.join("; ", refused), began);
-        }
-        emitPlan();
-        String stop = RunStop.DONE;
+        boolean opened = false;
+        String stop = null;
         String result = null;
         String detail = null;
-        try (GraphArtifact artifact = new GraphArtifact(setup.graphFile())) {
-            GraphState out = graph().compile(artifact).invoke(GraphState.empty(), RunConfig.defaults());
-            result = (String) out.get("result");
-        } catch (RunStopped stopped) {
-            stop = stopped.reason();
-            detail = stopped.getMessage();
-        } catch (GraphRecursionException loop) {
-            stop = RunStop.RECURSION_LIMIT;
-            detail = loop.getMessage();
-        } catch (Exception failure) {
-            stop = setup.signal().isCancelled() ? RunStop.ABORTED : RunStop.STEP_FAILED;
-            detail = String.valueOf(failure.getMessage());
-        } finally {
-            host.permissionFloor(null);
-            if (!host.chatModel().equals(chatBefore)) {
-                host.switchChat(chatBefore);
+        try {
+            Playbook.ModelRef chatBefore = host.chatModel();
+            Map<String, Object> start = new LinkedHashMap<>();
+            start.put("run", setup.runId());
+            start.put("playbook", p.id());
+            start.put("dir", setup.pinned().dir().toString());
+            start.put("hash", setup.pinned().hash());
+            start.put("mode", setup.sessionMode());
+            start.put("chat", Map.of("provider", chatBefore.provider(), "model", chatBefore.model()));
+            if (setup.task() != null) {
+                start.put("task", setup.task());
             }
+            if (!setup.picks().isEmpty()) {
+                // Card 584: the picks of this run, so a replay shows what ran on another model than the playbook's.
+                Map<String, Object> picks = new java.util.TreeMap<>();
+                setup.picks().forEach((node, ref) -> {
+                    Map<String, Object> pick = new LinkedHashMap<>();
+                    pick.put("provider", ref.provider());
+                    pick.put("model", ref.model());
+                    picks.put(node, pick);
+                });
+                start.put("picks", picks);
+            }
+            setup.recorder().record("playbook_start", start);
+            host.emit(RunEvent.PlaybookProgress.started(AGENT_ID, setup.runId(), p.name(), setup.task(),
+                    System.currentTimeMillis()));
+            List<String> refused = refusals(setup.pinned(), host.asker() != null, host::kindOf, setup.picks());
+            host.emit(lines.runStart(p.name(), setup.task(), forwardNodes(), host.workspace()));
+            opened = true;
+            if (!refused.isEmpty()) {
+                stop = RunStop.REFUSED;
+                detail = String.join("; ", refused);
+                return end(stop, null, detail, began);
+            }
+            emitPlan();
+            try (GraphArtifact artifact = new GraphArtifact(setup.graphFile())) {
+                GraphState out = graph().compile(artifact).invoke(GraphState.empty(), RunConfig.defaults());
+                result = (String) out.get("result");
+                stop = RunStop.DONE;
+            } catch (RunStopped stopped) {
+                stop = stopped.reason();
+                detail = stopped.getMessage();
+            } catch (GraphRecursionException loop) {
+                stop = RunStop.RECURSION_LIMIT;
+                detail = loop.getMessage();
+            } catch (Exception failure) {
+                stop = setup.signal().isCancelled() ? RunStop.ABORTED : RunStop.STEP_FAILED;
+                detail = String.valueOf(failure.getMessage());
+            } finally {
+                host.permissionFloor(null);
+                if (!host.chatModel().equals(chatBefore)) {
+                    host.switchChat(chatBefore);
+                }
+            }
+            emitPlan();
+            return end(stop, result, detail, began);
+        } catch (RuntimeException | Error broken) {
+            // Card 586: a throw outside the graph's own catch, or an Error from a
+            // node. An outcome already reached stays; else the run failed.
+            if (stop == null) {
+                stop = setup.signal().isCancelled() ? RunStop.ABORTED : RunStop.STEP_FAILED;
+                detail = errorOf(broken);
+            }
+            throw broken;
+        } finally {
+            // Card 586: the one place run_end goes out, so every run ends once,
+            // also one that threw before its start line.
+            if (!opened) {
+                host.emit(lines.runStart(p.name(), setup.task(), forwardNodes(), host.workspace()));
+            }
+            host.emit(lines.runEnd(stop, result, detail, System.currentTimeMillis() - began));
         }
-        emitPlan();
-        return end(stop, result, detail, began);
     }
 
     private Outcome end(String stop, String result, String detail, long began) {
@@ -246,7 +355,12 @@ public final class PlaybookRunner {
         CancelSignal stepSignal = new CancelSignal();
         Runnable unhook = setup.signal().onCancel(stepSignal::cancel);
         long t0 = System.currentTimeMillis();
+        int entry = lines.enter(s.id());
         String childId = null;
+        String output = null;
+        boolean opened = false;
+        boolean closed = false;
+        Throwable thrown = null;
         try {
             AgentFile agent = agentOf(s);
             ModelResolver.Resolved model = resolveOrAsk(s.id(), s.model(), s.privacy());
@@ -254,6 +368,10 @@ public final class PlaybookRunner {
             Map<String, String> found = documents(state);
             Map<String, Map<Path, Long>> before = snapshots(s.produces());
             StepPrompt.Prompt prompt = StepPrompt.of(setup.pinned(), s, found, setup.task());
+            host.emit(lines.stepStart(s.id(), s.name(), "step", entry, new RunSteps.Start(s.performer(),
+                    roleOf(s, agent), model.ref().provider(), model.ref().model(), setup.picks().containsKey(s.id()),
+                    prompt.record(), reads(s, found), null, null)));
+            opened = true;
             host.permissionFloor("inherit".equals(s.permission()) ? null : s.permission());
             if ("child".equals(s.performer())) {
                 LlmProvider provider = provider(model.ref());
@@ -263,6 +381,7 @@ public final class PlaybookRunner {
                 SubagentManager.StepResult r = manager.runStep(new SubagentManager.StepChild(role, task,
                         prompt.record(), "playbook:" + s.id(), provider), host::emit, stepSignal);
                 childId = r.childId();
+                output = r.failed() ? r.outcome() : r.answer();
                 stopIfCancelled(s.id());
                 if (r.failed()) {
                     throw new RunStopped(RunStop.STEP_FAILED, r.outcome());
@@ -270,6 +389,7 @@ public final class PlaybookRunner {
             } else {
                 switchChatFor(s, model.ref());
                 PlaybookHost.ChatTurn turn = host.chatTurn(prompt.record(), prompt.model(), stepSignal);
+                output = turn.lastText();
                 stopIfCancelled(s.id());
                 if ("aborted".equals(turn.stopReason())) {
                     throw new RunStopped(RunStop.ABORTED, s.id() + ": the chat turn was aborted");
@@ -285,22 +405,52 @@ public final class PlaybookRunner {
             Map<String, String> written = changed(s.produces(), before);
             nod(s);
             recordStepEnd(s, childId, true, null, t0);
+            host.emit(lines.stepEnd(s.id(), s.name(), "step", entry, new RunSteps.End(RunSteps.DONE,
+                    System.currentTimeMillis() - t0, childId, null, output, written(written, before), null, null,
+                    null, null)));
+            closed = true;
             mark(s.id(), "completed");
             StateUpdate up = StateUpdate.of("documents", written);
             Playbook.Arrow a = PlaybookWalk.arrowFrom(p, s.id(), null);
             return ends.contains(a.to()) ? up.and("result", resultOf(a.to())) : up;
         } catch (RunStopped stopped) {
+            thrown = stopped;
             recordStepEnd(s, childId, false, stopped.getMessage(), t0);
             throw stopped;
         } catch (RuntimeException failure) {
             // A host that throws still leaves a step_end behind; the engine
             // writes node_error and run() names the stop.
+            thrown = failure;
             recordStepEnd(s, childId, false, String.valueOf(failure.getMessage()), t0);
             throw failure;
+        } catch (Error broken) {
+            thrown = broken;
+            throw broken;
         } finally {
-            host.permissionFloor(null);
-            unhook.run();
+            try {
+                if (!closed) {
+                    closeStep(s, entry, opened, new RunSteps.End(statusOf(thrown), System.currentTimeMillis() - t0,
+                            childId, null, output, List.of(), null, errorOf(thrown), null, null));
+                }
+            } finally {
+                host.permissionFloor(null);
+                unhook.run();
+            }
         }
+    }
+
+    /**
+     * Card 586: the end line of a step that a Stop or a failure cut short.
+     * When the step failed before its start line went out, for example because
+     * its model did not resolve, the start line goes out first, without a
+     * model, so the end never stands alone.
+     */
+    private void closeStep(Playbook.Step s, int entry, boolean opened, RunSteps.End end) {
+        if (!opened) {
+            host.emit(lines.stepStart(s.id(), s.name(), "step", entry, new RunSteps.Start(s.performer(),
+                    roleOf(s, null), null, null, false, null, List.of(), null, null)));
+        }
+        host.emit(lines.stepEnd(s.id(), s.name(), "step", entry, end));
     }
 
     private StateUpdate decide(Playbook.Decision d, GraphState state) {
@@ -309,9 +459,22 @@ public final class PlaybookRunner {
         CancelSignal signal = new CancelSignal();
         Runnable unhook = setup.signal().onCancel(signal::cancel);
         long t0 = System.currentTimeMillis();
+        int entry = lines.enter(d.id());
+        // Card 586: the round this entry opens; its start and every end name it.
+        Integer round = d.maxRounds() == null ? null : loops(state).getOrDefault(d.id(), 0) + 1;
+        String childId = null;
+        String detail = null;
+        boolean opened = false;
+        boolean closed = false;
+        Throwable thrown = null;
         try {
+            host.emit(lines.stepStart(d.id(), d.name(), "decision", entry, new RunSteps.Start(null, null, null, null,
+                    false, null, List.of(), round, d.maxRounds())));
+            opened = true;
             Playbook.Check check = p.checks().get(d.check());
             CheckResult r = check(d, check, documents(state), signal);
+            childId = r.childId();
+            detail = r.detail();
             stopIfCancelled(d.id());
             String label = r.label();
             if (label == null) {
@@ -322,6 +485,10 @@ public final class PlaybookRunner {
                     default -> RunStop.STEP_FAILED;
                 };
                 recordCheck(d, check, null, loops(state).getOrDefault(d.id(), 0), r.detail(), t0);
+                host.emit(lines.stepEnd(d.id(), d.name(), "decision", entry, new RunSteps.End(RunSteps.FAILED,
+                        System.currentTimeMillis() - t0, r.childId(), null, r.detail(), List.of(), null, r.detail(),
+                        round, d.maxRounds())));
+                closed = true;
                 throw new RunStopped(reason, d.id() + ": " + r.detail());
             }
             // A round of the decision's own loop counts; a forward exit leaves the
@@ -339,11 +506,27 @@ public final class PlaybookRunner {
                 next = count;
             }
             recordCheck(d, check, label, count, r.detail(), t0);
+            host.emit(lines.stepEnd(d.id(), d.name(), "decision", entry, new RunSteps.End(RunSteps.DONE,
+                    System.currentTimeMillis() - t0, r.childId(), null, r.detail(), List.of(), label, null,
+                    round, d.maxRounds())));
+            closed = true;
             mark(d.id(), "completed");
             StateUpdate up = StateUpdate.of("outcome", label).and("loops", Map.of(d.id(), next));
             return arrow != null && ends.contains(arrow.to()) ? up.and("result", resultOf(arrow.to())) : up;
+        } catch (RuntimeException | Error failure) {
+            thrown = failure;
+            throw failure;
         } finally {
-            unhook.run();
+            try {
+                // A check without a label closes its entry itself before it throws.
+                if (opened && !closed) {
+                    host.emit(lines.stepEnd(d.id(), d.name(), "decision", entry, new RunSteps.End(statusOf(thrown),
+                            System.currentTimeMillis() - t0, childId, null, detail, List.of(), null, errorOf(thrown),
+                            round, d.maxRounds())));
+                }
+            } finally {
+                unhook.run();
+            }
         }
     }
 
@@ -375,7 +558,8 @@ public final class PlaybookRunner {
 
     private ModelResolver.Resolved resolveOrAsk(String nodeId, String choice, String privacy) {
         while (true) {
-            ModelResolver.Resolution r = ModelResolver.resolve(p.models().get(choice), privacy, host::probe);
+            ModelResolver.Resolution r = ModelResolver.resolve(ModelPicks.choiceOf(p, nodeId, choice, setup.picks()),
+                    privacy, host::probe);
             if (r instanceof ModelResolver.Resolved ok) {
                 return ok;
             }
@@ -588,6 +772,9 @@ public final class PlaybookRunner {
             f.put("agent", agent.name());
         }
         f.put("choice", s.model());
+        if (setup.picks().containsKey(s.id())) {
+            f.put("picked", true);
+        }
         f.put("provider", model.ref().provider());
         f.put("model", model.ref().model());
         f.put("endpoint", model.probe().endpoint());
@@ -625,5 +812,98 @@ public final class PlaybookRunner {
         f.put("detail", detail);
         f.put("durationMs", System.currentTimeMillis() - t0);
         setup.recorder().record("check", f);
+    }
+
+    // Run view (card 586).
+
+    /** Card 586: the forward path as the run view lists it. */
+    private List<RunEvent.RunNode> forwardNodes() {
+        List<RunEvent.RunNode> out = new ArrayList<>();
+        for (String id : status.keySet()) {
+            out.add(new RunEvent.RunNode(id, nameOf(id), kindOf(id)));
+        }
+        return out;
+    }
+
+    private String kindOf(String id) {
+        for (Playbook.Node n : p.nodes()) {
+            if (n.id().equals(id)) {
+                return n instanceof Playbook.Decision ? "decision" : "step";
+            }
+        }
+        return "step";
+    }
+
+    /**
+     * Card 586: who works on a child step; null for a chat step. An agent
+     * role names the agent, also when its file was not read yet.
+     */
+    private static String roleOf(Playbook.Step s, AgentFile agent) {
+        if (!"child".equals(s.performer())) {
+            return null;
+        }
+        if (agent != null) {
+            return agent.name();
+        }
+        String role = s.role() == null ? "worker" : s.role();
+        return role.startsWith(PinnedPlaybook.AGENT_ROLE) ? role.substring(PinnedPlaybook.AGENT_ROLE.length()) : role;
+    }
+
+    /**
+     * Card 586: every document a step is told to read, at the location its
+     * prompt names: where this run wrote it, else the document's location.
+     * The path is set only when that location is a file inside the workspace.
+     */
+    private List<RunEvent.RunDoc> reads(Playbook.Step s, Map<String, String> found) {
+        List<RunEvent.RunDoc> out = new ArrayList<>();
+        for (String id : s.consumes()) {
+            String location = found.getOrDefault(id, p.documents().get(id).location());
+            out.add(new RunEvent.RunDoc(id, fileInWorkspace(location), null));
+        }
+        return out;
+    }
+
+    /**
+     * Card 586: the path is resolved before it is checked, so a symlink
+     * anywhere on it, a folder included, cannot lead a line out of the
+     * workspace.
+     *
+     * @return the path of a regular file whose real path lies inside the
+     *         workspace's real path, relative to the latter; else null
+     */
+    private String fileInWorkspace(String location) {
+        try {
+            Path ws = host.workspace().toRealPath();
+            Path file = host.workspace().resolve(location).toRealPath();
+            return file.startsWith(ws) && Files.isRegularFile(file) ? ws.relativize(file).toString() : null;
+        } catch (IOException | InvalidPathException notThere) {
+            return null;
+        }
+    }
+
+    /** Card 586: the written documents, created when the path was not there before the step. */
+    private List<RunEvent.RunDoc> written(Map<String, String> written, Map<String, Map<Path, Long>> before) {
+        List<RunEvent.RunDoc> out = new ArrayList<>();
+        written.forEach((id, path) -> {
+            boolean existed = before.getOrDefault(id, Map.of()).keySet().stream()
+                    .anyMatch(k -> host.workspace().relativize(k).toString().equals(path));
+            out.add(new RunEvent.RunDoc(id, path, existed ? "changed" : "created"));
+        });
+        return out;
+    }
+
+    /** Card 586: stopped when the owner pressed Stop or the run was aborted, else failed. */
+    private String statusOf(Throwable thrown) {
+        return setup.signal().isCancelled()
+                || (thrown instanceof RunStopped stopped && RunStop.ABORTED.equals(stopped.reason()))
+                ? RunSteps.STOPPED : RunSteps.FAILED;
+    }
+
+    /** Card 586: what a person reads about a throw, its type when it carries no message. */
+    private static String errorOf(Throwable thrown) {
+        if (thrown == null) {
+            return null;
+        }
+        return thrown.getMessage() != null ? thrown.getMessage() : thrown.toString();
     }
 }

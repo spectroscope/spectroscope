@@ -65,6 +65,10 @@ const loadSpectrolyzrPage = chunk("playbook/spectrolyzr/SpectrolyzrPage", () => 
 // Card 554: the start sheet the chat opens after /run-with-playbook; developer fetches it on idle.
 // prettier-ignore
 const loadPlaybookStartSheet = chunk("playbook/PlaybookStartSheet", () => import("../playbook/PlaybookStartSheet"));
+// Card 586: the wide run view draws a run's graph with React Flow. It belongs to
+// no surface: every mode shows it, and only once a run goes wide, so nothing
+// fetches it on idle.
+const loadRunWideView = chunk("components/RunWideView", () => import("../components/RunWideView"));
 
 export const SpectrumView = lazy(() => loadSpectrumView().then((m) => ({ default: m.SpectrumView })));
 export const TraceView = lazy(() => loadTraceView().then((m) => ({ default: m.TraceView })));
@@ -88,6 +92,9 @@ export const SpectrolyzrPage = lazy(() =>
 export const PlaybookChatSheet = lazy(() =>
   loadPlaybookStartSheet().then((m) => ({ default: m.PlaybookChatSheet })),
 );
+
+// Card 586: drawn by App in the chat's place while a run is wide, under a ChunkBoundary.
+export const RunWideView = lazy(() => loadRunWideView().then((m) => ({ default: m.RunWideView })));
 
 /** The loaders of each surface's chunks, in the order of the table's list. */
 export const SURFACE_LOADERS: Partial<Record<SurfaceId, ReadonlyArray<() => Promise<unknown>>>> = {

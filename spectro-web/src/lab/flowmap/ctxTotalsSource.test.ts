@@ -2,7 +2,7 @@
 // a surface does not have to scan the stream a second time to find out.
 //
 // deriveDetail already keeps the root's latest context_info and already
-// ignores every other agent's (children emit none anyway). The provenance
+// ignores every other agent's (a child's, sizes only since card 593, belongs to the ring's helper slot, not to the root's totals). The provenance
 // rides along on the same fold rather than in a second one.
 
 import { describe, expect, it } from "vitest";

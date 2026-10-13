@@ -98,9 +98,9 @@ describe("HONESTY 1 — a child never gets a percentage", () => {
   it("a child's own model does not become a divisor either", () => {
     // kid-a's run_start named claude-haiku-4-5, and Java's ModelWindows has a
     // row for it. Reaching for that row would be inventing a per-child window
-    // the harness never measured: children are built without introspection and
-    // emit no context_info at all (SubagentConfig's own javadoc), so nothing on
-    // the wire says what a child was measured against.
+    // this module never reads: a child's context_info (sizes only since card
+    // 593) lands in the ring's helper slot, and this table divides by the
+    // root's measured threshold only.
     const t = table([...CHILDREN, usage("main", 1_000), usage("kid-a", 30_000)]);
     expect(t.rows[1].model).toBe("claude-haiku-4-5");
     expect(t.rows[1].denominator).toBeNull();

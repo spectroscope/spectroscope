@@ -8,9 +8,41 @@ import java.util.List;
  * {@code rejected-key}, {@code http-<status>}, {@code bad-answer}. {@code live}
  * is true only when the models came from the provider, never from a curated
  * list. {@code endpoint} is the address that was dialled, so a failure can
- * name it.
+ * name it. {@code httpStatus} is the status of an HTTP answer that failed
+ * ({@code rejected-key} keeps whether it was 401 or 403, card 584), null for
+ * an answer that arrived and for a failure without an HTTP answer.
+ *
+ * @param outcome    {@code ok} or the reason code
+ * @param models     the model ids, possibly none
+ * @param live       true only when the models came from the provider
+ * @param endpoint   the address that was dialled
+ * @param httpStatus the HTTP status of a failed answer, or null
  */
-public record ListResult(String outcome, List<String> models, boolean live, String endpoint) {
+public record ListResult(String outcome, List<String> models, boolean live, String endpoint, Integer httpStatus) {
+
+    /**
+     * A result without an HTTP status, the shape before card 584.
+     *
+     * @param outcome  {@code ok} or the reason code
+     * @param models   the model ids, possibly none
+     * @param live     true only when the models came from the provider
+     * @param endpoint the address that was dialled
+     */
+    public ListResult(String outcome, List<String> models, boolean live, String endpoint) {
+        this(outcome, models, live, endpoint, null);
+    }
+
+    /**
+     * A list that did not arrive because the provider answered with an HTTP failure.
+     *
+     * @param reason     the reason code
+     * @param endpoint   the address that was dialled
+     * @param httpStatus the status of the answer, or null when there was none
+     * @return a result with no models, not live
+     */
+    public static ListResult failed(String reason, String endpoint, Integer httpStatus) {
+        return new ListResult(reason, List.of(), false, endpoint, httpStatus);
+    }
 
     /**
      * A list the provider answered with.

@@ -12,8 +12,8 @@ import java.util.Set;
 
 /**
  * Card 558: the skills, commands and agents one session sees, merged from its
- * sources (the workspace, the picked playbook and the user's folders) under the
- * owner's rule of 2026-10-12. A name that exists once keeps its plain form. A
+ * sources (the workspace, the picked playbook and the user's folders; card 587
+ * adds the app's own skills) under the owner's rule of 2026-10-12. A name that exists once keeps its plain form. A
  * name that exists more than once stays in every source, each under a namespace
  * that names the source ({@code workspace:}, {@code user:}, the playbook's id),
  * and no source wins.
@@ -34,6 +34,11 @@ public final class SessionCatalogue {
     public static final String PLAYBOOK = "playbook";
     /** The source word of the user's folders, and their namespace. */
     public static final String USER = "user";
+    /** Card 587: the source word of the skills the app itself ships, and their namespace. */
+    public static final String APP = "app";
+
+    /** Card 587, fix round: every source word, in the order the pages list the sources. */
+    public static final List<String> SOURCES = List.of(WORKSPACE, PLAYBOOK, USER, APP);
 
     /** A skill: a folder with a SKILL.md. */
     public static final String SKILL = "skill";
@@ -64,8 +69,14 @@ public final class SessionCatalogue {
      */
     public record Layer(String source, String namespace, List<Entry> entries) {
 
-        /** @param entries what the layer brings; copied */
+        /**
+         * @param entries what the layer brings; copied
+         * @throws IllegalArgumentException for a source outside {@link #SOURCES}
+         */
         public Layer {
+            if (!SOURCES.contains(source)) {
+                throw new IllegalArgumentException("not a source of the session catalogue: " + source);
+            }
             entries = List.copyOf(entries);
         }
 
@@ -152,7 +163,7 @@ public final class SessionCatalogue {
      * @return the namespace
      */
     public static String playbookNamespace(String id) {
-        return WORKSPACE.equals(id) || USER.equals(id) ? PLAYBOOK + "-" + id : id;
+        return WORKSPACE.equals(id) || USER.equals(id) || APP.equals(id) ? PLAYBOOK + "-" + id : id;
     }
 
     /** The items of one name space (agents, or skills and commands), with effective names. */

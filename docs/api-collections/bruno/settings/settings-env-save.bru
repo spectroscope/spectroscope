@@ -16,15 +16,15 @@ headers {
 
 body:json {
   {
-    "name": "SPECTRO_OTLP_ENDPOINT",
-    "value": "http://localhost:4318"
+    "name": "SPECTRO_HUB_ENABLED",
+    "value": "true"
   }
 }
 
 docs {
-  Write one named setting into ~/.spectro/.env (0600). 404 for a refused caller, 400 for an unknown name or a value that is not the shape that name takes.
+  Write one named setting into ~/.spectro/.env (0600): SPECTRO_HUB_ENABLED (true or false; on, off, yes, no, 1 and 0 are saved as true or false), SPECTRO_HUB_PORT (blank, 0, or 1024 to 65535 except 8080 to 8100 and this server's own port) or SPECTRO_ALLOW_SPAWN (true or false). 404 for a refused caller, 400 for an unknown name or a value that is not the shape that name takes, with reason (under-1024, app-range, server-port, not-a-port, not-a-switch) and message. One locked write to a temporary file, moved over the old one: every other line of the file is kept, and an unset hub setting is left as a commented default line (# SPECTRO_HUB_ENABLED=false, # SPECTRO_HUB_PORT=7700), once.
   
-  Body: {name, value} — one setting per call.
+  Body: {name, value}, one setting per call.
   
   CAUTION: Writes ~/.spectro/.env. Only names on the writable allow-list are accepted.
   

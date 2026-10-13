@@ -29,6 +29,7 @@ import type {
   ReactNode,
 } from "react";
 import type { AgentInfo, GeneratedImage, PlanStep } from "../state/reducer";
+import type { RunEntry, RunTrack } from "../state/runView";
 import {
   openDockPanel,
   setDockColumnShare,
@@ -42,7 +43,8 @@ import type { DockPanelId } from "../state/layout";
 import { parseColumns } from "../panels/columnModel";
 import { PANEL_MIN_PX } from "../panels/dockModel";
 import { AgentsTab } from "./AgentsTab";
-import { PlanTab } from "./PlanTab";
+import { PlanTab, rootPlanRows } from "./PlanTab";
+import type { ShownAgent } from "../state/shownAgent";
 import { WorkPanel } from "./WorkPanel";
 import type { SidecarAgent, SidecarIndex } from "../import/sidecarAgents";
 import type { WorkItem } from "../state/work";
@@ -133,7 +135,14 @@ function ArrangementDivider({
 export function RightPanel({
   agents,
   analyze,
-  plan,
+  plans,
+  shown,
+  onPickAgent,
+  runs = [],
+  runWide = false,
+  onToggleRunWide,
+  onJumpToRunEntry,
+  onOpenRunPath,
   onClose,
   provider,
   model,
@@ -160,7 +169,21 @@ export function RightPanel({
   imageSessionId,
 }: {
   agents: AgentInfo[];
-  plan: PlanStep[] | null;
+  /** Card 593: the latest plan of each writer (UiState.plans). */
+  plans: Record<string, PlanStep[]>;
+  /** Card 593: the agent the agent views show, resolved by App, and the pick
+   *  that changes it. */
+  shown: ShownAgent;
+  onPickAgent: (id: string | null) => void;
+  /** Card 586: the runs of the shown session, drawn in the plan panel. */
+  runs?: RunTrack[];
+  /** Whether the run panel takes the full width of the chat tab. */
+  runWide?: boolean;
+  onToggleRunWide?: () => void;
+  /** A run panel card was pressed. */
+  onJumpToRunEntry?: (entry: RunEntry) => void;
+  /** A document or a file of a run was pressed. */
+  onOpenRunPath?: (run: RunTrack, path: string) => void;
   onClose: () => void;
   provider?: string;
   model?: string;
@@ -212,8 +235,7 @@ export function RightPanel({
   /** The live session whose workspace receives copies; absent in a replay. */
   imageSessionId?: string;
 }) {
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const selected = agents.find((a) => a.id === selectedId) ?? null;
+  const selected = shown.row;
   const lang = useLang();
   const layout = useLayout();
   const modes = dockModes(layout);
@@ -235,9 +257,10 @@ export function RightPanel({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [fullPanel]);
 
-  // Picking an agent shows its context — reveal the context panel.
+  // Picking an agent shows its context: the pick reaches every agent view
+  // (card 593) and the context panel is revealed, as before.
   const selectAgent = (id: string): void => {
-    setSelectedId(id);
+    onPickAgent(id);
     openDockPanel("context");
   };
 
@@ -327,7 +350,11 @@ export function RightPanel({
   const counts: Partial<Record<DockPanelId, number>> = {
     work: work?.length,
     agents: agents.length,
-    plan: plan?.length,
+    // Card 586: while the session has a run, the panel counts the latest run's entries.
+    plan:
+      runs.length > 0
+        ? runs[runs.length - 1].entries.length
+        : rootPlanRows(plans, shown.rootId, false)?.length,
     images: images.length,
   };
 
@@ -366,13 +393,30 @@ export function RightPanel({
           />
         );
       case "agents":
-        return <AgentsTab agents={agents} selectedId={selectedId} onSelect={selectAgent} analyze={analyze} />;
+        return <AgentsTab agents={agents} selectedId={shown.id} onSelect={selectAgent} analyze={analyze} />;
       case "plan":
-        return <PlanTab plan={plan} />;
+        return (
+          <PlanTab
+            plans={plans}
+            shown={shown}
+            agents={agents}
+            onPickAgent={onPickAgent}
+            runs={runs}
+            live={liveView === true}
+            sessionId={sessionId}
+            wide={runWide}
+            onToggleWide={onToggleRunWide}
+            onJump={onJumpToRunEntry}
+            onOpenPath={onOpenRunPath}
+          />
+        );
       case "context":
         return (
           <SystemContextTab
             selected={selected}
+            shown={shown}
+            agents={agents}
+            onPickAgent={onPickAgent}
             provider={provider}
             model={model}
             thinking={thinking}

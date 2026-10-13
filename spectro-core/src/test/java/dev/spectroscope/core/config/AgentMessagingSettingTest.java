@@ -46,14 +46,15 @@ class AgentMessagingSettingTest {
         assertTrue(SpectroConfig.DEFAULT_AGENT_MESSAGING);
     }
 
+    /** Card 587 appended codeGraphBackend after this key, so it is the last but one. */
     @Test
-    void theKeyIsTheLastComponentAndABoolean() {
+    void theKeyIsAppendedAfterTheSpeechRunnerAndABoolean() {
         RecordComponent[] components = SpectroConfig.class.getRecordComponents();
-        RecordComponent last = components[components.length - 1];
-        assertEquals("agentMessaging", last.getName());
-        assertEquals(boolean.class, last.getType());
+        RecordComponent key = components[components.length - 2];
+        assertEquals("agentMessaging", key.getName());
+        assertEquals(boolean.class, key.getType());
         // Integration 0.15.2: card 528 appended sttRunner before this key.
-        assertEquals("sttRunner", components[components.length - 2].getName(),
+        assertEquals("sttRunner", components[components.length - 3].getName(),
                 "appended after the last key before it");
     }
 

@@ -62,13 +62,13 @@ class SessionExportTest {
                 "r1", "main", null, "hello", "anthropic", null, 1L));
         store.append(new dev.spectroscope.core.events.RunEvent.RunEnd("r1", "end_turn", 2L));
 
-        ResponseEntity<?> res = controller.exportSession(store.id(), local());
+        ResponseEntity<byte[]> res = controller.exportSession(store.id(), local());
         assertEquals(200, res.getStatusCode().value());
-        String body = String.valueOf(res.getBody());
-        String onDisk = java.nio.file.Files.readString(
+        byte[] onDisk = java.nio.file.Files.readAllBytes(
                 dev.spectroscope.core.session.SessionStore.SESSIONS_DIR.resolve(store.id() + ".jsonl"));
-        assertEquals(onDisk, body, "the export is the stored file, byte for byte");
-        assertTrue(body.contains("\"run_start\""));
+        org.junit.jupiter.api.Assertions.assertArrayEquals(onDisk, res.getBody(),
+                "the export is the stored file, byte for byte");
+        assertTrue(new String(res.getBody(), java.nio.charset.StandardCharsets.UTF_8).contains("\"run_start\""));
 
         String disposition = res.getHeaders().getFirst("Content-Disposition");
         assertNotNull(disposition);

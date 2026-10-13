@@ -4,8 +4,8 @@
 // The socket-only frame session_items carries them: the picked playbook whose
 // items are in the list (or null, also for "No playbook"), and one row per
 // item with its effective name, its name in its source, the source
-// (workspace, playbook or user) and the namespace a doubled name is put
-// under. The server sends it after every playbook_info, after a folder change
+// (workspace, playbook or user; card 587 adds app, the skills the app ships)
+// and the namespace a doubled name is put under. The server sends it after every playbook_info, after a folder change
 // once the page has it, and when the page asks with get_session_items.
 //
 // Pure: the reducer folds the frame, the slash picker and the Skills and
@@ -15,7 +15,7 @@ import type { SkillOption } from "./slashCommands";
 import { t, type Lang } from "../i18n/i18n";
 
 export type SessionItemKind = "skill" | "command" | "agent";
-export type SessionItemSource = "workspace" | "playbook" | "user";
+export type SessionItemSource = "workspace" | "playbook" | "user" | "app";
 
 /** One item of the session. */
 export interface SessionItem {
@@ -38,7 +38,7 @@ export interface SessionItems {
 }
 
 const KINDS: readonly SessionItemKind[] = ["skill", "command", "agent"];
-const SOURCES: readonly SessionItemSource[] = ["workspace", "playbook", "user"];
+const SOURCES: readonly SessionItemSource[] = ["workspace", "playbook", "user", "app"];
 
 const str = (v: unknown): string | null => (typeof v === "string" ? v : null);
 
@@ -131,6 +131,7 @@ export function wantsItems(open: boolean, items: SessionItems | null, asked: boo
  */
 export function sourceLabel(item: { source?: SessionItemSource; sourceName?: string }, lang: Lang): string {
   if (item.source === "playbook") return item.sourceName ?? t(lang, "slash.src.playbook");
+  if (item.source === "app") return t(lang, "slash.src.app");
   return t(lang, item.source === "workspace" ? "slash.src.workspace" : "slash.src.user");
 }
 

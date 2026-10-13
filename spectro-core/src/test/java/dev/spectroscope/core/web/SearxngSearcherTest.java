@@ -1,6 +1,7 @@
 package dev.spectroscope.core.web;
 
 import com.sun.net.httpserver.HttpServer;
+import dev.spectroscope.core.net.LoopbackPorts;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -8,7 +9,6 @@ import org.junit.jupiter.api.Timeout;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
-import java.net.ServerSocket;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Locale;
@@ -257,10 +257,8 @@ class SearxngSearcherTest {
 
     @Test
     void anUnreachableInstanceNamesTheAddressItTried() throws IOException {
-        String dead;
-        try (ServerSocket socket = new ServerSocket(0)) {
-            dead = "http://127.0.0.1:" + socket.getLocalPort();
-        } // closed: nothing listens there now
+        // Probed at 127.0.0.1 and released: nothing listens there now (card 582).
+        String dead = "http://127.0.0.1:" + LoopbackPorts.dead();
 
         RuntimeException failure = assertThrows(RuntimeException.class,
                 () -> new SearxngSearcher(dead).search("q", 3));

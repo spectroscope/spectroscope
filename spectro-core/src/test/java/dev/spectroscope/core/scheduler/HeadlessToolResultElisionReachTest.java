@@ -25,7 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * Card 467 on the unattended faces: {@code spectro run}, a cron fire and a
  * fleet node build their agent in {@code HeadlessRunner}, and the operator's
  * {@code toolResultElision} has to arrive there, read off the requests a real
- * run sends with the real {@code read_file}.
+ * run sends with the real {@code read_file}. Card 600: the switch ships off.
  */
 @Timeout(value = 30, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
 class HeadlessToolResultElisionReachTest {
@@ -75,13 +75,26 @@ class HeadlessToolResultElisionReachTest {
     }
 
     @Test
-    void aSpectroRunStubsAnOldReadByDefault(@TempDir Path dir, @TempDir Path cwd) throws IOException {
+    void aSpectroRunSendsAnOldReadWholeByDefault(@TempDir Path dir, @TempDir Path cwd)
+            throws IOException {
         List<ProviderRequest> requests = run(dir, cwd, "{ \"maxTurns\": 9 }");
 
         assertTrue(requests.get(1).messages().toString().contains("LINE-OF-THE-BIG-FILE"),
                 "premise: the real read_file returned the file in turn 2");
+        assertTrue(lastSentRead(requests).contains("LINE-OF-THE-BIG-FILE"),
+                "card 600: the switch ships off and an unattended run stubbed a read");
+    }
+
+    @Test
+    void aSpectroRunOnALocalProviderStubsAnOldReadWhenTheSwitchIsOn(@TempDir Path dir,
+            @TempDir Path cwd) throws IOException {
+        List<ProviderRequest> requests = run(dir, cwd, "{ \"maxTurns\": 9, \"provider\": \"ollama\","
+                + " \"model\": \"qwen3:latest\", \"toolResultElision\": \"on\" }");
+
+        assertTrue(requests.get(1).messages().toString().contains("LINE-OF-THE-BIG-FILE"),
+                "premise: the real read_file returned the file in turn 2");
         assertFalse(lastSentRead(requests).contains("LINE-OF-THE-BIG-FILE"),
-                "an unattended run resent a read eight turns old in full");
+                "an unattended run with the switch on resent a read eight turns old in full");
     }
 
     @Test

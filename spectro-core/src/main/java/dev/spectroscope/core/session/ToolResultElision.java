@@ -159,14 +159,14 @@ public final class ToolResultElision {
     }
 
     /**
-     * Whether a settings value turns the elision on. Unset means the shipped
-     * value, on; only {@code "off"} turns it off.
+     * Whether a settings value turns the elision on. Card 600: unset means the
+     * shipped value, off; only {@code "on"} turns it on, for every provider.
      *
      * @param setting the {@code toolResultElision} value, or null when unset
-     * @return true unless the value is {@code "off"}
+     * @return true only when the value is {@code "on"}
      */
     public static boolean enabled(String setting) {
-        return !"off".equals(setting);
+        return "on".equals(setting);
     }
 
     /**

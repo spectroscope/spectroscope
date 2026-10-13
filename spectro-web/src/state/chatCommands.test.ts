@@ -14,11 +14,13 @@ import {
   commandFrame,
   confirmPlaybookFrame,
   decideDraft,
+  graphAskFrame,
   helpText,
   loopFrame,
   loopStopFrame,
-  matchCommands,
   noPlaybookFrame,
+  offerCommands,
+  opensWithCommand,
   parseLoop,
   parseSlash,
   setPlaybookFrame,
@@ -27,7 +29,6 @@ import {
   WEB_COMMAND_IDS,
 } from "./chatCommands";
 import { __resetCommandList, webCommands } from "./commandList";
-import { t } from "../i18n/i18n";
 import { coreCommandRows } from "../testkit/commandRows";
 
 /** Card 554: the list as the server serves it; the composer decides against it. */
@@ -70,11 +71,10 @@ describe("parseSlash (card 554)", () => {
   });
 
   it("knows only the web's wired rows", () => {
-    expect(id("/codegraph"), "another card wires it").toBeNull();
     expect(id("/goal the tests pass"), "a terminal command").toBeNull();
     expect(id("/model")).toBeNull();
     expect(id("please /help")).toBeNull();
-    expect(id("/HELP")).toBeNull();
+    expect(id("/HELPS"), "a longer word in capitals is still no command").toBeNull();
   });
 });
 
@@ -108,7 +108,8 @@ describe("decideDraft (card 554)", () => {
     const show = ROWS.find((r) => r.id === "playbook-show");
     expect(show?.takesArgs, "Enter on the picker row runs it for the current playbook").toBe(false);
     expect(show?.help.en).toContain("/playbook show [name]");
-    expect(t("de", "cmd.playbook-show.help")).toContain("/playbook show [Name]");
+    // Card 588: the German comes from the list.
+    expect(show?.help.de).toContain("/playbook show [Name]");
     expect(decide("/playbook use team-x")).toEqual({ kind: "playbookUse", name: "team-x" });
     expect(decide("/playbook use")).toEqual({ kind: "playbookUse", name: "" });
   });
@@ -145,7 +146,6 @@ describe("decideDraft (card 554)", () => {
 
   it("sends a skill token, an unknown name and a terminal command as the prompt they are", () => {
     expect(decide("/clean-code tidy this")).toEqual({ kind: "prompt", text: "/clean-code tidy this" });
-    expect(decide("/codegraph")).toEqual({ kind: "prompt", text: "/codegraph" });
     expect(decide("/model")).toEqual({ kind: "prompt", text: "/model" });
     expect(decide("/clearer")).toEqual({ kind: "prompt", text: "/clearer" });
   });
@@ -205,16 +205,20 @@ describe("decideDraft, the one decision Chat.tsx reads (task 13)", () => {
   });
 });
 
-describe("matchCommands (card 554: the picker's rows)", () => {
+// Card 588, fix round M6: the picker's rows come from offerCommands alone.
+describe("the picker's rows (card 554, read through offerCommands since card 588)", () => {
   const ids = (query: string, mode: "learn" | "light" | "developer") =>
-    matchCommands(query, 0, ROWS, mode).map((r) => r.id);
+    offerCommands(`/${query}`, query.length + 1, ROWS, mode)?.rows.map((r) => r.id) ?? [];
 
-  it("offers the chat rows, then the skills row, on a bare slash in learn", () => {
-    expect(ids("", "learn")).toEqual(["help", "compact", "clear", "loop", "skills"]);
-    expect(ids("", "light")).toEqual(["help", "compact", "clear", "loop", "skills"]);
+  // Card 588: a bare slash offers one row per command; a command's
+  // subcommands follow once its name is typed. Card 587's /graph stands
+  // between the chat and the skills, in every mode.
+  it("offers one row per command on a bare slash in learn: chat, /graph, then /skills", () => {
+    expect(ids("", "learn")).toEqual(["help", "compact", "clear", "loop", "graph", "skills"]);
+    expect(ids("", "light")).toEqual(["help", "compact", "clear", "loop", "graph", "skills"]);
   });
 
-  it("adds the playbook group in developer, in the list's order", () => {
+  it("adds the playbook commands in developer, in the list's order, without their subcommands", () => {
     expect(ids("", "developer")).toEqual([
       "help",
       "compact",
@@ -222,17 +226,15 @@ describe("matchCommands (card 554: the picker's rows)", () => {
       "loop",
       "run-with-playbook",
       "playbook-current",
-      "playbook-list",
-      "playbook-show",
-      "playbook-use",
-      "playbook-workflow",
+      "graph",
       "skills",
     ]);
   });
 
   it("narrows by the front of a spelling or an alias, the exact one first in its group", () => {
     expect(ids("cl", "learn")).toEqual(["clear"]);
-    expect(ids("c", "learn")).toEqual(["help", "compact", "clear"]);
+    // Card 587: /graph answers to /codegraph as well.
+    expect(ids("c", "learn")).toEqual(["help", "compact", "clear", "graph"]);
     expect(ids("playbook", "developer")).toEqual([
       "playbook-current",
       "run-with-playbook",
@@ -247,8 +249,187 @@ describe("matchCommands (card 554: the picker's rows)", () => {
   });
 
   it("offers nothing to a slash that does not open the draft", () => {
-    expect(matchCommands("", 7, ROWS, "developer")).toEqual([]);
-    expect(matchCommands("cl", 12, ROWS, "learn")).toEqual([]);
+    expect(offerCommands("please /", 8, ROWS, "developer")).toBeNull();
+    expect(offerCommands("fix the /cl", 11, ROWS, "learn")).toBeNull();
+    expect(ids("cl", "learn"), "premise: the same query at the start offers /clear").toEqual(["clear"]);
+  });
+});
+
+describe("/graph (card 587)", () => {
+  const graph = (action: string, question = "") => ({ kind: "graph", action, question });
+
+  it("reads each subcommand, by the main name and by both old names", () => {
+    for (const name of ["graph", "codegraph", "graphify"]) {
+      expect(decide(`/${name} build`), name).toEqual(graph("build"));
+      expect(decide(`/${name} update`), name).toEqual(graph("update"));
+      expect(decide(`/${name} show`), name).toEqual(graph("show"));
+      expect(decide(`/${name} help`), name).toEqual(graph("help"));
+      expect(decide(`/${name} ask who calls PlaybookRunner.step`), name).toEqual(
+        graph("ask", "who calls PlaybookRunner.step"),
+      );
+    }
+  });
+
+  it("answers /graph alone with its help", () => {
+    expect(decide("/graph")).toEqual(graph("help"));
+    expect(decide(" /codegraph ")).toEqual(graph("help"));
+    expect(decide("/graphify")).toEqual(graph("help"));
+  });
+
+  it("hands an empty question on, so the page can name the usage", () => {
+    expect(decide("/graph ask")).toEqual(graph("ask"));
+    expect(decide("/graph ask   ")).toEqual(graph("ask"));
+  });
+
+  it("keeps card 471's rule: words after a subcommand that takes none make a prompt", () => {
+    expect(decide("/graph build it now")).toEqual({ kind: "prompt", text: "/graph build it now" });
+    expect(decide("/codegraph show me")).toEqual({ kind: "prompt", text: "/codegraph show me" });
+    expect(decide("/graph of the imports")).toEqual({ kind: "prompt", text: "/graph of the imports" });
+    expect(decide("/graphs")).toEqual({ kind: "prompt", text: "/graphs" });
+  });
+
+  it("asks the session with graph_ask, never as a user message", () => {
+    expect(graphAskFrame("who calls X")).toEqual({ type: "graph_ask", question: "who calls X" });
+  });
+});
+
+describe("the picker's offer (card 588)", () => {
+  const offer = (draft: string, mode: "learn" | "light" | "developer" = "learn") =>
+    offerCommands(draft, draft.length, ROWS, mode);
+  const ids = (draft: string, mode: "learn" | "light" | "developer" = "learn") =>
+    offer(draft, mode)?.rows.map((r) => r.id) ?? null;
+  const GRAPH = ["graph", "graph-build", "graph-update", "graph-show", "graph-ask", "graph-help"];
+  const PLAYBOOK = [
+    "playbook-current",
+    "run-with-playbook",
+    "playbook-list",
+    "playbook-show",
+    "playbook-use",
+    "playbook-workflow",
+  ];
+
+  it("lists a command's subcommands once its name is typed, the command itself first", () => {
+    expect(ids("/graph")).toEqual(GRAPH);
+    expect(ids("/gr")).toEqual(["graph"]);
+  });
+
+  it("keeps them after the space and narrows them by the second word", () => {
+    expect(ids("/graph ")).toEqual(GRAPH);
+    expect(ids("/graph b")).toEqual(["graph-build"]);
+    expect(ids("/graph a")).toEqual(["graph-ask"]);
+    expect(ids("/graph x")).toEqual([]);
+  });
+
+  it("reaches the subcommands through an old name", () => {
+    expect(ids("/codegraph")).toEqual(GRAPH);
+    expect(ids("/codegraph ")).toEqual(GRAPH);
+    expect(ids("/graphify s")).toEqual(["graph-show"]);
+  });
+
+  it("lists list, show, use and workflow under /playbook, /playbook run among them, in developer only", () => {
+    expect(ids("/playbook", "developer")).toEqual(PLAYBOOK);
+    expect(ids("/playbook ", "developer")).toEqual(PLAYBOOK);
+    expect(ids("/playbook u", "developer")).toEqual(["playbook-use"]);
+    expect(ids("/playbook r", "developer")).toEqual(["run-with-playbook"]);
+    expect(ids("/playbook", "learn")).toEqual([]);
+  });
+
+  it("names the command whose words are being typed, for its template, and offers no row", () => {
+    expect(offer("/graph ask ")?.rows).toEqual([]);
+    expect(offer("/graph ask ")?.writing?.id).toBe("graph-ask");
+    expect(offer("/graph ask who calls PlaybookRunner.step")?.writing?.id).toBe("graph-ask");
+    expect(offer("/codegraph ask who")?.writing?.id).toBe("graph-ask");
+    expect(offer("/loop ")?.writing?.id).toBe("loop");
+    expect(offer("/loop 5m check the build")?.writing?.id).toBe("loop");
+    expect(offer("/playbook use spec", "developer")?.writing?.id).toBe("playbook-use");
+    expect(offer("/graph build ")?.writing?.id).toBe("graph-build");
+    expect(offer("/graph")?.writing).toBeNull();
+    expect(offer("/nonsense words")?.writing).toBeNull();
+  });
+
+  it("reads only up to the caret", () => {
+    expect(offerCommands("/gr", 3, ROWS, "learn")?.rows.map((r) => r.id)).toEqual(["graph"]);
+    expect(
+      offerCommands("/graph b  ", 8, ROWS, "learn")?.rows.map((r) => r.id),
+      "space after the caret",
+    ).toEqual(["graph-build"]);
+  });
+
+  // Fix round, I1: a row picked with text after the caret would be written
+  // over that text, so the picker offers rows only where the caret ends the
+  // draft. Inside a draft it names the command the whole draft spells, for
+  // its template, and leaves Enter to the composer.
+  it("offers no row while the caret is inside the draft, only the command the draft spells", () => {
+    for (const at of [3, 7, 8]) {
+      const inside = offerCommands("/graph ask who calls X", at, ROWS, "learn");
+      expect(inside?.rows, `caret ${at}`).toEqual([]);
+      expect(inside?.writing?.id, `caret ${at}`).toBe("graph-ask");
+    }
+    expect(offerCommands("/graph build", 3, ROWS, "learn")).toEqual({
+      rows: [],
+      writing: ROWS.find((r) => r.id === "graph-build"),
+    });
+    expect(offerCommands("/playbook use spec-review", 11, ROWS, "developer")?.writing?.id).toBe(
+      "playbook-use",
+    );
+  });
+
+  it("is nothing for a draft that is no command", () => {
+    expect(offer("hello /graph")).toBeNull();
+    expect(offer("/graph\nask")).toBeNull();
+    expect(offer("")).toBeNull();
+    expect(offer("graph")).toBeNull();
+  });
+});
+
+// Card 588, round 2 (N1): whether the first word of a draft names a command,
+// the check that keeps the picker from writing a skill over it.
+describe("a draft that opens with a command", () => {
+  it("is named by its first word, an alias too, in any case and in every mode", () => {
+    expect(opensWithCommand("/graph ask who", ROWS)).toBe(true);
+    expect(opensWithCommand("/GRAPH", ROWS)).toBe(true);
+    expect(opensWithCommand("/codegraph build", ROWS)).toBe(true);
+    expect(
+      opensWithCommand("/playbook use spec-review", ROWS),
+      "a developer row is typed in every mode",
+    ).toBe(true);
+    expect(opensWithCommand("/loop\nwatch the build", ROWS)).toBe(true);
+  });
+
+  it("is no command for a prefix, another word or a slash later in the text", () => {
+    expect(opensWithCommand("/gra ask who", ROWS)).toBe(false);
+    expect(opensWithCommand("/ver ask me", ROWS)).toBe(false);
+    expect(opensWithCommand("please /graph", ROWS)).toBe(false);
+    expect(opensWithCommand("/", ROWS)).toBe(false);
+    expect(opensWithCommand("", ROWS)).toBe(false);
+  });
+});
+
+// Card 588, fix round M2: command words are read in any case, the same way by
+// the parse, the offer and the template; what follows them keeps its case.
+describe("a command typed in capitals", () => {
+  it("is the command, its words kept as typed", () => {
+    expect(parseSlash("/GRAPH ask Who Calls X", ROWS)).toMatchObject({
+      row: { id: "graph-ask" },
+      rest: "Who Calls X",
+    });
+    expect(decide("/GRAPH ask who")).toEqual({ kind: "graph", action: "ask", question: "who" });
+    expect(decide("/Graph Build")).toEqual({ kind: "graph", action: "build", question: "" });
+    expect(decide("/HELP")).toEqual({ kind: "help" });
+    expect(decide("/LOOP stop")).toEqual({ kind: "loopStop" });
+    expect(decide("/Loop 5m Check The Build")).toEqual({
+      kind: "loop",
+      intervalSeconds: 300,
+      prompt: "Check The Build",
+    });
+    expect(decide("/Playbook Use Team-X")).toEqual({ kind: "playbookUse", name: "Team-X" });
+    // An old name reaches the parent row, which reads its subcommand in any case.
+    expect(decide("/codegraph ASK who")).toEqual({ kind: "graph", action: "ask", question: "who" });
+  });
+
+  it("offers the same command and template", () => {
+    expect(offerCommands("/GRAPH ask who", 14, ROWS, "learn")?.writing?.id).toBe("graph-ask");
+    expect(offerCommands("/GRAPH A", 8, ROWS, "learn")?.rows.map((r) => r.id)).toEqual(["graph-ask"]);
   });
 });
 
@@ -272,6 +453,35 @@ describe("the frames (card 554)", () => {
       dir: "/pb",
       hash: "sha256:ab",
       prompt: "add a CSV export",
+    });
+  });
+
+  // Card 584: the models picked in the sheet ride along, and only when there are any.
+  it("carries the picks of the sheet, and none when nothing was picked", () => {
+    const picks = { write_plan: { provider: "ollama", model: "llama3:8b" } };
+    expect(startPlaybookFrame("/pb", "sha256:ab", "x", picks)).toEqual({
+      type: "start_playbook",
+      dir: "/pb",
+      hash: "sha256:ab",
+      prompt: "x",
+      picks,
+    });
+    expect(startPlaybookFrame("/pb", "sha256:ab", "x", {})).toEqual({
+      type: "start_playbook",
+      dir: "/pb",
+      hash: "sha256:ab",
+      prompt: "x",
+    });
+  });
+
+  // Card 584, second fix round: the id the server's refusal of this start answers.
+  it("carries the id the start asks with", () => {
+    expect(startPlaybookFrame("/pb", "sha256:ab", "x", {}, "start-4")).toEqual({
+      type: "start_playbook",
+      dir: "/pb",
+      hash: "sha256:ab",
+      prompt: "x",
+      ask: "start-4",
     });
   });
 
@@ -327,18 +537,26 @@ describe("/help (card 554)", () => {
       );
       expect(lines.indexOf("Playbook (developer mode)"), mode).toBeGreaterThan(lines.indexOf("Chat"));
       expect(
-        matchCommands("", 0, ROWS, mode).some((r) => r.developerOnly),
+        (offerCommands("/", 1, ROWS, mode)?.rows ?? []).some((r) => r.developerOnly),
         mode,
       ).toBe(false);
     }
     expect(helpText(ROWS, "de", "learn").split("\n")).toContain("Playbook (Entwicklermodus)");
   });
 
-  it("names no terminal command and no row another card wires", () => {
+  it("names no terminal command", () => {
     const text = helpText(ROWS, "en", "developer");
     expect(text).not.toContain("/goal");
-    expect(text).not.toContain("/codegraph");
     expect(text).not.toContain("/exit");
+  });
+
+  it("lists /graph under the code graph group with its old names (card 587)", () => {
+    const lines = helpText(ROWS, "en", "learn").split("\n");
+    expect(lines).toContain("Code graph");
+    expect(lines.indexOf("Code graph")).toBeGreaterThan(lines.indexOf("Chat"));
+    expect(lines.find((l) => l.startsWith("/graph, /codegraph, /graphify: "))).toBeDefined();
+    expect(lines).toContain("/graph ask: Ask a question the model answers through the code graph");
+    expect(helpText(ROWS, "de", "learn").split("\n")).toContain("Code-Graph");
   });
 
   it("speaks German", () => {

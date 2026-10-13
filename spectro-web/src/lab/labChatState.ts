@@ -5,10 +5,13 @@
 // record, so the goal line, the loop chip and the gear's Clear work there as in
 // the main chat. An archive keeps its own fold.
 
-import type { UiState } from "../state/reducer";
+import type { Turn, UiState } from "../state/reducer";
 
-/** The parts of a live record's state the Lab's chat takes over. */
-export type LiveGoalLoop = Pick<UiState, "goal" | "goalVerdict" | "loop" | "runTurn">;
+/** The parts of a live record's state the Lab's chat takes over. App hands
+ *  the whole record's state, so `turns` is there for withCommandMarks. */
+export type LiveGoalLoop = Pick<UiState, "goal" | "goalVerdict" | "loop" | "runTurn"> & {
+  turns?: readonly Turn[];
+};
 
 /**
  * @param ui   the Lab's stepped fold
@@ -43,4 +46,31 @@ export function liveGoalLoopShown(
   live: LiveGoalLoop | null,
 ): LiveGoalLoop | null {
   return onLiveRun && queued === 0 ? live : null;
+}
+
+/**
+ * Card 576, fix round: the Lab folds its chat from the stream it steps, which
+ * never sees a frame leave, so its error turns cannot know they answer a
+ * command typed in the composer, and its Chat mounts anew on every tab
+ * switch. On the live run each error takes the live record's mark, the k-th
+ * error onto the k-th: both folds read the same events in the same order.
+ *
+ * @param ui        the Lab chat's state
+ * @param liveTurns the live record's turns, or null for an archive
+ * @return the state with the marks; `ui` itself when none is new
+ */
+export function withCommandMarks(ui: UiState, liveTurns: readonly Turn[] | null | undefined): UiState {
+  if (liveTurns == null) return ui;
+  const marked = liveTurns.filter((turn) => turn.kind === "error").map((turn) => turn.afterCommand === true);
+  if (!marked.includes(true)) return ui;
+  let k = 0;
+  let changed = false;
+  const turns = ui.turns.map((turn) => {
+    if (turn.kind !== "error") return turn;
+    const mark = marked[k++] === true;
+    if (!mark || turn.afterCommand === true) return turn;
+    changed = true;
+    return { ...turn, afterCommand: true as const };
+  });
+  return changed ? { ...ui, turns } : ui;
 }

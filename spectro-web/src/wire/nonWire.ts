@@ -133,6 +133,10 @@ export const SOCKET_ONLY_TYPES: ReadonlySet<string> = new Set([
   // stored "the folder was found" would be a claim about a disk that changes.
   "playbook_info",
   "playbook_confirm",
+  // Card 584: the server's refusal of one start of the sheet, by the id the
+  // start asked with (playbook_start_refused). The record of a refusal is the
+  // error line in the chat.
+  "playbook_start_refused",
   // Card 558. The session's skills, commands and agents as the server reads
   // them for its next turn (session_items), and the page's ask for them
   // (get_session_items). The list is a reading of folders that change; the

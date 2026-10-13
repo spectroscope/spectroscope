@@ -19,7 +19,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code buildAgentOnce} built follows the operator's {@code toolResultElision},
  * read off that agent and never off one a test assembled. The loop's behaviour
  * under each value is pinned in spectro-core ({@code AgentToolResultElisionTest});
- * this pins that the session hands the value over at all.
+ * this pins that the session hands the value over at all. Card 600: the
+ * switch ships off, and on or off it applies to every provider. Since its fix
+ * round 1 only the user settings set it: a pinned folder's settings file that
+ * carries the key loses it.
  */
 @Timeout(value = 60, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
 class SessionToolResultElisionReachTest {
@@ -55,35 +58,82 @@ class SessionToolResultElisionReachTest {
     }
 
     @Test
-    void aSessionOpensWithTheElisionOnWhenNothingIsSet(@TempDir Path workspace) throws IOException {
+    void aSessionOpensWithTheElisionOffWhenNothingIsSet(@TempDir Path workspace) throws IOException {
         String previous = saveForUser("""
                 { "provider": "ollama", "model": "qwen3:latest" }
                 """);
         try {
-            SessionConnection connection = sessionIn("ws-467-on", workspace);
+            SessionConnection connection = sessionIn("ws-600-unset", workspace);
             connection.buildAgentOnce();
 
             assertThat(connection.agent().toolResultElision())
-                    .as("the shipped value is on")
-                    .isTrue();
+                    .as("card 600: the shipped value is off")
+                    .isFalse();
         } finally {
             restoreUserSettings(previous);
         }
     }
 
     @Test
-    void aSessionOpenedAfterTheOperatorSavedOffSendsEveryResultWhole(@TempDir Path workspace)
+    void aSessionOpenedAfterTheOperatorSavedOnCarriesTheSwitchOn(@TempDir Path workspace)
             throws IOException {
         String previous = saveForUser("""
-                { "provider": "ollama", "model": "qwen3:latest", "toolResultElision": "off" }
+                { "provider": "ollama", "model": "qwen3:latest", "toolResultElision": "on" }
                 """);
         try {
-            SessionConnection connection = sessionIn("ws-467-off", workspace);
+            SessionConnection connection = sessionIn("ws-600-on", workspace);
             connection.buildAgentOnce();
 
             assertThat(connection.agent().toolResultElision())
-                    .as("the operator's off did not reach the session's agent")
+                    .as("the operator's on did not reach the session's agent")
+                    .isTrue();
+        } finally {
+            restoreUserSettings(previous);
+        }
+    }
+
+    private static void saveForFolder(Path workspace, String json) throws IOException {
+        Path file = workspace.resolve(SpectroConfig.PROJECT_SETTINGS);
+        Files.createDirectories(file.getParent());
+        Files.writeString(file, json);
+    }
+
+    @Test
+    void aFolderFileSayingOnLeavesALlamaCppSessionWithoutElision(@TempDir Path workspace)
+            throws IOException {
+        String previous = saveForUser("""
+                { "provider": "llamacpp", "model": "some-model" }
+                """);
+        try {
+            saveForFolder(workspace, """
+                    { "toolResultElision": "on" }
+                    """);
+            SessionConnection connection = sessionIn("ws-600-folder-on", workspace);
+            connection.buildAgentOnce();
+
+            assertThat(connection.agent().toolResultElision())
+                    .as("card 600: a folder file turned the elision on")
                     .isFalse();
+        } finally {
+            restoreUserSettings(previous);
+        }
+    }
+
+    @Test
+    void theUserOnWinsOverAFolderFileSayingOff(@TempDir Path workspace) throws IOException {
+        String previous = saveForUser("""
+                { "provider": "llamacpp", "model": "some-model", "toolResultElision": "on" }
+                """);
+        try {
+            saveForFolder(workspace, """
+                    { "toolResultElision": "off" }
+                    """);
+            SessionConnection connection = sessionIn("ws-600-user-on", workspace);
+            connection.buildAgentOnce();
+
+            assertThat(connection.agent().toolResultElision())
+                    .as("card 600: a folder file saying off overrode the user's on")
+                    .isTrue();
         } finally {
             restoreUserSettings(previous);
         }

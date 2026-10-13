@@ -1,15 +1,15 @@
 package dev.spectroscope.server.fleet;
 
 import dev.spectroscope.orchestrator.BusEnvelope;
+import dev.spectroscope.orchestrator.HubSettings;
 import dev.spectroscope.orchestrator.NodeCard;
 import dev.spectroscope.orchestrator.ProcessBusHub;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 
-import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -20,12 +20,13 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
- * The server-hosted fleet hub (block C): OWNS a {@link ProcessBusHub} when —
- * and only when — the operator opted in via {@code SPECTRO_HUB_PORT}. Default
- * OFF: a listener by default would be attack surface and port conflicts for
- * everyone who never runs a fleet; the hub itself binds loopback only. An
- * invalid port value disables the hub LOUDLY (a typo must not silently turn
- * the fleet off while the operator believes it is on — the log names it).
+ * The server-hosted fleet hub (block C): OWNS a {@link ProcessBusHub} when
+ * the operator turned it on ({@code SPECTRO_HUB_ENABLED}, or the older opt-in, a
+ * {@code SPECTRO_HUB_PORT} on its own). Default OFF: a listener by default would
+ * be attack surface and port conflicts for everyone who never runs a fleet; the
+ * hub itself binds loopback only. Card 585: the hub never binds a port under
+ * 1024, and no hub value fails the boot. {@link HubSettings} holds the rules,
+ * and every deviation from the written values is a WARN that names it.
  *
  * <p>The feed is a local tap, never a wire self-subscription: topics are
  * discovered from the {@link NodeCard}s that ride each node's handshake (no
@@ -62,55 +63,117 @@ public class FleetAggregator implements AutoCloseable {
         void onFleetEvent(BusEnvelope envelope);
     }
 
-    private final ProcessBusHub hub; // null = opt-out (the default)
+    private final ProcessBusHub hub; // null = off (the default)
+    private final HubSettings.Outcome hubState;
     private final Map<String, NodeState> nodes = new ConcurrentHashMap<>();
     private final Set<String> tappedTopics = ConcurrentHashMap.newKeySet();
     private final List<Listener> listeners = new CopyOnWriteArrayList<>();
 
     /**
-     * @param hubPort the {@code SPECTRO_HUB_PORT} value — blank keeps the hub
-     *                off, {@code 0} binds an ephemeral loopback port
+     * The port alone, the old opt-in: blank keeps the hub off, {@code 0} binds
+     * an OS-assigned loopback port. Tests use this form.
+     *
+     * @param hubPort the {@code SPECTRO_HUB_PORT} value
      */
-    public FleetAggregator(@Value("${SPECTRO_HUB_PORT:}") String hubPort) {
-        this.hub = openHub(hubPort);
+    public FleetAggregator(String hubPort) {
+        this("", hubPort, HubSettings.DEFAULT_PORT);
+    }
+
+    /**
+     * The bean: both hub settings and the server's own port, read from the
+     * environment (card 585). No value fails the boot: a setting that cannot
+     * be read at all (an unresolvable placeholder) leaves the hub off with a
+     * note, and a hub that cannot open is off too. The log, the roster and
+     * doctor say why.
+     *
+     * @param environment the application environment
+     */
+    @Autowired
+    public FleetAggregator(Environment environment) {
+        this(planFrom(environment));
+    }
+
+    /**
+     * Both settings as plain values, the server's port not known.
+     *
+     * @param hubEnabled the {@code SPECTRO_HUB_ENABLED} value
+     * @param hubPort    the {@code SPECTRO_HUB_PORT} value
+     */
+    public FleetAggregator(String hubEnabled, String hubPort) {
+        this(hubEnabled, hubPort, HubSettings.DEFAULT_PORT, 0);
+    }
+
+    /**
+     * @param hubEnabled the switch
+     * @param hubPort    the port
+     * @param pickFrom   where the walk for a free port starts (tests move it off 7700)
+     */
+    FleetAggregator(String hubEnabled, String hubPort, int pickFrom) {
+        this(hubEnabled, hubPort, pickFrom, 0);
+    }
+
+    /**
+     * @param hubEnabled the switch
+     * @param hubPort    the port
+     * @param pickFrom   where the walk for a free port starts (tests move it off 7700)
+     * @param serverPort the server's own port, 0 when not known
+     */
+    FleetAggregator(String hubEnabled, String hubPort, int pickFrom, int serverPort) {
+        this(HubSettings.plan(hubEnabled, hubPort, pickFrom, serverPort));
+    }
+
+    private FleetAggregator(HubSettings.Plan plan) {
+        this.hubState = HubSettings.open(plan);
+        this.hub = hubState.hub();
+        if (hubState.note() != HubSettings.Note.NONE) {
+            log.warn("{}", hubState.describe());
+        } else if (hub != null) {
+            log.info("{}", hubState.describe());
+        }
         if (hub != null) {
             hub.onRosterChange(this::rosterChanged);
             // The accept loop is already live: a node could have joined between
-            // openHub and the line above, firing into a null listener. Fold once
+            // the bind and the line above, firing into a null listener. Fold once
             // now (idempotent) so no early join stays invisible.
             rosterChanged();
-            log.info("fleet hub listening on loopback port {} (SPECTRO_HUB_PORT)", hub.port());
         }
     }
 
-    private static ProcessBusHub openHub(String hubPort) {
-        if (hubPort == null || hubPort.isBlank()) {
-            return null; // the documented default: no fleet, no listener
-        }
-        int port;
+    /**
+     * Reads the two settings and {@code server.port} without letting a bad
+     * value throw: {@code @Value} resolved nested placeholders and failed the
+     * boot on "${nope}" (review D6).
+     */
+    static HubSettings.Plan planFrom(Environment environment) {
+        String enabled;
+        String port;
         try {
-            port = Integer.parseInt(hubPort.strip());
-        } catch (NumberFormatException invalid) {
-            log.warn("SPECTRO_HUB_PORT is not a port number: \"{}\" — the fleet hub stays OFF",
-                    hubPort);
-            return null;
-        }
-        if (port < 0 || port > 65535) {
-            // A numeric-but-impossible port joins the typo bucket (loud, off);
-            // ProcessBusHub would otherwise throw IllegalArgumentException from
-            // InetSocketAddress and crash the boot past both catches below.
-            log.warn("SPECTRO_HUB_PORT is out of range: \"{}\" — the fleet hub stays OFF",
-                    hubPort);
-            return null;
+            enabled = environment.getProperty(HubSettings.ENABLED);
+        } catch (RuntimeException unreadable) {
+            return HubSettings.unreadable(HubSettings.ENABLED, unreadable.getMessage());
         }
         try {
-            return new ProcessBusHub(port);
-        } catch (IOException bindFailed) {
-            // The operator explicitly asked for a hub — failing the boot is
-            // honest; a silently missing hub would be the worse surprise.
-            throw new UncheckedIOException(
-                    "SPECTRO_HUB_PORT=" + port + " could not bind", bindFailed);
+            port = environment.getProperty(HubSettings.PORT);
+        } catch (RuntimeException unreadable) {
+            return HubSettings.unreadable(HubSettings.PORT, unreadable.getMessage());
         }
+        return HubSettings.plan(enabled, port, HubSettings.DEFAULT_PORT, serverPort(environment));
+    }
+
+    /** @return the configured {@code server.port}, or 0 when it is not a usable number */
+    private static int serverPort(Environment environment) {
+        try {
+            String value = environment.getProperty("server.port", "8080");
+            int port = Integer.parseInt(value.strip());
+            return port > 0 && port <= 65535 ? port : 0;
+        } catch (RuntimeException unknown) {
+            return 0;
+        }
+    }
+
+    /** @return what the settings asked for and what the hub became */
+    public HubSettings.Outcome hubState() {
+        return hubState;
     }
 
     /** @return true when the operator opted in and the hub is listening */

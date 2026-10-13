@@ -128,4 +128,30 @@ class SessionPlaybookHostTest {
         assertThat(host.switchChat(new Playbook.ModelRef("gemini", "g"))).contains("GEMINI_API_KEY");
         assertThat(asked).containsExactly("ollama qwen3:8b", "gemini g");
     }
+
+    /**
+     * Card 584, criterion 7: the registry leaves the address of a cloud row
+     * empty, so the run's question said "no address". The probe names the
+     * configured or preset base URL where the provider has one, and leaves it
+     * empty only for a provider without an address of its own, which the
+     * question then names as its default address.
+     */
+    @Test
+    void aCloudRowsProbeNamesTheAddressTheProviderIsDialledAt() {
+        SpectroConfig config = SpectroConfig.load(new SpectroConfig.Overrides("ollama", "qwen3:8b", null, null, null,
+                ws.toString()));
+        SessionPlaybookHost host = new SessionPlaybookHost(ws, e -> { }, null, null, () -> config,
+                (p, m) -> null, c -> null,
+                p -> new ProviderRow(p, "cloud", "failed", true, null, "ollama".equals(p) ? "http://elsewhere:1" : null,
+                        List.of(), false, "rejected-key", 3L),
+                p -> "cloud", m -> { }, r -> true, q -> null);
+
+        assertThat(host.probe("openai").endpoint()).isEqualTo(config.endpointFor("openai"))
+                .startsWith("http");
+        assertThat(host.probe("gemini").endpoint()).isEqualTo(config.endpointFor("gemini"));
+        assertThat(host.probe("anthropic").endpoint()).as("anthropic's address is fixed in the SDK").isNull();
+        assertThat(host.probe("copilot").endpoint()).isNull();
+        assertThat(host.probe("ollama").endpoint()).as("a row that names its address keeps it")
+                .isEqualTo("http://elsewhere:1");
+    }
 }

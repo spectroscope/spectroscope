@@ -10,6 +10,7 @@ import dev.spectroscope.core.provider.LlmProvider;
 import dev.spectroscope.core.scheduler.JobState;
 import dev.spectroscope.core.session.SessionStore;
 import dev.spectroscope.core.web.WebSearchTiers;
+import dev.spectroscope.orchestrator.HubSettings;
 import dev.spectroscope.server.DotEnvSettings;
 import dev.spectroscope.server.leveling.ServerLeveling;
 import dev.spectroscope.server.providers.ListResult;
@@ -302,7 +303,7 @@ public class SessionsController {
      *         id or a session that is not there
      */
     @GetMapping("/api/sessions/{id}/export")
-    public ResponseEntity<String> exportSession(@PathVariable String id, HttpServletRequest request) {
+    public ResponseEntity<byte[]> exportSession(@PathVariable String id, HttpServletRequest request) {
         if (!LocalOrigin.isLocalOrigin(request)
                 || !LocalOrigin.originIsLoopbackOrAbsent(request)
                 || !SESSION_ID.matcher(id).matches()) {
@@ -315,10 +316,10 @@ public class SessionsController {
             if (!Files.isRegularFile(file)) {
                 return ResponseEntity.status(404).build();
             }
-            String jsonl = Files.readString(file);
-            // The body is stored session content = caller-shaped text. Serve it
-            // as a download with a non-HTML type and nosniff, so it can never
-            // reach an HTML parsing context on this origin. The id in the
+            byte[] jsonl = Files.readAllBytes(file);
+            // The body is stored session content = caller-shaped text. Serve its
+            // bytes unchanged as a download with a non-HTML type and nosniff, so
+            // it can never reach an HTML parsing context on this origin. The id in the
             // filename is safe by the shape check above: [A-Za-z0-9-] carries
             // no quote, CR or LF.
             return ResponseEntity.ok()
@@ -621,7 +622,8 @@ public class SessionsController {
             return ResponseEntity.badRequest().body(Map.of("error", "empty key"));
         }
         try {
-            SpectroConfig.writeApiKey(keyEnv, body.key().trim());
+            // The same locked, atomic writer as every other save (card 585).
+            DotEnvSettings.save(SpectroConfig.dotEnvPath(), keyEnv, body.key().trim());
         } catch (Exception writeFailed) {
             return ResponseEntity.internalServerError().body(Map.of("error", "could not save the key"));
         }
@@ -650,18 +652,29 @@ public class SessionsController {
             return ResponseEntity.notFound().build();
         }
         Map<String, Object> fromFile = DotEnvSettings.read(SpectroConfig.dotEnvPath());
-        Map<String, Object> out = new LinkedHashMap<>();
+        Map<String, Map<String, Object>> out = new LinkedHashMap<>();
+        Map<String, String> values = new LinkedHashMap<>();
         for (String name : DotEnvSettings.WRITABLE) {
             String live = System.getenv(name);
             boolean fromEnv = live != null && !live.isBlank();
-            out.put(name, Map.of(
-                    "value", fromEnv ? live : String.valueOf(fromFile.getOrDefault(name, "")),
-                    // A real env var wins over the file for the whole process
-                    // life, so the UI must say the box it is showing cannot take
-                    // effect rather than let the operator type into it and wonder.
-                    "fromEnvironment", fromEnv));
+            String value = fromEnv ? live : String.valueOf(fromFile.getOrDefault(name, ""));
+            values.put(name, value);
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("value", value);
+            // A real env var wins over the file for the whole process
+            // life, so the UI must say the box it is showing cannot take
+            // effect rather than let the operator type into it and wonder.
+            entry.put("fromEnvironment", fromEnv);
+            out.put(name, entry);
         }
-        return ResponseEntity.ok(out);
+        // Card 585: whether these values turn the hub on at the next start
+        // (a port alone still does), and the port an empty field means. The
+        // rule lives in HubSettings only, so the switch never guesses it.
+        boolean hubOn = HubSettings.plan(values.get(DotEnvSettings.HUB_ENABLED),
+                values.get(DotEnvSettings.HUB_PORT)).on();
+        out.get(DotEnvSettings.HUB_ENABLED).put("effective", hubOn);
+        out.get(DotEnvSettings.HUB_PORT).put("default", String.valueOf(HubSettings.DEFAULT_PORT));
+        return ResponseEntity.ok(new LinkedHashMap<>(out));
     }
 
     /**
@@ -680,7 +693,7 @@ public class SessionsController {
      * by the launchers into the process environment, so an unrestricted writer
      * here would be remote code execution wearing a settings form: one
      * {@code JAVA_TOOL_OPTIONS} line and the next boot runs whatever it says.
-     * Two names, both validated for shape, and nothing else is accepted.</p>
+     * Three names, each validated for shape, and nothing else is accepted.</p>
      *
      * @param body the setting to save
      * @param request the servlet request, for the fences
@@ -698,11 +711,17 @@ public class SessionsController {
             return ResponseEntity.badRequest().body(Map.of("error", "not a settable name"));
         }
         String value = body.value() == null ? "" : body.value().trim();
-        if (!validSetting(name, value)) {
-            return ResponseEntity.badRequest().body(Map.of("error", "not a value this setting takes"));
+        String problem = settingProblem(name, value, request.getLocalPort());
+        if (problem != null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "not a value this setting takes",
+                    "reason", problem, "message", HubSettings.refusal(problem)));
+        }
+        if (DotEnvSettings.HUB_ENABLED.equals(name) && !value.isEmpty()) {
+            value = String.valueOf(HubSettings.readSwitch(value)); // on/yes/1 and off/no/0 saved as true/false
         }
         try {
-            SpectroConfig.writeApiKey(name, value); // same writer, same 0600 file
+            // One locked, atomic write: the value and the commented defaults (card 585).
+            DotEnvSettings.save(SpectroConfig.dotEnvPath(), name, value);
         } catch (Exception writeFailed) {
             return ResponseEntity.internalServerError().body(Map.of("error", "could not save the setting"));
         }
@@ -718,32 +737,34 @@ public class SessionsController {
     }
 
     /**
-     * Whether a value is the shape its setting takes.
+     * Why a value is not the shape its setting takes, or null when it is.
      *
      * <p>Blank is always allowed: it is how an operator turns an opt-in back
-     * off, and both readers treat a blank as "off" already.</p>
+     * off, and every reader treats a blank as "off" already.</p>
      *
      * @param name the setting name, already known to be writable
      * @param value the trimmed value
-     * @return true when it may be written
+     * @param serverPort the port this request reached the server on
+     * @return {@code under-1024}, {@code app-range}, {@code server-port},
+     *         {@code not-a-port}, {@code not-a-switch}, or null when it may be written
      */
-    private static boolean validSetting(String name, String value) {
+    private static String settingProblem(String name, String value, int serverPort) {
         if (value.isEmpty()) {
-            return true;
+            return null;
         }
         if (DotEnvSettings.HUB_PORT.equals(name)) {
-            // 0 is meaningful here: it binds an ephemeral loopback port.
-            try {
-                int port = Integer.parseInt(value);
-                return port >= 0 && port <= 65535;
-            } catch (NumberFormatException notAPort) {
-                return false;
-            }
+            // Card 585: 0 stays (a port the system assigns); 1 to 1023 need
+            // admin rights, 8080 to 8100 and this server's own port belong to
+            // the app; each once killed the next start, so they are refused.
+            return HubSettings.portProblem(value, serverPort);
         }
-        // The reader treats anything but "true" as off; accepting only the two
-        // words keeps the file readable and a typo visible instead of silently
-        // meaning "off".
-        return "true".equalsIgnoreCase(value) || "false".equalsIgnoreCase(value);
+        if (DotEnvSettings.HUB_ENABLED.equals(name)) {
+            return HubSettings.readSwitch(value) == null ? "not-a-switch" : null;
+        }
+        // The spawn reader treats anything but "true" as off; accepting only
+        // the two words keeps the file readable and a typo visible instead of
+        // silently meaning "off".
+        return "true".equalsIgnoreCase(value) || "false".equalsIgnoreCase(value) ? null : "not-a-switch";
     }
 
     /** One operator setting to save. Not a key — these two are not secrets. */

@@ -53,11 +53,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * the config/session files written here never touch the real home.</p>
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-        // SPECTRO_HUB_PORT is pinned blank here: an inlined property wins over
-        // the OS environment, so a developer or CI shell that happens to export
-        // SPECTRO_HUB_PORT cannot silently turn the hub ON and break the
-        // hub-off frame-order assertions below.
-        properties = {"server.address=127.0.0.1", "SPECTRO_HUB_PORT="})
+        // SPECTRO_HUB_ENABLED and SPECTRO_HUB_PORT are pinned blank here: an
+        // inlined property wins over the OS environment, so a developer or CI
+        // shell that happens to export either one cannot silently turn the hub
+        // ON and break the hub-off frame-order assertions below (card 585).
+        properties = {"server.address=127.0.0.1", "SPECTRO_HUB_ENABLED=", "SPECTRO_HUB_PORT="})
 @Timeout(value = 30, unit = TimeUnit.SECONDS)
 class SpectroServerIntegrationTest {
 
@@ -1096,6 +1096,44 @@ class SpectroServerIntegrationTest {
         assertTrue(response.getBody() != null && response.getBody().contains("unknown settings key"),
                 "the error JSON's message field must carry the readable reason, got: "
                         + response.getBody());
+    }
+
+    @Test
+    void aSettingsWriteReachesASocketThatHasNotRun() throws Exception {
+        // Card 580: Spring hands the controller the live sessions, and a socket
+        // that has not run announces the saved default without a reload. The
+        // unit tests drive the controller by hand; only this boot proves the
+        // wiring.
+        Path user = Path.of(System.getProperty("user.home"), ".spectro", "settings.json");
+        byte[] before = Files.exists(user) ? Files.readAllBytes(user) : null;
+        List<JsonNode> events = new CopyOnWriteArrayList<>();
+        CountDownLatch connected = new CountDownLatch(1);
+        try (HttpClient client = HttpClient.newHttpClient()) {
+            WebSocket socket = client.newWebSocketBuilder()
+                    .buildAsync(URI.create("ws://127.0.0.1:" + port + "/ws"),
+                            collectInto(events, "provider_info", connected))
+                    .join();
+            assertTrue(connected.await(10, TimeUnit.SECONDS), "the connect frame names the backend");
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            ResponseEntity<String> saved = rest.exchange("/api/settings/user", HttpMethod.PUT,
+                    new HttpEntity<>("{\"model\":\"qwen-580\"}", headers), String.class);
+            assertEquals(200, saved.getStatusCode().value());
+            for (int i = 0; i < 100 && events.stream()
+                    .noneMatch(e -> "qwen-580".equals(e.path("model").asText())); i++) {
+                Thread.sleep(100);
+            }
+            socket.sendClose(WebSocket.NORMAL_CLOSURE, "done").join();
+        } finally {
+            if (before == null) {
+                Files.deleteIfExists(user);
+            } else {
+                Files.write(user, before);
+            }
+        }
+        assertTrue(events.stream().anyMatch(e -> "provider_info".equals(e.path("type").asText())
+                        && "qwen-580".equals(e.path("model").asText())),
+                "the blank socket must announce the saved model, got " + events);
     }
 
     @Test

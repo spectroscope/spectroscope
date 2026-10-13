@@ -175,8 +175,15 @@ regardless). The hub's `roster()` lists the cards of currently connected
 nodes — registration is the handshake, liveness is the connection.
 
 The server side closes the loop: spectro-server hosts the hub as an
-OPT-IN bean (`SPECTRO_HUB_PORT`; default off — no listener, no attack
-surface for non-fleet users; an invalid value disables it LOUDLY). The
+OPT-IN bean (`SPECTRO_HUB_ENABLED`, or the older opt-in, `SPECTRO_HUB_PORT`
+on its own; default off, so no listener and no attack surface for non-fleet
+users). `HubSettings` holds the rules: the port defaults to 7700; a port
+under 1024, a port in 8080 to 8100, the server's own port and a value that
+is not a number are never bound, and the hub takes the first free loopback
+port from 7700 up instead; a written port that cannot open, or that another
+program already listens on (a connect probe on 127.0.0.1 and [::1] asks
+first), leaves the hub off while the server starts anyway. Every deviation
+is a WARN, and `GET /api/fleet` carries it. The
 aggregator taps every card-announced topic through the hub's own
 local-subscriber discipline, folds joins/leaves/last-seen, and surfaces
 the fleet as `GET /api/fleet`, per-node ring replay under

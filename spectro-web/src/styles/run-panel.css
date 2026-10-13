@@ -1,0 +1,302 @@
+/* ============================================================ run panel
+   Card 586: a playbook or workflow run in the plan panel beside the chat
+   (components/RunPanel.tsx, components/PlanTab.tsx). Imported by app.css.
+
+   Tokens only: the panel tokens of panels.css, and the status colours of the
+   agent-card palette there (accent running, ok done, error failed, warn
+   waiting). Both designs resolve from the same names. */
+
+.run-plan { display: flex; flex-direction: column; gap: var(--sp-3); }
+.run-panel { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+
+/* ---------- header ---------- */
+.run-head { display: flex; flex-direction: column; gap: 3px; }
+.run-head-row { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+.run-title {
+  margin: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--fs-13);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.run-picker {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 50%;
+  font: inherit;
+  font-size: var(--fs-11);
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+}
+.run-wide {
+  flex: none;
+  font: inherit;
+  font-size: var(--fs-11);
+  color: var(--text-dim);
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  padding: 0 var(--sp-2);
+  cursor: pointer;
+}
+.run-wide:hover { color: var(--text); border-color: var(--accent); }
+.run-task { margin: 0; font-size: var(--fs-12); color: var(--text-dim); overflow-wrap: anywhere; }
+.run-status {
+  margin: 0;
+  font-size: var(--fs-11);
+  color: var(--text-faint);
+  border-left: 2px solid var(--border-strong);
+  padding-left: var(--sp-2);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+.run-status--running { color: var(--text); border-left-color: var(--accent); }
+.run-status--done { border-left-color: var(--ok); }
+.run-status--failed { border-left-color: var(--error); }
+.run-status--stopped { border-left-color: var(--text-faint); }
+.run-status-waiting { color: var(--warn); }
+
+/* ---------- graph strip ---------- */
+.run-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  color: var(--text-faint);
+  white-space: pre;
+}
+.run-node--running { color: var(--accent); }
+.run-node--waiting { color: var(--warn); }
+.run-node--done { color: var(--ok); }
+.run-node--failed { color: var(--error); }
+
+/* ---------- cards ---------- */
+.run-cards { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+.run-card {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  padding: var(--sp-2) var(--sp-3);
+  cursor: pointer;
+  transition: border-color var(--t-fast);
+}
+.run-card:hover { border-color: var(--border-strong); }
+.run-card:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+.run-card--running { border-left-color: var(--accent); }
+.run-card--waiting { border-left-color: var(--warn); }
+.run-card--done { border-left-color: var(--ok); }
+.run-card--failed { border-left-color: var(--error); }
+.run-card-head { display: flex; align-items: baseline; gap: var(--sp-2); min-width: 0; }
+.run-mark { flex: none; font-family: var(--font-mono); font-size: var(--fs-11); color: var(--text-faint); white-space: pre; }
+.run-card--running .run-mark { color: var(--accent); }
+.run-card--waiting .run-mark { color: var(--warn); }
+.run-card--done .run-mark { color: var(--ok); }
+.run-card--failed .run-mark { color: var(--error); }
+.run-card-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--fs-12);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.run-card-time { flex: none; font-size: var(--fs-11); color: var(--text-faint); white-space: nowrap; }
+.run-card--waiting .run-card-time { color: var(--warn); }
+.run-card-who,
+.run-card-decision,
+.run-card-shell { font-size: var(--fs-11); color: var(--text-dim); overflow-wrap: anywhere; }
+.run-card-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-1) var(--sp-2); font-size: var(--fs-11); min-width: 0; }
+.run-card-label { color: var(--text-faint); text-transform: uppercase; letter-spacing: var(--track-eyebrow); }
+.run-out { display: inline-flex; align-items: baseline; gap: var(--sp-1); min-width: 0; }
+.run-doc { color: var(--text-dim); }
+.run-path {
+  min-width: 0;
+  max-width: 100%;
+  padding: 0;
+  font: inherit;
+  font-size: var(--fs-11);
+  color: var(--accent);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.run-path:hover { text-decoration: underline; }
+.run-change { color: var(--text-faint); }
+.run-files { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1px; font-size: var(--fs-11); }
+.run-files li { display: flex; align-items: baseline; gap: var(--sp-1); min-width: 0; }
+.run-files-more { color: var(--text-faint); }
+.run-card-error { font-size: var(--fs-11); color: var(--error); overflow-wrap: anywhere; }
+.run-card-live {
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- nodes not entered ---------- */
+.run-ghost {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-3);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-control);
+  color: var(--text-faint);
+}
+.run-ghost .run-card-name { color: var(--text-faint); }
+
+/* ---------- the model's plan under a run ---------- */
+.run-model-plan {
+  margin: 0;
+  font-size: var(--fs-11);
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: var(--track-eyebrow);
+  color: var(--text-faint);
+}
+
+/* ---------- wide view ----------
+   The run in the chat's place (components/RunWideView.tsx). App puts the
+   modifier on the chat row and the view in a slot of its own, where a chunk
+   that fails to load shows its notice. The chat and the dock stay mounted
+   and step aside, so a draft, the scroll and the dock's panels survive
+   "small". */
+.chat-row[data-run-wide] > :not(.run-wide-slot) { display: none; }
+.run-wide-slot { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.run-wide-view {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--sp-3) var(--sp-4);
+}
+.run-wide-graph--graph {
+  flex: none;
+  height: min(520px, 55vh);
+  min-height: 240px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+}
+/* Under the state graph's narrow breakpoint (900px) its side panel stacks
+   under the canvas; the box grows and the canvas keeps a reserved height, as
+   the Playbook segment's run graph does (playbook-run.css). */
+@media (max-width: 900px) {
+  .run-wide-graph--graph { height: auto; }
+  .run-wide-graph--graph .sg { height: auto; }
+  .run-wide-graph--graph .sg-canvas { min-height: var(--pb-run-canvas-min); }
+}
+.run-wide-empty { margin: 0; font-size: var(--fs-12); color: var(--text-faint); }
+
+.run-chain { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-1) var(--sp-2); }
+.run-chain li { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+.run-chain li + li::before { content: "\2192"; color: var(--text-faint); font-size: var(--fs-11); }
+.run-link {
+  display: inline-flex;
+  align-items: baseline;
+  min-width: 0;
+  font: inherit;
+  font-size: var(--fs-12);
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  padding: var(--sp-1) var(--sp-2);
+  cursor: pointer;
+}
+.run-link:hover { border-color: var(--border-strong); }
+.run-link[aria-pressed="true"] { border-color: var(--accent); }
+.run-link--running { border-left-color: var(--accent); }
+.run-link--waiting { border-left-color: var(--warn); }
+.run-link--done { border-left-color: var(--ok); }
+.run-link--failed { border-left-color: var(--error); }
+.run-link--running .run-mark { color: var(--accent); }
+.run-link--waiting .run-mark { color: var(--warn); }
+.run-link--done .run-mark { color: var(--ok); }
+.run-link--failed .run-mark { color: var(--error); }
+.run-link-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.run-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  min-width: 0;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  padding: var(--sp-2) var(--sp-3);
+}
+.run-detail-head { display: flex; align-items: baseline; gap: var(--sp-2); min-width: 0; }
+.run-detail-name {
+  margin: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--fs-13);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.run-in-chat {
+  flex: none;
+  font: inherit;
+  font-size: var(--fs-11);
+  color: var(--text-dim);
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  padding: 0 var(--sp-2);
+  cursor: pointer;
+}
+.run-in-chat:hover { color: var(--text); border-color: var(--accent); }
+.run-detail-rows {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--sp-2) var(--sp-3);
+  margin: 0;
+  font-size: var(--fs-12);
+}
+.run-detail-rows dt {
+  color: var(--text-faint);
+  font-size: var(--fs-11);
+  text-transform: uppercase;
+  letter-spacing: var(--track-eyebrow);
+}
+.run-detail-rows dd { margin: 0; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-1); color: var(--text-dim); overflow-wrap: anywhere; }
+.run-text {
+  margin: 0;
+  max-height: 18em;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.run-text-cut { margin: 0; font-size: var(--fs-11); color: var(--text-faint); }
+.run-path-text { font-family: var(--font-mono); font-size: var(--fs-11); color: var(--text-faint); overflow-wrap: anywhere; }
+.run-helpers { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--sp-1) var(--sp-3); font-family: var(--font-mono); font-size: var(--fs-11); }
+.run-detail .run-card-decision,
+.run-detail .run-card-shell,
+.run-detail .run-card-error,
+.run-detail .run-card-live { margin: 0; }
+@container chat-row (max-width: 628px) {
+  .run-detail-rows { grid-template-columns: minmax(0, 1fr); }
+}

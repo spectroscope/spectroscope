@@ -236,7 +236,8 @@ class PlaybookGuideDriftTest {
         }
         for (String key : List.of("pbchip.noPlaybook", "pbchip.suggested", "pb.run.confirmTitle", "pbb.tab.steps",
                 "pb.run.start", "pb.run.hash", "pb.run.skills", "pb.run.commands", "pb.run.refusals",
-                "pb.run.unrecorded")) {
+                // Card 586: a run without an end record is told by the run panel now, not the pane.
+                "run.panel.unfinished")) {
             String shown = english(i18n, key);
             if (!run.contains("&ldquo;" + shown + "&rdquo;")) {
                 missing.add(key + " = \"" + shown + "\"");

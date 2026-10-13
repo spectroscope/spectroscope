@@ -232,6 +232,16 @@ describe("PlaybookPane with a loaded playbook", () => {
     expect(out).not.toContain(dict["pb.run.start"].en);
   });
 
+  it("draws no run view with a loaded playbook and an open session, and the link to the runs once (card 586)", async () => {
+    respond(LOADED);
+    await loadPlaybook("/p", "/ws");
+    const out = renderToStaticMarkup(<PlaybookPane workspace="/ws" sessionId="s1" hasRun />);
+    expect(out, "positive: the playbook is drawn").toContain('class="pb-steps"');
+    expect(out).not.toContain("pb-run-view");
+    expect(out.match(/class="pb-run-link"/g)).toHaveLength(1);
+    expect(out).toContain(dict["pb.run.segmentLink"].en);
+  });
+
   it("lists each step's skills as in the playbook or missing in it (card 558), its model and provider state, privacy, documents and nod", async () => {
     respond(LOADED);
     await loadPlaybook("/p", "/ws");

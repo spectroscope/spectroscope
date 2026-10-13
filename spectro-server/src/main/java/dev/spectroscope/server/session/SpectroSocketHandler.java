@@ -50,6 +50,15 @@ public class SpectroSocketHandler extends TextWebSocketHandler {
     /** Per-connection state, keyed by the Spring session id. */
     private final Map<String, SessionConnection> connections = new ConcurrentHashMap<>();
 
+    /** Card 580: reads the settings for a new connection; a test hands in its own. */
+    private volatile java.util.function.Supplier<SpectroConfig> settingsLoader =
+            () -> SpectroConfig.load(SpectroConfig.Overrides.none());
+
+    /** @param loader card 580: what reads the settings for a new connection, for tests */
+    void useSettingsLoader(java.util.function.Supplier<SpectroConfig> loader) {
+        this.settingsLoader = loader;
+    }
+
     SpectroSocketHandler(FleetAggregator fleet, LiveSessions liveSessions,
                          dev.spectroscope.server.browser.PrecedenceBrowserFaces browser,
                          dev.spectroscope.server.browser.SessionBrowserBridge browserBridge) {
@@ -69,10 +78,14 @@ public class SpectroSocketHandler extends TextWebSocketHandler {
     public void afterConnectionEstablished(WebSocketSession socket) {
         // ?resume=<id> reopens an old session from the JSONL store; absent = new.
         String resumeId = queryParam(socket, "resume");
+        // Card 580: the write count before the read, so a write during it
+        // still reaches this connection once it listens.
+        long settingsWrites = liveSessions == null ? 0 : liveSessions.settingsWrites();
         // Config + provider + system prompt exactly as the CLI builds them.
-        SpectroConfig config = SpectroConfig.load(SpectroConfig.Overrides.none());
+        SpectroConfig config = settingsLoader.get();
         SessionConnection connection =
                 new SessionConnection(socket, mapper, config, resumeId, fleet, liveSessions);
+        connection.settingsReadAfter(settingsWrites);
         // The session's browser (cards 201, 226). The precedence directory
         // resolves per call: the desktop pane when a shell is attached, the
         // server's headless Chrome for a web reader otherwise. Each face reads
@@ -201,8 +214,13 @@ public class SpectroSocketHandler extends TextWebSocketHandler {
             // Card 482: the confirmation sheet's Start. The hash is the one the
             // sheet showed; the connection refuses when the folder moved since.
             // Card 554: the prompt is the run's task and is required.
+            // Card 584: picks, optional, are the models picked in the sheet per
+            // step for this run; untrusted, the connection checks them again.
+            // The second fix round: ask, optional, is the page's id for this
+            // start; a refusal of the start answers it.
             case "start_playbook" -> connection.onStartPlaybook(frame.path("dir").asText(""),
-                    frame.path("hash").asText(""), frame.path("prompt").asText(""));
+                    frame.path("hash").asText(""), frame.path("prompt").asText(""), frame.path("picks"),
+                    frame.path("ask").isTextual() ? frame.path("ask").asText() : null);
             // Card 554: the owner picked a playbook for this session (the
             // header dropdown or /playbook use). Absent or null withdraws it;
             // with none true it is the explicit "No playbook" (decision b).
@@ -237,6 +255,7 @@ public class SpectroSocketHandler extends TextWebSocketHandler {
             // Card 558: the page asks for the session's skills, commands and
             // agents; the answer is session_items. Reads only.
             case "get_session_items" -> connection.onGetSessionItems(); // additive (card 558)
+            case "graph_ask" -> connection.onGraphAsk(frame.path("question").asText("")); // additive (card 587)
             default -> connection.sendError("Unknown message type.");
         }
     }

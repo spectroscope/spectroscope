@@ -1,0 +1,23 @@
+meta {
+  name: hub port check
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/api/fleet/port-check
+  body: none
+  auth: none
+}
+
+params:query {
+  port: 7700
+}
+
+docs {
+  Whether a hub port is free on loopback right now: {port, free, thisHub}. free is false when the port cannot be bound or another program answers on 127.0.0.1 or [::1]; thisHub is true when this server's own hub holds it. 400 with reason (under-1024, app-range, server-port, not-a-port) and message for a port the hub may not take, refused before any bind. The fleet settings ask this before they save a port.
+  
+  Fence: host. Loopback fence: the TCP peer must be loopback AND the Host header must be localhost/127.0.0.1/::1. A REST client passes automatically when it targets http://localhost:<port>. A LAN IP or rebound DNS name in the URL answers a blank 404.
+  
+  Writes state: no
+}

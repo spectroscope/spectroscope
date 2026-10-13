@@ -3,6 +3,10 @@
 // A row whose value differs from what Local mode writes says so and offers a
 // reset. The decisions live in state/localMode.ts and on the server; this
 // file draws them and reports a change.
+//
+// Card 600: below them, a switch of its own for toolResultElision, the tool
+// results cache. It is not one of Local mode's rows: it writes the user
+// settings and is drawn whether Local mode is on or off.
 
 import { useState } from "react";
 import {
@@ -13,6 +17,8 @@ import {
   type ToolUseAnswer,
 } from "../state/localMode";
 import { t, type Lang } from "../i18n/i18n";
+import { ReachBlock } from "./settingsReach";
+import { saveToolResultCache, type ToolResultCacheState } from "../state/toolResultCache";
 
 /** The label and the note of each row, by key. A key the server adds later
  *  is drawn with its own name and no note. */
@@ -88,6 +94,7 @@ export function LocalModeSection({
   onSwitch,
   onEdit,
   onReset,
+  cache,
 }: {
   lang: Lang;
   /** The server's last local_mode_info, or null before the first one. */
@@ -99,6 +106,8 @@ export function LocalModeSection({
   onSwitch: (on: boolean) => void;
   onEdit: (key: string, value: unknown) => void;
   onReset: (key: string) => void;
+  /** Card 600: the tool results cache switch, read by the gear when it opens. */
+  cache?: ToolResultCacheState;
 }) {
   if (info === null) return null;
   return (
@@ -170,6 +179,34 @@ export function LocalModeSection({
         <p className="settings-error wsg-inline-error">
           {t(lang, "wsg.tools.saveFailed", { reason: info.saveError })}
         </p>
+      )}
+      {cache !== undefined && (
+        <div className="wsg-lm-cache">
+          <ReachBlock lang={lang} fields={["toolResultElision"]}>
+            <label className="wsg-lm-switch">
+              <input
+                type="checkbox"
+                role="switch"
+                checked={cache.on}
+                disabled={!cache.known}
+                aria-label={t(lang, "wsg.lm.cacheTitle")}
+                onChange={(e) => saveToolResultCache(e.target.checked, cache)}
+              />
+              <span className="wsg-lm-title">{t(lang, "wsg.lm.cacheTitle")}</span>
+            </label>
+            <p className="wsg-tool-groups-note">{t(lang, "wsg.lm.cacheNote")}</p>
+            {cache.readError !== null && (
+              <p className="settings-error wsg-inline-error">
+                {t(lang, "wsg.lm.cacheReadFailed", { reason: cache.readError })}
+              </p>
+            )}
+            {cache.error !== null && (
+              <p className="settings-error wsg-inline-error">
+                {t(lang, "wsg.tools.saveFailed", { reason: cache.error })}
+              </p>
+            )}
+          </ReachBlock>
+        </div>
       )}
     </div>
   );

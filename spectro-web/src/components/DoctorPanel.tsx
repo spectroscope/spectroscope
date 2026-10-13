@@ -14,6 +14,7 @@ import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { webSearchCheck, webSearchRowValue, type ServedWebSearch } from "./webSearchSetup";
 import { codeGraphDoctorRow, fetchCodeGraphStatus, type CodeGraphStatus } from "../codegraph/codeGraphModel";
+import { hubDoctorRow, type HubState } from "./hubSettings";
 
 type Verdict = "ok" | "warn" | "error";
 
@@ -48,6 +49,9 @@ export function DoctorPanel(props: {
     { configured: boolean; ok?: boolean; endpoint?: string; message?: string } | null | "failed"
   >(null);
 
+  // Card 585: the fleet hub's settings and the port it took, from the roster.
+  const [hub, setHub] = useState<HubState | null | "failed">(null);
+
   // Card 472: whether graphify, behind "Build code graph", is on the server's tool PATH.
   const [codeGraph, setCodeGraph] = useState<CodeGraphStatus | null | "pending">("pending");
 
@@ -72,6 +76,11 @@ export function DoctorPanel(props: {
       .catch(() => setSessions("failed"));
     setCodeGraph("pending");
     void fetchCodeGraphStatus(null).then(setCodeGraph);
+    setHub(null);
+    fetch("/api/fleet")
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((f) => setHub((f as { hub?: HubState }).hub ?? "failed"))
+      .catch(() => setHub("failed"));
     setOtlp(null);
     fetch("/api/otlp/probe")
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
@@ -158,6 +167,7 @@ export function DoctorPanel(props: {
         ? { verdict: "ok" as const, value: "…" }
         : codeGraphDoctorRow(codeGraph, lang)),
     },
+    { key: "doc.hub", ...hubDoctorRow(hub, lang) },
     {
       key: "doc.sessions",
       verdict: sessions === "failed" ? "error" : "ok",

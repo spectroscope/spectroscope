@@ -12,6 +12,7 @@ import type { RunEvent } from "../events";
 import { __getState, __resetForTests, openDockPanel, openRightPanel } from "../state/layout";
 import { initialState, reduceAll } from "../state/reducer";
 import { listableBeforeTheFirstRun, paneState } from "./paneState";
+import { NO_SELECTION } from "../testkit/noSelection";
 
 const frame = (fields: Record<string, unknown>): RunEvent =>
   ({ type: "workspace_info", ts: 1, ...fields }) as unknown as RunEvent;
@@ -42,7 +43,14 @@ function pressFilesIcon(): void {
 
 function renderDock(workspace: ReturnType<typeof reduceAll>["workspace"]): string {
   return renderToStaticMarkup(
-    <RightPanel agents={[]} plan={null} onClose={() => {}} thinking workspace={workspace} sessionId={null} />,
+    <RightPanel
+      agents={[]}
+      {...NO_SELECTION}
+      onClose={() => {}}
+      thinking
+      workspace={workspace}
+      sessionId={null}
+    />,
   );
 }
 

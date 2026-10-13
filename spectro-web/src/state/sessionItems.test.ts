@@ -10,7 +10,15 @@
 import { describe, expect, it } from "vitest";
 import type { RunEvent } from "../events";
 import { initialState, reduce, type UiState } from "./reducer";
-import { parseSessionItems, sessionItemsOf, slashItems, wantsItems, type SessionItems } from "./sessionItems";
+import {
+  ITEM_SOURCES,
+  parseSessionItems,
+  sessionItemsOf,
+  slashItems,
+  sourceLabel,
+  wantsItems,
+  type SessionItems,
+} from "./sessionItems";
 import { NON_WIRE_TYPES } from "../wire/nonWire";
 
 const PICKED = {
@@ -153,6 +161,32 @@ describe("session_items", () => {
     expect(
       sessionItemsOf({ viewingLive: false, liveItems: null, continuable: false, wokenItems: items }),
     ).toBeNull();
+  });
+
+  // Card 587: the skill the app ships for the code graph is a fourth source.
+  it("reads the app's own skill, labels it as built in, and lists the source last", () => {
+    const read = parseSessionItems({
+      type: "session_items",
+      playbook: null,
+      items: [
+        {
+          kind: "skill",
+          name: "code-graph",
+          plain: "code-graph",
+          source: "app",
+          namespace: "app",
+          description: "When to ask the code graph",
+        },
+      ],
+    }) as SessionItems;
+    expect(read.items.map((i) => `${i.name}:${i.source}`)).toEqual(["code-graph:app"]);
+    const option = slashItems(read)[0];
+    expect(option).toMatchObject({ name: "code-graph", source: "app", kind: "skill" });
+    expect(sourceLabel(option ?? {}, "en")).toBe("built in");
+    expect(sourceLabel(option ?? {}, "de")).toBe("eingebaut");
+    // Card 587, fix round (M7): which sources exist is the server's list,
+    // held by sessionItems.drift.test.ts rather than typed here a second time.
+    expect(ITEM_SOURCES).toContain("app");
   });
 
   it("is asked for once, when something that shows it is open and nothing has arrived", () => {

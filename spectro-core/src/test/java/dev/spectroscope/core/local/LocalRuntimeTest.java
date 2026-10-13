@@ -1,6 +1,7 @@
 package dev.spectroscope.core.local;
 
 import com.sun.net.httpserver.HttpServer;
+import dev.spectroscope.core.net.LoopbackPorts;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -16,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /** LocalRuntime supervises one llama-server on a free localhost port. The binary
  *  launch is a seam, so a stub HTTP server stands in for the real llama-server —
@@ -73,6 +75,35 @@ class LocalRuntimeTest {
         assertNull(rt.reaper, "shutdown forgets the reaper");
         assertFalse(Runtime.getRuntime().removeShutdownHook(reaper),
                 "shutdown deregistered the hook — a dead runtime keeps no grip on the JVM");
+    }
+
+    /** Card 582: the launch port must be free at 127.0.0.1, the address the
+     *  launcher binds. macOS hands out ports in sequence, and a wildcard bind
+     *  does not see a 127.0.0.1 listener, so holding the next ports on
+     *  127.0.0.1 puts a held port exactly where a wildcard probe lands. The
+     *  stub's bind then fails and ensureRunning returns empty at once: the
+     *  "No value present" of the 0.15.3 gate. */
+    @Test
+    void theLaunchPortIsNeverOneALoopbackListenerHolds(@TempDir Path dir) throws Exception {
+        Path model = Files.writeString(dir.resolve("m.gguf"), "gguf");
+        LocalRuntime.Launcher stub = stub();
+        int[] handed = {-1};
+        LocalRuntime rt = new LocalRuntime((m, port, key) -> {
+            handed[0] = port;
+            return stub.start(m, port, key);
+        }, "vibethinker-3b");
+        try (LoopbackPorts.Held held = LoopbackPorts.holdNext(64)) {
+            assumeTrue(held.blindsAWildcardProbe(),
+                    "this kernel did not hand a wildcard bind a held port, so it cannot show the defect");
+
+            Optional<LocalRuntime.LocalEndpoint> endpoint = rt.ensureRunning(model);
+
+            assertFalse(held.contains(handed[0]),
+                    "the runtime handed its launcher port " + handed[0] + ", which a 127.0.0.1 listener holds");
+            assertTrue(endpoint.isPresent(), "the stub on a free port answers its health check");
+        } finally {
+            rt.shutdown();
+        }
     }
 
     @Test

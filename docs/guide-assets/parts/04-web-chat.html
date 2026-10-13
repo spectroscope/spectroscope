@@ -199,18 +199,29 @@ switch <code>agentMessaging</code> in the settings menu of the composer turns al
 
 <p>The composer's commands come from one list that the server sends, the same list the
 terminal's <code>/help</code> prints (chapter 3). The chat offers <code>/help</code> (also
-<code>/commands</code>), <code>/compact</code>, <code>/clear</code>, <code>/loop</code> and
+<code>/commands</code>), <code>/compact</code>, <code>/clear</code>, <code>/loop</code>, <code>/graph</code> and
 <code>/skills</code>, and in developer mode the playbook commands of chapter 15d. Type
 <code>/</code> at the start of an empty message and the picker lists the commands above the
 session's skills and commands, each with one line of help. A click runs a command. Enter and Tab
 write the highlighted command into the message box, and Enter on a message that is exactly the
 command runs it, so a slash and a stray Enter start nothing. A command that takes words, such as
-<code>/loop</code>, is only written into the message box. A message counts as a command only
+<code>/loop</code>, is only written into the message box. A command with subcommands lists them
+once its name is typed: <code>/graph</code> shows <code>/graph build</code>,
+<code>/graph ask</code> and the others, and the second word narrows the list, so
+<code>/graph b</code> leaves <code>/graph build</code>. A row that takes words shows its template
+under it, for example <code>/graph ask &lt;question&gt;</code>, and while you type those words
+the picker shows only the template and its help. Help and templates come from the same list, in
+English and German. The picker offers command rows only while the cursor is at the end of the message.
+With the cursor inside a message whose first word is a command, the picker offers nothing for
+that word, and Enter sends the message as it stands. Esc puts the list away, and a skill typed later
+in the same message opens its own list. Commands are read in any case, so
+<code>/GRAPH ask</code> is <code>/graph ask</code>. A message counts as a command only
 when it is exactly a command that takes no words, or starts with one that takes words. A
 sentence such as <code>please /clear the cache</code> is sent to the agent as written.
 <code>/help</code> answers with a list in the chat, and <code>/skills</code> opens the Skills
-and Commands page. No command reaches the model as text, and while a run is active
-<code>/compact</code>, <code>/clear</code> and <code>/loop</code> answer "A run is already active,
+and Commands page. No command reaches the model as text, except the question of
+<code>/graph ask</code>, which runs as a prompt, and while a run is active
+<code>/compact</code>, <code>/clear</code>, <code>/loop</code> and <code>/graph ask</code> answer "A run is already active,
 stop it first." Until the list has arrived the picker says &ldquo;Loading the commands
 &hellip;&rdquo;, and a message that starts with a slash waits instead of being sent. The commands
 work in learn and in light; the playbook commands need developer mode.</p>
@@ -255,6 +266,24 @@ work in learn and in light; the playbook commands need developer mode.</p>
   tick it calls <code>schedule_wakeup</code> with a delay and a reason, or ends the loop.
   <code>/loop stop</code> ends the loop, as Stop on the chip does. The section below says how a
   loop runs and ends.</p>
+</div>
+
+<div class="callout">
+  <div class="co-title">/graph</div>
+  <p>Works with the code graph of the session's folder (card 587). <code>/graph build</code> builds it
+  and <code>/graph update</code> brings it up to date, as the Build code graph row of the folder chip
+  does, without names for the communities. The chat says when the build is done, with the number of
+  nodes, edges and communities; says the graph is already current when the structure of the code is
+  the same as at the last build; says only that an update finished when graphify's output names
+  neither; or names the exit code and the last line of a build that failed. These lines stay in this
+  window, and after a reload the chip in the header shows how the build ended. <code>/graph show</code>
+  opens the graph in the browser panel. <code>/graph ask &lt;question&gt;</code> sends the question to
+  the model with a line that asks it to answer through the <code>code_graph</code> tool (chapter 9);
+  where the folder has no graph or the program is not installed, the chat says so and how to go on.
+  <code>/graph help</code> and <code>/graph</code> alone list the subcommands, and
+  <code>/codegraph</code> and <code>/graphify</code> work the same as <code>/graph</code>. While the
+  folder has a graph, the session lists the skill <code>code-graph</code>, built into the app, beside
+  its own skills, and the list follows a build or a deletion within a few seconds.</p>
 </div>
 
 <h2 id="ch-chat-goal-loop">Goal and loop</h2>

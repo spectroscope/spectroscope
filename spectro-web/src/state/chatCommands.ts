@@ -16,6 +16,12 @@
 // /clear the cache" and "/clear the cache" are prompts, so a sentence that
 // happens to mention a command is sent as written.
 //
+// Card 587 adds /graph (old names /codegraph and /graphify) with build,
+// update, show, ask and help; the page runs them (state/graphCommand.ts).
+//
+// Card 588, fix round: command words are read in any case, by the parse, the
+// offer and the template alike; the words after them keep the case typed.
+//
 // Before the list has arrived a draft that starts with a slash is held
 // (criterion 8h): the composer keeps it and sends nothing, because it cannot
 // yet tell a command from a prompt.
@@ -24,7 +30,9 @@
 
 import type { ClientMessage } from "../events";
 import { t, type Lang } from "../i18n/i18n";
-import { webCommands, type CommandRow } from "./commandList";
+import { helpOf, webCommands, type CommandRow } from "./commandList";
+import { pairSafeCut } from "../pairSafeCut";
+import type { Picks } from "./playbookPicks";
 import type { ViewMode } from "./viewMode";
 
 /** The two commands that leave as a frame of their own (card 471). */
@@ -38,7 +46,7 @@ export interface LoopDraft {
 
 const LOOP = /^\/loop(?:\s+([\s\S]*))?$/;
 const INTERVAL = /^(\d{1,7})([smhd])(?:\s+([\s\S]*))?$/;
-const LOOP_STOP = /^\/loop\s+stop$/;
+const LOOP_STOP = /^\/loop\s+stop$/i;
 const UNIT_SECONDS: Record<string, number> = { s: 1, m: 60, h: 3600, d: 86400 };
 
 /**
@@ -102,7 +110,8 @@ export interface SlashMatch {
  * follows it, the rule of CommandList.match in the core: "/playbook run x"
  * names run-with-playbook, "/playbook" alone the current playbook row. Only
  * the web's wired rows count, in every mode: typing works where the picker
- * does not list a row.
+ * does not list a row. Card 588, fix round: the spellings match in any case
+ * here, where the core and the terminal still match them as written.
  *
  * @param draft the composer's text, untrimmed
  * @param rows  the command list
@@ -112,11 +121,12 @@ export function parseSlash(draft: string, rows: readonly CommandRow[]): SlashMat
   const text = draft.trim();
   if (!text.startsWith("/")) return null;
   const body = text.slice(1);
+  const lower = body.toLowerCase();
   let best: SlashMatch | null = null;
   let bestLength = -1;
   for (const row of webCommands(rows)) {
     for (const spelling of spellingsOf(row)) {
-      const hit = body === spelling || body.startsWith(`${spelling} `) || body.startsWith(`${spelling}\n`);
+      const hit = lower === spelling || lower.startsWith(`${spelling} `) || lower.startsWith(`${spelling}\n`);
       if (hit && spelling.length > bestLength) {
         best = { row, rest: body.slice(spelling.length).trim() };
         bestLength = spelling.length;
@@ -125,6 +135,12 @@ export function parseSlash(draft: string, rows: readonly CommandRow[]): SlashMat
   }
   return best;
 }
+
+/** Card 587: what /graph does: its five subcommands. */
+export type GraphAction = "build" | "update" | "show" | "ask" | "help";
+
+/** Card 587: the subcommands, in the order of the list. */
+export const GRAPH_ACTIONS: readonly GraphAction[] = ["build", "update", "show", "ask", "help"];
 
 /** The decisions card 471 and card 504 made: a command, a prompt, a loop or its stop. */
 export type ComposerSubmit =
@@ -149,7 +165,8 @@ export type DraftDecision =
   | { kind: "playbookList" }
   | { kind: "playbookShow"; name: string }
   | { kind: "playbookUse"; name: string }
-  | { kind: "runWorkflow"; name: string; input: string };
+  | { kind: "runWorkflow"; name: string; input: string }
+  | { kind: "graph"; action: GraphAction; question: string };
 
 /**
  * Card 554: the ids of the rows the web knows how to run. Every wired web row
@@ -166,6 +183,12 @@ export const WEB_COMMAND_IDS = [
   "playbook-show",
   "playbook-use",
   "playbook-workflow",
+  "graph",
+  "graph-build",
+  "graph-update",
+  "graph-show",
+  "graph-ask",
+  "graph-help",
   "skills",
 ] as const;
 
@@ -213,6 +236,16 @@ export function decideDraft(draft: string, rows: readonly CommandRow[] | null): 
         ? { kind: "runWorkflow", name: rest, input: "" }
         : { kind: "runWorkflow", name: rest.slice(0, space), input: rest.slice(space).trim() };
     }
+    // Card 587: an old name reaches the parent row, so the parent reads its
+    // subcommand from the rest; the sub rows carry theirs.
+    case "graph":
+      return graphDecision(rest === "" ? "help" : rest, text);
+    case "graph-build":
+    case "graph-update":
+    case "graph-show":
+    case "graph-help":
+    case "graph-ask":
+      return graphDecision(`${row.id.slice("graph-".length)} ${rest}`.trim(), text);
     default: {
       const whole = WHOLE[row.id];
       return whole !== undefined && rest === "" ? whole : { kind: "prompt", text };
@@ -221,33 +254,183 @@ export function decideDraft(draft: string, rows: readonly CommandRow[] | null): 
 }
 
 /**
- * Card 554: the rows a slash query offers in the picker.
+ * Card 587: the decision for the words after /graph: a subcommand, the
+ * question after ask, or the prompt the draft is when a subcommand that takes
+ * no words is followed by some (card 471's rule) or no subcommand is named.
  *
- * Only a slash that opens the draft offers any: a command is the whole
- * message, so offering one in the middle of a sentence would offer something
- * that, once picked, is a prompt. A row is offered when one of its spellings
- * starts with the query; the rows come grouped in the list's order of groups,
- * and inside a group a row the query spells out exactly comes first.
- *
- * @param query   the text after the slash, any case
- * @param slashAt where the slash stands in the draft
- * @param rows    the command list
- * @param mode    the window's mode; the developer rows only in developer
- * @returns the rows to offer
+ * @param words the subcommand and what follows it, trimmed
+ * @param text  the whole draft, trimmed, for the prompt
  */
-export function matchCommands(
-  query: string,
-  slashAt: number,
+function graphDecision(words: string, text: string): DraftDecision {
+  const space = words.search(/\s/);
+  const sub = space < 0 ? words : words.slice(0, space);
+  const after = space < 0 ? "" : words.slice(space).trim();
+  const action = GRAPH_ACTIONS.find((a) => a === sub.toLowerCase());
+  if (action === undefined) return { kind: "prompt", text };
+  if (action === "ask") return { kind: "graph", action, question: after };
+  return after === "" ? { kind: "graph", action, question: "" } : { kind: "prompt", text };
+}
+
+/** Card 588: what the picker offers for a draft at the caret. */
+export interface CommandOffer {
+  /** The rows to pick from, grouped in the list's order of groups, the exact one first in its group. */
+  rows: CommandRow[];
+  /** The row whose words are being typed, for its template; null while a command is still being picked. */
+  writing: CommandRow | null;
+}
+
+/** A command word as the list spells it; a skill name with a colon is none. */
+const WORD = /^[a-z0-9-]*$/;
+
+/** The words of a spelling: one, or the name and the second word. */
+const wordsOf = (spelling: string): string[] => spelling.split(" ");
+
+/**
+ * Card 588: what the picker offers for the draft up to the caret.
+ *
+ * Only a slash that opens the draft offers commands: a command is the whole
+ * message. While the first word is typed, one row per command whose one-word
+ * spelling starts with it (a subcommand only through a one-word alias of its
+ * own, such as /run-workflow, and never on a bare slash). Once the first word
+ * names a command, its subcommands follow it, the command first: on the name
+ * itself, after its space, and narrowed by the second word. A two-word alias
+ * (/playbook run) counts as a subcommand of its first word, and an old name
+ * (/codegraph) reaches the subcommands of the command it names. Past the
+ * command's words no row is offered, and `writing` names the command whose
+ * words are being typed, so the picker can show its template.
+ *
+ * Fix round: a pick writes over the text before the caret, so rows are
+ * offered only where nothing but blanks follows the caret. With the caret
+ * inside a draft, `writing` names the command the whole draft spells and no
+ * row is offered, so Enter stays the composer's.
+ *
+ * @param draft the composer's text
+ * @param caret the caret position inside it
+ * @param rows  the command list
+ * @param mode  the window's mode; the developer rows only in developer
+ * @returns the offer, or null when the draft up to the caret is no command
+ */
+export function offerCommands(
+  draft: string,
+  caret: number,
   rows: readonly CommandRow[],
   mode: ViewMode,
+): CommandOffer | null {
+  const text = pairSafeCut(draft, caret);
+  if (!text.startsWith("/") || /[\r\n\t]/.test(text)) return null;
+  const shown = webCommands(rows, mode);
+  if (draft.slice(caret).trim() !== "") {
+    return { rows: [], writing: writingOf(`${draft.trim().slice(1).replace(/\s+/g, " ")} `, shown) };
+  }
+  const words = text.slice(1).toLowerCase().split(" ");
+  const first = words[0] ?? "";
+  if (words.length === 1) {
+    if (!WORD.test(first)) return { rows: [], writing: null };
+    const own = shown.filter((row) =>
+      spellingsOf(row).some(
+        (s) => wordsOf(s).length === 1 && s.startsWith(first) && (row.sub === null || first !== ""),
+      ),
+    );
+    const parent = parentOf(first, shown);
+    return {
+      rows: grouped(parent === null ? own : [...own, ...subsOf(parent, first, "", shown)], first),
+      writing: null,
+    };
+  }
+  if (words.length === 2 && WORD.test(first) && WORD.test(words[1] ?? "")) {
+    const second = words[1] ?? "";
+    const parent = parentOf(first, shown);
+    if (parent !== null) {
+      const subs = subsOf(parent, first, second, shown);
+      if (subs.length > 0) {
+        return {
+          rows: grouped(second === "" ? [parent, ...subs] : subs, `${first} ${second}`),
+          writing: null,
+        };
+      }
+    }
+  }
+  return { rows: [], writing: writingOf(text.slice(1), shown) };
+}
+
+/**
+ * Card 588, round 2: whether the first word of a draft names a command, by a
+ * row's name or the first word of an alias, in any case and in every mode, as
+ * the composer reads it. Inside such a draft the picker writes nothing over
+ * that word, so Enter sends the draft.
+ *
+ * @param draft the composer's text
+ * @param rows  the command list
+ * @returns true when the draft opens with a slash and a command's first word
+ */
+export function opensWithCommand(draft: string, rows: readonly CommandRow[]): boolean {
+  const text = draft.trimStart();
+  if (!text.startsWith("/")) return false;
+  const first = (text.slice(1).split(/\s/)[0] ?? "").toLowerCase();
+  if (first === "") return false;
+  return webCommands(rows).some((row) => spellingsOf(row).some((spelling) => wordsOf(spelling)[0] === first));
+}
+
+/** The row without a second word that a first word names, by its name or a one-word alias. */
+function parentOf(first: string, shown: readonly CommandRow[]): CommandRow | null {
+  return (
+    shown.find(
+      (row) => row.sub === null && spellingsOf(row).some((s) => wordsOf(s).length === 1 && s === first),
+    ) ?? null
+  );
+}
+
+/** The rows spelled with two words under a parent, by its name or the word typed for it. */
+function subsOf(
+  parent: CommandRow,
+  typed: string,
+  second: string,
+  shown: readonly CommandRow[],
 ): CommandRow[] {
-  if (slashAt !== 0) return [];
-  const needle = query.toLowerCase();
-  const shown = webCommands(rows, mode).filter((row) => spellingsOf(row).some((s) => s.startsWith(needle)));
-  const groups = [...new Set(shown.map((row) => row.group))];
-  const exact = (row: CommandRow): number => (spellingsOf(row).includes(needle) ? 0 : 1);
+  return shown.filter((row) =>
+    spellingsOf(row).some((s) => {
+      const [w1, w2] = wordsOf(s);
+      return w2 !== undefined && (w1 === parent.name || w1 === typed) && w2.startsWith(second);
+    }),
+  );
+}
+
+/**
+ * The row whose words a draft past the picking types: its longest spelling
+ * followed by a space, in any case. A parent reached by an old name hands on
+ * to its subcommand when the next word names one (/codegraph ask names
+ * /graph ask).
+ */
+function writingOf(typed: string, shown: readonly CommandRow[]): CommandRow | null {
+  const body = typed.toLowerCase();
+  let best: CommandRow | null = null;
+  let bestLength = -1;
+  for (const row of shown) {
+    for (const spelling of spellingsOf(row)) {
+      if (body.startsWith(`${spelling} `) && spelling.length > bestLength) {
+        best = row;
+        bestLength = spelling.length;
+      }
+    }
+  }
+  if (best !== null && best.sub === null) {
+    const rest = body.slice(bestLength + 1);
+    const space = rest.indexOf(" ");
+    const named = space > 0 ? rest.slice(0, space) : null;
+    const parent = best;
+    const child = named === null ? undefined : shown.find((r) => r.name === parent.name && r.sub === named);
+    if (child !== undefined) return child;
+  }
+  return best;
+}
+
+/** The rows once each, grouped in the order the groups first appear, the one spelled exactly first in its group. */
+function grouped(rows: readonly CommandRow[], typed: string): CommandRow[] {
+  const once = [...new Set(rows)];
+  const groups = [...new Set(once.map((row) => row.group))];
+  const exact = (row: CommandRow): number => (spellingsOf(row).includes(typed) ? 0 : 1);
   return groups.flatMap((group) =>
-    shown
+    once
       .map((row, at) => ({ row, at }))
       .filter(({ row }) => row.group === group)
       .sort((a, b) => exact(a.row) - exact(b.row) || a.at - b.at)
@@ -280,9 +463,27 @@ export function confirmPlaybookFrame(prompt: string, dir?: string): ClientMessag
 /**
  * Card 554: Start on the sheet. The hash is the one the sheet showed; the
  * server reads the folder again and refuses a mismatch.
+ *
+ * Card 584: the models picked per step in the sheet, for this run only; the
+ * field is left out when nothing was picked. The server checks them again.
+ * The second fix round adds ask, the id the server's refusal of this start
+ * answers with.
  */
-export function startPlaybookFrame(dir: string, hash: string, prompt: string): ClientMessage {
-  return { type: "start_playbook", dir, hash, prompt };
+export function startPlaybookFrame(
+  dir: string,
+  hash: string,
+  prompt: string,
+  picks: Picks = {},
+  ask?: string,
+): ClientMessage {
+  return {
+    type: "start_playbook",
+    dir,
+    hash,
+    prompt,
+    ...(Object.keys(picks).length === 0 ? {} : { picks }),
+    ...(ask === undefined ? {} : { ask }),
+  };
 }
 
 /**
@@ -293,6 +494,14 @@ export function startWorkflowFrame(name: string, input: string, lang: Lang, dir?
   return dir === undefined
     ? { type: "start_workflow", name, input, lang }
     : { type: "start_workflow", name, input, lang, dir };
+}
+
+/**
+ * Card 587: /graph ask on the session's own socket. The server checks the
+ * folder's graph and runs the question with a line for the graph tool.
+ */
+export function graphAskFrame(question: string): ClientMessage {
+  return { type: "graph_ask", question };
 }
 
 /** Card 554: the playbook picked for the session, or null to withdraw the pick. */
@@ -335,7 +544,7 @@ export function helpText(rows: readonly CommandRow[], lang: Lang, mode: ViewMode
       const names = spellingsOf(row)
         .map((s) => `/${s}`)
         .join(", ");
-      lines.push(`${names}: ${t(lang, `cmd.${row.id}.help`)}`);
+      lines.push(`${names}: ${helpOf(row, lang)}`);
     }
   }
   return lines.join("\n");

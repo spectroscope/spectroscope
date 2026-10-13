@@ -18,10 +18,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * Card 504, hub and spoke review round 1: a text cut at a fixed number of
  * characters can end in half of a surrogate pair, and the chat then shows a
- * broken character. In the loop, messaging, peer and subagents packages a head
- * cut goes through {@link PeerNotices#cut} or backs off one character itself.
+ * broken character. In the loop, messaging, peer, playbook.run and subagents
+ * packages a head cut goes through {@link PeerNotices#cut} or
+ * {@code ToolOutput.clip}, or backs off one character itself. Card 586 added
+ * playbook.run, because a lone high surrogate in a run_step line makes
+ * {@code SessionStore.append} throw.
  *
- * <p>What the scan reads: every {@code r.substring(0, end)} in the four
+ * <p>What the scan reads: every {@code r.substring(0, end)} in these
  * packages. It passes only these ends. An end made only of {@code .length()}
  * reads (a known suffix taken off). An end that is one bare
  * {@code x.indexOf(...)} or {@code x.lastIndexOf(...)} call. A local whose
@@ -47,6 +50,7 @@ class PairSafeCutDriftTest {
             Path.of("src/main/java/dev/spectroscope/core/loop"),
             Path.of("src/main/java/dev/spectroscope/core/messaging"),
             Path.of("src/main/java/dev/spectroscope/core/peer"),
+            Path.of("src/main/java/dev/spectroscope/core/playbook/run"),
             Path.of("src/main/java/dev/spectroscope/core/subagents"));
 
     private static final String CALL = ".substring(";
@@ -256,7 +260,7 @@ class PairSafeCutDriftTest {
     }
 
     @Test
-    void noRawCutAtACapInTheFourPackages() throws IOException {
+    void noRawCutAtACapInTheGuardedPackages() throws IOException {
         List<String> hits = new ArrayList<>();
         int read = 0;
         for (Path root : ROOTS) {
@@ -269,7 +273,7 @@ class PairSafeCutDriftTest {
             }
         }
         assertEquals(List.of(), hits);
-        assertTrue(read >= 11, "positive: the scan reads the head cuts of the four packages, saw " + read);
+        assertTrue(read >= 13, "positive: the scan reads the head cuts of the guarded packages, saw " + read);
     }
 
     @Test

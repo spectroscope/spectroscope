@@ -411,11 +411,13 @@ class WorkspaceRefusalCostTest {
                 //
                 // Asked of the loader rather than typed here, so a key that
                 // grows a value check tomorrow does not quietly resurrect this.
-                // Card 476 added the second checked string on this list; its
-                // sample is the value that is not the default.
+                // Card 476 added the second checked string on this list and
+                // card 600 the third; each sample is the value that is not the
+                // default.
                 return switch (key) {
                     case "logLevel" -> "debug";
                     case "desktopNotifications" -> SpectroConfig.DESKTOP_NOTIFICATIONS_OFF;
+                    case "toolResultElision" -> SpectroConfig.TOOL_RESULT_ELISION_ON;
                     default -> "card-354-" + key;
                 };
             }

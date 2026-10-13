@@ -33,9 +33,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * provider, prompt, registry, permission, hooks, wire, latency, cwd and the two
  * ids, and nothing else — so a parent pinned to 5,000 on the owner's backend
  * spawned children that derived 153,216 from the same provider. A 30x
- * divergence from a stated instruction, and an invisible one: children are
- * built without introspection, so no {@code context_info} of theirs ever says
- * what they were compacting at.</p>
+ * divergence from a stated instruction, and at the time an invisible one:
+ * children were built without introspection. Since card 593 a child's
+ * {@code context_info} names its threshold each turn; the measurement below
+ * predates that and still holds.</p>
  *
  * <p>What is observable from outside is the CONSEQUENCE of the override
  * arriving: a run that has one never asks the backend for a window, because the

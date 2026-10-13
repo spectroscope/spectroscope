@@ -56,7 +56,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * repository is public.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-        properties = {"server.address=127.0.0.1", "SPECTRO_HUB_PORT="})
+        properties = {"server.address=127.0.0.1", "SPECTRO_HUB_ENABLED=", "SPECTRO_HUB_PORT="})
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @EnabledIfEnvironmentVariable(named = "SPECTRO_LIVE_BROWSER", matches = "1")
 @Timeout(value = 180, unit = TimeUnit.SECONDS)

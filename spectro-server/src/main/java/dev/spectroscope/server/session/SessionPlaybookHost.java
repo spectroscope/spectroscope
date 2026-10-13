@@ -135,9 +135,42 @@ final class SessionPlaybookHost implements PlaybookHost {
 
     @Override
     public Probe probe(String provider) {
-        ProviderRow row = check.apply(provider);
-        return new Probe(row.id(), row.kind(), row.state(), row.endpoint(), row.reason(), row.models(), row.live(),
+        return probeOf(provider, check.apply(provider), config.get());
+    }
+
+    /**
+     * A registry row as the run's resolver reads it. The registry leaves the
+     * address of a cloud row empty; card 584 (criterion 7) fills it with the
+     * address the provider is dialled at, the configured or preset base URL,
+     * so the run's question names it. A provider without an address of its
+     * own (anthropic's is fixed in its SDK) stays empty, and the question
+     * names its default address. A provider the registry does not know reads
+     * as cloud and unknown.
+     *
+     * @param provider the provider name
+     * @param row      its registry row after a check, or null
+     * @param config   the session's live config
+     * @return the probe
+     */
+    static Probe probeOf(String provider, ProviderRow row, SpectroConfig config) {
+        if (row == null) {
+            return new Probe(provider, "cloud", "unknown", null, null, List.of(), false, 0L);
+        }
+        String endpoint = row.endpoint() != null ? row.endpoint() : addressOf(provider, config);
+        return new Probe(row.id(), row.kind(), row.state(), endpoint, row.reason(), row.models(), row.live(),
                 row.checkedAt());
+    }
+
+    /** The configured or preset base URL of a provider that has one, else null. */
+    private static String addressOf(String provider, SpectroConfig config) {
+        if (SpectroConfig.presetEndpointFor(provider) == null) {
+            return null;
+        }
+        try {
+            return config.endpointFor(provider);
+        } catch (IllegalArgumentException noAddress) {
+            return null;
+        }
     }
 
     @Override

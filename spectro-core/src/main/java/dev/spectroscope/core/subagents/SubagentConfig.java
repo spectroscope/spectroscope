@@ -44,9 +44,10 @@ import java.util.List;
  *                      or null when the operator set none. AC 3 of card 263 says
  *                      an explicit setting wins; without carrying it here a
  *                      parent pinned to 5,000 spawned children that derived
- *                      153,216 from the shared provider — a 30x divergence from
- *                      a stated instruction, and invisible, because children are
- *                      built without introspection and emit no {@code context_info}
+ *                      153,216 from the shared provider, a 30x divergence from
+ *                      a stated instruction. It was invisible at the time, because
+ *                      children were built without introspection; since card 593 a
+ *                      child's {@code context_info} names its threshold each turn
  * @param budget        what a child may spend (card 270). Default: derived from
  *                      a fresh, unfed {@link dev.spectroscope.core.provider.ExchangeLatency},
  *                      which means {@code subagentBudgetSeconds} below governs
@@ -95,7 +96,7 @@ import java.util.List;
  *                      shipped default. Zero or less is refused here, by name
  * @param toolResultElision the session's {@code toolResultElision} (card 467),
  *                      handed to every child so the tree follows the rule its
- *                      root follows. Nullable: the shipped value, on
+ *                      root follows. Nullable: the shipped value, off (card 600)
  * @param toolGroupsOff the parent session's switched-off tool groups (card
  *                      466), the SAME reader the parent agent is built with.
  *                      While a parent run is in flight a child takes the set
@@ -245,7 +246,7 @@ public record SubagentConfig(
      * @param subagentBudgetSeconds the operator's floor (nullable → the shipped one)
      * @param sessionWindow the parent session's window holder (nullable → children derive)
      * @param subagentBudgetTokens a child's token budget (nullable → the shipped one)
-     * @param toolResultElision the session's elision switch (nullable → on)
+     * @param toolResultElision the session's elision switch (nullable → off)
      * @param toolGroupsOff the parent session's switched-off groups (nullable → none) */
     public SubagentConfig(LlmProvider provider, Path cwd, String parentAgentId,
                           PermissionBroker onPermission, List<Tool> baseTools,
@@ -452,7 +453,7 @@ public record SubagentConfig(
         private Integer subagentBudgetSeconds;   // nullable -> the shipped floor
         private dev.spectroscope.core.session.SessionWindow sessionWindow; // nullable -> children derive
         private Integer subagentBudgetTokens;    // nullable -> the shipped budget
-        private String toolResultElision;        // nullable -> the shipped "on"
+        private String toolResultElision;        // nullable -> the shipped "off"
         private java.util.function.Supplier<java.util.Set<dev.spectroscope.core.ToolGroup>> toolGroupsOff; // nullable -> none off
         private Integer sessionsPerChat;         // nullable -> no count per chat
         private String careParagraph;            // nullable -> the shipped "off"
@@ -576,7 +577,7 @@ public record SubagentConfig(
         /**
          * Card 467: the session's elision switch, for every child.
          *
-         * @param value {@code "on"}, {@code "off"}, or null for the shipped on
+         * @param value {@code "on"}, {@code "off"}, or null for the shipped off
          * @return this builder
          */
         public Builder toolResultElision(String value) {

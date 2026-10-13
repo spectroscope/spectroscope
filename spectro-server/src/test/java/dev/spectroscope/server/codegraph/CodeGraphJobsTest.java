@@ -241,6 +241,34 @@ class CodeGraphJobsTest {
         assertTrue(jobs.get(dir).lastLine().contains("No such file or directory"), jobs.get(dir).lastLine());
     }
 
+    /**
+     * Card 587, fix round (M12): whoever listens hears once that a build ended,
+     * after its state is final, whether it ended well or not, so the sessions
+     * can look again at their folder's graph.
+     */
+    @Test
+    void aBuildThatEndsTellsItsListenersOnceAndAfterItsStateIsFinal(@TempDir Path dir) throws Exception {
+        Script script = new Script();
+        FakeProcess ok = script.next();
+        FakeProcess failing = script.next();
+        CodeGraphJobs jobs = new CodeGraphJobs(script, CLOCK, Duration.ofMinutes(5));
+        List<String> heard = new CopyOnWriteArrayList<>();
+        jobs.onEnded(() -> heard.add(jobs.get(dir).state()));
+
+        jobs.start(dir, "s-1", "update", List.of(TWO_STEPS.get(0)), Map.of());
+        Thread.sleep(50);
+        assertEquals(List.of(), heard, "a running build says nothing");
+        ok.exit(0);
+        await(() -> heard.size() == 1);
+        assertEquals(List.of(CodeGraphJobs.OK), heard);
+
+        jobs.start(dir, "s-1", "update", List.of(TWO_STEPS.get(0)), Map.of());
+        failing.exit(3);
+        await(() -> heard.size() == 2);
+        Thread.sleep(50);
+        assertEquals(List.of(CodeGraphJobs.OK, CodeGraphJobs.FAILED), heard);
+    }
+
     @Test
     void theJobsAppearInTheJobsStateMapWithTheSchedulersFields(@TempDir Path dir) throws Exception {
         Script script = new Script();

@@ -13,6 +13,7 @@
 
 import { emptyQueue, foldQueue, type QueueState } from "./flowmap/queueDepth";
 import type { RunEvent } from "../events";
+import { PLAYBOOK_AGENT } from "../state/planVerdict";
 import { clipMiddle, fileLabel } from "../format";
 
 // Card 374 moved these two into format.ts, where the answer line needs them and
@@ -320,6 +321,11 @@ export function advanceScene(scene: Scene, event: RunEvent): Scene {
   if (queued !== scene.queue) {
     return { ...scene, queue: queued };
   }
+
+  // Card 586: the playbook runner's own lines (run_step, playbook_progress and
+  // its plan) carry the agent id "playbook". The runner is not an agent: it
+  // gets no card, and the main loop does not move.
+  if (agentOf(event) === PLAYBOOK_AGENT) return scene;
 
   // Parent-level A2A card meta — handled before the child guard even though the
   // ids name children; they never move a loop.

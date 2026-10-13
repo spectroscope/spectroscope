@@ -7,7 +7,10 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.net.ConnectException;
+import java.net.InetAddress;
 import java.net.ServerSocket;
+import java.net.Socket;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -120,11 +123,15 @@ class FleetPanelOverHubTest {
     @Test
     void anUnreachableHubNeitherDelaysNorBreaksTheReturnedStream(@TempDir Path tmp) {
         int deadPort;
-        try (ServerSocket probe = new ServerSocket(0)) {
+        // Probed at 127.0.0.1, the address the panel dials. A wildcard probe can
+        // be handed a port that a 127.0.0.1 listener holds (card 582).
+        try (ServerSocket probe = new ServerSocket(0, 1, InetAddress.getByAddress(new byte[] {127, 0, 0, 1}))) {
             deadPort = probe.getLocalPort();
         } catch (Exception e) {
             throw new IllegalStateException(e);
         }
+        assertThrows(ConnectException.class, () -> new Socket("127.0.0.1", deadPort).close(),
+                "the premise: nothing answers on " + deadPort);
         // deadPort is now closed → connection refused. The hub mirror can only
         // drop-count; the returned stream is the local spine and must be whole.
         OrchestratorPanel panel = new OrchestratorPanel(new HubAddress("127.0.0.1", deadPort));

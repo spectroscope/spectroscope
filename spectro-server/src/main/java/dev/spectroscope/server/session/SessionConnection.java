@@ -22,6 +22,8 @@ import dev.spectroscope.core.image.ImageStore;
 import dev.spectroscope.core.leveling.LevelingPort;
 import dev.spectroscope.core.mcp.McpServerRegistry;
 import dev.spectroscope.core.permission.Allowlist;
+import dev.spectroscope.core.playbook.Playbook;
+import dev.spectroscope.core.playbook.run.ModelPicks;
 import dev.spectroscope.core.playbook.run.Permissions;
 import dev.spectroscope.core.playbook.run.PinnedPlaybook;
 import dev.spectroscope.core.playbook.run.PlaybookRecorder;
@@ -375,18 +377,29 @@ public final class SessionConnection {
     private Path workspaceLayerFolder;
     /** Card 558: true once this socket was sent session_items; a new folder then sends them again. */
     private boolean sessionItemsAnnounced;
+    /** Card 587, fix round (M12): whether the last session_items offered the code-graph skill. */
+    private boolean codeGraphOfferSent;
     /** Card 558: the picked folder whose invalid id this socket was told about, so it is said once. */
     private String refusedPlaybookDir;
     /** Card 482: builds a provider from a config; a test hands in its own. */
     private Function<SpectroConfig, LlmProvider> providerBuilder = ServerProviders::build;
     /** Card 482: the registry's bounded check of one provider; a test hands in its own. */
     private Function<String, ProviderRow> providerCheck = this::registryCheck;
+    /** Card 584: the one deadline of a round of model list checks: the registry's budget and one second. */
+    private long checkBudgetMs = ProviderRegistry.CHECK_BUDGET_MS + 1_000L;
+    /** Card 584: where a provider's key comes from, a word and never the value; a test hands in its own. */
+    private Function<String, String> keySource =
+            provider -> SpectroConfig.apiKeySource(SpectroConfig.keyEnvFor(provider));
 
     /** The process-wide live-session registry, or null — then this connection
      *  claims nothing and announces nothing, frame for frame the pre-212 one. */
     private final LiveSessions liveSessions;
     /** This connection's tap on the registry; registered on start, removed on close. */
     private LiveSessions.Listener liveListener;
+    /** Card 580: hears of a settings write; registered on start, removed on close. */
+    private LiveSessions.SettingsListener settingsListener;
+    /** Card 587, fix round (M12): this connection's look at its folder's code graph, while it is live. */
+    private Runnable codeGraphCheck;
     /**
      * Pending live-set snapshots, drained to the socket on this connection's OWN
      * thread. The registry pushes while holding its monitor, from whichever
@@ -493,6 +506,7 @@ public final class SessionConnection {
         this.resumeId = resumeId;
         this.fleet = fleet;
         this.activeConfig = new AtomicReference<>(config);
+        this.settingsWritesRead = liveSessions == null ? 0 : liveSessions.settingsWrites();
         this.imageProviderName.set(config.imageProvider());
         this.thinking.set(config.thinking());
         this.permissionMode = config.permissionMode();
@@ -747,6 +761,22 @@ public final class SessionConnection {
             rosterDrain = Thread.ofVirtual().name("spectro-roster-drain").start(this::drainRoster);
             rosterListener = this::offerRoster;
             liveSessions.addRosterListener(rosterListener);
+            // Card 580: after the connect provider frame, so a refresh's frame
+            // never precedes it; a fresh chat's workspace and tool frames may
+            // come after one. A write that landed after the settings were read
+            // and before this registration gets its refresh now.
+            settingsListener = () -> settingsRefresh.execute(this::refreshFromSettings);
+            liveSessions.addSettingsListener(settingsListener);
+            // Card 587, fix round (M12): a build that ends and a timer make
+            // this session look again whether its folder's graph came or went.
+            // Round 2 (N1): on this connection's own thread, like the live set
+            // and the settings refresh, so a shared thread never writes here.
+            codeGraphCheck = this::lookAtCodeGraphSoon;
+            liveSessions.addCodeGraphCheck(codeGraphCheck);
+            liveSessions.startCodeGraphTicker();
+            if (liveSessions.settingsWrites() != settingsWritesRead) {
+                settingsRefresh.execute(this::refreshFromSettings);
+            }
         }
         if (resumeId == null) {
             sendProspectiveWorkspace();
@@ -948,6 +978,10 @@ public final class SessionConnection {
 
     /** Card 482: the answer to a start whose folder changed since the confirmation showed its hash. */
     static final String PLAYBOOK_CHANGED = "The playbook changed since the confirmation. Open it again.";
+    /** Card 584, second fix round: a Stop arrived while the picks of a start were checked again. */
+    static final String PLAYBOOK_START_STOPPED = "The playbook start was stopped before the run began.";
+    /** The longest id a start may ask with; a longer or unreadable one is no id. */
+    static final int MAX_ASK_CHARS = 64;
     static final String WORKFLOW_CHANGED = "The workflow file changed since the playbook module listed it. Open the playbook again.";
 
     /** @return the session's status line now, as the registry row carries it (card 506, for tests) */
@@ -2179,7 +2213,14 @@ public final class SessionConnection {
             return "\"" + providerName + "\" needs " + SpectroConfig.keyEnvFor(providerName)
                     + " — set a key in Settings, then switch.";
         }
-        SpectroConfig current = activeConfig.get();
+        // Card 579: the provider addresses come from the settings as they are
+        // now, read from the same scopes, in the same order, as the session's
+        // first run (owner, 2026-10-13: a session folder may set them). Before
+        // the session moment the session's own config answers, which card 580
+        // keeps current; a file that cannot be read is reported once and the
+        // session keeps its addresses.
+        SpectroConfig own = activeConfig.get();
+        SpectroConfig current = own.withEndpointsOf(liveConfig());
         String useModel;
         if (model != null && !model.isBlank()) {
             useModel = model.trim();
@@ -2199,8 +2240,8 @@ public final class SessionConnection {
         } catch (RuntimeException rejected) {
             return rejected.getMessage();
         }
+        providerTouched = true; // before the set: a refresh that reads the pick also reads this (card 580)
         activeConfig.set(derived);
-        providerTouched = true;
         if (switchable != null) {
             switchable.swap(next, providerName);   // agent already built: swap the delegate
         }
@@ -2210,6 +2251,80 @@ public final class SessionConnection {
         // optimistic state.
         sendProviderInfo(next, ask); // card 521: the new model's window rides along
         return null;
+    }
+
+    /**
+     * The settings as a new socket reads them: environment, user and launch
+     * folder, no session folder (card 580).
+     *
+     * @return the reading
+     */
+    private SpectroConfig settingsOutsideTheFolder() {
+        return settingsReader.get();
+    }
+
+    /** Card 580: the launch folder whose settings a refresh reads; the server's working folder. */
+    private volatile Path launchFolder = projectDir;
+
+    /** @param folder card 580: the launch folder a refresh reads, for tests */
+    void useLaunchFolder(Path folder) {
+        this.launchFolder = folder;
+    }
+
+    /** Card 580: reads the settings as a new socket does; a test hands in its own. */
+    private volatile java.util.function.Supplier<SpectroConfig> settingsReader =
+            () -> SpectroConfig.load(SpectroConfig.Overrides.none(), launchFolder);
+
+    /** @param reader what reads the settings outside the session folder, for tests */
+    void useSettingsReader(java.util.function.Supplier<SpectroConfig> reader) {
+        this.settingsReader = reader;
+    }
+
+    /** Card 580: one refresh at a time, so the last one to run reads the latest write. */
+    private final Object settingsRefreshLock = new Object();
+
+    /**
+     * Card 580: a write through the settings API reaches a chat that does
+     * not know its folder yet, the way a new socket would read it. New chat
+     * reuses the socket of a blank chat, and that socket read the settings
+     * when the page connected it.
+     *
+     * <p>A chat with no history and no pick (no resume, no wake, no switch)
+     * takes the saved provider and model. A chat that switched, or a woken
+     * chat whose recorded folder is gone, keeps its pair (card 459) and takes
+     * only the addresses (card 579). A chat that knows its folder is left
+     * alone: one that ran, one that resumed, and a woken chat whose folder is
+     * there. Its first run or its next switch reads the addresses itself. The
+     * frame goes out when the pair or the host moved.</p>
+     */
+    void refreshFromSettings() {
+        synchronized (settingsRefreshLock) {
+            // The config first: a switch and the session moment set the flags
+            // read below before they set the config. A wake whose record names
+            // no usable pair sets no config, so such a chat may count as blank
+            // here and take the saved default, as a new socket would.
+            SpectroConfig seen = activeConfig.get();
+            if (agent != null || workspace != null || !socket.isOpen()) {
+                return;
+            }
+            SpectroConfig now;
+            try {
+                now = settingsOutsideTheFolder();
+            } catch (RuntimeException unreadable) {
+                return; // the session moment reports a broken file when the chat starts
+            }
+            SpectroConfig next = seen.withEndpointsOf(now);
+            if (resumeId == null && store == null && !providerTouched) {
+                next = next.withProvider(now.provider(), now.model());
+            }
+            if (next.equals(seen) || !activeConfig.compareAndSet(seen, next)) {
+                return;
+            }
+            if (!next.provider().equals(seen.provider()) || !next.model().equals(seen.model())
+                    || !java.util.Objects.equals(next.providerHost(), seen.providerHost())) {
+                sendProviderInfo();
+            }
+        }
     }
 
     /**
@@ -2294,6 +2409,134 @@ public final class SessionConnection {
     /** @param loops card 504: the loops this connection uses, for tests */
     void useLoops(SessionLoops loops) {
         this.loops = loops;
+    }
+
+    /**
+     * Card 587: the code graph tool of this session. The belt, the
+     * {@code /graph ask} check and the offer of the {@code code-graph} skill
+     * read this one instance. Fix round (I4): it asks the one resolver for the
+     * folder of each call ({@code CodeGraphSetting}), never the config the
+     * socket connected with, so the folder's own settings reach it before the
+     * session moment as well.
+     */
+    private volatile dev.spectroscope.core.tools.CodeGraphTool codeGraphTool;
+
+    /** @param tool card 587: the code graph tool this connection uses, for tests */
+    void useCodeGraphTool(dev.spectroscope.core.tools.CodeGraphTool tool) {
+        this.codeGraphTool = tool;
+    }
+
+    /** @return card 587, fix round: the backend this session's tool uses for its folder now, for tests */
+    dev.spectroscope.core.codegraph.CodeGraphBackend codeGraphBackend() {
+        return codeGraphTool().backendFor(launchProjectDir());
+    }
+
+    /** @return card 587: this session's code graph tool, built once, its backend asked per call */
+    private dev.spectroscope.core.tools.CodeGraphTool codeGraphTool() {
+        dev.spectroscope.core.tools.CodeGraphTool held = codeGraphTool;
+        if (held == null) {
+            Path start = projectDir;
+            held = new dev.spectroscope.core.tools.CodeGraphTool(
+                    folder -> dev.spectroscope.core.codegraph.CodeGraphSetting.backendFor(start, folder));
+            codeGraphTool = held;
+        }
+        return held;
+    }
+
+    /** @return card 587: whether this session's folder offers the code graph now */
+    private boolean codeGraphOffered() {
+        return codeGraphTool().offeredIn(launchProjectDir());
+    }
+
+    /** Card 587, round 2 (N1): where this connection's code graph look runs; its own virtual thread. */
+    private volatile java.util.concurrent.Executor codeGraphLook =
+            task -> Thread.ofVirtual().name("spectro-codegraph-look").start(task);
+
+    /** Card 587, round 2 (N1): a look on its way, so a look stuck on a slow client is not joined by more. */
+    private final java.util.concurrent.atomic.AtomicBoolean codeGraphLookPending =
+            new java.util.concurrent.atomic.AtomicBoolean();
+
+    /**
+     * Card 587, round 2 (N1): hands {@link #recheckCodeGraphOffer} to this
+     * connection's own thread and returns at once. The look of the live
+     * sessions and a build's end run on shared threads, and a socket write
+     * there would hold up every other session behind a slow client.
+     */
+    void lookAtCodeGraphSoon() {
+        if (!codeGraphLookPending.compareAndSet(false, true)) {
+            return;
+        }
+        try {
+            codeGraphLook.execute(() -> {
+                try {
+                    recheckCodeGraphOffer();
+                } finally {
+                    codeGraphLookPending.set(false);
+                }
+            });
+        } catch (RuntimeException notStarted) {
+            codeGraphLookPending.set(false);
+        }
+    }
+
+    /** @param executor card 587, round 2: where this connection's code graph look runs, for tests */
+    void useCodeGraphLook(java.util.concurrent.Executor executor) {
+        this.codeGraphLook = executor;
+    }
+
+    /**
+     * Card 587, fix round (M12): sends session_items again when the offer of
+     * the code-graph skill changed since the last list this socket was sent: a
+     * build ended, or the graph was built or deleted elsewhere. Nothing is
+     * sent to a page that never asked for the list.
+     */
+    synchronized void recheckCodeGraphOffer() {
+        if (sessionItemsAnnounced && codeGraphOffered() != codeGraphOfferSent) {
+            sendSessionItems();
+        }
+    }
+
+    /**
+     * Card 587: {@code /graph ask <question>} from the composer. Refused with
+     * the reason where the code graph tool would not be offered for the
+     * session's folder; otherwise one run whose record is the command as typed
+     * and whose model text is the question with the line that asks for the
+     * graph tool.
+     *
+     * @param question the words after {@code /graph ask}
+     */
+    public void onGraphAsk(String question) {
+        String asked = question == null ? "" : question.strip();
+        if (asked.isEmpty()) {
+            sendError(dev.spectroscope.core.codegraph.CodeGraphAsk.USAGE);
+            return;
+        }
+        synchronized (runGate) {
+            if (running) {
+                sendError(RUN_ACTIVE);
+                return;
+            }
+        }
+        dev.spectroscope.core.tools.CodeGraphTool tool = codeGraphTool();
+        Path folder = launchProjectDir();
+        String refusal = dev.spectroscope.core.codegraph.CodeGraphAsk.refusal(
+                tool.availability(folder), tool.backendFor(folder));
+        if (refusal != null) {
+            sendError(refusal);
+            return;
+        }
+        synchronized (runGate) {
+            if (running) {
+                sendError(RUN_ACTIVE);
+                return;
+            }
+            running = true;
+        }
+        CancelSignal runSignal = new CancelSignal();
+        this.signal = runSignal;
+        Thread.ofVirtual().name("spectroscope-run").start(() -> runPrompt(
+                dev.spectroscope.core.codegraph.CodeGraphAsk.recordText(asked), List.of(), false,
+                dev.spectroscope.core.codegraph.CodeGraphAsk.modelText(asked), runSignal));
     }
 
     /** @return card 504: the loops of this connection's process */
@@ -2504,6 +2747,12 @@ public final class SessionConnection {
             if (rosterListener != null) {
                 liveSessions.removeRosterListener(rosterListener);
             }
+            if (settingsListener != null) {
+                liveSessions.removeSettingsListener(settingsListener);
+            }
+            if (codeGraphCheck != null) {
+                liveSessions.removeCodeGraphCheck(codeGraphCheck);
+            }
             liveSessions.release(socket.getId());
             if (liveDrain != null) {
                 liveDrain.interrupt();
@@ -2693,8 +2942,7 @@ public final class SessionConnection {
         // its constructor, and the reason the asker re-checks after publishing.
         runSignal.onCancel(asker::releaseAllPending);
         ensureStore();
-        statusLine = "working"; // card 502: read by the record and the rows reportRunning publishes
-        reportRunning(true);   // every rail on this machine, not just this page
+        reportRunning(true);   // every rail on this machine, not just this page; card 578: sets working
         // Card 395: a quit while this run's events are still queued must not
         // lose them. The drain registers before the run can queue anything, and
         // the finally below unregisters it.
@@ -2743,9 +2991,7 @@ public final class SessionConnection {
             runDrain.finished();
             QuitFlush.unregister(runDrain);
             running = false;
-            statusLine = "idle";       // card 502
-            peerTurn = null;
-            reportRunning(false);      // a run that died still stopped running
+            reportRunning(false);      // a run that died still stopped running; card 578: idle, no turn
             this.signal = null;
             this.drain = null;
             releasePending();          // orphaned questions: deny them
@@ -2883,15 +3129,82 @@ public final class SessionConnection {
             sendError("The playbook could not be read: " + unreadable.getMessage());
             return;
         }
+        String folder = resolved.folder().toString();
+        String task = prompt.strip();
         if (read.pinned() == null) {
             // Criterion 7: a finding is a line in the chat as well; the sheet lists it beside the steps.
             sendError("The playbook does not load: " + read.loaded().findings());
+            sendPlaybookConfirm(folder, task, dev.spectroscope.server.playbooks.PlaybookStartPreview.of(
+                    read.loaded(), null, provider -> null, true, keySource));
+            return;
         }
+        // Card 584, fix round (review D1): the model lists are asked off the
+        // socket thread, so a ping, an abort or any other frame of this
+        // session is answered while a provider takes its time.
+        Thread.ofVirtual().name("spectro-playbook-check").start(() -> {
+            Map<String, ProviderRow> rows = checkedRows(SpectroConfig.knownProviders());
+            sendPlaybookConfirm(folder, task, dev.spectroscope.server.playbooks.PlaybookStartPreview.of(
+                    read.loaded(), read.pinned(), rows::get, true, keySource));
+        });
+    }
+
+    /**
+     * Card 584, criterion 1: the providers asked for their model lists side
+     * by side on virtual threads, through the registry's bounded check
+     * ({@link ProviderRegistry#CHECK_BUDGET_MS} each), under one shared
+     * deadline for all of them (fix round, review N1). A provider without
+     * key, sign in or model file is answered without a request. Never call
+     * it on the socket thread (review D1).
+     *
+     * <p>A check that has not come back by the deadline, or that throws,
+     * reads as the provider it is: its kind, credential and address from the
+     * registry's row, which needs no request, the state {@code configured}
+     * (not checked) and the reason {@code check-timeout} or
+     * {@code check-error} (review N6), never as a provider the app does not
+     * know.</p>
+     *
+     * @param providers the providers to ask
+     * @return the rows after the checks, by provider name
+     */
+    private Map<String, ProviderRow> checkedRows(java.util.Collection<String> providers) {
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.MILLISECONDS.toNanos(checkBudgetMs);
+        Map<String, java.util.concurrent.Future<ProviderRow>> answers = new java.util.TreeMap<>();
         Map<String, ProviderRow> rows = new java.util.LinkedHashMap<>();
-        ProviderRegistry.shared().rows(activeConfig.get()).forEach(r -> rows.put(r.id(), r));
-        sendPlaybookConfirm(resolved.folder().toString(), prompt.strip(),
-                dev.spectroscope.server.playbooks.PlaybookStartPreview.of(read.loaded(), read.pinned(), rows::get,
-                        true));
+        java.util.concurrent.ExecutorService runner = java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor();
+        try {
+            for (String provider : providers) {
+                answers.put(provider, runner.submit(() -> providerCheck.apply(provider)));
+            }
+            for (Map.Entry<String, java.util.concurrent.Future<ProviderRow>> answer : answers.entrySet()) {
+                String provider = answer.getKey();
+                try {
+                    long left = Math.max(0L, deadline - System.nanoTime());
+                    ProviderRow row = answer.getValue().get(left, java.util.concurrent.TimeUnit.NANOSECONDS);
+                    if (row != null) {
+                        rows.put(provider, row);
+                    }
+                } catch (java.util.concurrent.TimeoutException late) {
+                    answer.getValue().cancel(true);
+                    putLost(rows, provider, "check-timeout");
+                } catch (java.util.concurrent.ExecutionException | java.util.concurrent.CancellationException broke) {
+                    putLost(rows, provider, "check-error");
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    putLost(rows, provider, "check-timeout");
+                }
+            }
+        } finally {
+            // Not close(): that would wait for a check that ignores its cancel.
+            runner.shutdownNow();
+        }
+        return rows;
+    }
+
+    /** A lost check as the provider it is, from the registry's row, which sends no request. */
+    private void putLost(Map<String, ProviderRow> rows, String provider, String reason) {
+        ProviderRegistry.shared().rows(activeConfig.get()).stream().filter(r -> r.id().equals(provider)).findFirst()
+                .ifPresent(r -> rows.put(provider, new ProviderRow(r.id(), r.kind(), "configured", r.keyPresent(),
+                        r.credential(), r.endpoint(), List.of(), false, reason, 0L, null)));
     }
 
     /**
@@ -2925,17 +3238,60 @@ public final class SessionConnection {
      * @param prompt the task the owner typed
      */
     public void onStartPlaybook(String dir, String hash, String prompt) {
+        onStartPlaybook(dir, hash, prompt, null);
+    }
+
+    /**
+     * Card 584: the Start of the sheet with the models picked per step for
+     * this run. The picks come from the page and are checked like any
+     * untrusted input, after the hash: their shape ({@link ModelPicks#read}),
+     * then that each names a node of the pinned playbook that runs on a
+     * model, a provider the app knows, and a model that serves on a fresh
+     * check of its provider, a private node never on a cloud provider
+     * ({@link ModelPicks#refusal}). They are held for this run only; nothing
+     * is written to the playbook folder.
+     *
+     * @param dir    the playbook folder, or blank for the session's own
+     * @param hash   the hash the confirmation showed
+     * @param prompt the task the owner typed
+     * @param picks  the frame's {@code picks}, or null or missing for none
+     */
+    public void onStartPlaybook(String dir, String hash, String prompt, JsonNode picks) {
+        onStartPlaybook(dir, hash, prompt, picks, null);
+    }
+
+    /**
+     * Card 584, second fix round: the Start of the sheet with the id it asked
+     * with. Every refusal of this start goes to the chat as an error, and,
+     * when the start carried an id, also as the socket-only frame
+     * {@code playbook_start_refused {ask, message}}, so the sheet shows only
+     * the refusal of its own start. A Stop while the picks are checked again
+     * cancels the start before any run begins.
+     *
+     * @param dir    the playbook folder, or blank for the session's own
+     * @param hash   the hash the confirmation showed
+     * @param prompt the task the owner typed
+     * @param picks  the frame's {@code picks}, or null or missing for none
+     * @param askText the page's id for this start, or null for none; a longer or unreadable one is none
+     */
+    public void onStartPlaybook(String dir, String hash, String prompt, JsonNode picks, String askText) {
+        String ask = askText == null || askText.isBlank() || askText.length() > MAX_ASK_CHARS
+                || askText.chars().anyMatch(Character::isISOControl) ? null : askText;
+        startPlaybook(dir, hash, prompt, picks, ask);
+    }
+
+    private void startPlaybook(String dir, String hash, String prompt, JsonNode picks, String ask) {
         if (running) {
-            sendError(RUN_ACTIVE);
+            refuseStart(ask, RUN_ACTIVE);
             return;
         }
         if (prompt == null || prompt.isBlank()) {
-            sendError(RUN_WITH_PLAYBOOK_USAGE);
+            refuseStart(ask, RUN_WITH_PLAYBOOK_USAGE);
             return;
         }
         Resolved resolved = resolvePlaybook(dir);
         if (resolved.refusal() != null) {
-            sendError(resolved.refusal());
+            refuseStart(ask, resolved.refusal());
             return;
         }
         Path folder = resolved.folder();
@@ -2943,28 +3299,93 @@ public final class SessionConnection {
         try {
             read = loadAndPin(folder);
         } catch (IOException | RuntimeException unreadable) {
-            sendError("The playbook could not be read: " + unreadable.getMessage());
+            refuseStart(ask, "The playbook could not be read: " + unreadable.getMessage());
             return;
         }
         if (read.pinned() == null) {
             // The sheet disables Start on a finding; the frame is a second
             // gate, so a client that skips the sheet cannot start a
             // playbook the validator refused.
-            sendError("The playbook does not load: " + read.loaded().findings());
+            refuseStart(ask, "The playbook does not load: " + read.loaded().findings());
             return;
         }
         PinnedPlaybook pinned = read.pinned();
         if (!pinned.hash().equals(hash)) {
-            sendError(PLAYBOOK_CHANGED);
+            refuseStart(ask, PLAYBOOK_CHANGED);
             return;
         }
-        if (!folder.toString().equals(playbookDir)) {
-            recordPick(folder.toString(), pinned.playbook().name());
-            sendPlaybookInfo();
+        ModelPicks.Read picked = ModelPicks.read(picks);
+        if (picked.refusal() != null) {
+            refuseStart(ask, picked.refusal());
+            return;
         }
+        // Review N4: a pick equal to the step's own model is no pick.
+        Map<String, Playbook.ModelRef> runPicks = ModelPicks.withoutDefaults(pinned.playbook(), picked.picks());
+        String structural = ModelPicks.structuralRefusal(pinned.playbook(), runPicks, SpectroConfig::isKnownProvider);
+        if (structural != null) {
+            refuseStart(ask, structural);
+            return;
+        }
+        // Second fix round: the run's signal exists from here on, so a Stop
+        // while the picks are checked again cancels the start.
+        CancelSignal runSignal = new CancelSignal();
+        this.signal = runSignal;
         running = true;
         String task = prompt.strip();
-        Thread.ofVirtual().name("spectroscope-run").start(() -> runPlaybook(pinned, task));
+        // Fix round (review D1): the picked providers are asked again on the
+        // run's own thread, side by side under one deadline; the socket thread
+        // is free at once. A refusal or a Stop frees the run slot again.
+        Thread.ofVirtual().name("spectroscope-run").start(() -> {
+            String refused = null;
+            if (!runPicks.isEmpty()) {
+                Runnable unhook = runSignal.onCancel(Thread.currentThread()::interrupt);
+                try {
+                    Map<String, ProviderRow> rows = checkedRows(runPicks.values().stream()
+                            .map(Playbook.ModelRef::provider).distinct().toList());
+                    refused = runSignal.isCancelled() ? null : ModelPicks.refusal(pinned.playbook(), runPicks,
+                            SpectroConfig::isKnownProvider,
+                            provider -> SessionPlaybookHost.probeOf(provider, rows.get(provider), activeConfig.get()));
+                } finally {
+                    unhook.run();
+                    Thread.interrupted();
+                }
+            }
+            if (runSignal.isCancelled() || refused != null) {
+                this.signal = null;
+                running = false;
+                refuseStart(ask, refused != null ? refused : PLAYBOOK_START_STOPPED);
+                return;
+            }
+            if (!folder.toString().equals(playbookDir)) {
+                recordPick(folder.toString(), pinned.playbook().name());
+                sendPlaybookInfo();
+            }
+            runPlaybook(pinned, task, runPicks, runSignal);
+        });
+    }
+
+    /**
+     * A start that does not go ahead: an error line in the chat, and for a
+     * start that asked with an id the socket-only answer
+     * {@code playbook_start_refused {ask, message}} for its sheet.
+     *
+     * @param ask     the start's id, or null
+     * @param message why it does not start
+     */
+    private void refuseStart(String ask, String message) {
+        sendError(message);
+        if (ask != null) {
+            sendPlaybookStartRefused(ask, message);
+        }
+    }
+
+    /** The refusal of one start for its sheet, a socket-only frame like {@code playbook_confirm}. */
+    private synchronized void sendPlaybookStartRefused(String ask, String message) {
+        Map<String, Object> frame = new java.util.LinkedHashMap<>();
+        frame.put("type", "playbook_start_refused");
+        frame.put("ask", ask);
+        frame.put("message", message);
+        sendFrame(frame);
     }
 
     /**
@@ -3173,8 +3594,7 @@ public final class SessionConnection {
             runDrain.finished();
             QuitFlush.unregister(runDrain);
             running = false;
-            statusLine = "idle";
-            reportRunning(false);
+            reportRunning(false); // card 578: sets the status line to idle
             this.signal = null;
             this.drain = null;
             releasePending();
@@ -3343,13 +3763,17 @@ public final class SessionConnection {
      * @return workspace, playbook and user merged under the owner's rule
      */
     private dev.spectroscope.core.skills.SessionCatalogue catalogue(
-            dev.spectroscope.server.playbooks.PlaybookSessionLayer.Read picked) {
+            dev.spectroscope.server.playbooks.PlaybookSessionLayer.Read picked, boolean codeGraph) {
         List<dev.spectroscope.core.skills.SessionCatalogue.Layer> layers = new ArrayList<>();
         layers.add(workspaceLayer());
         if (picked != null && picked.layer() != null) {
             layers.add(picked.layer());
         }
         layers.add(userLayer());
+        // Card 587: the app's code-graph skill, while the session's folder has a graph.
+        if (codeGraph) {
+            layers.add(dev.spectroscope.core.codegraph.CodeGraphSkill.layer());
+        }
         // Decisions 5 and round 3: no session item shadows a web chat command;
         // a terminal-only word reserves nothing (owner, 2026-10-13).
         return dev.spectroscope.core.skills.SessionCatalogue.of(layers,
@@ -3358,7 +3782,7 @@ public final class SessionConnection {
 
     /** Card 558: reads the pick as it is now into the session's catalogue; called when a run starts. */
     private void refreshSessionItems() {
-        sessionSkills.set(catalogue(pickedLayer()));
+        sessionSkills.set(catalogue(pickedLayer(), codeGraphOffered()));
     }
 
     /**
@@ -3371,7 +3795,8 @@ public final class SessionConnection {
      */
     private synchronized void sendSessionItems() {
         dev.spectroscope.server.playbooks.PlaybookSessionLayer.Read picked = pickedLayer();
-        dev.spectroscope.core.skills.SessionCatalogue c = catalogue(picked);
+        boolean codeGraph = codeGraphOffered();
+        dev.spectroscope.core.skills.SessionCatalogue c = catalogue(picked, codeGraph);
         Map<String, Object> frame = new java.util.LinkedHashMap<>();
         frame.put("type", "session_items");
         if (picked != null && picked.refusal() != null) {
@@ -3406,6 +3831,7 @@ public final class SessionConnection {
         frame.put("items", items);
         sendFrame(frame);
         sessionItemsAnnounced = true;
+        codeGraphOfferSent = codeGraph;
     }
 
     /** Card 558: sends session_items again when this socket already has them, after a folder change. */
@@ -3563,8 +3989,8 @@ public final class SessionConnection {
      * @param pinned the bytes the confirmation showed
      * @param task   what the owner asked the run to do
      */
-    private void runPlaybook(PinnedPlaybook pinned, String task) {
-        CancelSignal runSignal = new CancelSignal();
+    private void runPlaybook(PinnedPlaybook pinned, String task, Map<String, Playbook.ModelRef> picks,
+                             CancelSignal runSignal) {
         this.signal = runSignal;
         runSignal.onCancel(asker::releaseAllPending);
         ensureStore();
@@ -3583,8 +4009,8 @@ public final class SessionConnection {
                     subagents, agent, activeConfig::get, this::switchProvider, providerBuilder, providerCheck,
                     this::providerKind, this::permissionFloor, broker, asker);
             new PlaybookRunner(new PlaybookRunner.Setup(pinned, runId,
-                    PlaybookRecorder.graphFileFor(sessionId, runId), recorder, runSignal, permissionMode, task),
-                    host, subagents, HostGuard.live()::refusal).run();
+                    PlaybookRecorder.graphFileFor(sessionId, runId), recorder, runSignal, permissionMode, task,
+                    picks), host, subagents, HostGuard.live()::refusal).run();
         } catch (RuntimeException failure) {
             sendError("Playbook run ended with an error: " + failure.getMessage());
         } finally {
@@ -3640,9 +4066,42 @@ public final class SessionConnection {
         this.providerBuilder = builder;
     }
 
+    /** Card 580: where a settings refresh runs; its own virtual thread unless a test hands in another. */
+    private volatile java.util.concurrent.Executor settingsRefresh =
+            task -> Thread.ofVirtual().name("spectro-settings-refresh").start(task);
+
+    /** @param executor card 580: where this connection's settings refresh runs, for tests */
+    void useSettingsRefresh(java.util.concurrent.Executor executor) {
+        this.settingsRefresh = executor;
+    }
+
+    /** Card 580: the settings write count when this connection's settings were read. */
+    private volatile long settingsWritesRead;
+
+    /**
+     * Card 580: the socket handler takes the count before it reads the
+     * settings, so a write during that read is not lost. Without this call the
+     * count at construction stands.
+     *
+     * @param writes {@link LiveSessions#settingsWrites()} before the read
+     */
+    void settingsReadAfter(long writes) {
+        this.settingsWritesRead = writes;
+    }
+
     /** @param check what answers the registry check of one provider in this connection, for tests */
     void providerCheckForTest(Function<String, ProviderRow> check) {
         this.providerCheck = check;
+    }
+
+    /** @param ms the one deadline of a round of model list checks in this connection, for tests (card 584) */
+    void checkBudgetForTest(long ms) {
+        this.checkBudgetMs = ms;
+    }
+
+    /** @param source where a provider's key comes from in this connection, a word, for tests (card 584) */
+    void keySourceForTest(Function<String, String> source) {
+        this.keySource = source;
     }
 
     /**
@@ -3757,9 +4216,22 @@ public final class SessionConnection {
      * other viewer's rail can draw the pulse. Silent without a registry or
      * before the store exists — there is no session to talk about yet.
      *
+     * <p>Card 578: the status line follows the flag here, before the publish,
+     * so the snapshot that says a run started says working and the one that
+     * says it stopped says idle. Every run path starts and ends through this
+     * call. Before the card the playbook run had no reset of its own and its
+     * row read "working" until a reload, and a playbook or workflow run read
+     * "idle" until the main agent's first turn, through a classify question
+     * too. The run's end clears the turn here as well, so the peer record of
+     * every run kind says no turn between runs.</p>
+     *
      * @param inFlight true when a run just started, false when it ended
      */
     private void reportRunning(boolean inFlight) {
+        statusLine = inFlight ? "working" : "idle";
+        if (!inFlight) {
+            peerTurn = null;
+        }
         SessionStore current = this.store;
         if (liveSessions != null && current != null) {
             liveSessions.running(socket.getId(), current.id(), inFlight);
@@ -3822,7 +4294,7 @@ public final class SessionConnection {
         // Card 547: the code graph reader rides right behind the standard set,
         // on the parent and (below) in the child belt, as ONE instance. The
         // loop offers it only in a run whose folder has a built graph.
-        Tool codeGraph = new dev.spectroscope.core.tools.CodeGraphTool();
+        Tool codeGraph = codeGraphTool(); // card 587: on the backend the config names
         registry.register(codeGraph);
         // ONE supplier step, two consumers (card 270, criterion 3): the settings
         // belt is assembled once and its tools go on the parent registry AND into
@@ -4088,7 +4560,7 @@ public final class SessionConnection {
      *
      * <p>Card 491: the number comes from {@link #liveConfig()}, which reads the
      * settings files again. {@link #activeConfig} is written when the agent is
-     * built and by nothing a settings save does, so reading it here kept the
+     * built and by no settings save after that, so reading it here kept the
      * budget the session started with. The key's reach is {@code next-run}.</p>
      */
     void refreshContinuationBudget() {
@@ -4276,7 +4748,10 @@ public final class SessionConnection {
             // Through the same door as the belt's per-call reading, so the
             // session moment and the first tool call cannot say it twice.
             reportUnreadable(invalidWorkspaceScope);
-            sessionConfig = activeConfig.get();
+            // A copy, not the same object: a settings refresh that read the
+            // config before this moment then loses its compare-and-set (card 580).
+            SpectroConfig own = activeConfig.get();
+            sessionConfig = own.withProvider(own.provider(), own.model());
         }
         activeConfig.set(sessionConfig);
         if (!modeTouched) {
@@ -4323,10 +4798,12 @@ public final class SessionConnection {
      * makes, on every call.
      *
      * <p>Card 222, and the part of it that is not obvious. {@link #activeConfig}
-     * is a SNAPSHOT: it is written at connect, again at the session moment
-     * ({@link #adoptSessionConfig()}), and by a provider switch — and by nothing
-     * else, ever. No settings write touches it, because a settings write happens
-     * in a REST controller that has never heard of this connection. So the
+     * is a SNAPSHOT: it is written at connect, by a resume or a wake that
+     * restores its recorded pair, again at the session moment
+     * ({@link #adoptSessionConfig()}), by a provider switch, and before the
+     * session moment by a write through the settings API (card 580,
+     * {@link #refreshFromSettings()}). After the session moment no settings
+     * write touches it. So the
      * per-call suppliers the belt already had (the image model, the Chrome
      * binary, the net fence) were per-call over a frozen value: they re-read a
      * reference nobody was updating. That is why the comments above them claimed

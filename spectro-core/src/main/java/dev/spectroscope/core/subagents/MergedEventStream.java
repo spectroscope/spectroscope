@@ -55,11 +55,13 @@ final class MergedEventStream implements EventStream {
      * queue. The receiver takes a message in on its own thread and its record
      * comes through its own forwarder, so without the latch its
      * {@code received} record could be queued before the {@code sent} record
-     * (BackgroundFanOutTest on the 0.15.3 gate).
+     * (BackgroundFanOutTest on the 0.15.3 gate). Card 594: the
+     * {@code returned} record of a receiver that ended with the message
+     * unread waits the same way.
      */
     private final ConcurrentHashMap<String, CountDownLatch> unsent = new ConcurrentHashMap<>();
 
-    /** How many {@code received} records wait for their {@code sent} record now. */
+    /** How many {@code received} or {@code returned} records wait for their {@code sent} record now. */
     private final AtomicInteger held = new AtomicInteger();
 
     /**
@@ -96,7 +98,7 @@ final class MergedEventStream implements EventStream {
 
     /**
      * @param onCancel         as above
-     * @param sentRecordWaitMs how long a received record waits for its sent record
+     * @param sentRecordWaitMs how long a received or returned record waits for its sent record
      */
     MergedEventStream(Runnable onCancel, long sentRecordWaitMs) {
         this.onCancel = onCancel;
@@ -107,9 +109,10 @@ final class MergedEventStream implements EventStream {
      * Producer side: the parent pump and the child forwarders put events here.
      * Events arriving after end() are dropped — by the time the parent run
      * ends, every child has already finished (see SubagentManager.run), so
-     * nothing of value can be lost. A {@code received} record of a message
-     * announced through {@link #expectSent} waits here until the message's
-     * {@code sent} record is in the queue or the stream ends.
+     * nothing of value can be lost. A {@code received} or {@code returned}
+     * record of a message announced through {@link #expectSent} waits here
+     * until the message's {@code sent} record is in the queue or the stream
+     * ends.
      *
      * @param event the next parent or child event, enqueued in arrival order
      */
@@ -117,7 +120,7 @@ final class MergedEventStream implements EventStream {
         if (ended) {
             return;
         }
-        String received = peerLabel(event, "received");
+        String received = receiverSide(event);
         CountDownLatch toWaitFor = received == null ? null : unsent.get(received);
         if (toWaitFor != null) {
             awaitSent(toWaitFor, received);
@@ -138,6 +141,15 @@ final class MergedEventStream implements EventStream {
         if (opened != null) {
             opened.countDown();
         }
+    }
+
+    /**
+     * @return the msg id of a record from the receiving side of a peer
+     *         message, {@code received} or (card 594) {@code returned}, else null
+     */
+    private static String receiverSide(RunEvent event) {
+        String received = peerLabel(event, "received");
+        return received != null ? received : peerLabel(event, "returned");
     }
 
     /** @return the msg id of a peer record in {@code state}, else null */
@@ -164,7 +176,7 @@ final class MergedEventStream implements EventStream {
             held.decrementAndGet();
         }
         if (!opened && loggedLate.compareAndSet(false, true)) {
-            log.warn("The sent record of in-run message {} did not reach the stream within {} ms; its received"
+            log.warn("The sent record of in-run message {} did not reach the stream within {} ms; the receiver's"
                     + " record is written without it. Logged once per run.", msgId, sentRecordWaitMs);
         }
     }
@@ -196,7 +208,7 @@ final class MergedEventStream implements EventStream {
     }
 
     /**
-     * Lets every held {@code received} record go into the queue at once, and
+     * Lets every held {@code received} or {@code returned} record go into the queue at once, and
      * every later one without waiting: the run is stopping.
      */
     void releaseHeld() {
@@ -204,7 +216,7 @@ final class MergedEventStream implements EventStream {
         unsent.values().forEach(CountDownLatch::countDown);
     }
 
-    /** @return how many received records wait for their sent record now (tests) */
+    /** @return how many received or returned records wait for their sent record now (tests) */
     int heldForTests() {
         return held.get();
     }

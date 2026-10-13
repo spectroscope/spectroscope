@@ -22,6 +22,7 @@ import { __resetSkillList } from "../state/skillList";
 import { __resetCommandList, __setCommandRows, commandListStatus, loadCommands } from "../state/commandList";
 import { coreCommandRows } from "../testkit/commandRows";
 import { helpText } from "../state/chatCommands";
+import { graphHelpText } from "../state/graphCommand";
 import type { LocalLine } from "../state/pageCommands";
 import { read, stripComments } from "../testkit/source";
 
@@ -144,6 +145,23 @@ describe("the playbook commands that leave as frames of the session", () => {
     await flush();
     expect(session).toEqual([{ type: "set_playbook", dir: "/pb/team-x" }]);
     expect(direct).toEqual([]);
+    expect(sent).toEqual([]);
+  });
+});
+
+describe("/graph in the composer (card 587)", () => {
+  it("sends /graph ask as graph_ask on the session's own socket, never to the model", () => {
+    const tree = drive(chat(), [Chat], [type("/graph ask who calls PlaybookRunner.step"), clickSend]);
+    expect(session).toEqual([{ type: "graph_ask", question: "who calls PlaybookRunner.step" }]);
+    expect(direct, "never on the socket in view").toEqual([]);
+    expect(sent, "never to the model as text").toEqual([]);
+    expect(field(tree).props.value).toBe("");
+  });
+
+  it("answers /graph help and its old name as one line of this chat", () => {
+    drive(chat(), [Chat], [type("/codegraph"), clickSend]);
+    expect(lines).toEqual([{ text: graphHelpText(coreCommandRows(), "en") }]);
+    expect(session).toEqual([]);
     expect(sent).toEqual([]);
   });
 });

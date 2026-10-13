@@ -11,7 +11,7 @@
 // the chat's is that two of its three offers depend on the machine. A fleet is
 // not an object anyone creates — there is no POST /api/fleet. There is only
 // spawning a NODE into a hub that must already be running, behind two opt-ins
-// that both default to off (SPECTRO_HUB_PORT and SPECTRO_ALLOW_SPAWN), and the
+// that both default to off (SPECTRO_HUB_ENABLED and SPECTRO_ALLOW_SPAWN), and the
 // server answers a uniform 404 for every reason it might refuse, deliberately,
 // so the client cannot be told which one is missing.
 //
@@ -115,8 +115,8 @@ export function FleetLobby(props: {
           ) : (
             <p className="lobby-off">
               {de
-                ? "Kein Hub läuft. Setze SPECTRO_HUB_PORT und starte den Server neu, dann steht hier das fertige Kommando."
-                : "No hub is running. Set SPECTRO_HUB_PORT and restart the server, and the finished command stands here."}
+                ? "Kein Hub läuft. Schalte ihn in den Einstellungen unter Flotte ein (SPECTRO_HUB_ENABLED) und starte den Server neu, dann steht hier das fertige Kommando."
+                : "No hub is running. Turn it on in the settings under Fleet (SPECTRO_HUB_ENABLED) and restart the server, and the finished command stands here."}
             </p>
           )}
           <div className="fleet-home-actions">
@@ -129,8 +129,8 @@ export function FleetLobby(props: {
                 hubUp
                   ? undefined
                   : de
-                    ? "Braucht einen laufenden Hub (SPECTRO_HUB_PORT) und SPECTRO_ALLOW_SPAWN."
-                    : "Needs a running hub (SPECTRO_HUB_PORT) and SPECTRO_ALLOW_SPAWN."
+                    ? "Braucht einen laufenden Hub (SPECTRO_HUB_ENABLED) und SPECTRO_ALLOW_SPAWN."
+                    : "Needs a running hub (SPECTRO_HUB_ENABLED) and SPECTRO_ALLOW_SPAWN."
               }
             >
               + {de ? "node starten" : "spawn a node"}

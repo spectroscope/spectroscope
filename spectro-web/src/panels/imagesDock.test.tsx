@@ -18,6 +18,7 @@ import type { GeneratedImage } from "../state/reducer";
 import { __getState, __resetForTests, openDockPanel, setDockTabs, toggleRightPanel } from "../state/layout";
 import { imagesShown, revealImagesPanel, toggleImagesPanel } from "../state/imagesPanel";
 import { dict } from "../i18n/i18n";
+import { NO_SELECTION } from "../testkit/noSelection";
 
 // Card 517: a fresh store starts in tabs mode; this file is about side by side.
 beforeEach(() => {
@@ -51,7 +52,7 @@ function renderDock(images: GeneratedImage[]): string {
   return renderToStaticMarkup(
     <RightPanel
       agents={[]}
-      plan={null}
+      {...NO_SELECTION}
       onClose={() => {}}
       thinking
       workspace={null}

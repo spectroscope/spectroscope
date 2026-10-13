@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
+import java.util.function.Predicate;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -45,6 +46,14 @@ final class FakeHost implements PlaybookHost {
     boolean turnsIgnoreCancel;
     boolean nobodyToAsk;
     Playbook.ModelRef chat = new Playbook.ModelRef("lmstudio", "start-model");
+    /** Card 586: the next event this matches throws "emit broke" and is not kept; null for none. */
+    Predicate<RunEvent> failEmit;
+    /** Card 586: kindOf throws this when set. */
+    RuntimeException failKindOf;
+    /** Card 586: a chat switch to this provider throws "switch broke"; null for none. */
+    String failSwitchTo;
+    /** Card 586: runs when a question whose text holds the key is asked, before the scripted answer. */
+    final Map<String, Consumer<FakeHost>> onAsk = new HashMap<>();
 
     FakeHost(Path workspace) {
         this.workspace = workspace;
@@ -54,7 +63,16 @@ final class FakeHost implements PlaybookHost {
     }
 
     @Override public Path workspace() { return workspace; }
-    @Override public void emit(RunEvent event) { events.add(event); }
+
+    @Override
+    public void emit(RunEvent event) {
+        Predicate<RunEvent> fail = failEmit;
+        if (fail != null && fail.test(event)) {
+            failEmit = null;
+            throw new IllegalStateException("emit broke");
+        }
+        events.add(event);
+    }
 
     @Override
     public ChatTurn chatTurn(String recordPrompt, String modelPrompt, CancelSignal signal) {
@@ -75,6 +93,9 @@ final class FakeHost implements PlaybookHost {
 
     @Override
     public String switchChat(Playbook.ModelRef ref) {
+        if (ref.provider().equals(failSwitchTo)) {
+            throw new IllegalStateException("switch broke");
+        }
         switches.add(ref.provider() + "/" + ref.model());
         chat = ref;
         return null;
@@ -91,7 +112,13 @@ final class FakeHost implements PlaybookHost {
         return rows.get(provider);
     }
 
-    @Override public String kindOf(String provider) { return rows.get(provider).kind(); }
+    @Override
+    public String kindOf(String provider) {
+        if (failKindOf != null) {
+            throw failKindOf;
+        }
+        return rows.get(provider).kind();
+    }
     @Override public void permissionFloor(String mode) { floors.add(String.valueOf(mode)); }
     @Override public PermissionBroker broker() { return request -> true; }
 
@@ -102,6 +129,11 @@ final class FakeHost implements PlaybookHost {
         }
         return question -> {
             String text = question.questions().get(0).question();
+            onAsk.forEach((key, action) -> {
+                if (text.contains(key)) {
+                    action.accept(this);
+                }
+            });
             String scripted = answerQueue.isEmpty() ? null : answerQueue.poll();
             for (Map.Entry<String, String> e : answers.entrySet()) {
                 if (text.contains(e.getKey())) {

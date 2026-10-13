@@ -88,15 +88,16 @@ public final class ReviewCheck {
         return best;
     }
 
-    /** @return the label the child named, or a null label with the reason */
+    /** @return the label the child named, or a null label with the reason; either way the child's id */
     public static CheckResult run(String task, List<String> labels, LlmProvider provider, SubagentManager manager,
                                   Consumer<RunEvent> out, CancelSignal signal, String stepLabel) {
         SubagentManager.StepResult r = manager.runStep(
                 new SubagentManager.StepChild(AgentType.EXPLORE, task, task, stepLabel, provider), out, signal);
         if (r.failed()) {
-            return new CheckResult(null, r.outcome());
+            return new CheckResult(null, r.outcome(), r.childId());
         }
         String label = labelOf(r.answer(), labels);
-        return new CheckResult(label, "[" + r.childId() + "] " + (label == null ? "named no label" : "answered " + label));
+        return new CheckResult(label, "[" + r.childId() + "] " + (label == null ? "named no label" : "answered " + label),
+                r.childId());
     }
 }

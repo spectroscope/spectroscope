@@ -129,6 +129,10 @@ export interface LayoutState {
    *  tabs mode. A stored blob decides for itself, and a blob without the key
    *  (written before card 444) reads as off, see hydrateLayout. */
   dockTabs: boolean;
+  /** Card 586: the run in the plan panel takes the chat tab's full width; the
+   *  chat steps aside until "small". Off by default; a blob without the key,
+   *  or with anything but true in it, reads as off (see hydrateLayout). */
+  runWide: boolean;
 }
 
 export const DEFAULT_LAYOUT: LayoutState = {
@@ -164,6 +168,7 @@ export const DEFAULT_LAYOUT: LayoutState = {
   dockTermTabs: "",
   dockReturn: false,
   dockTabs: true,
+  runWide: false,
 };
 
 const KEY = "spectroscope:layout";
@@ -313,6 +318,9 @@ export function hydrateLayout(parsed: unknown, termOpenRaw: string | null): Layo
   // fall back to DEFAULT_LAYOUT. No object at all means no stored layout,
   // which is the new installation and takes the default.
   state.dockTabs = stored ? blob.dockTabs === true : DEFAULT_LAYOUT.dockTabs;
+  // Card 586, final fix round (review M1): the wide run view is for the page
+  // only. A reload starts compact, so a session with a run opens with its chat.
+  state.runWide = false;
   const postCard = DOCK_FIELDS.some((f) => f in blob);
   if (postCard) {
     for (const f of DOCK_FIELDS) state[f] = normalizeMode(state[f]);
@@ -461,7 +469,7 @@ function readSaved(): LayoutState {
     if (read.recovered) {
       // Heal the stored copy too, or the next load recovers all over again.
       try {
-        localStorage.setItem(KEY, JSON.stringify(read.state));
+        localStorage.setItem(KEY, JSON.stringify(persistedLayout(read.state)));
       } catch {
         /* ignore */
       }
@@ -495,9 +503,15 @@ export function useLayoutRecovered(): boolean {
   return useSyncExternalStore(subscribe, layoutRecovered, neverRecovered);
 }
 
+/** The layout as it is stored: everything but the page-only runWide. */
+function persistedLayout(layout: LayoutState): Omit<LayoutState, "runWide"> {
+  const { runWide: _pageOnly, ...kept } = layout;
+  return kept;
+}
+
 function persist(): void {
   try {
-    localStorage.setItem(KEY, JSON.stringify(state));
+    localStorage.setItem(KEY, JSON.stringify(persistedLayout(state)));
   } catch {
     /* ignore */
   }
@@ -531,7 +545,8 @@ function set(patch: Partial<LayoutState>): void {
     next.dockColumns === state.dockColumns &&
     next.dockTermTabs === state.dockTermTabs &&
     next.dockReturn === state.dockReturn &&
-    next.dockTabs === state.dockTabs
+    next.dockTabs === state.dockTabs &&
+    next.runWide === state.runWide
   ) {
     return; // no change — no emit
   }
@@ -691,6 +706,32 @@ export function openDockPanel(id: DockPanelId): void {
 }
 
 /**
+ * Card 586: the run in the plan panel takes the chat tab's full width, or
+ * gives it back. The run panel's "wide" sets it, the wide view's "small"
+ * clears it.
+ *
+ * @param on true for the wide view, false for the chat beside the panel
+ */
+export function setRunWide(on: boolean): void {
+  set({ runWide: on });
+}
+
+/**
+ * Card 586: whether the wide run view takes the chat's place. Wide is on, the
+ * dock is open and shows the plan panel (open or folded), and the session has
+ * a run; otherwise the chat and the dock stand as they are.
+ *
+ * @param layout the layout store's state
+ * @param runs   how many runs the shown session holds
+ */
+export function showsRunWide(
+  layout: Pick<LayoutState, "runWide" | "rightPanelOpen" | "dockPlan">,
+  runs: number,
+): boolean {
+  return layout.runWide && layout.rightPanelOpen && layout.dockPlan !== "closed" && runs > 0;
+}
+
+/**
  * Stores the terminal panel's serialized tab strip (card 339).
  *
  * <p>Written by the pane on every strip change and read once when it mounts.
@@ -757,6 +798,10 @@ export function useLayout(): LayoutState {
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
 
+/** Test-only: listens to the store as useLayout does; returns the unsubscribe. */
+export function __subscribeForTests(cb: () => void): () => void {
+  return subscribe(cb);
+}
 /** Test-only. */
 export function __getState(): LayoutState {
   return state;

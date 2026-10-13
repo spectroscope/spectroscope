@@ -219,6 +219,26 @@ describe("messageLanes — lanes and grouping", () => {
     expect(lanes.map((l) => l.tag)).toEqual(["w1", "w2"]);
   });
 
+  it("draws no handover for a message that came back unread (card 594)", () => {
+    // The returned line runs from the helper to the sender and is the harness's words, not the helper's.
+    const events = [
+      ...conversation(),
+      {
+        type: "agent_message",
+        from: "kid",
+        to: "operator",
+        role: "peer",
+        state: "returned",
+        text: "[Delivery notice] Your message to kid was not delivered",
+        label: "m-page",
+        ts: 40,
+      } as RunEvent,
+    ];
+    const { lanes, messages } = messageLanes(events);
+    expect(messages.map((m) => m.role)).toEqual(["task", "status", "result"]);
+    expect(lanes[0].messages.map((m) => m.state)).toEqual(["submitted", "working", "completed"]);
+  });
+
   it("reports an empty lane list for a run that handed nothing over", () => {
     const { lanes, messages } = messageLanes([start("main", 0)]);
     expect(lanes).toEqual([]);
