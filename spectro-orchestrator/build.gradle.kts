@@ -10,7 +10,7 @@ plugins {
 }
 
 group = "dev.spectroscope"
-version = "0.15.3"
+version = "0.15.4"
 
 repositories {
     mavenCentral()
