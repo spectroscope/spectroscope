@@ -1113,6 +1113,73 @@ class CopilotProviderTest {
         assertEquals("bee", delivered.get("toolu_b").path("result").path("textResultForLlm").asText());
     }
 
+    @Test
+    void twoToolCallsThatArriveInTheOtherOrderStreamInTheOrderOfTheAssistantMessage() throws Exception {
+        // The SDK runs each tool handler on a thread of its own, so the call the
+        // model gave second can reach the provider first (the 0.15.2 and 0.15.3
+        // tag runs). This runtime asks for toolu_b first and asks for toolu_a only
+        // once the reader has seen a call, or after one second.
+        start("claude-sonnet-5");
+        Map<String, JsonNode> delivered = new java.util.concurrent.ConcurrentHashMap<>();
+        java.util.concurrent.CountDownLatch sawACall = new java.util.concurrent.CountDownLatch(1);
+        runtime.onSend(turn -> {
+            turn.usage(538, 80, 0, 0, "tool_calls");
+            turn.message("", List.of(
+                    Map.of("toolCallId", "toolu_a", "name", "read_file", "arguments", Map.of("path", "a.txt"),
+                            "type", "function"),
+                    Map.of("toolCallId", "toolu_b", "name", "read_file", "arguments", Map.of("path", "b.txt"),
+                            "type", "function")));
+            turn.askPermission(Map.of("kind", "custom-tool", "toolCallId", "toolu_b", "toolName", "read_file"));
+            turn.askPermission(Map.of("kind", "custom-tool", "toolCallId", "toolu_a", "toolName", "read_file"));
+            String b = turn.requestTool("toolu_b", "read_file", Map.of("path", "b.txt"));
+            try {
+                sawACall.await(1, TimeUnit.SECONDS);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            }
+            String a = turn.requestTool("toolu_a", "read_file", Map.of("path", "a.txt"));
+            delivered.put("toolu_a", turn.awaitToolResult(a, Duration.ofSeconds(20)));
+            delivered.put("toolu_b", turn.awaitToolResult(b, Duration.ofSeconds(20)));
+            turn.delta("Both read.");
+            turn.usage(700, 3, 538, 0, "stop");
+            turn.idle();
+        });
+        // Answers only if the second request opens a fresh session, so that case
+        // fails on the session count below instead of waiting for the timeout.
+        runtime.onSend(says("A fresh session."));
+        List<ProviderMessage> history = new ArrayList<>(List.of(user("Read a.txt and b.txt")));
+        List<ProviderEvent> first = new ArrayList<>();
+        for (ProviderEvent event : provider.stream(ask(history, List.of(readFileSpec()), new CancelSignal()))) {
+            first.add(event);
+            if (event instanceof PToolCall) {
+                sawACall.countDown();
+            }
+        }
+
+        assertEquals(List.of(
+                new PUsage(538, 80, 0, 0),
+                new PToolCall("toolu_a", "read_file", JSON.valueToTree(Map.of("path", "a.txt"))),
+                new PToolCall("toolu_b", "read_file", JSON.valueToTree(Map.of("path", "b.txt"))),
+                new PStop(PStop.StopReason.TOOL_USE)), first);
+
+        // The history the harness builds from that stream is the one the runtime
+        // session has seen: the results go to the parked calls of the same session.
+        history.add(new ProviderMessage(ProviderMessage.Role.ASSISTANT, List.<ProviderContent>of(
+                new ToolCallContent("toolu_a", "read_file", JSON.valueToTree(Map.of("path", "a.txt"))),
+                new ToolCallContent("toolu_b", "read_file", JSON.valueToTree(Map.of("path", "b.txt"))))));
+        history.add(new ProviderMessage(ProviderMessage.Role.USER, List.<ProviderContent>of(
+                new ToolResultContent("toolu_a", "ay", false),
+                new ToolResultContent("toolu_b", "bee", false))));
+        List<ProviderEvent> second = drain(provider.stream(ask(history, List.of(readFileSpec()), new CancelSignal())));
+
+        assertEquals(1, runtime.requests("session.create").size(), "one runtime session for both turns");
+        assertEquals(1, runtime.requests("session.send").size(), "the results are no new message");
+        assertEquals(new PStop(PStop.StopReason.END_TURN), second.getLast());
+        awaitCount(delivered::size, 2);
+        assertEquals("ay", delivered.get("toolu_a").path("result").path("textResultForLlm").asText());
+        assertEquals("bee", delivered.get("toolu_b").path("result").path("textResultForLlm").asText());
+    }
+
     // ---- final round, 2026-10-10: the reasoning contract and the reviewer's open pins ----
 
     @Test

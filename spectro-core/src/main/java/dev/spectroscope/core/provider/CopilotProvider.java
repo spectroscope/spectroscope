@@ -45,6 +45,7 @@ import org.slf4j.LoggerFactory;
 import java.io.Closeable;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -1080,7 +1081,10 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
         private final Deque<ProviderEvent> pending = new ArrayDeque<>();
         private final BlockingQueue<Object> queue = new LinkedBlockingQueue<>();
         private final StringBuilder text = new StringBuilder();
+        /** The harness tool calls of this turn, held back until it ends ({@link #releaseCalls}). */
         private final List<PToolCall> calls = new ArrayList<>();
+        /** The call ids of the assistant message's tool requests, in the model's order. */
+        private List<String> requestOrder = List.of();
         private final LlmWireTap.Exchange exchange;
         private final Runnable unhookCancel;
         private Conversation conversation;
@@ -1330,9 +1334,7 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
                             + " (the runtime process exited or was killed)");
                 }
                 case CallArrived call -> {
-                    PToolCall event = new PToolCall(call.callId(), call.name(), call.input());
-                    calls.add(event);
-                    pending.add(event);
+                    calls.add(new PToolCall(call.callId(), call.name(), call.input()));
                     if (expectedCalls >= 0 && calls.size() >= expectedCalls) {
                         finish(StopReason.TOOL_USE);
                     }
@@ -1373,6 +1375,7 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
                         pending.add(new PTextDelta(data.content()));
                     }
                     if (data.toolRequests() != null && !data.toolRequests().isEmpty()) {
+                        requestOrder = data.toolRequests().stream().map(r -> r.toolCallId()).toList();
                         Set<String> ours = conversation.toolNames;
                         expectedCalls = (int) data.toolRequests().stream()
                                 .filter(r -> r.name() != null && ours.contains(r.name())).count();
@@ -1438,6 +1441,9 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
             if (finished) {
                 return;
             }
+            if (reason != StopReason.ABORTED) {
+                releaseCalls();
+            }
             pending.add(new PStop(reason));
             finished = true;
             conversation.turn = null;
@@ -1458,6 +1464,23 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
                 conversation.busy = false;
             }
             end(exchange, reason == StopReason.ABORTED, null);
+        }
+
+        /**
+         * The SDK runs each tool handler on a thread of its own, so the calls
+         * of one turn reach the queue in any order (the 0.15.2 and 0.15.3 tag
+         * runs had toolu_b before toolu_a). They go out when the turn ends, in
+         * the order of the assistant message's tool requests; a call the
+         * message does not name goes last, in arrival order. The same order
+         * goes into {@code seen}, so the history the harness builds from the
+         * stream continues the runtime session.
+         */
+        private void releaseCalls() {
+            calls.sort(Comparator.comparingInt(call -> {
+                int at = requestOrder.indexOf(call.callId());
+                return at < 0 ? Integer.MAX_VALUE : at;
+            }));
+            pending.addAll(calls);
         }
 
         private void fail(String message) {
