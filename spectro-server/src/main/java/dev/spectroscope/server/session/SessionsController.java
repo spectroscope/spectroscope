@@ -303,7 +303,7 @@ public class SessionsController {
      *         id or a session that is not there
      */
     @GetMapping("/api/sessions/{id}/export")
-    public ResponseEntity<String> exportSession(@PathVariable String id, HttpServletRequest request) {
+    public ResponseEntity<byte[]> exportSession(@PathVariable String id, HttpServletRequest request) {
         if (!LocalOrigin.isLocalOrigin(request)
                 || !LocalOrigin.originIsLoopbackOrAbsent(request)
                 || !SESSION_ID.matcher(id).matches()) {
@@ -316,10 +316,10 @@ public class SessionsController {
             if (!Files.isRegularFile(file)) {
                 return ResponseEntity.status(404).build();
             }
-            String jsonl = Files.readString(file);
-            // The body is stored session content = caller-shaped text. Serve it
-            // as a download with a non-HTML type and nosniff, so it can never
-            // reach an HTML parsing context on this origin. The id in the
+            byte[] jsonl = Files.readAllBytes(file);
+            // The body is stored session content = caller-shaped text. Serve its
+            // bytes unchanged as a download with a non-HTML type and nosniff, so
+            // it can never reach an HTML parsing context on this origin. The id in the
             // filename is safe by the shape check above: [A-Za-z0-9-] carries
             // no quote, CR or LF.
             return ResponseEntity.ok()
