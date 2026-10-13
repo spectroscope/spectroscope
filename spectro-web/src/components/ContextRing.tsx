@@ -20,13 +20,16 @@
 // later context_info names the window with the source `window_override`.
 
 import { Fragment, useEffect, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import type { ContextSnapshot, WindowAnnouncement } from "../state/reducer";
-import { formatCredits, formatTokens } from "../format";
+import { agentAccent, formatCredits, formatTokens } from "../format";
 import { formatWindow } from "./contextWindow";
 import { contextGauge, namedWindow, ringFrame, type ContextGauge, type RingFrame } from "./contextRingMath";
 import { t, type Lang } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { parseWindowDraft, WINDOW_OVERRIDE_CEILING, WINDOW_OVERRIDE_FLOOR } from "../wire/windowOverride";
+import type { AgentPick, ShownAgent } from "../state/shownAgent";
+import { AgentPicker } from "./AgentPicker";
 
 const SIZE = 18;
 const R = 7;
@@ -70,8 +73,13 @@ export function ContextRing(props: {
    *  run_start or the server's provider_info. Absent or null reads the
    *  snapshot alone. */
   announcedWindow?: WindowAnnouncement | null;
+  /** Card 593: which agent the ring shows and the picker over the session's
+   *  agents. Absent draws the root as before the card, without a picker. */
+  picker?: AgentPick;
 }) {
   const { lastInputTokens, context } = props;
+  const lang = useLang();
+  const helper = helperOf(props.picker);
   const frame = ringFrame(context, props.announcedWindow);
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLSpanElement>(null);
@@ -124,7 +132,10 @@ export function ContextRing(props: {
         className="context-ring"
         aria-haspopup="dialog"
         aria-expanded={open}
-        aria-label={`Context ${shownPct} percent full — details`}
+        aria-label={t(lang, "ring.aria", {
+          name: helper === null ? t(lang, "pick.main") : helper.id,
+          pct: shownPct,
+        })}
         onClick={() => setOpen((o) => !o)}
       >
         <svg viewBox={`0 0 ${SIZE} ${SIZE}`} width={SIZE} height={SIZE} aria-hidden="true">
@@ -152,6 +163,15 @@ export function ContextRing(props: {
             />
           )}
         </svg>
+        {helper !== null && (
+          <span
+            className="context-ring-agent mono"
+            style={{ "--agent-color": agentAccent(helper.id) } as CSSProperties}
+          >
+            <span className="context-ring-agent-dot" aria-hidden="true" />
+            {helper.id}
+          </span>
+        )}
         <span className="tabular">{shownPct}%</span>
       </button>
 
@@ -164,10 +184,16 @@ export function ContextRing(props: {
           shownPct={shownPct}
           onWindowOverride={props.onWindowOverride}
           aiCredits={props.aiCredits}
+          picker={props.picker}
         />
       )}
     </span>
   );
+}
+
+/** The helper a picker shows, or null for the root and where no picker was handed in. */
+function helperOf(picker: AgentPick | undefined): ShownAgent | null {
+  return picker !== undefined && !picker.shown.isRoot ? picker.shown : null;
 }
 
 /**
@@ -192,8 +218,13 @@ export function ContextPopover(props: {
   onWindowOverride: ((tokens: number | null) => void) | undefined;
   /** See ContextRing: null draws no credit line. */
   aiCredits: number | null;
+  /** Card 593: see ContextRing. A helper's popover leaves out the session's
+   *  window row and the session's credits, names the helper's model and says
+   *  that its parts carry sizes only. */
+  picker?: AgentPick;
 }) {
   const { lastInputTokens, context, gauge, shownPct, onWindowOverride, aiCredits } = props;
+  const helper = helperOf(props.picker);
   const frame = props.frame ?? ringFrame(context, null);
   const lang = useLang();
   const [draft, setDraft] = useState("");
@@ -216,27 +247,32 @@ export function ContextPopover(props: {
   return (
     <div className="context-pop" role="dialog" aria-label="Context usage">
       <span className="eyebrow">Context</span>
-      <p className="context-line tabular">
-        {formatTokens(lastInputTokens)} of{" "}
-        {gauge.windowOf === null ? formatTokens(denominator.value) : formatWindow(denominator.value)}{" "}
-        {scaleName(gauge)} ({shownPct}%)
-      </p>
+      {props.picker !== undefined && <AgentPicker {...props.picker} />}
+      {helper !== null && windowUnknown ? (
+        <p className="context-line tabular">{formatTokens(lastInputTokens)}</p>
+      ) : (
+        <p className="context-line tabular">
+          {formatTokens(lastInputTokens)} of{" "}
+          {gauge.windowOf === null ? formatTokens(denominator.value) : formatWindow(denominator.value)}{" "}
+          {scaleName(gauge)} ({shownPct}%)
+        </p>
+      )}
       {gauge.compactsAt !== null && (
         <p className="context-compacts tabular">compacts at {formatTokens(gauge.compactsAt)}</p>
       )}
-      {aiCredits !== null && (
+      {helper === null && aiCredits !== null && (
         <p className="context-credits tabular">
           {t(lang, "ctx.credits", { credits: formatCredits(aiCredits, lang) })}
         </p>
       )}
       {windowUnknown && <p className="context-unknown">{t(lang, "ctx.window.unknown")}</p>}
-      {named !== null && (
+      {helper === null && named !== null && (
         <p className="context-window tabular">
           {named.of === "loaded" ? "loaded " : named.of === "published" ? "model " : ""}window ·{" "}
           {formatWindow(named.tokens)}
         </p>
       )}
-      {onWindowOverride !== undefined && (
+      {helper === null && onWindowOverride !== undefined && (
         <WindowOverrideRow
           lang={lang}
           draft={draft}
@@ -251,6 +287,9 @@ export function ContextPopover(props: {
             setDraft("");
           }}
         />
+      )}
+      {helper !== null && helper.row?.model !== undefined && (
+        <p className="context-helper-model mono">{t(lang, "ctx.helperModel", { model: helper.row.model })}</p>
       )}
       {context !== null ? (
         <>
@@ -269,12 +308,18 @@ export function ContextPopover(props: {
           <p className="context-meta tabular">
             messages: {context.messages} &middot; turn: {context.turn}
           </p>
-          <p className="context-note">char/4 estimate — the usage line is the truth</p>
+          {helper === null ? (
+            <p className="context-note">char/4 estimate — the usage line is the truth</p>
+          ) : (
+            <p className="context-note">{t(lang, "ctx.helperNoParts")}</p>
+          )}
         </>
-      ) : (
+      ) : helper === null ? (
         <p className="context-note">
           Live introspection (context_info) is additive — the ring uses the last usage event.
         </p>
+      ) : (
+        <p className="context-note">{t(lang, "ctx.helperNoSnapshot", { id: helper.id })}</p>
       )}
     </div>
   );

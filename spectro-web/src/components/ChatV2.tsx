@@ -73,7 +73,7 @@ export function ChatV2(
             const span = item === undefined ? null : elapsedLabel(item.firstTs, item.lastTs);
             const open = fold.isOpen(id);
             return (
-              <span key={id} className="work-chip-pair">
+              <span key={id} className="work-chip-pair" data-agent-thread={id}>
                 <button
                   type="button"
                   className={`work-chip-btn${item !== undefined ? ` work-chip-btn--${item.state}` : ""}`}

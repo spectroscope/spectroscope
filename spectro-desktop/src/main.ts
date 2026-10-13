@@ -18,6 +18,7 @@ import { trayMenuModel, traySummary, trayTooltip, type ShellAction, type TraySta
 import { shellCommandScript, type ShellCommandId } from "./shellCommands";
 import { quitQuestion, runningCount } from "./quitGuard";
 import { cronJobs, jobNotice } from "./jobNotices";
+import { OutputTail, waitForStart } from "./serverStart";
 
 // Health budget: 30 s by default, overridable for slow environments (the CI
 // xvfb smoke and emulated containers boot the JVM far slower than any laptop).
@@ -61,6 +62,8 @@ let previousJobStates: Record<string, string> = {}; // last /api/jobs/state, for
 let serverUp = true;
 let lastTraySummary = "";      // rebuild guard: mutating a MenuItem label shows nothing
 let restarting = false;        // single-flight, so a second click cannot double-spawn a JVM
+let serverTail = new OutputTail(); // the server's output since its last spawn (card 585)
+let spawnFailed = false;           // the spawn's own error dialog already spoke
 
 // (a) The server port, with memory (card 168): localStorage is origin-bound, so a fresh
 // OS-assigned port on every launch ran the web app on a new localhost origin with an
@@ -170,8 +173,10 @@ function spawnServer(port: number): ChildProcess {
     "--server.port=" + port,
   ];
   const jvm = spawn(resolveJavaBin(), args);
+  serverTail = new OutputTail();
 
   jvm.on("error", (err: NodeJS.ErrnoException) => {
+    spawnFailed = true;
     if (err.code === "ENOENT") {
       dialog.showErrorBox(
         "Java 21 is required",
@@ -183,27 +188,34 @@ function spawnServer(port: number): ChildProcess {
     app.quit();
   });
 
-  // Surface the server log to the shell's console — useful when the jar is missing or crashes.
-  jvm.stdout?.on("data", (chunk) => process.stdout.write(chunk));
-  jvm.stderr?.on("data", (chunk) => process.stderr.write(chunk));
+  // Surface the server log to the shell's console, and keep its tail: a start
+  // that fails is reported in the server's own words (card 585).
+  const tail = serverTail;
+  jvm.stdout?.on("data", (chunk) => { process.stdout.write(chunk); tail.push(chunk); });
+  jvm.stderr?.on("data", (chunk) => { process.stderr.write(chunk); tail.push(chunk); });
   return jvm;
 }
 
 // (c) Health poll: Spring Boot needs a moment. Poll GET /api/health until it answers 200,
-// with a total budget of HEALTH_BUDGET_MS, then a clear error dialog. fetch is built into
-// modern Node — no dependency needed.
-async function waitForHealth(port: number): Promise<void> {
-  const deadline = Date.now() + HEALTH_BUDGET_MS;
-  while (Date.now() < deadline) {
-    try {
-      const response = await fetch(`http://127.0.0.1:${port}/api/health`);
-      if (response.ok) return; // 200 -> the server is up
-    } catch {
-      // connection refused while the JVM is still starting — try again
-    }
-    await new Promise((r) => setTimeout(r, HEALTH_INTERVAL_MS));
+// with a total budget of HEALTH_BUDGET_MS. Card 585: a server that exits during start ends
+// the wait at once, and the error carries its own last error lines.
+async function healthy(port: number): Promise<boolean> {
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/api/health`, { signal: AbortSignal.timeout(2_000) });
+    return response.ok; // 200 -> the server is up
+  } catch {
+    return false; // connection refused while the JVM is still starting
   }
-  throw new Error(`spectro-server did not become healthy within ${HEALTH_BUDGET_MS / 1000} s.`);
+}
+
+function waitForHealth(jvm: ChildProcess, port: number): Promise<void> {
+  return waitForStart({
+    child: jvm,
+    probe: () => healthy(port),
+    budgetMs: HEALTH_BUDGET_MS,
+    intervalMs: HEALTH_INTERVAL_MS,
+    tail: serverTail,
+  });
 }
 
 function createWindow(port: number, hash?: string): BrowserWindow {
@@ -493,13 +505,14 @@ async function restartServer(): Promise<void> {
     const old = child;
     shutdown();
     if (old) await awaitExit(old, KILL_GRACE_MS + 1_000);
-    child = spawnServer(serverPort);
+    const jvm = spawnServer(serverPort);
+    child = jvm;
     try {
-      await waitForHealth(serverPort);
+      await waitForHealth(jvm, serverPort);
     } catch (err) {
       serverUp = false;
       refreshTray();
-      dialog.showErrorBox("spectro-server did not restart", (err as Error).message);
+      if (!spawnFailed) dialog.showErrorBox("spectro-server did not restart", (err as Error).message);
       return;
     }
     serverUp = true;
@@ -644,12 +657,13 @@ async function startup(): Promise<void> {
   tray = createTray();
 
   serverPort = await resolveServerPort();
-  child = spawnServer(serverPort);
+  const jvm = spawnServer(serverPort);
+  child = jvm;
   try {
-    await waitForHealth(serverPort); // block until 200, or throw on timeout
+    await waitForHealth(jvm, serverPort); // until 200; throws on exit (at once) or timeout
   } catch (err) {
     shutdown();                       // never leave a headless JVM behind on a startup failure
-    dialog.showErrorBox("spectro-server did not start", (err as Error).message);
+    if (!spawnFailed) dialog.showErrorBox("spectro-server did not start", (err as Error).message);
     app.quit();
     return;
   }

@@ -2,6 +2,8 @@ package dev.spectroscope.server.workspace;
 
 import dev.spectroscope.core.config.SpectroConfig;
 import dev.spectroscope.core.config.WorkspaceResolver;
+import dev.spectroscope.core.events.RunEvent;
+import dev.spectroscope.core.session.SessionStore;
 import dev.spectroscope.server.session.SessionWorkspaces;
 import dev.spectroscope.server.web.LocalOrigin;
 import jakarta.servlet.http.HttpServletRequest;
@@ -12,12 +14,18 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.function.Supplier;
 
@@ -52,6 +60,13 @@ import java.util.function.Supplier;
  * <p>Both endpoints wear the local-origin fence (card 74). They answer with the
  * operator's own files, and a DNS-rebound page reaches loopback with the
  * attacker's Host, which is the half JavaScript cannot forge.</p>
+ *
+ * <p>Card 586 adds {@code GET /api/run-document} for the run view: one
+ * document a run recorded as written, dot folders included, opened only on
+ * the session's own record, only in the folder the run worked in, and never
+ * for a secret such as a {@code .env} file or a path under {@code .git}, see
+ * {@link #runDocument}. It wears the same fence, and it answers a session
+ * without a resolved workspace with 404 rather than 409.</p>
  */
 @RestController
 public class WorkspaceController {
@@ -643,26 +658,48 @@ public class WorkspaceController {
                 return ResponseEntity.notFound().build();
             }
         }
-        if (!Files.isRegularFile(requested)) {
-            return ResponseEntity.notFound().build();
-        }
+        return serve(requested);
+    }
+
+    /**
+     * The bytes of one file whose path a route has already checked, typed for
+     * the preview: the answer {@code /api/file} and {@code /api/run-document}
+     * share once their own checks have passed. A 200 carries the CSP sandbox
+     * header.
+     *
+     * <p>Card 586, straggler M1: the path is looked at and opened without
+     * following a link, and the read stops one byte past the cap. A link put in
+     * its place after the route resolved it fails the open, and a file that
+     * grows after the size was read answers 413 instead of being read whole.
+     * Outside such a race the answers are the ones the size check gave.</p>
+     *
+     * @param requested the canonical path, already proven inside the workspace
+     * @return 200 with typed bytes; 404 for a directory, a link, a missing or an
+     *         unreadable file; 413 over the size caps; 415 for binary content
+     */
+    private ResponseEntity<byte[]> serve(Path requested) {
         try {
-            long size = Files.size(requested);
+            BasicFileAttributes attributes =
+                    Files.readAttributes(requested, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+            if (!attributes.isRegularFile()) {
+                return ResponseEntity.notFound().build();
+            }
             String ext = extension(requested);
             MediaType image = imageType(ext);
+            long cap = image != null ? MAX_IMAGE_BYTES : MAX_TEXT_BYTES;
+            if (attributes.size() > cap) {
+                return ResponseEntity.status(413).build();
+            }
+            byte[] bytes = readBounded(requested, cap);
+            if (bytes.length > cap) {
+                return ResponseEntity.status(413).build(); // it grew after the size was read
+            }
             if (image != null) {
-                if (size > MAX_IMAGE_BYTES) {
-                    return ResponseEntity.status(413).build();
-                }
                 return ResponseEntity.ok()
                         .header("Content-Security-Policy", CSP_SANDBOX)
                         .contentType(image)
-                        .body(Files.readAllBytes(requested));
+                        .body(bytes);
             }
-            if (size > MAX_TEXT_BYTES) {
-                return ResponseEntity.status(413).build();
-            }
-            byte[] bytes = Files.readAllBytes(requested);
             if (!looksLikeText(bytes)) {
                 return ResponseEntity.status(415).build(); // binary, no preview
             }
@@ -676,6 +713,189 @@ public class WorkspaceController {
         } catch (IOException unreadable) {
             return ResponseEntity.notFound().build();
         }
+    }
+
+    /**
+     * Opens {@code file} once, without following a link, and reads at most
+     * {@code cap + 1} bytes from that one channel, so a caller can tell a file
+     * over the cap from one at it.
+     *
+     * @param file the file to read
+     * @param cap  the most bytes a caller accepts
+     * @return the bytes read, at most {@code cap + 1}
+     * @throws IOException when the file is a link, gone or unreadable
+     */
+    static byte[] readBounded(Path file, long cap) throws IOException {
+        try (InputStream in = Files.newInputStream(file, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS)) {
+            return in.readNBytes((int) Math.min(cap + 1, Integer.MAX_VALUE - 8));
+        }
+    }
+
+    // ---- a run's written documents ----------------------------------------------
+
+    /**
+     * Card 586: a document a run recorded as written, also under a dot folder
+     * such as {@code .superpowers/}. Only the exact path the session's own
+     * record names for that run opens; {@code .env} files and anything under
+     * {@code .git} never do, recorded or not.
+     *
+     * <p>Both names, and the other secrets {@link #secret} lists, are refused in
+     * any letter case, on the asked path and again on its real path. APFS, the
+     * default macOS volume, ignores case, so {@code .ENV} is the file dotenv
+     * opens as {@code .env}, and a recorded name that is a link to one of them
+     * would hand out its bytes. A {@code .git} segment anywhere on the absolute
+     * real path refuses too, so a workspace inside a git folder serves nothing.
+     * The rest is the sandbox of {@code /api/file}: the real path lies inside
+     * the session's workspace, and the bytes go out through the same
+     * {@link #serve}.</p>
+     *
+     * <p>A run binds its folder (straggler M5): when the run's {@code run_start}
+     * line carries a workspace fingerprint, the fingerprint of the session's
+     * current real workspace must equal it. A session whose folder changed
+     * since the run, such as a resumed one whose recorded folder is gone, opens
+     * none of that run's documents. A {@code run_start} without the field,
+     * written before it existed, keeps the old answer.</p>
+     *
+     * @param session the session whose file holds the record and whose resolved
+     *                workspace holds the document
+     * @param run     the run that wrote the document, twelve lowercase hex digits
+     * @param rel     the workspace-relative path, exactly as the run's
+     *                {@code step_end} line names it
+     * @param request the servlet request, for the local-origin fence
+     * @return 200 with the typed bytes and headers of {@code /api/file}; 400 for
+     *         a malformed session or run id; 404 for a non-local caller or a
+     *         rebound Host, a session without a resolved workspace, a path the
+     *         run did not record as written, a run bound to another folder, a
+     *         secret name, a path outside the workspace, a directory or a
+     *         missing file; 413 over the size caps; 415 for binary content
+     */
+    @GetMapping("/api/run-document")
+    public ResponseEntity<byte[]> runDocument(@RequestParam("session") String session,
+            @RequestParam("run") String run, @RequestParam("path") String rel, HttpServletRequest request) {
+        if (!LocalOrigin.isLocalOrigin(request)) {
+            return ResponseEntity.status(404).build(); // no fingerprint in the refusal
+        }
+        if (!run.matches("[0-9a-f]{12}")) {
+            return ResponseEntity.badRequest().build();
+        }
+        Path base;
+        try {
+            base = rootFor(session);
+        } catch (IllegalArgumentException badId) {
+            return ResponseEntity.badRequest().build();
+        } catch (NoWorkspaceResolved none) {
+            return ResponseEntity.notFound().build();
+        }
+        RunRecord record = recordOf(session, run, rel);
+        if (!record.written()) {
+            return ResponseEntity.notFound().build();
+        }
+        Path asked;
+        try {
+            asked = Path.of(rel);
+        } catch (InvalidPathException unusable) {
+            return ResponseEntity.notFound().build();
+        }
+        if (secret(asked)) {
+            return ResponseEntity.notFound().build();
+        }
+        Path realBase;
+        Path requested;
+        try {
+            realBase = base.toRealPath();
+            if (record.fingerprint() != null
+                    && !record.fingerprint().equals(RunEvent.RunStep.fingerprintOf(realBase))) {
+                return ResponseEntity.notFound().build(); // the run wrote in another folder
+            }
+            requested = resolveInside(realBase, rel);
+        } catch (IOException outside) {
+            return ResponseEntity.notFound().build();
+        }
+        if (secret(realBase.relativize(requested))) {
+            return ResponseEntity.notFound().build();
+        }
+        for (Path segment : requested) {
+            if (".git".equals(segment.toString().toLowerCase(Locale.ROOT))) {
+                return ResponseEntity.notFound().build(); // the workspace itself lies in a git folder
+            }
+        }
+        return serve(requested);
+    }
+
+    /**
+     * What the session's own file says about a run and a path.
+     *
+     * @param written     whether a {@code step_end} line of the run names the path
+     *                    among its {@code documents}
+     * @param fingerprint the workspace fingerprint of the run's {@code run_start}
+     *                    line; null when the line or the field is missing
+     */
+    private record RunRecord(boolean written, String fingerprint) {}
+
+    /**
+     * Reads the session's own file for {@code run}: whether a {@code run_step}
+     * {@code step_end} line of that run has {@code documents} carrying exactly
+     * {@code rel}, and the fingerprint its {@code run_start} line gives the
+     * run's folder. The documents a step reads ride on its {@code step_start}
+     * line and are no record, so reading a file does not make it servable.
+     *
+     * @param session the session whose file is read
+     * @param run     the run asked for
+     * @param rel     the path asked for, compared as written
+     * @return the record; a session file that cannot be read, such as one not
+     *         written yet, records nothing
+     */
+    private static RunRecord recordOf(String session, String run, String rel) {
+        boolean written = false;
+        String fingerprint = null;
+        try {
+            for (RunEvent event : SessionStore.readSessionEvents(session)) {
+                if (!(event instanceof RunEvent.RunStep s) || !run.equals(s.runId())) {
+                    continue;
+                }
+                if (RunEvent.RunStep.RUN_START.equals(s.phase()) && s.workspaceFingerprint() != null) {
+                    fingerprint = s.workspaceFingerprint();
+                }
+                if (RunEvent.RunStep.STEP_END.equals(s.phase()) && s.documents() != null
+                        && s.documents().stream().anyMatch(d -> rel.equals(d.path()))) {
+                    written = true;
+                }
+            }
+        } catch (IOException unreadable) {
+            return new RunRecord(false, null);
+        }
+        return new RunRecord(written, fingerprint);
+    }
+
+    /** Folders whose contents are never served: version control and credential stores. */
+    private static final Set<String> SECRET_SEGMENTS = Set.of(".git", ".aws", ".ssh");
+    /** File names never served. */
+    private static final Set<String> SECRET_NAMES = Set.of(".env", ".envrc", ".netrc", ".npmrc");
+    /** File name beginnings never served. */
+    private static final List<String> SECRET_PREFIXES = List.of(".env.", ".env-");
+    /** File name endings never served: keys and certificate stores. */
+    private static final List<String> SECRET_SUFFIXES = List.of(".pem", ".key", ".p12", ".pfx");
+
+    /**
+     * The names {@code /api/run-document} never serves, recorded or not, all
+     * compared in lower case: a segment in {@link #SECRET_SEGMENTS} anywhere, or
+     * a file name in {@link #SECRET_NAMES}, beginning with one of
+     * {@link #SECRET_PREFIXES} or ending with one of {@link #SECRET_SUFFIXES}.
+     *
+     * @param path a workspace-relative path, as asked or as resolved
+     * @return true when the path names one of them
+     */
+    private static boolean secret(Path path) {
+        for (Path segment : path) {
+            if (SECRET_SEGMENTS.contains(segment.toString().toLowerCase(Locale.ROOT))) {
+                return true;
+            }
+        }
+        Path name = path.getFileName();
+        String file = name == null ? "" : name.toString().toLowerCase(Locale.ROOT);
+        return SECRET_NAMES.contains(file)
+                || SECRET_PREFIXES.stream().anyMatch(file::startsWith)
+                || SECRET_SUFFIXES.stream().anyMatch(file::endsWith);
     }
 
     /**

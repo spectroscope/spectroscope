@@ -33,7 +33,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * roster suite's empty-connect-roster assertion.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-        properties = {"SPECTRO_HUB_PORT=0", "fleet.control=on"})
+        properties = {"SPECTRO_HUB_ENABLED=", "SPECTRO_HUB_PORT=0", "fleet.control=on"})
 @Timeout(value = 60, unit = TimeUnit.SECONDS)
 class FleetControlIntegrationTest {
 

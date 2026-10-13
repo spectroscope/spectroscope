@@ -60,6 +60,27 @@ class RunEventJsonTest {
     }
 
     @Test
+    void aSizesOnlyContextPartLeavesTheTextKeyOffAndReadsBackEqual() throws Exception {
+        // Card 593: a helper's context_info carries sizes only. The wire says
+        // "no text" by leaving the key off, as every pre-content session did.
+        RunEvent.ContextInfo sizes = new RunEvent.ContextInfo("explore-1", 1, 3, 2652, 100_000,
+                List.of(new RunEvent.ContextPart("system prompt", 1200, 300, null),
+                        new RunEvent.ContextPart("tool schemas", 4208, 1052, null),
+                        new RunEvent.ContextPart("conversation", 5200, 1300, null)),
+                15L, "fallback");
+        String line = JSON.writeValueAsString(sizes);
+        assertFalse(line.contains("\"text\""), "no text key on a sizes-only line: " + line);
+        assertTrue(line.contains("\"chars\":1200"), "the full count rides: " + line);
+        assertEquals(sizes, JSON.readValue(line, RunEvent.class));
+
+        RunEvent.ContextInfo texts = new RunEvent.ContextInfo("main", 1, 3, 2652, 100_000,
+                List.of(new RunEvent.ContextPart("system prompt", 1200, 300, "You are the main agent.")),
+                15L, "fallback");
+        assertTrue(JSON.writeValueAsString(texts).contains("\"text\":\"You are the main agent.\""),
+                "a line with texts keeps them");
+    }
+
+    @Test
     void usageCacheFieldsAreAdditiveAndOmittedWhenAbsent() throws Exception {
         // The legacy shape (no cache counts) serializes EXACTLY as before —
         // old sessions and the TypeScript edition stay byte-identical.

@@ -124,7 +124,10 @@ class ToolOutputClampDriftTest {
             "launch_start quotes at most 2,000 characters of a failed start's last lines"
                     + " inside its error sentence",
             "spectro-core/src/main/java/dev/spectroscope/core/goal/GoalVerdict.java|MAX_OUTPUT_CHARS",
-            "the goal check's own 4,000 characters of a check command's tail, not a tool result");
+            "the goal check's own 4,000 characters of a check command's tail, not a tool result",
+            "spectro-core/src/main/java/dev/spectroscope/core/playbook/run/RunSteps.java|TEXT_CAP",
+            "run_step lines cut a step's input, output and error and a run's detail at 4,000 characters"
+                    + " for the run view; no model reads them");
 
     /**
      * Files that may keep the fixed clamp, each with its reason.

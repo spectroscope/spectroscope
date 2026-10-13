@@ -8,9 +8,11 @@ import {
   COMMANDS_TIMEOUT_MS,
   commandListStatus,
   commandRows,
+  helpOf,
   loadCommands,
   reloadCommands,
   rowOf,
+  usageOf,
   webCommands,
 } from "./commandList";
 import { coreCommandRows, rawCoreCommands } from "../testkit/commandRows";
@@ -165,7 +167,7 @@ describe("the command list store", () => {
 });
 
 describe("a row read off the answer", () => {
-  it("defaults what the file leaves out: no aliases, no sub, wired", () => {
+  it("defaults what the file leaves out: no aliases, no sub, wired, the English for the German, no template", () => {
     expect(rowOf({ id: "x", name: "x", takesArgs: false, help: { en: "X" } })).toEqual({
       id: "x",
       name: "x",
@@ -176,8 +178,37 @@ describe("a row read off the answer", () => {
       surfaces: "both",
       developerOnly: false,
       wired: true,
-      help: { en: "X" },
+      help: { en: "X", de: "X" },
+      usage: null,
     });
+  });
+
+  // Card 588, criterion 3: the list gives help and usage per language.
+  it("reads the help and the template in both languages", () => {
+    const row = rowOf({
+      id: "graph-ask",
+      name: "graph",
+      sub: "ask",
+      takesArgs: true,
+      help: { en: "Ask the graph", de: "Den Graphen fragen" },
+      usage: { en: "/graph ask <question>", de: "/graph ask <Frage>" },
+    });
+    expect(row?.usage).toEqual({ en: "/graph ask <question>", de: "/graph ask <Frage>" });
+    expect(row === null ? null : helpOf(row, "de")).toBe("Den Graphen fragen");
+    expect(row === null ? null : helpOf(row, "en")).toBe("Ask the graph");
+    expect(row === null ? null : usageOf(row, "de")).toBe("/graph ask <Frage>");
+    expect(row === null ? null : usageOf(row, "en")).toBe("/graph ask <question>");
+  });
+
+  it("reads a template without German as the English one, and a broken one as none", () => {
+    expect(rowOf({ id: "x", name: "x", help: { en: "X" }, usage: { en: "/x <y>" } })?.usage).toEqual({
+      en: "/x <y>",
+      de: "/x <y>",
+    });
+    expect(rowOf({ id: "x", name: "x", help: { en: "X" }, usage: { de: "/x <y>" } })?.usage).toBeNull();
+    expect(rowOf({ id: "x", name: "x", help: { en: "X" }, usage: "/x" })?.usage).toBeNull();
+    const plain = rowOf({ id: "x", name: "x", help: { en: "X" } });
+    expect(plain === null ? "" : usageOf(plain, "en")).toBeNull();
   });
 
   it("drops a row without an id or a name", () => {
@@ -195,7 +226,6 @@ describe("the rows the web chat offers", () => {
     expect(ids).toContain("run-with-playbook");
     expect(ids).toContain("help");
     expect(ids, "a terminal-only row").not.toContain("goal");
-    expect(ids, "a row another card wires").not.toContain("codegraph");
     for (const row of webCommands(rows, "developer")) {
       expect(["web", "both"]).toContain(row.surfaces);
       expect(row.wired).toBe(true);

@@ -96,7 +96,9 @@ class PinnedPlaybookTest {
                 Goal: Agree the design.
                 Read: nothing.
                 Write: Spec at docs/{slug}-design.md with the sections Goal, Design.
-                Done when: Spec complete: Spec has the sections Goal, Design, each with text.""", prompt.record());
+                Done when: Spec complete: Spec has the sections Goal, Design, each with text \
+                (a section is a heading such as "## Goal" or a line that starts with "**Goal:**"; \
+                such a line's text runs up to the next bold field line or the next # or ## heading).""", prompt.record());
         assertTrue(prompt.model().startsWith(prompt.record() + "\n\n## Skill spectropowers:brainstorming\n\nAsk one question at a time."),
                 prompt.model());
         assertTrue(!prompt.model().contains("## Skill house-rules"), "a skill the folder does not hold is not inlined");

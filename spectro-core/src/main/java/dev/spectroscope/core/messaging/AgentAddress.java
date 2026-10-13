@@ -35,10 +35,23 @@ public final class AgentAddress {
     /**
      * What {@code to} reached.
      *
-     * @param row     the agent, or null when nothing was reached
-     * @param refusal the text for the model when nothing was reached, else null
+     * @param row         the agent, or null when nothing was reached
+     * @param refusal     the text for the model when nothing was reached, else null
+     * @param nameUnknown true when no agent answers to the name at all (card 581), so the
+     *                    refusal is the unknown-name one and not an ambiguous name, a wrong
+     *                    ref or a name that now names someone else
      */
-    public record Result(AgentRow row, String refusal) {
+    public record Result(AgentRow row, String refusal, boolean nameUnknown) {
+
+        /**
+         * A result whose refusal, if any, is not the unknown-name one.
+         *
+         * @param row     the agent, or null when nothing was reached
+         * @param refusal the text for the model when nothing was reached, else null
+         */
+        public Result(AgentRow row, String refusal) {
+            this(row, refusal, false);
+        }
 
         static Result found(AgentRow row) {
             return new Result(row, null);
@@ -46,6 +59,10 @@ public final class AgentAddress {
 
         static Result refused(String text) {
             return new Result(null, text);
+        }
+
+        static Result unknown(String text) {
+            return new Result(null, text, true);
         }
     }
 
@@ -82,7 +99,7 @@ public final class AgentAddress {
             }
         }
         if (named.isEmpty()) {
-            return Result.refused(PeerClient.unknownName(trimmed));
+            return Result.unknown(PeerClient.unknownName(trimmed));
         }
         if (ref != null) {
             for (AgentRow row : named) {
@@ -147,7 +164,7 @@ public final class AgentAddress {
         if (process.size() > 1) {
             return ambiguous(to, process);
         }
-        return Result.refused(PeerClient.unknownName(to));
+        return Result.unknown(PeerClient.unknownName(to));
     }
 
     private static Result ambiguous(String name, List<AgentRow> rows) {

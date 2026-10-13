@@ -15,6 +15,7 @@ import dev.spectroscope.core.provider.OllamaProvider;
 import dev.spectroscope.core.scheduler.CronScheduler;
 import dev.spectroscope.core.session.SessionStore;
 import dev.spectroscope.core.tools.ToolPath;
+import dev.spectroscope.orchestrator.HubSettings;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.ParentCommand;
@@ -279,15 +280,23 @@ public final class DoctorCommand implements Callable<Integer> {
         // Fleet hub — optional infrastructure: nodes are opt-in, so the lines
         // inform when the env names a hub and never fail the doctor.
         // $SPECTRO_HUB is the node side (what a node DIALS);
-        // $SPECTRO_HUB_PORT is the server side (what spectro-server BINDS).
+        // $SPECTRO_HUB_ENABLED and $SPECTRO_HUB_PORT are the server side (what
+        // spectro-server opens), read like the server reads them: the process
+        // environment first, then ~/.spectro/.env (card 585).
         String hubEnv = System.getenv("SPECTRO_HUB");
         if (hubEnv != null && !hubEnv.isBlank()) {
             info(hubProbe(hubEnv));
         }
-        String hubHosting = System.getenv("SPECTRO_HUB_PORT");
-        if (hubHosting != null && !hubHosting.isBlank()) {
-            info(hubHostingLine(hubHosting));
-        }
+        java.util.Map<String, String> hub = hubSettingsFrom(System.getenv(), SpectroConfig.dotEnvPath());
+        String hubEnabled = hub.get(HubSettings.ENABLED);
+        String hubPort = hub.get(HubSettings.PORT);
+        HubSettings.Plan hubPlan = HubSettings.plan(hubEnabled, hubPort);
+        boolean writtenBusy = hubPlan.on() && !hubPlan.pick() && hubPlan.writtenPort() > 0
+                && !HubSettings.free(hubPlan.writtenPort());
+        // Review N3: the doctor cannot tell a running spectro-server's own hub
+        // from another program, so it says both.
+        info(hubHostingLine(hubEnabled, hubPort) + (writtenBusy
+                ? " (in use right now: a running spectro-server's own hub, or another program)" : ""));
 
         // Image provider — a missing key is not unhealthy: generate_image
         // explains itself when used. Doctor just says what would happen.
@@ -1133,22 +1142,67 @@ public final class DoctorCommand implements Callable<Integer> {
     }
 
     /**
-     * The hosting twin of {@link #hubProbe}: what {@code SPECTRO_HUB_PORT}
-     * will make spectro-server BIND on boot — or the typo, named loudly, so
-     * the operator never believes a fleet is on that silently is not.
+     * The two hub settings, read the way spectro-server reads them (review
+     * N2): a variable in the environment wins, even when it is blank; else the
+     * last line in {@code ~/.spectro/.env}, verbatim, through the server's own
+     * reader.
      *
-     * @param value the raw $SPECTRO_HUB_PORT value
+     * @param env  the process environment
+     * @param file the env file
+     * @return both names, each mapped to its value or to null when set nowhere
+     */
+    static java.util.Map<String, String> hubSettingsFrom(java.util.Map<String, String> env, java.nio.file.Path file) {
+        java.util.List<String> names = java.util.List.of(HubSettings.ENABLED, HubSettings.PORT);
+        java.util.Map<String, String> fromFile = SpectroConfig.readDotEnv(file, names);
+        java.util.Map<String, String> out = new java.util.HashMap<>();
+        for (String name : names) {
+            out.put(name, env.containsKey(name) ? env.get(name) : fromFile.get(name));
+        }
+        return out;
+    }
+
+    /**
+     * The hosting twin of {@link #hubProbe}: both hub settings and what
+     * spectro-server opens on boot (card 585). A port under 1024 or one that is
+     * not a number is never bound; the line names where the hub goes instead.
+     *
+     * @param enabled the raw $SPECTRO_HUB_ENABLED value, or null
+     * @param port    the raw $SPECTRO_HUB_PORT value, or null
      * @return the info line to print
      */
-    static String hubHostingLine(String value) {
-        try {
-            int port = Integer.parseInt(value.strip());
-            return "hub hosting: SPECTRO_HUB_PORT=" + port
-                    + " — spectro-server binds loopback:" + port + " on boot";
-        } catch (NumberFormatException invalid) {
-            return "hub hosting: SPECTRO_HUB_PORT invalid (\"" + value
-                    + "\") — the server keeps the hub OFF";
+    static String hubHostingLine(String enabled, String port) {
+        HubSettings.Plan plan = HubSettings.plan(enabled, port);
+        String settings = (plan.enabledSetting() == null
+                ? HubSettings.ENABLED + " not set" : HubSettings.ENABLED + "=" + plan.enabledSetting())
+                + ", " + (plan.portSetting() == null
+                ? HubSettings.PORT + " not set" : HubSettings.PORT + "=" + plan.portSetting());
+        String walk = "spectro-server takes the first free loopback port from " + HubSettings.DEFAULT_PORT;
+        if (!plan.on()) {
+            if (plan.note() == HubSettings.Note.ENABLED_UNREADABLE) {
+                return "hub hosting: " + settings + ": " + HubSettings.ENABLED
+                        + " is not true or false, so the hub stays off";
+            }
+            if (plan.enabledSetting() == null && plan.portSetting() == null) {
+                return "hub hosting: off (" + HubSettings.ENABLED + " and " + HubSettings.PORT + " not set)";
+            }
+            return "hub hosting: off (" + settings + ")";
         }
+        if (!plan.pick()) {
+            return plan.writtenPort() == 0
+                    ? "hub hosting: " + settings + ": spectro-server binds a system-assigned loopback port on boot"
+                    : "hub hosting: " + settings + ": spectro-server binds loopback:" + plan.writtenPort()
+                            + " on boot; if that port is taken, the app starts without the hub";
+        }
+        return switch (plan.note()) {
+            case PORT_PRIVILEGED -> "hub hosting: " + settings + ": port " + plan.portSetting()
+                    + " is under 1024 and needs admin rights; " + walk + " instead";
+            case PORT_INVALID -> "hub hosting: " + settings + ": \"" + plan.portSetting()
+                    + "\" is not a port number; " + walk + " instead";
+            case PORT_APP_RANGE -> "hub hosting: " + settings + ": port " + plan.portSetting()
+                    + " belongs to the app's own server range (" + HubSettings.APP_FIRST + " to "
+                    + HubSettings.APP_LAST + "); " + walk + " instead";
+            default -> "hub hosting: " + settings + ": " + walk + " on boot";
+        };
     }
 
     /**

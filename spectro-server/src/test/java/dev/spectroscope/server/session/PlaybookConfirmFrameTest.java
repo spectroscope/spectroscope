@@ -129,6 +129,19 @@ class PlaybookConfirmFrameTest {
         return out;
     }
 
+    /**
+     * The first playbook_confirm frame, waited for: card 584 sends it from a
+     * virtual thread once every provider answered, not on the socket thread.
+     */
+    private JsonNode awaitConfirm() throws Exception {
+        long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        while (frames("playbook_confirm").isEmpty() && System.nanoTime() < until) {
+            Thread.sleep(20);
+        }
+        assertThat(frames("playbook_confirm")).as("a playbook_confirm frame").isNotEmpty();
+        return frames("playbook_confirm").getFirst();
+    }
+
     private List<String> errors() throws IOException {
         return frames("error").stream().map(f -> f.path("message").asText()).toList();
     }
@@ -138,14 +151,14 @@ class PlaybookConfirmFrameTest {
     }
 
     @Test
-    void theFramesFolderIsConfirmedWithItsPreviewAndThePrompt() throws IOException {
+    void theFramesFolderIsConfirmedWithItsPreviewAndThePrompt() throws Exception {
         Path dir = registered(ONE_STEP);
         SessionConnection connection = session("ws-554-confirm");
 
         connection.onConfirmPlaybook(dir.toString(), "  " + TASK + "  ");
 
         assertThat(errors()).isEmpty();
-        JsonNode confirm = frames("playbook_confirm").getFirst();
+        JsonNode confirm = awaitConfirm();
         assertThat(confirm.path("dir").asText()).isEqualTo(dir.toString());
         assertThat(confirm.path("prompt").asText()).isEqualTo(TASK);
         assertThat(confirm.path("preview").path("hash").asText()).isEqualTo(hash(dir));
@@ -156,7 +169,7 @@ class PlaybookConfirmFrameTest {
     }
 
     @Test
-    void withoutAFolderInTheFrameTheSessionsPickIsConfirmed() throws IOException {
+    void withoutAFolderInTheFrameTheSessionsPickIsConfirmed() throws Exception {
         Path dir = registered(ONE_STEP);
         SessionConnection connection = session("ws-554-picked");
         connection.onSetPlaybook(dir.toString());
@@ -164,11 +177,11 @@ class PlaybookConfirmFrameTest {
         connection.onConfirmPlaybook(null, TASK);
 
         assertThat(errors()).isEmpty();
-        assertThat(frames("playbook_confirm").getFirst().path("dir").asText()).isEqualTo(dir.toString());
+        assertThat(awaitConfirm().path("dir").asText()).isEqualTo(dir.toString());
     }
 
     @Test
-    void withoutAPickTheFolderPinnedForTheWorkspaceIsConfirmed() throws IOException {
+    void withoutAPickTheFolderPinnedForTheWorkspaceIsConfirmed() throws Exception {
         Path dir = registered(ONE_STEP);
         PlaybookFolders.inHome().pin(workspace, dir);
         SessionConnection connection = session("ws-554-pinned");
@@ -176,7 +189,7 @@ class PlaybookConfirmFrameTest {
         connection.onConfirmPlaybook(null, TASK);
 
         assertThat(errors()).isEmpty();
-        assertThat(frames("playbook_confirm").getFirst().path("dir").asText()).isEqualTo(dir.toString());
+        assertThat(awaitConfirm().path("dir").asText()).isEqualTo(dir.toString());
         assertThat(connection.playbookDir()).as("a confirm is no pick").isNull();
     }
 

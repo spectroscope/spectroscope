@@ -186,3 +186,11 @@
   font-size: var(--fs-13);
   color: var(--text-dim);
 }
+
+/* Card 588: how a command that takes words is written, on its own line. */
+.skills-command-usage {
+  flex-basis: 100%;
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}

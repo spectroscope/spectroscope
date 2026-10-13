@@ -101,6 +101,8 @@ describe("the ring reads the main agent's window, never a child's (card 521, AC 
     expect(denominator(state)).toBe(1_000_000);
     expect(state.context?.contextWindow).toBe(1_000_000);
     expect(ringPercent(state)).toBe("30%");
+    // Card 593: the child's snapshot is not dropped any more, it lands in its own slot.
+    expect(state.helpers.worker?.context?.contextWindow).toBe(32_768);
   });
 });
 

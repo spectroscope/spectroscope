@@ -1,0 +1,1 @@
+[Delivery notice] Your message to explore-2 was not delivered: explore-2 ended before it read it (ended by cancellation of the parent run while it waited for a free slot). The message began: «status?». Do not wait for a reply; continue, or choose another approach.

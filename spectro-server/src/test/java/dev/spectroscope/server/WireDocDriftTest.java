@@ -41,6 +41,7 @@ class WireDocDriftTest {
     private static final Map<String, String> FENCED = Map.of(
             "/api/files", "workspace/WorkspaceController.java",
             "/api/file", "workspace/WorkspaceController.java",
+            "/api/run-document", "workspace/WorkspaceController.java",
             "/api/claude/transcripts", "transcripts/ClaudeTranscriptsController.java",
             "/api/claude/transcripts/content", "transcripts/ClaudeTranscriptsController.java");
 

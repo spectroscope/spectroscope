@@ -151,7 +151,9 @@ skill must never take the harness down.</p>
 <p>A session of the app reads its skills, commands and agents from three sources instead: the
 <code>.claude</code> and <code>.spectro</code> folders of its own working folder (the
 <code>.spectro</code> copy wins inside it), the playbook it picked in developer mode (chapter 15d)
-and <code>~/.spectro/skills</code>. Between these sources no one wins. A name that exists in more
+and <code>~/.spectro/skills</code>. While the working folder has a code graph, the app adds its own
+skill <code>code-graph</code> under the source &ldquo;built in&rdquo; (card 587, chapter 9). Between these
+sources no one wins. A name that exists in more
 than one stays in each, under the name of its source: <code>workspace:</code>, <code>user:</code>
 or the playbook's id, for example <code>spectro:brainstorming</code>. A name that exists once
 keeps its plain form, and a skill or command named like a command of the web chat, such as

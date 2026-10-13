@@ -69,6 +69,38 @@ class ModelListsTest {
         }
     }
 
+    /** Card 584: the start sheet names the HTTP status a rejected key came back with. */
+    @Test
+    void aRejectedKeyKeepsItsHttpStatus() throws IOException {
+        for (int status : new int[] {401, 403}) {
+            HttpServer fake = serve("/v1/models", status, "{\"error\":\"bad key\"}");
+            try {
+                ListResult r = ModelLists.openAiCompat("openai", base(fake), "wrong");
+                assertEquals("rejected-key", r.outcome());
+                assertEquals(status, r.httpStatus());
+            } finally {
+                fake.stop(0);
+            }
+        }
+    }
+
+    @Test
+    void anotherHttpFailureKeepsItsStatusAndAnAnswerHasNone() throws IOException {
+        HttpServer down = serve("/v1/models", 503, "{}");
+        HttpServer up = serve("/v1/models", 200, "{\"data\":[{\"id\":\"m\",\"created\":1}]}");
+        try {
+            ListResult failed = ModelLists.openAiCompat("lmstudio", base(down), null);
+            assertEquals("http-503", failed.outcome());
+            assertEquals(503, failed.httpStatus());
+            assertEquals(null, ModelLists.openAiCompat("lmstudio", base(up), null).httpStatus());
+            assertEquals(null, ModelLists.openAiCompat("lmstudio", "http://127.0.0.1:1", null).httpStatus(),
+                    "a refused connection has no HTTP status");
+        } finally {
+            down.stop(0);
+            up.stop(0);
+        }
+    }
+
     @Test
     void aBodyWithoutDataIsABadAnswer() throws IOException {
         HttpServer fake = serve("/v1/models", 200, "{\"hello\":1}");

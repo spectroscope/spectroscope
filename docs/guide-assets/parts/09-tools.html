@@ -89,13 +89,19 @@ size at the end of the answer; invalid regex answers <code>ERROR: invalid regex:
 
 <div class="ref"><div class="ref-head"><code class="name">code_graph</code><span class="chip free">free</span><span class="meta">input: { action, question?, dfs?, budget?, from?, to?, name?, depth?, top? }</span></div>
 <div class="ref-body"><p>Asks the code graph of the session folder, the <code>graphify-out/graph.json</code> that
-Build code graph or <code>graphify update</code> wrote. Five actions run graphify's read-only
+Build code graph, <code>/graph build</code> or <code>graphify update</code> wrote. Five actions run graphify's read-only
 subcommands: <code>query</code> asks a question in words, <code>path</code> finds the shortest path
 between two nodes, <code>explain</code> describes one node, <code>affected</code> lists what depends on
 a node and <code>god_nodes</code> lists the most connected nodes. The model sees the tool only when
 graphify is on the PATH and the folder has a graph, and a graph that links out of the folder is
-refused. graphify runs without a shell, stops after 30&thinsp;s, and the answer is cut at 16,000
-characters. A name or question that starts with a dash is refused. Explore subagents get it too.
+refused. A folder has a graph when <code>graph.json</code> and its page <code>graph.html</code> both lie
+inside it; the tool, <code>/graph</code> and the folder chip read this one rule. The program is the one the
+<code>codeGraphBackend</code> setting names for the folder (chapter 18), today always graphify. While the
+folder has a graph the session also lists the skill <code>code-graph</code>, built into the app, which tells
+the model when to ask the graph before it reads files, and <code>/graph ask &lt;question&gt;</code> in the
+chat sends a question with a line that asks for this tool (chapter 4). graphify runs without a shell, stops
+after 30&thinsp;s, and the answer is cut at 16,000 characters. A name or question that starts with a dash is
+refused. Explore subagents get it too.
 <em>Try: “Use the code graph: what is affected if CodeGraphJobs changes?”</em></p></div></div>
 
 <h2 id="ch-tools-mutation">Mutation &amp; shell</h2>

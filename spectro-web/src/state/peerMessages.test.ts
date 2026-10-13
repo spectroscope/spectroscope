@@ -6,7 +6,10 @@
 import { describe, expect, it } from "vitest";
 import type { RunEvent } from "../events";
 import { initialState, reduce, type Turn, type UiState } from "./reducer";
-import { mergePeerFrames } from "./peerMessages";
+import { mergePeerFrames, parseReturnedLine } from "./peerMessages";
+import { chatBody } from "../export/html";
+import { read } from "../testkit/source";
+import { t } from "../i18n/i18n";
 
 const frame = (fields: Record<string, unknown>): RunEvent =>
   ({ type: "peer_message", ...fields }) as unknown as RunEvent;
@@ -192,6 +195,119 @@ describe("the message turn", () => {
     );
     expect(messages(after)).toHaveLength(1);
     expect(messages(before)).toHaveLength(0);
+  });
+});
+
+describe("a message that came back unread (card 594)", () => {
+  // The line the sender's model reads, as PeerNotices.returned writes it in
+  // Java; PeerNoticesTest pins the same file from that side.
+  const LINE = read("../testkit/returnedLine.txt", import.meta.url).trim();
+  const REASON = "ended by cancellation of the parent run while it waited for a free slot";
+  const SPAWN = {
+    type: "agent_spawn",
+    agentId: "explore-2",
+    parentId: "main",
+    task: "look",
+    ts: 2,
+  } as RunEvent;
+  const SENT = {
+    type: "agent_message",
+    from: "main",
+    to: "explore-2",
+    role: "peer",
+    state: "sent",
+    text: "status?",
+    label: "m9",
+    ts: 3,
+  } as RunEvent;
+  const RETURNED = {
+    type: "agent_message",
+    from: "explore-2",
+    to: "main",
+    role: "peer",
+    state: "returned",
+    text: LINE,
+    label: "m9",
+    ts: 4,
+  } as RunEvent;
+
+  it("reads the helper, the reason and the start out of the line the Java side writes", () => {
+    expect(parseReturnedLine(LINE)).toEqual({ reason: REASON, start: "status?" });
+    const cut = LINE.replace("\u00abstatus?\u00bb", "\u00ablong\u2026\u00bb").replace(
+      REASON,
+      "out of budget (derived)",
+    );
+    expect(parseReturnedLine(cut)).toEqual({ reason: "out of budget (derived)", start: "long\u2026" });
+    expect(parseReturnedLine("something else")).toBeNull();
+  });
+
+  it("marks the message's block returned and draws the line in the chat's language", () => {
+    const state = fold([RUN, SPAWN, SENT, RETURNED]);
+    const all = messages(state);
+    expect(all).toHaveLength(1);
+    expect(all[0]).toMatchObject({
+      msgId: "m9",
+      direction: "sent",
+      status: "returned",
+      text: "status?",
+      agentId: "explore-2",
+    });
+    expect(state.turns.filter((t) => t.kind === "info" && t.text === LINE)).toEqual([
+      {
+        kind: "info",
+        text: LINE,
+        tone: "warn",
+        infoKey: "msg.returned",
+        infoVars: { helper: "explore-2", reason: REASON, start: "status?" },
+      },
+    ]);
+    const vars = { helper: "explore-2", reason: REASON, start: "status?" };
+    expect(t("en", "msg.returned", vars)).toContain("explore-2");
+    expect(t("de", "msg.returned", vars)).toContain("Nicht an explore-2 zugestellt");
+    expect(t("de", "msg.returned", vars)).toContain("\u00abstatus?\u00bb");
+  });
+
+  it("marks a block that appears only after the line, and makes no empty block before it", () => {
+    // A stop between a delivery and its sent record, or an operator's reply whose frame comes late.
+    const early = fold([RUN, SPAWN, RETURNED]);
+    expect(messages(early)).toHaveLength(0);
+    expect(early.turns.filter((t) => t.kind === "info" && t.infoKey === "msg.returned")).toHaveLength(1);
+    const late = fold([SENT], early);
+    expect(messages(late)).toHaveLength(1);
+    expect(messages(late)[0]).toMatchObject({ msgId: "m9", status: "returned", text: "status?" });
+    const fromFrame = fold(
+      [frame({ kind: "message", direction: "sent", msgId: "m9", name: "explore-2", text: "status?", ts: 5 })],
+      early,
+    );
+    expect(messages(fromFrame)[0]).toMatchObject({ msgId: "m9", status: "returned" });
+    const thenDelivered = fold(
+      [
+        frame({
+          kind: "status",
+          direction: "sent",
+          msgId: "m9",
+          name: "explore-2",
+          status: "delivered",
+          ts: 6,
+        }),
+      ],
+      late,
+    );
+    expect(messages(thenDelivered)[0].status).toBe("returned");
+  });
+
+  it("draws a line it cannot read as written", () => {
+    const state = fold([RUN, SPAWN, { ...RETURNED, text: "an older wording" } as RunEvent]);
+    expect(state.turns.filter((t) => t.kind === "info" && t.text === "an older wording")).toEqual([
+      { kind: "info", text: "an older wording", tone: "warn" },
+    ]);
+  });
+
+  it("is in the export in the export's language", () => {
+    expect(chatBody([RUN, SPAWN, SENT, RETURNED]).body).toContain("explore-2");
+    const de = chatBody([RUN, SPAWN, SENT, RETURNED], { lang: "de" }).body;
+    expect(de).toContain("Nicht an explore-2 zugestellt");
+    expect(de).toContain(REASON);
   });
 });
 

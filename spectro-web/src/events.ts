@@ -123,6 +123,45 @@ export type RunEvent =
   // line without dir is a withdrawn pick, and with none true the explicit
   // "No playbook" (integrator decision b).
   | { type: "playbook_picked"; dir?: string; name?: string; none?: boolean; ts: number } // additive
+  // Card 586: one line of a playbook or workflow run for the run view beside the chat.
+  | {
+      type: "run_step";
+      agentId: string;
+      runId: string;
+      runKind: "playbook" | "workflow";
+      phase: "run_start" | "step_start" | "step_end" | "run_end";
+      name?: string;
+      task?: string;
+      nodes?: { id: string; name?: string; kind: string }[];
+      node?: string;
+      kind?: string;
+      entry?: number;
+      performer?: "chat" | "child";
+      role?: string;
+      provider?: string;
+      model?: string;
+      picked?: boolean;
+      input?: string;
+      inputChars?: number;
+      /** A read document carries no path when its location is not a file
+       *  inside the workspace. */
+      reads?: { doc: string; path?: string }[];
+      round?: number;
+      maxRounds?: number;
+      status?: "done" | "failed" | "stopped";
+      durationMs?: number;
+      childId?: string;
+      children?: string[];
+      output?: string;
+      outputChars?: number;
+      documents?: { doc: string; path: string; change?: "created" | "changed" }[];
+      label?: string;
+      error?: string;
+      stopReason?: string;
+      result?: string;
+      detail?: string;
+      ts: number;
+    } // additive
   // Card 184 leg 3: one finished backend-to-model exchange, as the SESSION's own
   // record of it. It was a socket-only frame until the sealed union grew a type
   // for it, which is why a reopened session used to lose the fact that a model
@@ -594,7 +633,17 @@ export type ClientMessage =
   // showed; the server loads the folder again and refuses a mismatch.
   // Card 554: the prompt typed after /run-with-playbook becomes the run's task;
   // the server refuses a start without one. Only the chat's start sheet sends it.
-  | { type: "start_playbook"; dir: string; hash: string; prompt: string }
+  // Card 584: picks, absent when none, are the models picked per step in the
+  // sheet for this run only, by node id; the server checks them again.
+  | {
+      type: "start_playbook";
+      dir: string;
+      hash: string;
+      prompt: string;
+      picks?: Record<string, { provider: string; model: string }>;
+      /** Card 584, second fix round: the id a refusal of this start answers with (playbook_start_refused). */
+      ask?: string;
+    }
   // Card 554: /run-with-playbook asks for the start sheet. The server resolves
   // the folder (this dir, else the session's pick, else the workspace's pin)
   // and answers with the socket-only playbook_confirm frame. Starts nothing.
@@ -627,7 +676,10 @@ export type ClientMessage =
   | { type: "set_loop"; action: "stop" }
   // Card 558: the page asks for the session's skills, commands and agents;
   // the server answers with the socket-only session_items frame. Reads only.
-  | { type: "get_session_items" };
+  | { type: "get_session_items" }
+  // Card 587: /graph ask from the chat. The server refuses it where the folder
+  // has no code graph, else runs the question with a line for the graph tool.
+  | { type: "graph_ask"; question: string };
 
 // GET /api/sessions — the sidebar list (REST contract, design/BUILD-PLAN.md).
 export interface SessionMeta {

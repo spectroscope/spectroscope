@@ -27,7 +27,7 @@ import { rowsPrefFrom, type RowsPref } from "./flowmap/workerGrid";
 import { AnalyzeRun } from "../components/AnalyzeRun";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
-import { labChatState, liveGoalLoopShown, type LiveGoalLoop } from "./labChatState";
+import { labChatState, liveGoalLoopShown, withCommandMarks, type LiveGoalLoop } from "./labChatState";
 
 /** The card-view choice survives tab switches and reloads (TextView pattern). */
 export const VIEW_STORAGE_KEY = "spectroscope.lab.view";
@@ -276,8 +276,14 @@ export function LabView(props: {
   // Card 504, last fix round: at the live end of the live run the chat's goal
   // and loop are the live record's, not the stepped fold's
   // (lab/labChatState.ts). Stepped back, the fold's stay.
+  // Card 576: on the live run, at any step, the errors that answer a command
+  // typed in the composer carry the record's mark (no Send again).
   const chatState = useMemo(
-    () => labChatState(st.ui, liveGoalLoopShown(replay === null, st.queue.length, props.liveStatus ?? null)),
+    () =>
+      withCommandMarks(
+        labChatState(st.ui, liveGoalLoopShown(replay === null, st.queue.length, props.liveStatus ?? null)),
+        replay === null ? props.liveStatus?.turns : null,
+      ),
     [st.ui, replay, st.queue.length, props.liveStatus],
   );
   const rowClass = `lab-row${layout.chatOpen ? "" : " lab-row--chat-collapsed"}${layout.traceOpen ? "" : " lab-row--trace-collapsed"}`;

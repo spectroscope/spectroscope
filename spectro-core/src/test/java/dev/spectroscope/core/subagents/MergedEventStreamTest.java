@@ -409,6 +409,22 @@ class MergedEventStreamTest {
     }
 
     @Test
+    void aReturnedRecordOfAnAnnouncedMessageWaitsForItsSentRecordToo() throws InterruptedException {
+        // Card 594: a helper that ends with the message unread hands it back,
+        // and that line belongs after the message on the stream.
+        MergedEventStream stream = new MergedEventStream(() -> { });
+        stream.expectSent("m9");
+        Thread helper = Thread.ofVirtual().start(() -> stream.put(peer("m9", "returned")));
+        awaitTrue("the helper's put to return or be held",
+                () -> !helper.isAlive() || stream.heldForTests() == 1);
+        stream.put(peer("m9", "sent"));
+        helper.join(5_000);
+        stream.end();
+        assertEquals(List.of("m9:sent", "m9:returned"),
+                drain(stream).stream().map(MergedEventStreamTest::describe).toList());
+    }
+
+    @Test
     void aReceivedRecordWhoseSentRecordPassedFirstGoesAtOnce() {
         MergedEventStream stream = new MergedEventStream(() -> { });
         stream.expectSent("m2");

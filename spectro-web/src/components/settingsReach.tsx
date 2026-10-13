@@ -238,6 +238,10 @@ export const SETTING_REACH = {
   // run reads it once when it starts, so the two tools leave the request of
   // the next run. The inbound refusal reads the user settings on each message.
   agentMessaging: "next-run",
+  // Card 587, fix round: every reader asks one resolver for the folder at hand
+  // on each read (the session's code_graph tool, the skill offer, /graph and
+  // the folder chip, the System context view).
+  codeGraphBackend: "live",
 } as const satisfies Record<string, Reach>;
 
 /** A settings key this page knows how to be honest about. A new field has to

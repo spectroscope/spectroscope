@@ -258,11 +258,48 @@
   white-space: nowrap;
 }
 
+/* Card 588, fix round: a command's help wraps instead of ending in an
+   ellipsis, in a row and beside the template; the title carries it as well.
+   Every command row wraps, not only the highlighted one, so moving the
+   highlight moves no row (measured in fix1-walk-*.json). The floor puts the
+   help under the name when less than 12em is left beside it; at 390 px a
+   long name and its aliases left 3 to 80 px, one word or syllable a line. */
+.slash-row--command .slash-desc,
+.slash-writing .slash-desc {
+  min-width: min(100%, 12em);
+  white-space: normal;
+}
+
 /* Card 554: another spelling of the command, beside its name, quieter. */
 .slash-alias {
   flex: none;
   color: var(--text-dim);
   font-size: var(--fs-12);
+}
+
+/* Card 588: a row's template, on a line of its own under the name and the
+   help. Wraps rather than cuts: the template is the thing to read. */
+.slash-usage {
+  flex-basis: 100%;
+  color: var(--text-dim);
+  font-size: var(--fs-12);
+  overflow-wrap: anywhere;
+}
+
+/* Card 588: the template while a command's words are typed, with its help. */
+.slash-writing {
+  margin: 0;
+  padding: 2px var(--sp-2);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: var(--sp-3);
+  row-gap: var(--sp-1);
+}
+.slash-writing .slash-usage {
+  flex-basis: auto;
+  color: var(--text);
+  font-size: var(--fs-13);
 }
 
 /* Card 554: a group's name above its first command, when more than one group is on offer. */

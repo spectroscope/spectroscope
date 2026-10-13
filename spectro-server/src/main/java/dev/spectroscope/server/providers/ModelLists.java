@@ -5,6 +5,7 @@ import dev.spectroscope.core.provider.OpenAiCompatProvider;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.HttpServerErrorException;
+import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 
@@ -84,7 +85,7 @@ public final class ModelLists {
             }
             return ListResult.ok(ids, ANTHROPIC_MODELS_URL);
         } catch (Exception failure) {
-            return ListResult.failed(reasonOf(failure), ANTHROPIC_MODELS_URL);
+            return ListResult.failed(reasonOf(failure), ANTHROPIC_MODELS_URL, statusOf(failure));
         }
     }
 
@@ -110,7 +111,7 @@ public final class ModelLists {
             }
             return ListResult.ok(names, base);
         } catch (Exception failure) {
-            return ListResult.failed(reasonOf(failure), base);
+            return ListResult.failed(reasonOf(failure), base, statusOf(failure));
         }
     }
 
@@ -150,8 +151,19 @@ public final class ModelLists {
                     .toList();
             return ListResult.ok(ids, base);
         } catch (Exception failure) {
-            return ListResult.failed(reasonOf(failure), base);
+            return ListResult.failed(reasonOf(failure), base, statusOf(failure));
         }
+    }
+
+    /**
+     * Card 584: the HTTP status of a failure that got an answer, so the start
+     * sheet can say whether a rejected key came back 401 or 403.
+     *
+     * @param failure what the request threw
+     * @return the status, or null when no HTTP answer arrived
+     */
+    static Integer statusOf(Exception failure) {
+        return failure instanceof HttpStatusCodeException http ? http.getStatusCode().value() : null;
     }
 
     /** One reason code per failure class. Everything unknown is a bad answer. */

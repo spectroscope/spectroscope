@@ -60,11 +60,12 @@ export function AgentsTab({
                     {a.id}
                   </span>
                   {isMain && <span className="agent-role-tag">{t(lang, "agents.main")}</span>}
-                  {/* The model the child ACTUALLY ran on, when a transcript said
-                    so (card 167). It is not the parent's: measured over
-                    ~/.claude/projects, 617 launch records name one across seven
-                    ids, and a haiku child under an opus parent is a normal
-                    line. Verbatim, "[1m]" suffix and all. */}
+                  {/* The model this agent ran on, when its own run_start (card 593)
+                    or a transcript's launch record (card 167) said so. It is
+                    not the parent's: measured over ~/.claude/projects, 617
+                    launch records name one across seven ids, and a haiku child
+                    under an opus parent is a normal line. Verbatim, "[1m]"
+                    suffix and all. */}
                   {a.model !== undefined && <span className="agent-model mono">{a.model}</span>}
                   {/* "launched, never reported back" is a claim about the file,
                     so the importer only sets `launched` when the file says

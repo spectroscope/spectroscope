@@ -3,6 +3,7 @@ package dev.spectroscope.core.tools;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import dev.spectroscope.core.CancelSignal;
+import dev.spectroscope.core.codegraph.CodeGraphBackend;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -47,9 +48,11 @@ class CodeGraphToolTest {
         }
     }
 
+    /** A folder with a code graph: the graph and its page, as a build writes them (fix round, M9). */
     private static Path withGraph(Path root) throws IOException {
         Files.createDirectories(root.resolve("graphify-out"));
         Files.writeString(root.resolve("graphify-out/graph.json"), "{\"nodes\":[],\"links\":[]}");
+        Files.writeString(root.resolve("graphify-out/graph.html"), "<html></html>");
         return root;
     }
 
@@ -297,6 +300,7 @@ class CodeGraphToolTest {
         String out = call(tool(runner), root, input("god_nodes"));
         assertTrue(out.startsWith("ERROR: "), out);
         assertTrue(out.contains("Build code graph") && out.contains("graphify update"), out);
+        assertTrue(out.contains("/graph build"), "card 587: the chat command is named too: " + out);
         assertTrue(runner.calls.isEmpty());
     }
 
@@ -307,6 +311,92 @@ class CodeGraphToolTest {
         String out = call(new CodeGraphTool(Optional::empty, runner), root, input("god_nodes"));
         assertTrue(out.startsWith("ERROR: ") && out.contains("graphify is not on the PATH"), out);
         assertTrue(runner.calls.isEmpty());
+    }
+
+    // ---- card 587: the backend the setting names -----------------------------------
+
+    private static final CodeGraphBackend OTHER = new CodeGraphBackend("othergraph", "og", "brew install og",
+            Path.of("og-out", "g.json"), Path.of("og-out", "g.html"));
+
+    private static Path withOther(Path root) throws IOException {
+        Files.createDirectories(root.resolve("og-out"));
+        Files.writeString(root.resolve("og-out/g.json"), "{}");
+        Files.writeString(root.resolve("og-out/g.html"), "<html></html>");
+        return root;
+    }
+
+    @Test
+    void theToolReadsTheGraphFileOfItsBackend(@TempDir Path base) throws IOException {
+        Path graphify = withGraph(Files.createDirectories(base.resolve("graphify")));
+        Path other = withOther(Files.createDirectories(base.resolve("other")));
+        CodeGraphTool tool = new CodeGraphTool(OTHER, () -> Optional.of("/opt/og"), new Recording());
+        assertTrue(tool.offeredIn(other));
+        assertFalse(tool.offeredIn(graphify), "graphify's file is not this backend's graph");
+        assertEquals(OTHER, tool.backendFor(other));
+        assertEquals(CodeGraphBackend.GRAPHIFY, new CodeGraphTool().backendFor(other), "the shipped tool is graphify's");
+    }
+
+    /**
+     * Fix round, I4: the tool asks which backend the folder at hand uses, on
+     * every call, so the setting a folder names in its own settings reaches it.
+     */
+    @Test
+    void theToolAsksForTheBackendOfTheFolderItWorksIn(@TempDir Path base) throws IOException {
+        Path graphified = withGraph(Files.createDirectories(base.resolve("g")));
+        Path other = withOther(Files.createDirectories(base.resolve("o")));
+        List<Path> asked = new ArrayList<>();
+        Recording runner = new Recording();
+        CodeGraphTool tool = new CodeGraphTool(folder -> {
+            asked.add(folder);
+            return other.equals(folder) ? OTHER : CodeGraphBackend.GRAPHIFY;
+        }, backend -> Optional.of("/opt/" + backend.binary()), runner);
+        assertEquals(CodeGraphTool.Availability.READY, tool.availability(graphified));
+        assertEquals(CodeGraphTool.Availability.READY, tool.availability(other));
+        assertEquals(OTHER, tool.backendFor(other));
+        assertEquals(CodeGraphBackend.GRAPHIFY, tool.backendFor(graphified));
+        call(tool, other, input("god_nodes"));
+        assertEquals("/opt/og", runner.calls.get(0).get(0), "the program of the folder's backend runs");
+        assertTrue(runner.calls.get(0).contains(other.toRealPath().resolve("og-out/g.json").toString()),
+                String.valueOf(runner.calls.get(0)));
+        assertTrue(asked.contains(other), "the folder it worked in was asked for: " + asked);
+    }
+
+    /** Fix round, M9: a graph without its page is no graph for the tool either. */
+    @Test
+    void aGraphWithoutItsPageIsNoGraph(@TempDir Path root) throws IOException {
+        Files.createDirectories(root.resolve("graphify-out"));
+        Files.writeString(root.resolve("graphify-out/graph.json"), "{}");
+        Recording runner = new Recording();
+        assertEquals(CodeGraphTool.Availability.NO_GRAPH, tool(runner).availability(root));
+        String out = call(tool(runner), root, input("god_nodes"));
+        assertTrue(out.startsWith("ERROR: this folder has no code graph yet"), out);
+        assertTrue(runner.calls.isEmpty(), "graphify must not start: " + runner.calls);
+        withGraph(root);
+        assertEquals(CodeGraphTool.Availability.READY, tool(runner).availability(root), "premise: with its page it is");
+    }
+
+    @Test
+    void aMissingProgramIsNamedByTheBackend(@TempDir Path root) throws IOException {
+        withOther(root);
+        String out = call(new CodeGraphTool(OTHER, Optional::empty, new Recording()), root, input("god_nodes"));
+        assertTrue(out.contains("og is not on the PATH") && out.contains("brew install og"), out);
+        assertFalse(out.contains("graphify"), out);
+    }
+
+    @Test
+    void availabilityNamesWhyTheToolIsNotOffered(@TempDir Path base) throws IOException {
+        Path bare = Files.createDirectories(base.resolve("bare"));
+        Path graphed = withGraph(Files.createDirectories(base.resolve("graphed")));
+        Path outside = withGraph(Files.createDirectories(base.resolve("outside")));
+        Path linked = Files.createDirectories(base.resolve("linked"));
+        Files.createSymbolicLink(linked.resolve("graphify-out"), outside.resolve("graphify-out"));
+        CodeGraphTool found = tool(new Recording());
+        assertEquals(CodeGraphTool.Availability.READY, found.availability(graphed));
+        assertEquals(CodeGraphTool.Availability.NO_GRAPH, found.availability(bare));
+        assertEquals(CodeGraphTool.Availability.OUTSIDE, found.availability(linked));
+        assertEquals(CodeGraphTool.Availability.NO_FOLDER, found.availability(null));
+        assertEquals(CodeGraphTool.Availability.NOT_INSTALLED,
+                new CodeGraphTool(Optional::empty, new Recording()).availability(graphed));
     }
 
     // ---- what the runner reports becomes a tool result ---------------------------

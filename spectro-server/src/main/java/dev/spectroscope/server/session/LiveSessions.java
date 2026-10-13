@@ -8,6 +8,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Which sessions are LIVE on this server right now — the fact card 212 found
@@ -350,6 +354,108 @@ public final class LiveSessions {
     /** @return the last roster of other processes */
     public List<LiveSession> roster() {
         return roster;
+    }
+
+    /**
+     * Card 587, fix round (M12): how often the open sessions look again
+     * whether their folder's code graph came or went, in seconds. A build from
+     * the app is announced at its end without waiting; this catches a graph
+     * built in a terminal or deleted, at the cost of a few file checks per
+     * open session.
+     */
+    static final long CODE_GRAPH_RECHECK_SECONDS = 5;
+
+    /** One daemon thread for the looks of every registry in the process. */
+    private static final ScheduledExecutorService CODE_GRAPH_TICKER = Executors.newSingleThreadScheduledExecutor(
+            run -> Thread.ofPlatform().daemon().name("spectro-codegraph-recheck").unstarted(run));
+
+    private final List<Runnable> codeGraphChecks = new CopyOnWriteArrayList<>();
+    private ScheduledFuture<?> codeGraphTick;
+
+    /**
+     * Card 587, fix round (M12): a session's look at its folder's code graph,
+     * run by {@link #checkCodeGraphs}. It must not block for long.
+     *
+     * @param check the look
+     */
+    public void addCodeGraphCheck(Runnable check) {
+        codeGraphChecks.add(check);
+    }
+
+    /** @param check a look added before; the timer stops with the last one */
+    public synchronized void removeCodeGraphCheck(Runnable check) {
+        codeGraphChecks.remove(check);
+        if (codeGraphChecks.isEmpty() && codeGraphTick != null) {
+            codeGraphTick.cancel(false);
+            codeGraphTick = null;
+        }
+    }
+
+    /**
+     * Card 587, fix round (M12): every {@link #CODE_GRAPH_RECHECK_SECONDS} the
+     * sessions look again; started by the first session that connects, stopped
+     * when the last one leaves.
+     */
+    public synchronized void startCodeGraphTicker() {
+        if (codeGraphTick == null) {
+            codeGraphTick = CODE_GRAPH_TICKER.scheduleWithFixedDelay(this::checkCodeGraphs,
+                    CODE_GRAPH_RECHECK_SECONDS, CODE_GRAPH_RECHECK_SECONDS, TimeUnit.SECONDS);
+        }
+    }
+
+    /** Card 587, fix round (M12): every live session looks at its folder's code graph now. */
+    public void checkCodeGraphs() {
+        for (Runnable check : codeGraphChecks) {
+            try {
+                check.run();
+            } catch (RuntimeException ignored) {
+                // one session's failed look must not keep the others from theirs
+            }
+        }
+    }
+
+    /** Card 580: a connection that wants to hear of a settings write. Must not block. */
+    public interface SettingsListener {
+        /** A settings file was written through this server's settings API. */
+        void onSettingsWritten();
+    }
+
+    /** Card 580: who hears of a settings write. */
+    private final List<SettingsListener> settingsListeners = new CopyOnWriteArrayList<>();
+
+    /** Card 580: how many settings writes this server has told of. */
+    private final java.util.concurrent.atomic.AtomicLong settingsWrites = new java.util.concurrent.atomic.AtomicLong();
+
+    /**
+     * Card 580: the count of settings writes so far. A connection compares it
+     * with the count taken before its settings were read, so a write that
+     * landed before it listened still reaches it.
+     *
+     * @return the number of writes {@link #settingsWritten()} has told of
+     */
+    public long settingsWrites() {
+        return settingsWrites.get();
+    }
+
+    /** @param listener card 580: a connection to tell of every settings write; it must not block */
+    public void addSettingsListener(SettingsListener listener) {
+        settingsListeners.add(listener);
+    }
+
+    /** @param listener card 580: the connection to stop telling; unknown listeners are ignored */
+    public void removeSettingsListener(SettingsListener listener) {
+        settingsListeners.remove(listener);
+    }
+
+    /**
+     * Card 580: a settings write landed (the settings view, another window, a
+     * direct PUT). Every listening connection hears of it.
+     */
+    public void settingsWritten() {
+        settingsWrites.incrementAndGet();
+        for (SettingsListener listener : settingsListeners) {
+            listener.onSettingsWritten();
+        }
     }
 
     /**

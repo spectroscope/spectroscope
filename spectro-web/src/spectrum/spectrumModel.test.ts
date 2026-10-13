@@ -307,3 +307,45 @@ describe("lane thinking pass-through", () => {
     expect(m.lanes[0].thinking).toBe("");
   });
 });
+
+// Card 586: the playbook runner's own lines carry the agent id "playbook". It is
+// the runner, not an agent, so it gets no lane.
+describe("the playbook runner's lines (card 586)", () => {
+  it("open no lane named playbook", () => {
+    const RUN = "abcdefabcdef";
+    const model = buildSpectrum([
+      ...fleet,
+      {
+        type: "run_step",
+        agentId: "playbook",
+        runId: RUN,
+        runKind: "playbook",
+        phase: "run_start",
+        name: "spectro",
+        nodes: [],
+        ts: 2000,
+      },
+      {
+        type: "playbook_progress",
+        agentId: "playbook",
+        runId: RUN,
+        phase: "start",
+        playbook: "spectro",
+        ts: 2000,
+      },
+      { type: "plan", agentId: "playbook", steps: [{ text: "[a] A", status: "pending" }], ts: 2000 },
+      {
+        type: "run_step",
+        agentId: "playbook",
+        runId: RUN,
+        runKind: "playbook",
+        phase: "run_end",
+        stopReason: "done",
+        ts: 2100,
+      },
+    ] as unknown as RunEvent[]);
+    const ids = model.lanes.map((l) => l.id);
+    expect(ids, "premise: the fleet's lanes are there").toContain("worker-1");
+    expect(ids).not.toContain("playbook");
+  });
+});

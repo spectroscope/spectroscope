@@ -81,6 +81,19 @@ describe("the message block", () => {
     expect(out).toContain("Antworten");
   });
 
+  it("says a message came back unread, in both languages (card 594)", () => {
+    const back = {
+      ...received,
+      direction: "sent" as const,
+      from: "main",
+      to: "explore-2",
+      status: "returned",
+    };
+    expect(html(back)).toContain("returned unread");
+    expect(html(back, true, "de")).toContain("ungelesen zurück");
+    expect(html(back)).not.toContain("msg.status.");
+  });
+
   it("sends peer_message_decision for Deliver and Decline", () => {
     expect(decisionFrame("m1", true)).toEqual({ type: "peer_message_decision", msgId: "m1", deliver: true });
     expect(decisionFrame("m1", false)).toEqual({

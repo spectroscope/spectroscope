@@ -150,7 +150,10 @@ public final class SendMessageTool implements Tool {
             return "ERROR: " + childRefusal(to, miss);
         }
         if (found.row() == null) {
-            return "ERROR: " + found.refusal();
+            // Card 581: a name that reaches nobody but a child that has ended is named as
+            // ended. An ambiguous name, a wrong ref and a rebound name keep their refusal.
+            String ended = found.nameUnknown() ? seat.endedChild(AgentAddress.bare(to)) : null;
+            return "ERROR: " + (ended != null ? ended : found.refusal());
         }
         AgentRow row = found.row();
         if (notify && row.kind().inRun()) {
@@ -174,7 +177,11 @@ public final class SendMessageTool implements Tool {
                         message, sent.msgId(), System.currentTimeMillis()));
             }
             out.append("Sent \"").append(summary).append("\" to ").append(label(row));
-            out.append(row.kind().inRun()
+            out.append(row.kind() == AgentRow.Kind.CHILD
+                    // Card 594: a helper that ends before it reads it hands it back.
+                    ? " (in its inbox; it reads it at its next step. If it ends before it reads it, the message"
+                    + " comes back to you as a [Delivery notice])."
+                    : row.kind().inRun()
                     ? " (in its inbox; it reads it at its next step)."
                     : " (queued there; a [Delivery notice] follows if that session holds or refuses it).");
             out.append(" msg_id: ").append(sent.msgId());

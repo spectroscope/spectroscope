@@ -85,8 +85,8 @@ the answer to "why is this 404?" is always one click away.
 - `POST /api/local-model/download` starts a **multi-gigabyte** download into
   `~/.spectro/models` — keep it out of automated replays.
 - `POST /api/fleet/nodes` needs the server started with
-  `SPECTRO_ALLOW_SPAWN` **and** a running hub (`SPECTRO_HUB_PORT`) —
-  otherwise every answer is 404, by design.
+  `SPECTRO_ALLOW_SPAWN` **and** a running hub (`SPECTRO_HUB_ENABLED`, or
+  `SPECTRO_HUB_PORT` on its own). Otherwise every answer is 404, by design.
 - `POST /api/pick-workspace` blocks up to 120 s on a native macOS dialog.
 - `POST /api/explain` and the cloud translate engine spend the operator's
   API key.

@@ -23,9 +23,9 @@ export type MessageTurn = Extract<Turn, { kind: "message" }>;
  */
 export const WORKFLOW_SUMMARISER_LABEL_PREFIX = "workflow:";
 
-/** The six delivery states of card 502, plus the two a block starts in. */
+/** The six delivery states of card 502, the two a block starts in, and card 594's returned. */
 export type MessageStatus =
-  "queued" | "received" | "held" | "denied" | "expired" | "delivered" | "refused" | "dropped";
+  "queued" | "received" | "held" | "denied" | "expired" | "delivered" | "refused" | "dropped" | "returned";
 
 const STATUSES: ReadonlySet<string> = new Set([
   "queued",
@@ -36,6 +36,7 @@ const STATUSES: ReadonlySet<string> = new Set([
   "delivered",
   "refused",
   "dropped",
+  "returned",
 ]);
 
 /** How far along a message is: a later state never gives way to an earlier one. */
@@ -48,6 +49,8 @@ const RANK: Record<MessageStatus, number> = {
   expired: 2,
   refused: 2,
   dropped: 2,
+  // Card 594: final; nothing after it moves a message that came back.
+  returned: 3,
 };
 
 /** The patch one frame or record brings to a block. */
@@ -92,7 +95,10 @@ function upsert(state: UiState, patch: Patch): UiState {
       to: patch.to ?? "",
       ...(patch.fromSession !== undefined ? { fromSession: patch.fromSession } : {}),
       time: patch.time ?? Date.now(),
-      status: patch.status ?? (patch.direction === "sent" ? "queued" : "received"),
+      // Card 594: the line that handed it back may have come first.
+      status: state.returnedMsgIds.includes(patch.msgId)
+        ? "returned"
+        : (patch.status ?? (patch.direction === "sent" ? "queued" : "received")),
       summary: patch.summary ?? firstLine(text),
       text,
       msgId: patch.msgId,
@@ -228,6 +234,7 @@ function childIds(agents: readonly AgentInfo[]): Set<string> {
 export function foldPeerRecord(state: UiState, event: Extract<RunEvent, { type: "agent_message" }>): UiState {
   const msgId = str(event.label);
   if (msgId === undefined) return state;
+  if (event.state === "returned") return withReturnedLine(state, msgId, event.text, event.from);
   const children = childIds(state.agents);
   const sent = event.state === "sent";
   // Card 506: a workflow summariser's message to its parent is the run's
@@ -252,6 +259,58 @@ export function foldPeerRecord(state: UiState, event: Extract<RunEvent, { type: 
     ...(agentId !== undefined ? { agentId } : {}),
     ...(answer ? { answer: true } : {}),
   });
+}
+
+/**
+ * Card 594: the line PeerNotices.returned writes for the sending model. The
+ * fields it quotes are cleaned of guillemets on the Java side, so the reason
+ * ends at the one "). The message began: «" and the start at the first "»".
+ * testkit/returnedLine.txt holds one such line, and both sides test against it.
+ */
+const RETURNED_LINE =
+  /^\[Delivery notice\] Your message to .+? was not delivered: .+? ended before it read it \((.*)\)\. The message began: \u00ab([^\u00bb]*)\u00bb\./u;
+
+/**
+ * Card 594: the reason and the start of the message out of a returned line.
+ *
+ * @param text the line as the record carries it
+ * @returns both parts, or null for a line in another wording
+ */
+export function parseReturnedLine(text: string): { reason: string; start: string } | null {
+  const match = RETURNED_LINE.exec(text);
+  return match === null ? null : { reason: match[1], start: match[2] };
+}
+
+/**
+ * Card 594: a helper ended with this message unread and handed it back. The
+ * message's block says so, at once or when it appears later. The chat shows
+ * the line in its own language, with the helper, the reason and the start of
+ * the message; the English line the model read stays as the fallback, and a
+ * line in another wording is shown as written.
+ *
+ * @param state  the state the record lands on
+ * @param msgId  the message that came back
+ * @param line   the line its sender read
+ * @param helper the helper that ended without reading it
+ * @returns the state with the block marked and the line added
+ */
+function withReturnedLine(state: UiState, msgId: string, line: string, helper: string): UiState {
+  const known = state.turns.some((t) => t.kind === "message" && t.msgId === msgId);
+  const marked = known
+    ? upsert(state, { msgId, status: "returned" })
+    : { ...state, returnedMsgIds: [...state.returnedMsgIds, msgId] };
+  const parts = parseReturnedLine(line);
+  const turn: Turn =
+    parts === null
+      ? { kind: "info", text: line, tone: "warn" }
+      : {
+          kind: "info",
+          text: line,
+          tone: "warn",
+          infoKey: "msg.returned",
+          infoVars: { helper, reason: parts.reason, start: parts.start },
+        };
+  return { ...marked, turns: [...marked.turns, turn] };
 }
 
 /** Whether an agent is a child a workflow started as its summariser. */

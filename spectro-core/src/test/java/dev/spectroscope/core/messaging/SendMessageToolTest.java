@@ -221,6 +221,25 @@ class SendMessageToolTest {
     }
 
     @Test
+    void aSendToAChildSaysTheMessageComesBackWhenTheChildEndsBeforeReadingIt() {
+        // Card 594, review M8: the answer the sending model reads.
+        FakeSeat seat = new FakeSeat();
+        seat.runAgents.add(AgentRow.inRun(AgentRow.Kind.CHILD, "explore-1", "explore-1", "explore", "working",
+                null));
+        String out = new SendMessageTool(seat).execute(input("explore-1", "status?", null, null),
+                context(run, "main"));
+        assertTrue(out.startsWith("Sent \"status?\" to explore-1 (in its inbox; it reads it at its next step."), out);
+        assertTrue(out.contains("If it ends before it reads it, the message comes back to you as a [Delivery notice]"),
+                out);
+        String toParent = new SendMessageTool(childSeat()).execute(input("parent", "done", null, null),
+                context(run, "explore-1"));
+        assertTrue(toParent.startsWith("Sent \"done\" to parent (in its inbox; it reads it at its next step)."),
+                toParent);
+        assertFalse(toParent.contains("comes back"), "a message to the parent says nothing of coming back: "
+                + toParent);
+    }
+
+    @Test
     void aSendToASessionIsRecordedAsAnAgentMessageSent() {
         FakeSeat seat = new FakeSeat();
         seat.sessions.add(session("ForgeDemo-7f", "s2"));
@@ -396,6 +415,55 @@ class SendMessageToolTest {
         String out = new SendMessageTool(seat).execute(input("ForgeDemo-7f", "hi", null, null),
                 context(run, "explore-1"));
         assertTrue(out.startsWith("ERROR: Not sent: ForgeDemo-7f is not your parent."), out);
+    }
+
+    // ── card 581: an ended child is named as ended only where its name reaches nobody ──
+
+    private static final String ENDED = "Not sent: explore-1 has ended and reads no more messages.";
+
+    private static FakeSeat seatWithEndedChild() {
+        FakeSeat seat = new FakeSeat();
+        seat.endedChildren.put("explore-1", ENDED);
+        return seat;
+    }
+
+    @Test
+    void aNameThatReachesNobodyButAnEndedChildIsRefusedAsEnded() {
+        String out = new SendMessageTool(seatWithEndedChild()).execute(input("EXPLORE-1", "more?", null, null),
+                context(run, "main"));
+        assertEquals("ERROR: " + ENDED, out);
+    }
+
+    @Test
+    void anAmbiguousNameKeepsItsRefusalWhenAnEndedChildSharesIt() {
+        FakeSeat seat = seatWithEndedChild();
+        seat.sessions.add(session("explore-1", "s1"));
+        seat.sessions.add(session("explore-1", "s2"));
+        String out = new SendMessageTool(seat).execute(input("explore-1", "more?", null, null), context(run, "main"));
+        assertTrue(out.startsWith("ERROR: Not sent: two agents answer to 'explore-1'"), out);
+        assertTrue(seat.sent.isEmpty(), seat.sent.toString());
+    }
+
+    @Test
+    void aWrongRefKeepsItsRefusalWhenAnEndedChildSharesTheName() {
+        FakeSeat seat = seatWithEndedChild();
+        seat.sessions.add(session("explore-1", "s1"));
+        String out = new SendMessageTool(seat).execute(input("explore-1 [abcdef]", "more?", null, null),
+                context(run, "main"));
+        assertTrue(out.startsWith("ERROR: Not sent: no agent named 'explore-1' has the ref [abcdef]"), out);
+    }
+
+    @Test
+    void aReboundNameKeepsItsRefusalWhenAnEndedChildSharesIt() {
+        FakeSeat seat = seatWithEndedChild();
+        seat.sessions.add(session("explore-1", "s1"));
+        SendMessageTool tool = new SendMessageTool(seat);
+        String first = tool.execute(input("explore-1", "hello", null, null), context(run, "main"));
+        assertTrue(first.startsWith("Sent \"hello\" to explore-1"), first);
+        seat.sessions.clear();
+        seat.sessions.add(session("explore-1", "s9"));
+        String out = tool.execute(input("explore-1", "more?", null, null), context(run, "main"));
+        assertTrue(out.startsWith("ERROR: Not sent: 'explore-1' now names a different agent"), out);
     }
 
     @Test

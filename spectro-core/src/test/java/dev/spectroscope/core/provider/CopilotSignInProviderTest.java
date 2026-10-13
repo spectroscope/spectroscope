@@ -295,6 +295,36 @@ class CopilotSignInProviderTest {
         assertTrue(refused.getMessage().contains("not signed in"), refused.getMessage());
     }
 
+    /**
+     * Card 583 (second review F6): a run without any credential is refused
+     * before any runtime starts. The runtime here is an executable that
+     * exists and writes a line each time it starts; the model questions the
+     * agent asks first (window, sight, reasoning) and the model list start it
+     * no more than the run does.
+     */
+    @Test
+    void aRunWithoutACredentialStartsNoRuntimeAtAll() throws Exception {
+        Path started = dir.resolve("started.txt");
+        Path cli = dir.resolve("copilot");
+        Files.writeString(cli, "#!/bin/sh\necho \"started $*\" >> '" + started + "'\nexit 1\n");
+        Files.setPosixFilePermissions(cli, PosixFilePermissions.fromString("rwxr-xr-x"));
+        provider = new CopilotProvider(new CopilotProvider.Options("claude-sonnet-5", cli.toString(), null, false),
+                MAC, null);
+
+        IllegalStateException refused = assertThrows(IllegalStateException.class,
+                () -> drain(provider.stream(ask("hi"))));
+        IllegalStateException listed = assertThrows(IllegalStateException.class, provider::models);
+        LlmProvider.Vision vision = provider.vision();
+        int window = provider.contextWindow();
+
+        assertFalse(Files.exists(started), "the runtime ran without a credential: "
+                + (Files.exists(started) ? Files.readAllLines(started) : List.of()));
+        assertTrue(refused.getMessage().contains("not signed in"), refused.getMessage());
+        assertTrue(listed.getMessage().contains("not signed in"), listed.getMessage());
+        assertEquals(LlmProvider.Vision.UNKNOWN, vision);
+        assertEquals(0, window);
+    }
+
     @Test
     void anAuthorizationErrorUnderTheCliChoiceReachesTheRefusalListener() throws Exception {
         // Card 495, final round: the CLI choice has no token source, and its refusals still reach the sheet.

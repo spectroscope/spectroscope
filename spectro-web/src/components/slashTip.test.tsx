@@ -231,7 +231,11 @@ describe("the picker hands the popover the focused row", () => {
     // Card 471: the commands share that index and stand first, so a skill's
     // place in it is its place in the skill list plus the commands above it.
     expect(source).toMatch(/slashTipView\(options, index - commands\.length\)/);
-    expect(source).toMatch(/onMouseEnter=\{\(\) => setIndex\(at\)\}/);
+    // Card 588, fix round: the hover also notes that the pointer moved it, so
+    // the list does not scroll under the pointer (slashPickerKeepInView.test.ts).
+    expect(source).toMatch(
+      /onMouseEnter=\{\(\) => \{\s*movedBy\.current = "pointer";\s*setIndex\(at\);\s*\}\}/,
+    );
     expect(source).toMatch(/const at = commands\.length \+ skillAt;/);
     expect(source).toMatch(/const rowCount = commands\.length \+ options\.length;/);
     expect(source).toMatch(/setIndex\(\(i\) => \(i \+ step \+ rowCount\) % rowCount\)/);
@@ -252,7 +256,11 @@ describe("the picker hands the popover the focused row", () => {
 
   it("keeps Escape and Enter the picker's own", () => {
     const source = stripComments(read("./SlashPicker.tsx", import.meta.url));
-    expect(source).toMatch(/event\.key === "Escape"[\s\S]{0,120}setDismissed\(true\)/);
+    // Card 588, fix round: Escape puts away the commands and the skill token on
+    // offer, each on its own (slashPickerEscape.test.ts), and keeps the key.
+    expect(source).toMatch(
+      /event\.key === "Escape"[\s\S]{0,120}setCommandsAway\(true\)[\s\S]{0,120}setSkillsAwayAt\(at\.start\);\s*return true;/,
+    );
     expect(source).toMatch(/event\.key === "Enter" \|\| event\.key === "Tab"[\s\S]{0,120}pick\(active\)/);
   });
 

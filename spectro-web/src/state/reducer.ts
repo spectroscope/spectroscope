@@ -15,6 +15,8 @@ import {
   parsePlaybookInfo,
   pickOfLine,
   progressLine,
+  workflowLine,
+  answerStart,
   type PlaybookConfirm,
   type PlaybookPick,
 } from "./playbookChat";
@@ -31,6 +33,8 @@ import {
 } from "./goalLoop";
 import { foldPeerFrame, foldPeerRecord } from "./peerMessages";
 import { parseSessionItems, type SessionItems } from "./sessionItems";
+import { isTypedCommand } from "./typedCommand";
+import { cutOpenRuns, foldRun, runningChatEntryKey, type RunTrack } from "./runView";
 
 export interface ToolCard {
   callId: string;
@@ -98,6 +102,8 @@ export type Turn =
        *  into the chat, which is not the owner's turn. Absent on every prompt
        *  a person typed. */
       by?: "playbook";
+      /** Card 586: the run entry this prompt belongs to. */
+      runEntry?: string;
     }
   | {
       kind: "assistant";
@@ -151,11 +157,20 @@ export type Turn =
        *  link opens (the answer to /playbook show). Page-only, never folded
        *  from the wire. */
       openPlaybook?: string;
+      /** Card 586: the run a start line opens; the chat links the line to it. */
+      runId?: string;
     }
   /** agentId marks a failure that belongs to a subagent's thread — `error` has
    *  carried the field on the wire all along, and a session import sets it for
    *  an outage recorded inside a child. Absent is the run's own failure. */
-  | { kind: "error"; text: string; agentId?: string }
+  | {
+      kind: "error";
+      text: string;
+      agentId?: string;
+      /** Card 576: folded while UiState.afterCommand was set, after a command
+       *  typed in the composer. It answers the command, not a prompt. */
+      afterCommand?: true;
+    }
   /** Card 503: one agent message, sent or received, keyed by its msg_id.
    *  Folded from the socket-only peer_message frame and from the
    *  agent_message records with role peer (state/peerMessages.ts). */
@@ -285,11 +300,10 @@ export interface AgentInfo {
   lastStatus: string | null;
   inTokens: number;
   outTokens: number;
-  /** The model this agent ran on, when something said so. Only an import ever
-   *  does: a live subagent runs on the run's own model, and a transcript names
-   *  the child's model on the launch record (card 167). Absent, not null —
-   *  every live session and every older transcript says nothing here, and a
-   *  row with no chip is exactly a row nothing was said about. */
+  /** The model this agent ran on, when something said so: an import's launch
+   *  record names the child's model (card 167), and since card 593 a live
+   *  helper's own run_start does. The root's model is `runModel`. Absent, not
+   *  null: a row with no chip is exactly a row nothing was said about. */
   model?: string;
   /** The child was launched into the background and never reported back inside
    *  the transcript. Only ever true; a child that did report back says so by
@@ -356,6 +370,16 @@ export interface WindowAnnouncement {
   thresholdSource?: ThresholdSource;
 }
 
+/** Card 593: what the ring shows for one helper: its last request size (the
+ *  root's formula), its last sizes-only snapshot and the window its run_start
+ *  named since that snapshot. The root's figures are the three fields of the
+ *  same names on UiState. */
+export interface HelperFigures {
+  lastInputTokens: number;
+  context: ContextSnapshot | null;
+  announcedWindow: WindowAnnouncement | null;
+}
+
 export interface UiState {
   turns: Turn[];
   /** tool_call + tool_result, paired by callId. */
@@ -402,8 +426,8 @@ export interface UiState {
    *  starts. The pane says this out loud: a tool that promises you can watch
    *  everything must not drop the beginning of an incident without a word. */
   traceDropped: number;
-  /** Latest context_info snapshot of the run's own agent (card 521: a
-   *  child's never lands here). Latest wins, null until the first one. */
+  /** Latest context_info snapshot of the run's own agent; a helper's lands in
+   *  {@link UiState.helpers} (card 593). Latest wins, null until the first one. */
   context: ContextSnapshot | null;
   /** Card 521: the window the main agent's run_start or the server's
    *  provider_info named after the last snapshot, or null. The ring reads
@@ -412,6 +436,10 @@ export interface UiState {
   /** inputTokens of the LAST usage event of the run's own agent — the context
    *  ring's live value (the provider reports the true request size). */
   lastInputTokens: number;
+  /** Card 593: the figures of every helper, by agent id: its last request
+   *  size, its last sizes-only snapshot and the window its run_start named
+   *  since. The root never lands here; its three fields are above. */
+  helpers: Record<string, HelperFigures>;
   /**
    * The agent the root run opened under, or null before one has.
    *
@@ -453,6 +481,10 @@ export interface UiState {
   /** Card 482: the agent id of the latest plan, null until the first one. A
    *  playbook run writes its plan as "playbook" (planVerdict.ts). */
   planAgent: string | null;
+  /** Card 593: the latest plan of each writer, by agent id: the root's under
+   *  its id, a playbook run's under "playbook". `plan` and `planAgent` keep
+   *  the latest frame for the footer and the HTML export. */
+  plans: Record<string, PlanStep[]>;
   /** The session's workspace announcement — the Files tab reads it. */
   workspace: WorkspaceInfo | null;
   /** The active backend announcement — latest wins (connect + every switch). */
@@ -493,6 +525,12 @@ export interface UiState {
    *  socket-only playbook_confirm frame. Null when none is open; the run's
    *  start closes it. */
   playbookConfirm: PlaybookConfirm | null;
+  /** Card 586: the runs of this session, folded from run_step and the events of each step's agents. */
+  runs: RunTrack[];
+  /** Card 576: a frame of a command typed in the composer (asTypedCommand)
+   *  left since the last user_message or steering_message (noteSent). An
+   *  error folded meanwhile answers that command. Absent otherwise. */
+  afterCommand?: true;
   /** Card 558: the session's skills, commands and agents as the server reads
    *  them for its next turn, from the socket-only session_items frame. Null
    *  until the first frame; a later frame replaces it. */
@@ -508,6 +546,9 @@ export interface UiState {
    *  listed comes from a turn that wrote nothing (a tool call alone): it counts
    *  toward the totals and stamps no answer. Transient bookkeeping, not shown. */
   answerAwaitingUsage: string[];
+  /** Card 594: the msg ids of messages a helper handed back unread, so a
+   *  block that appears only after its returned line is still marked. */
+  returnedMsgIds: string[];
 }
 
 export const initialState: UiState = {
@@ -531,6 +572,7 @@ export const initialState: UiState = {
   context: null,
   announcedWindow: null,
   lastInputTokens: 0,
+  helpers: {},
   rootAgentId: null,
   thinkingActive: false,
   thinkingAgents: [],
@@ -539,6 +581,7 @@ export const initialState: UiState = {
   agents: [],
   plan: null,
   planAgent: null,
+  plans: {},
   workspace: null,
   providerInfo: null,
   lastOtlpExport: null,
@@ -552,10 +595,12 @@ export const initialState: UiState = {
   loop: null,
   playbook: null,
   playbookConfirm: null,
+  runs: [],
   sessionItems: null,
   runTurn: null,
   assistantTurnStart: {},
   answerAwaitingUsage: [],
+  returnedMsgIds: [],
 };
 
 /**
@@ -657,6 +702,11 @@ function upsertAgent(
   return next;
 }
 
+/** Card 593: a helper's slot, blank until its first frame. */
+function helperSlot(helpers: Record<string, HelperFigures>, id: string): HelperFigures {
+  return helpers[id] ?? { lastInputTokens: 0, context: null, announcedWindow: null };
+}
+
 /** Fold one event into the session-wide agent roster (never clears it). */
 function foldAgents(agents: AgentInfo[], event: RunEvent, rootRunId: string | null): AgentInfo[] {
   switch (event.type) {
@@ -666,6 +716,8 @@ function foldAgents(agents: AgentInfo[], event: RunEvent, rootRunId: string | nu
         state: "working",
         runId: event.runId,
         ...(event.parentId == null ? { label: null } : {}),
+        // Card 593: a helper's own run names its model; the root's is runModel.
+        ...(event.parentId != null && event.model !== undefined ? { model: event.model } : {}),
       });
     case "agent_spawn":
       return upsertAgent(agents, event.agentId, { parentId: event.parentId, task: event.task });
@@ -1024,6 +1076,10 @@ export function reduceUntraced(state: UiState, event: RunEvent): UiState {
  *  the state the frame lands on, with the row already appended when
  *  {@link reduce} built one. */
 function applyFrame(traced: UiState, event: RunEvent): UiState {
+  // Card 586: the runs fold first, so every branch below sees them. A frame
+  // that touches no run leaves the array, and with it the state, as it was.
+  const runs = foldRun(traced.runs, event);
+  if (runs !== traced.runs) traced = { ...traced, runs };
   const raw = event as { type: string; ts?: unknown; agentId?: unknown };
   // The socket-only workspace_info frame is handled HERE, at the socket
   // boundary — the pure RunEvent switch below stays sealed to wire events.
@@ -1218,6 +1274,10 @@ function applyFrame(traced: UiState, event: RunEvent): UiState {
   if (raw.type === "playbook_confirm") {
     return { ...traced, playbookConfirm: parsePlaybookConfirm(event) ?? traced.playbookConfirm };
   }
+  // Card 584, second fix round: the server's refusal of one start, by its id.
+  if (raw.type === "playbook_start_refused") {
+    return { ...traced, playbookConfirm: answerStart(traced.playbookConfirm, event) };
+  }
   // Card 558: the session's items, socket-only; a frame that cannot be read
   // keeps the last truth, a readable one replaces it (criterion 3).
   if (raw.type === "session_items") {
@@ -1251,6 +1311,28 @@ export function foldLocalLine(
     tone: more.tone ?? "neutral",
     ...(more.openPlaybook === undefined ? {} : { openPlaybook: more.openPlaybook }),
   });
+}
+
+/**
+ * Card 576: what a frame that left says about the errors after it. A frame
+ * the composer tagged for a command typed in it (asTypedCommand) marks them
+ * as its answer. A user_message or a steering_message ends the mark. Every
+ * other frame leaves the state as it is, an untagged frame of a command's
+ * type included (the header's playbook pick, the loop chip's Stop). Kept in
+ * the record, so a view switch and a wake keep it.
+ *
+ * @param state   the record's state
+ * @param message the frame that hit the wire
+ * @return the state, the same object when nothing changed
+ */
+export function noteSent(state: UiState, message: ClientMessage): UiState {
+  if (message.type === "user_message" || message.type === "steering_message") {
+    if (state.afterCommand === undefined) return state;
+    const { afterCommand: _ended, ...rest } = state;
+    return rest;
+  }
+  if (!isTypedCommand(message) || state.afterCommand === true) return state;
+  return { ...state, afterCommand: true };
 }
 
 /** Outgoing frames (ClientMessage) enter the trace through this helper — the
@@ -1290,13 +1372,35 @@ function announcement(contextWindow: unknown, source: unknown): WindowAnnounceme
   };
 }
 
+/** Card 554 and 586: the marks of a prompt a playbook step sent into the chat.
+ *  It is the playbook's turn, and it names the run entry of the chat step that
+ *  is running, when a run_step line opened one. */
+function playbookPrompt(runs: RunTrack[]): { by: "playbook"; runEntry?: string } {
+  const runEntry = runningChatEntryKey(runs);
+  return runEntry === null ? { by: "playbook" } : { by: "playbook", runEntry };
+}
+
 function applyEvent(state: UiState, event: RunEvent): UiState {
   switch (event.type) {
     case "run_start": {
       // Subagent runs carry parentId — they keep the run alive but get no
       // user bubble (agent_spawn already announced them).
       if (event.parentId != null) {
-        return { ...state, running: true };
+        // Card 593: the window a helper's run derived rides on its run_start
+        // (card 521); the ring reads it for the helper until its first snapshot.
+        const named = event.windowSource !== undefined || event.contextWindow !== undefined;
+        if (!named) return { ...state, running: true };
+        return {
+          ...state,
+          running: true,
+          helpers: {
+            ...state.helpers,
+            [event.agentId]: {
+              ...helperSlot(state.helpers, event.agentId),
+              announcedWindow: announcement(event.contextWindow, event.windowSource),
+            },
+          },
+        };
       }
       // Live: the root run picks up the thumbnails parked on send.
       // Replay has no bytes (the event carries only blobPath/sha256): one text
@@ -1339,7 +1443,7 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
           text: event.prompt + placeholder,
           ...(attachments?.length ? { attachments } : {}),
           // Card 554, criterion 8f: a playbook step's prompt is not the owner's turn.
-          ...(event.origin === "playbook" ? { by: "playbook" as const } : {}),
+          ...(event.origin === "playbook" ? playbookPrompt(state.runs) : {}),
         },
       );
     }
@@ -1356,6 +1460,14 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
     // Card 554, criterion 8e: the pick the session file recorded.
     case "playbook_picked":
       return { ...state, playbook: pickOfLine(event, state.playbook) };
+
+    // Card 586: applyFrame folded the line into the runs already. A workflow
+    // run has no playbook_progress, so its start and end lines come from here;
+    // a playbook run keeps its own lines.
+    case "run_step": {
+      const line = workflowLine(event);
+      return line === null ? state : addTurn(state, line);
+    }
 
     case "turn_start": {
       // No UI element of its own — the next text_delta begins the block.
@@ -1854,6 +1966,18 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
           event.agentId === (state.rootAgentId ?? "main")
             ? event.inputTokens + (event.cacheReadTokens ?? 0) + (event.cacheCreationTokens ?? 0)
             : state.lastInputTokens,
+        // Card 593: a helper's fill, the root's formula, in its own slot.
+        helpers:
+          event.agentId === (state.rootAgentId ?? "main")
+            ? state.helpers
+            : {
+                ...state.helpers,
+                [event.agentId]: {
+                  ...helperSlot(state.helpers, event.agentId),
+                  lastInputTokens:
+                    event.inputTokens + (event.cacheReadTokens ?? 0) + (event.cacheCreationTokens ?? 0),
+                },
+              },
       };
     }
 
@@ -1933,6 +2057,7 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
         kind: "error",
         text: event.message,
         ...(event.agentId !== undefined ? { agentId: event.agentId } : {}),
+        ...(state.afterCommand === true ? { afterCommand: true as const } : {}),
       });
 
     case "image_generated": {
@@ -1955,28 +2080,38 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
       return { ...state, images: [...state.images, image] };
     }
 
-    case "context_info":
-      // No chat turn — introspection feeds the context ring and the trace
-      // only. Latest snapshot wins.
-      // Card 521: the run's own agent only. A child runs against its own
-      // window, and its snapshot replacing the parent's made the ring divide
-      // a parent's usage by a child's window.
-      if (event.agentId !== (state.rootAgentId ?? "main")) return state;
-      return {
-        ...state,
-        announcedWindow: null,
-        context: {
-          turn: event.turn,
-          messages: event.messages,
-          estimatedTokens: event.estimatedTokens,
-          threshold: event.threshold,
-          // Spread rather than assign: a frame that stated no provenance must
-          // leave the KEY absent, not present-and-undefined.
-          ...(event.thresholdSource === undefined ? {} : { thresholdSource: event.thresholdSource }),
-          ...(event.contextWindow === undefined ? {} : { contextWindow: event.contextWindow }),
-          parts: event.parts,
-        },
+    case "context_info": {
+      // No chat turn: introspection feeds the context ring and the trace
+      // only. Latest snapshot wins. Card 521 kept a child's snapshot off the
+      // root's fields, because the ring divided a parent's usage by a child's
+      // window; card 593 gives the child its own slot, read when the ring
+      // shows that child.
+      const snapshot: ContextSnapshot = {
+        turn: event.turn,
+        messages: event.messages,
+        estimatedTokens: event.estimatedTokens,
+        threshold: event.threshold,
+        // Spread rather than assign: a frame that stated no provenance must
+        // leave the KEY absent, not present-and-undefined.
+        ...(event.thresholdSource === undefined ? {} : { thresholdSource: event.thresholdSource }),
+        ...(event.contextWindow === undefined ? {} : { contextWindow: event.contextWindow }),
+        parts: event.parts,
       };
+      if (event.agentId !== (state.rootAgentId ?? "main")) {
+        return {
+          ...state,
+          helpers: {
+            ...state.helpers,
+            [event.agentId]: {
+              ...helperSlot(state.helpers, event.agentId),
+              context: snapshot,
+              announcedWindow: null,
+            },
+          },
+        };
+      }
+      return { ...state, announcedWindow: null, context: snapshot };
+    }
 
     case "window_override":
       // Card 390: the server's answer to the operator setting or clearing the
@@ -2006,9 +2141,15 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
       };
 
     case "plan":
-      // No chat turn — the Plan tab renders this snapshot. Latest wins, exactly
-      // like context_info.
-      return { ...state, plan: event.steps, planAgent: event.agentId };
+      // No chat turn: the Plan tab renders the writer's latest snapshot. Card
+      // 593 keeps one per writer, so a playbook run and the main agent no
+      // longer overwrite each other; plan and planAgent stay the latest frame.
+      return {
+        ...state,
+        plan: event.steps,
+        planAgent: event.agentId,
+        plans: { ...state.plans, [event.agentId]: event.steps },
+      };
 
     default: {
       // An import-only frame the wire union does not know (card 167): what the
@@ -2112,6 +2253,9 @@ export const reduceAllUntraced = (s: UiState, events: RunEvent[]): UiState =>
 export function normalizeReplay(state: UiState): UiState {
   return {
     ...state,
+    // Card 586 (review I4): a run the record left without its run_end will
+    // not end; it is cut, so it takes nothing from a continued chat.
+    runs: cutOpenRuns(state.runs),
     running: false,
     compacting: false,
     rootRunId: null,

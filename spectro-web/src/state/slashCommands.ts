@@ -25,8 +25,8 @@ export interface SkillOption {
   disabled: boolean;
   /** Card 558: a skill or a command of the session (session_items); absent for an /api/skills row. */
   kind?: "skill" | "command";
-  /** Card 558: where the session reads it; absent for an /api/skills row. */
-  source?: "workspace" | "playbook" | "user";
+  /** Card 558: where the session reads it; absent for an /api/skills row. Card 587 adds app. */
+  source?: "workspace" | "playbook" | "user" | "app";
   /** Card 558: the playbook's name, for a playbook item's label. */
   sourceName?: string;
 }

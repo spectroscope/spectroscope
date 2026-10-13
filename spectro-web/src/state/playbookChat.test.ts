@@ -11,6 +11,8 @@
 import { describe, expect, it } from "vitest";
 import type { RunEvent } from "../events";
 import { dict } from "../i18n/i18n";
+import { markStarting, nextStartAsk } from "./playbookChat";
+import { NON_WIRE_TYPES } from "../wire/nonWire";
 import { initialState, reduce, type Turn, type UiState } from "./reducer";
 import { recallEntries } from "../components/composerKeys";
 import { read, blockOf } from "../testkit/source";
@@ -127,6 +129,77 @@ describe("the start sheet's content (playbook_confirm)", () => {
     );
     expect(state.playbookConfirm).toBeNull();
   });
+
+  // Card 584, fix round (review N7): the sheet stays open until the server
+  // starts the run, and a refusal of the start shows in it.
+  it("marks a sent start with the id it asked with, and keeps the picks' preview", () => {
+    const open = fold({ type: "playbook_confirm", dir: "/pb/spectro", prompt: "x", preview: PREVIEW });
+    const starting = markStarting(open.playbookConfirm!, "start-1");
+    expect(starting).toMatchObject({ starting: true, ask: "start-1", refusal: null });
+    expect(starting.preview, "the picks of the sheet belong to this preview").toBe(PREVIEW);
+  });
+
+  // Second fix round: the sheet shows only the refusal of its own start.
+  it("shows the refusal that answers its own start, in the sheet as well as in the chat", () => {
+    const open = fold({ type: "playbook_confirm", dir: "/pb/spectro", prompt: "x", preview: PREVIEW });
+    const starting = { ...open, playbookConfirm: markStarting(open.playbookConfirm!, "start-1") };
+
+    const refused = reduce(
+      reduce(starting, { type: "error", message: "The model pick for tidy does not serve: x." } as RunEvent),
+      {
+        type: "playbook_start_refused",
+        ask: "start-1",
+        message: "The model pick for tidy does not serve: x.",
+      } as never,
+    );
+
+    expect(refused.playbookConfirm).toMatchObject({
+      starting: false,
+      ask: "start-1",
+      refusal: "The model pick for tidy does not serve: x.",
+    });
+    expect(refused.turns.at(-1)).toMatchObject({ kind: "error" });
+    expect(markStarting(refused.playbookConfirm!, "start-2")).toMatchObject({
+      starting: true,
+      ask: "start-2",
+      refusal: null,
+    });
+  });
+
+  it("does not take an error of something else, or the refusal of another start, for its refusal", () => {
+    const open = fold({ type: "playbook_confirm", dir: "/pb/spectro", prompt: "x", preview: PREVIEW });
+    const starting = { ...open, playbookConfirm: markStarting(open.playbookConfirm!, "start-1") };
+
+    const afterError = reduce(starting, { type: "error", message: "something else" } as RunEvent);
+    expect(afterError.playbookConfirm, "an error in the window is no answer").toBe(starting.playbookConfirm);
+    expect(afterError.turns.at(-1)).toMatchObject({ kind: "error", text: "something else" });
+
+    const other = reduce(starting, {
+      type: "playbook_start_refused",
+      ask: "start-0",
+      message: "old",
+    } as never);
+    expect(other.playbookConfirm).toBe(starting.playbookConfirm);
+
+    const notStarted = reduce(open, {
+      type: "playbook_start_refused",
+      ask: "start-1",
+      message: "late",
+    } as never);
+    expect(notStarted.playbookConfirm).toBe(open.playbookConfirm);
+    expect(
+      reduce(initialState, { type: "playbook_start_refused", ask: "start-1", message: "x" } as never)
+        .playbookConfirm,
+    ).toBeNull();
+  });
+
+  it("is a frame of the page only, never written", () => {
+    expect(NON_WIRE_TYPES.has("playbook_start_refused")).toBe(true);
+  });
+
+  it("gives every start its own id", () => {
+    expect(nextStartAsk()).not.toBe(nextStartAsk());
+  });
 });
 
 describe("a run's lines in the chat (playbook_progress, criterion 8f)", () => {
@@ -189,6 +262,28 @@ describe("a run's lines in the chat (playbook_progress, criterion 8f)", () => {
     const [line] = infos(fold(progress({ phase: "end", stopReason: "brand_new" })));
     expect(line.infoRefKey).toBeUndefined();
     expect(line.infoVars).toMatchObject({ ref: "brand_new" });
+  });
+
+  // Card 586: the start line links to the run it opens.
+  it("names the run on its start line, with and without a task, and on no other line", () => {
+    const [withTask] = infos(
+      fold(progress({ phase: "start", playbook: "spectro", task: "add a CSV export" })),
+    );
+    expect(withTask.runId).toBe("pr-1");
+    const [noTask] = infos(fold(progress({ phase: "start", playbook: "spectro" })));
+    expect(noTask.runId).toBe("pr-1");
+    const [step] = infos(fold(progress({ phase: "step", node: "classify", name: "Classify" })));
+    expect(Object.keys(step)).not.toContain("runId");
+    const [end] = infos(fold(progress({ phase: "end", stopReason: "done" })));
+    expect(Object.keys(end)).not.toContain("runId");
+  });
+
+  it("names no run on a start line without a run id", () => {
+    const [line] = infos(
+      fold({ type: "playbook_progress", agentId: "playbook", phase: "start", playbook: "x", ts: 1 }),
+    );
+    expect(line.infoKey, "premise: the start line is drawn").toBe("chat.pb.startNoTask");
+    expect(Object.keys(line)).not.toContain("runId");
   });
 
   it("has every key it uses in both languages", () => {

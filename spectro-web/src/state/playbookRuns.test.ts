@@ -3,7 +3,7 @@
 // a session and for the graph file of one run.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fetchRunGraph, fetchRuns, fetchStartPreview, playbookSessionId } from "./playbookRuns";
+import { fetchRunGraph, fetchStartPreview, playbookSessionId } from "./playbookRuns";
 
 function respond(body: unknown, text = ""): void {
   vi.mocked(fetch).mockResolvedValue({
@@ -47,24 +47,14 @@ describe("the playbook run reads", () => {
     await expect(fetchStartPreview("/pb", "/ws")).rejects.toThrow("400");
   });
 
-  it("asks for the runs of a session", async () => {
-    const rows = [
-      { run: "abcdefabcdef", playbook: "spectro", startedAt: 1, stopReason: null, live: true, graph: "g" },
-    ];
-    respond(rows);
-    expect(await fetchRuns("s1")).toEqual(rows);
-    expect(urlOf(0)).toBe("/api/sessions/s1/playbook-runs");
-  });
-
   it("asks for the graph of one run and returns its text", async () => {
     respond(null, '{"type":"graph_start"}\n');
     expect(await fetchRunGraph("s1", "abcdefabcdef")).toBe('{"type":"graph_start"}\n');
     expect(urlOf(0)).toBe("/api/sessions/s1/playbook-runs/abcdefabcdef/graph");
   });
 
-  it("answers an empty list and an empty graph when the server refuses", async () => {
+  it("answers an empty graph when the server refuses", async () => {
     vi.mocked(fetch).mockResolvedValue({ ok: false, status: 404 } as unknown as Response);
-    expect(await fetchRuns("s1")).toEqual([]);
     expect(await fetchRunGraph("s1", "abcdefabcdef")).toBe("");
   });
 });

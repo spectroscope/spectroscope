@@ -150,7 +150,7 @@ public final class SubagentManager {
         REFUSED,
         /** The recipient's queue is at its cap. */
         FULL,
-        /** The name is not the parent or a running child of this run. */
+        /** The name is not the parent or a child of this run that has not ended. */
         UNKNOWN,
         /**
          * A child named another child. Hub and spoke (owner, 2026-10-12): a
@@ -159,9 +159,21 @@ public final class SubagentManager {
         NOT_PARENT
     }
 
-    /** Card 502: the inbox of every running child, by child id. */
+    /** Card 502: the inbox of every child, by child id. Card 581: from its spawn until it ends, so a
+     *  message to a child that is not working yet waits there for its first turn. */
     private final java.util.concurrent.ConcurrentHashMap<String, dev.spectroscope.core.peer.PeerInbox> childInboxes =
             new java.util.concurrent.ConcurrentHashMap<>();
+    /** Card 581: the slot ticket of every child, by child id, from its spawn until it ends. */
+    private final java.util.concurrent.ConcurrentHashMap<String, SessionSlots.Ticket> childTickets =
+            new java.util.concurrent.ConcurrentHashMap<>();
+    /**
+     * Card 594: what a child's inbox still held when it closed, by child id,
+     * until {@link #returnUnread} hands it back to its senders.
+     */
+    private final java.util.concurrent.ConcurrentHashMap<String, List<dev.spectroscope.core.peer.PeerEnvelope>>
+            unreadAtEnd = new java.util.concurrent.ConcurrentHashMap<>();
+    /** The name the operator's messages from the page carry (card 503). */
+    private static final String OPERATOR = "operator";
     /** Card 502: the task of every running child, by child id, in spawn order. */
     private final Map<String, String> childTasks = java.util.Collections.synchronizedMap(new java.util.LinkedHashMap<>());
     /** Card 502: the parent's own inbox, set by the face that hosts it; null when none. */
@@ -194,8 +206,10 @@ public final class SubagentManager {
 
     /**
      * Card 502: delivers one message inside this run. The address space is the
-     * run: the parent reaches its running children, a child reaches its parent
-     * ({@code parent} or the parent's id) and nobody else. Hub and spoke
+     * run: the parent reaches its children from their spawn until they end, a
+     * child reaches its parent ({@code parent} or the parent's id) and nobody
+     * else. A message to a child that is not working yet waits in its inbox
+     * and its first turn reads it (card 581). Hub and spoke
      * (owner, 2026-10-12): a child that names another child is refused with
      * {@link InRunDelivery#NOT_PARENT}, so what one child says to another
      * passes through the parent, where the person watching the run sees it. A
@@ -257,10 +271,10 @@ public final class SubagentManager {
         }
     }
 
-    /** Card 502: whether a name is a running child of this run, which a peer
-     *  session may never address.
+    /** Card 502: whether a name is a child of this run, which a peer session
+     *  may never address. Card 581: from its spawn until it ends.
      *  @param name the name
-     *  @return true for a running child */
+     *  @return true for a child that has not ended */
     public boolean isChild(String name) {
         return name != null && childInboxes.containsKey(name);
     }
@@ -325,7 +339,15 @@ public final class SubagentManager {
             String verdict = run.failed(id) ? "failed" : "finished";
             return run.collected(id) ? verdict : verdict + " in the background, result not collected";
         }
-        return childTasks.containsKey(id) ? "working in the background" : "waiting for a slot";
+        if (childTasks.containsKey(id)) {
+            return "working in the background";
+        }
+        if (!childInboxes.containsKey(id)) {
+            // Its run is over and its result is on the way to the run.
+            return "ending";
+        }
+        // Card 581: started, not working yet. Only the chat's count makes it wait.
+        return slots.holdsBack(childTickets.get(id), liveCount()) ? "waiting for a slot" : "starting";
     }
 
     /**
@@ -370,7 +392,7 @@ public final class SubagentManager {
     public dev.spectroscope.core.messaging.MessagingSeat.Sent sendFromOperator(String childId, String text,
                                                                                String unused) {
         String summary = text == null ? "" : text.strip().lines().findFirst().orElse("");
-        return inRun(config.parentAgentId(), "parent", "operator", childId, text, summary, false);
+        return inRun(config.parentAgentId(), "parent", OPERATOR, childId, text, summary, false);
     }
 
     /**
@@ -378,7 +400,7 @@ public final class SubagentManager {
      * they approve one of its gated calls.
      *
      * @param childId the child
-     * @return its inbox, or null when it is not running
+     * @return its inbox, or null when it is no child of this run or has ended
      */
     public dev.spectroscope.core.peer.PeerInbox inboxOf(String childId) {
         return childId == null ? null : childInboxes.get(childId);
@@ -394,7 +416,8 @@ public final class SubagentManager {
                 .msgId(msgId).from(replyAddress).fromName(fromName).priority("next").text(text)
                 .summary(summary).build();
         // Announced before the receiver can take it in, so its received record
-        // waits on the stream for the sent record the sender writes afterwards.
+        // (or the returned one, card 594) waits on the stream for the sent
+        // record the sender writes afterwards.
         // Only where both records go into that stream.
         MergedEventStream stream = recorded && onTheStream(from) && onTheStream(to) ? currentStream : null;
         if (stream != null) {
@@ -420,14 +443,33 @@ public final class SubagentManager {
 
     /** Card 505: why a name of this run takes no message, in words a model can act on. */
     private String unknownInRun(String to) {
-        BackgroundRun run = background;
-        if (run != null && run.holds(to)) {
-            return run.ended(to)
-                    ? "Not sent: " + to + " has ended; collect its result with wait_agents."
-                    : "Not sent: " + to + " is waiting for a free slot and reads no message yet; send it again"
-                    + " once list_agents shows it working.";
+        String ended = endedChild(to);
+        return ended != null ? ended : dev.spectroscope.core.peer.PeerClient.unknownName(to);
+    }
+
+    /**
+     * Card 581: the refusal for a child this manager started that has ended.
+     * A child takes messages from its spawn until it ends, so a started child
+     * without an inbox has ended.
+     *
+     * @param name the name a sender wrote, matched in any case
+     * @return the refusal, or null when the name is no child of this manager or one that has not ended
+     */
+    public String endedChild(String name) {
+        if (name == null) {
+            return null;
         }
-        return dev.spectroscope.core.peer.PeerClient.unknownName(to);
+        // Started first, inbox second: arrive() registers the inbox before the id.
+        String id = startedChildIds.stream()
+                .filter(started -> dev.spectroscope.core.peer.PeerNames.same(started, name))
+                .findFirst().orElse(null);
+        if (id == null || childInboxes.containsKey(id)) {
+            return null;
+        }
+        BackgroundRun run = background;
+        return run != null && run.holds(id)
+                ? "Not sent: " + id + " has ended; collect its result with wait_agents."
+                : "Not sent: " + id + " has ended and reads no more messages.";
     }
 
     /** Visible for tests: the seat a running child's messaging tools sit on.
@@ -439,9 +481,139 @@ public final class SubagentManager {
     /**
      * Hub and spoke: every child id this manager started, kept after the child
      * ends, so a child that names a finished one hears that it named another
-     * child agent. It only picks the words of a refusal.
+     * child agent, and a sender that names one hears that it has ended (card
+     * 581). It only picks the words of a refusal.
      */
     private final java.util.Set<String> startedChildIds = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    /**
+     * Card 581: a child is addressable from its spawn. Its inbox is opened
+     * and registered here, before its {@code agent_spawn} record and on the
+     * thread that writes that record: the parent's for a background child, so
+     * before {@code spawn_agents} returns; the child's own executor thread for
+     * a blocking child; the step's thread for a playbook step. A message sent
+     * before the child works waits there and the child's first turn reads it.
+     * {@link #executeChild} takes the inbox from here. Card 594: what the
+     * inbox still holds when it closes, through the child's own loop or
+     * through {@link #leave}, is kept for {@link #returnUnread}.
+     *
+     * @param childId the child
+     * @param ticket  its place in the chat's slot queue
+     * @return the child's inbox, open
+     */
+    private dev.spectroscope.core.peer.PeerInbox arrive(String childId, SessionSlots.Ticket ticket) {
+        dev.spectroscope.core.peer.PeerInbox inbox = new dev.spectroscope.core.peer.PeerInbox();
+        inbox.onUnread(unread -> unreadAtEnd.merge(childId, List.copyOf(unread), SubagentManager::joined));
+        inbox.open();
+        childTickets.put(childId, ticket);
+        childInboxes.put(childId, inbox);
+        startedChildIds.add(childId); // after the inbox: a started child without one has ended
+        return inbox;
+    }
+
+    /**
+     * Card 581: the address leaves with the child, on every way out of
+     * {@link #executeChild}. A child that never ran closes its inbox here, so
+     * nothing more waits in it; what did wait goes back to its senders
+     * through {@link #returnUnread} (card 594).
+     *
+     * @param childId the child
+     */
+    private void leave(String childId) {
+        dev.spectroscope.core.peer.PeerInbox inbox = childInboxes.remove(childId);
+        childTickets.remove(childId);
+        if (inbox != null) {
+            inbox.close();
+        }
+    }
+
+    /**
+     * Card 594: called where a child ends, in {@link #executeChild} and for a
+     * background child whose thread did not start. Every message its inbox
+     * still held goes back to its sender. A message the child read left the
+     * inbox when its loop took it in, so it never comes back. Each one is
+     * recorded as an {@code agent_message} with role {@code peer} and state
+     * {@code returned}, from the child to the sender, the message's
+     * {@code msg_id} in {@code label}, so a stored session and an export show
+     * the line. A message from the parent's model also puts the same line
+     * into the parent's inbox as a delivery notice, which the model reads at
+     * its next turn; a reply the operator typed on the page is only recorded.
+     *
+     * <p>A sink that fails on one line does not cost the others: every line
+     * is offered. Its failure is added to {@code primary} when the child
+     * already failed, and thrown after the last line when it did not.</p>
+     *
+     * @param childId the child that ended; its inbox must be closed
+     * @param outcome what it ended with: its result line or an ERROR: string
+     * @param out     where the child's records go
+     * @param primary the failure the child ended with, or null
+     */
+    private void returnUnread(String childId, String outcome, Consumer<RunEvent> out, Throwable primary) {
+        List<dev.spectroscope.core.peer.PeerEnvelope> unread = unreadAtEnd.remove(childId);
+        if (unread == null) {
+            return;
+        }
+        String why = howItEnded(childId, outcome);
+        Throwable sinkFailure = null;
+        for (dev.spectroscope.core.peer.PeerEnvelope message : unread) {
+            boolean fromOperator = OPERATOR.equals(message.fromName());
+            String line = dev.spectroscope.core.peer.PeerNotices.returned(childId, why, message.text(),
+                    !fromOperator);
+            dev.spectroscope.core.peer.PeerInbox parent = parentInbox;
+            if (!fromOperator && parent != null) {
+                parent.notice(line);
+            }
+            try {
+                out.accept(new RunEvent.AgentMessage(childId, fromOperator ? OPERATOR : config.parentAgentId(),
+                        "peer", "returned", line, message.msgId(), now()));
+            } catch (Throwable failure) {
+                Throwable first = primary != null ? primary : sinkFailure;
+                if (first == null) {
+                    sinkFailure = failure;
+                } else if (first != failure) {
+                    first.addSuppressed(failure);
+                }
+            }
+        }
+        if (sinkFailure instanceof RuntimeException unchecked) {
+            throw unchecked;
+        }
+        if (sinkFailure instanceof Error error) {
+            throw error;
+        }
+        if (sinkFailure != null) {
+            throw new IllegalStateException(sinkFailure);
+        }
+    }
+
+    /**
+     * Card 594: how a child ended, for the line that hands a message back:
+     * the first line of its ERROR: string without the prefix, its id and the
+     * closing period, or {@code completed} for a result.
+     *
+     * @param childId the child
+     * @param outcome its result line or ERROR: string
+     * @return the words
+     */
+    private static String howItEnded(String childId, String outcome) {
+        if (!outcome.startsWith("ERROR:")) {
+            return "completed";
+        }
+        String rest = outcome.substring("ERROR:".length()).strip();
+        String tag = "[" + childId + "]";
+        if (rest.startsWith(tag)) {
+            rest = rest.substring(tag.length()).strip();
+        }
+        return rest.lines().findFirst().orElse("").replaceFirst("\\.$", "");
+    }
+
+    /** Two lists of unread messages, the earlier first. */
+    private static List<dev.spectroscope.core.peer.PeerEnvelope> joined(
+            List<dev.spectroscope.core.peer.PeerEnvelope> earlier, List<dev.spectroscope.core.peer.PeerEnvelope> later) {
+        List<dev.spectroscope.core.peer.PeerEnvelope> all = new ArrayList<>(earlier);
+        all.addAll(later);
+        return all;
+    }
 
     /**
      * Hub and spoke: whether {@code name} is a child of this manager other
@@ -648,6 +820,28 @@ public final class SubagentManager {
      *  @param ms the interval */
     void checkInMs(long ms) {
         this.checkInMs = ms;
+    }
+
+    /** Wraps the sink a blocking child's records go to; the identity outside tests. */
+    private volatile java.util.function.UnaryOperator<Consumer<RunEvent>> blockingSink =
+            java.util.function.UnaryOperator.identity();
+
+    /** Test seam (card 594): wraps the sink of a blocking child's records, so a test can make it
+     *  fail; the run's own stream never does.
+     *  @param wrap takes the run's sink and answers the one the child's records go to */
+    void blockingSinkForTests(java.util.function.UnaryOperator<Consumer<RunEvent>> wrap) {
+        this.blockingSink = wrap;
+    }
+
+    /** Starts the thread of a background child; takes the thread's name and the child's body. */
+    private volatile java.util.function.BiConsumer<String, Runnable> backgroundStarter =
+            (name, body) -> Thread.ofVirtual().name(name).start(body);
+
+    /** Test seam (card 581): how the threads of background children start, so a
+     *  test can hold a child back until after the spawn tool has returned.
+     *  @param starter takes the thread's name and the child's body */
+    void backgroundStarterForTests(java.util.function.BiConsumer<String, Runnable> starter) {
+        this.backgroundStarter = starter;
     }
 
     /** Test seam: how many received records of in-run messages the run's
@@ -1068,22 +1262,31 @@ public final class SubagentManager {
             return "ERROR: task must be a non-empty string.";
         }
         String childId = nextChildId(type);
+        dev.spectroscope.core.peer.PeerInbox inbox = arrive(childId, ticket); // card 581: before its spawn record
+        Consumer<RunEvent> sink = blockingSink.apply(parentQueue::put);
 
-        // The A2A envelope around the whole child run: the tree edge, then the
-        // visible task assignment; at the end (every path) the result message.
-        parentQueue.put(new RunEvent.AgentSpawn(childId, config.parentAgentId(), task, now()));
-        parentQueue.put(new RunEvent.AgentMessage(config.parentAgentId(), childId,
-                "task", "submitted", ownerTask, label, now()));
-
-        String outcome;
+        String outcome = "ERROR: [" + childId + "] unexpected failure";
+        Throwable primary = null;
         childrenOnTheStream.add(childId);
         try {
-            outcome = executeChild(type, task, childId, parentQueue::put, parentSignal, ticket, null);
+            // The A2A envelope around the whole child run: the tree edge, then the
+            // visible task assignment; at the end (every path) the result message.
+            sink.accept(new RunEvent.AgentSpawn(childId, config.parentAgentId(), task, now()));
+            sink.accept(new RunEvent.AgentMessage(config.parentAgentId(), childId,
+                    "task", "submitted", ownerTask, label, now()));
+            outcome = executeChild(type, task, childId, sink, parentSignal, ticket, inbox, null);
+        } catch (Throwable failure) {
+            // A failure inside executeChild has handed its messages back there already.
+            outcome = "ERROR: [" + childId + "] did not start: " + describe(failure);
+            primary = failure;
+            throw failure;
         } finally {
             childrenOnTheStream.remove(childId);
+            leave(childId); // card 581: also when the envelope fails before executeChild
+            returnUnread(childId, outcome, sink, primary); // card 594: and a reply that reached it goes back
         }
         boolean failed = outcome.startsWith("ERROR:");
-        parentQueue.put(new RunEvent.AgentMessage(childId, config.parentAgentId(),
+        sink.accept(new RunEvent.AgentMessage(childId, config.parentAgentId(),
                 "result", failed ? "failed" : "completed", outcome, label, now()));
         return outcome;
     }
@@ -1095,7 +1298,9 @@ public final class SubagentManager {
      * {@code submitted}, and waits behind the children asked for before it.
      *
      * <p>This is the seam a helper passes on its way to the model: everything
-     * between the slot and the release is {@link #runAdmittedChild}.</p>
+     * between the slot and the release is {@link #runAdmittedChild}. The
+     * child's inbox is open the whole time (card 581): what reaches it while
+     * it waits for its slot, its first turn reads.</p>
      *
      * @param type         profile deciding system prompt and tool registry
      * @param task         the prompt the child runs on
@@ -1103,25 +1308,42 @@ public final class SubagentManager {
      * @param out          where its events are forwarded: the shared queue, or a step's sink
      * @param parentSignal the parent's cancel; it also ends a wait for a slot
      * @param ticket       the child's place in the slot queue
+     * @param inbox        the child's inbox, which {@link #arrive} registered at its spawn (card 581)
      * @param stepProvider a playbook step's own provider (card 482), or null for this manager's
-     * @return the child's memo or an "ERROR: " string; never throws
+     * @return the child's memo or an "ERROR: " string; a failure outside the child's run (a sink that
+     *         fails, an agent that cannot be built) is thrown once its unread messages went back (card 594)
      */
     private String executeChild(AgentType type, String task, String childId,
                                 Consumer<RunEvent> out, CancelSignal parentSignal,
-                                SessionSlots.Ticket ticket, LlmProvider stepProvider) {
-        SessionCount count = liveCount();
-        if (slots.mustWait(ticket, count)) {
-            out.accept(new RunEvent.AgentMessage(childId, config.parentAgentId(),
-                    "status", "submitted", count.waitingText(), null, now()));
-        }
-        parentSignal.onCancel(slots::wake);
-        if (!slots.acquire(ticket, this::liveCount, parentSignal)) {
-            return "ERROR: [" + childId + "] " + endedBy(parentSignal) + " while it waited for a free slot.";
-        }
+                                SessionSlots.Ticket ticket, dev.spectroscope.core.peer.PeerInbox inbox,
+                                LlmProvider stepProvider) {
+        String outcome = "ERROR: [" + childId + "] unexpected failure";
+        Throwable primary = null;
         try {
-            return runAdmittedChild(type, task, childId, out, parentSignal, stepProvider);
+            SessionCount count = liveCount();
+            if (slots.mustWait(ticket, count)) {
+                out.accept(new RunEvent.AgentMessage(childId, config.parentAgentId(),
+                        "status", "submitted", count.waitingText(), null, now()));
+            }
+            parentSignal.onCancel(slots::wake);
+            if (!slots.acquire(ticket, this::liveCount, parentSignal)) {
+                outcome = "ERROR: [" + childId + "] " + endedBy(parentSignal) + " while it waited for a free slot.";
+                return outcome;
+            }
+            try {
+                outcome = runAdmittedChild(type, task, childId, out, parentSignal, stepProvider, inbox);
+                return outcome;
+            } finally {
+                slots.release();
+            }
+        } catch (Throwable failure) {
+            // The words the returned line names; the failure itself goes on up.
+            outcome = "ERROR: [" + childId + "] unexpected failure: " + describe(failure);
+            primary = failure;
+            throw failure;
         } finally {
-            slots.release();
+            leave(childId);
+            returnUnread(childId, outcome, out, primary); // card 594: what it never read goes back to its senders
         }
     }
 
@@ -1135,10 +1357,11 @@ public final class SubagentManager {
      * @param out          where its events are forwarded: the shared queue, or a step's sink
      * @param parentSignal the parent's cancel; cancelling it cascades into the child's own signal
      * @param stepProvider a playbook step's own provider (card 482), or null for this manager's
+     * @param inbox        the child's inbox, registered since its spawn (card 581)
      */
     private String runAdmittedChild(AgentType type, String task, String childId,
                                     Consumer<RunEvent> out, CancelSignal parentSignal,
-                                    LlmProvider stepProvider) {
+                                    LlmProvider stepProvider, dev.spectroscope.core.peer.PeerInbox inbox) {
         // Cascading cancel + TWO per-child clocks: the child gets its OWN signal.
         // The parent's signal cancels it (Ctrl+C ends the whole tree; onCancel
         // fires immediately if the parent is already cancelled — no race at
@@ -1185,13 +1408,9 @@ public final class SubagentManager {
         // Card 482: a threshold and a window the operator typed describe the chat
         // model; a step child on another provider derives both from its own.
         boolean chatModel = provider == config.provider();
-        // Card 502: the child's own inbox, opened by its loop for its run. It is
-        // registered before the run starts so the parent can reach it from turn one.
-        dev.spectroscope.core.peer.PeerInbox inbox = new dev.spectroscope.core.peer.PeerInbox();
-        inbox.open();
+        // Card 502: the child's own inbox, opened by its loop for its run. Card
+        // 581: registered since its spawn, so its first turn reads what waits.
         childRoles.put(childId, type.id()); // card 503: the role a listing shows
-        childInboxes.put(childId, inbox);
-        startedChildIds.add(childId); // hub and spoke: the refusal's words
         // A subagent is simply another Agent instance from our own core.
         Agent child = new Agent(AgentOptions.builder()
                 .provider(provider)                   // the model lives in the provider
@@ -1204,6 +1423,14 @@ public final class SubagentManager {
                 .cwd(config.cwd())
                 .agentId(childId)
                 .parentId(config.parentAgentId())     // the tree edge — the graph tab draws exactly this
+                // Card 593: a helper reports the sizes of its context parts
+                // each turn, so the ring can show its fill against its own
+                // window; the texts stay off the wire. The llm-wire sidecar
+                // holds each request whole while a recorder is set and until
+                // its size ceiling, past which it drops bodies behind one
+                // llm_wire_truncated marker.
+                .introspection(true)
+                .introspectionTexts(false)
                 // AC 3 of card 263 governs the TREE, not just its root: an
                 // operator who typed a threshold means it for the children too,
                 // and null still lets them derive it from the shared provider.
@@ -1251,6 +1478,10 @@ public final class SubagentManager {
                 // child, so the child's read_file says and checks the same.
                 .readSharePercent(childReadSharePercent())
                 .peerInbox(inbox)                     // card 502: its own, never the parent's
+                // Card 594: a helper's history ends with it, so a message counts as
+                // read only once a request that carries it went out; one taken for a
+                // request that never left goes back to its sender.
+                .peerReadOnSend(true)
                 .agentMessaging(childAgentMessaging()) // card 503: the parent run's switch
                 .build());
 
@@ -1306,7 +1537,7 @@ public final class SubagentManager {
         } catch (RuntimeException failure) {
             return "ERROR: [" + childId + "] unexpected failure: " + describe(failure);
         } finally {
-            childInboxes.remove(childId); // card 502: the address leaves with the child
+            leave(childId); // card 502: the address leaves with the child, before it stops working
             childTasks.remove(childId);
             childRoles.remove(childId);   // card 503
             childStatus.remove(childId);
@@ -1559,17 +1790,27 @@ public final class SubagentManager {
         }
         String childId = nextChildId(request.type());
         SessionSlots.Ticket ticket = slots.enqueue();
+        dev.spectroscope.core.peer.PeerInbox inbox = arrive(childId, ticket); // card 581: before its spawn record
+        String outcome = "ERROR: [" + childId + "] unexpected failure";
+        Throwable primary = null;
         try {
             out.accept(new RunEvent.AgentSpawn(childId, config.parentAgentId(), request.task(), now()));
             out.accept(new RunEvent.AgentMessage(config.parentAgentId(), childId,
                     "task", "submitted", request.ownerTask(), request.label(), now()));
-            String outcome = executeChild(request.type(), request.task(), childId, out, signal,
-                    ticket, request.provider());
+            outcome = executeChild(request.type(), request.task(), childId, out, signal,
+                    ticket, inbox, request.provider());
             out.accept(new RunEvent.AgentMessage(childId, config.parentAgentId(), "result",
                     outcome.startsWith("ERROR:") ? "failed" : "completed", outcome, request.label(), now()));
             return new StepResult(childId, outcome);
+        } catch (Throwable failure) {
+            // A failure inside executeChild has handed its messages back there already.
+            outcome = "ERROR: [" + childId + "] did not start: " + describe(failure);
+            primary = failure;
+            throw failure;
         } finally {
             slots.forget(ticket); // a child refused before its slot holds no place
+            leave(childId); // card 581: also when the step's sink fails before executeChild
+            returnUnread(childId, outcome, out, primary); // card 594: and a reply that reached it goes back
         }
     }
 
@@ -1804,26 +2045,48 @@ public final class SubagentManager {
             ChildRequest request = requests.get(i);
             SessionSlots.Ticket ticket = tickets.get(i);
             String childId = nextChildId(request.type());
-            run.add(childId, request.type().id());
-            queue.put(new RunEvent.AgentSpawn(childId, config.parentAgentId(), request.task(), now()));
-            queue.put(new RunEvent.AgentMessage(config.parentAgentId(), childId,
-                    "task", "submitted", request.ownerTask(), request.label(), now()));
+            // Card 581: the inbox before the name is listed and before this
+            // call returns, so a send_message in the same turn waits there.
             childrenOnTheStream.add(childId);
-            Thread.ofVirtual().name("spectroscope-background-" + childId).start(() -> {
-                String outcome;
-                try {
-                    outcome = executeChild(request.type(), request.task(), childId, queue::put, run.signal(),
-                            ticket, null);
-                } catch (RuntimeException failure) {
-                    outcome = "ERROR: [" + childId + "] unexpected failure: " + describe(failure);
-                } finally {
-                    childrenOnTheStream.remove(childId);
-                    slots.forget(ticket);
+            dev.spectroscope.core.peer.PeerInbox inbox = arrive(childId, ticket);
+            try {
+                run.add(childId, request.type().id());
+                queue.put(new RunEvent.AgentSpawn(childId, config.parentAgentId(), request.task(), now()));
+                queue.put(new RunEvent.AgentMessage(config.parentAgentId(), childId,
+                        "task", "submitted", request.ownerTask(), request.label(), now()));
+                backgroundStarter.accept("spectroscope-background-" + childId, () -> {
+                    String outcome;
+                    try {
+                        outcome = executeChild(request.type(), request.task(), childId, queue::put, run.signal(),
+                                ticket, inbox, null);
+                    } catch (RuntimeException failure) {
+                        outcome = "ERROR: [" + childId + "] unexpected failure: " + describe(failure);
+                    } finally {
+                        childrenOnTheStream.remove(childId);
+                        slots.forget(ticket);
+                    }
+                    queue.put(new RunEvent.AgentMessage(childId, config.parentAgentId(), "result",
+                            outcome.startsWith("ERROR:") ? "failed" : "completed", outcome, request.label(),
+                            now()));
+                    run.finished(childId, outcome);
+                });
+            } catch (RuntimeException | Error failure) {
+                // Card 581: a child whose thread never started leaves no address, no
+                // ticket of this batch in line and no child the run would wait for.
+                leave(childId);
+                childrenOnTheStream.remove(childId);
+                for (SessionSlots.Ticket unstarted : tickets.subList(i, tickets.size())) {
+                    slots.forget(unstarted);
                 }
-                queue.put(new RunEvent.AgentMessage(childId, config.parentAgentId(), "result",
-                        outcome.startsWith("ERROR:") ? "failed" : "completed", outcome, request.label(), now()));
-                run.finished(childId, outcome);
-            });
+                String outcome = "ERROR: [" + childId + "] did not start: " + describe(failure);
+                returnUnread(childId, outcome, queue::put, failure); // card 594: a reply that reached it goes back
+                if (run.holds(childId)) {
+                    queue.put(new RunEvent.AgentMessage(childId, config.parentAgentId(), "result", "failed",
+                            outcome, request.label(), now()));
+                    run.finished(childId, outcome);
+                }
+                throw failure;
+            }
             started.add(childId + " (" + request.type().id() + ")");
         }
         SessionCount count = liveCount();

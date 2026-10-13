@@ -36,7 +36,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * Card 467, the llm-wire half of criterion 4: the {@code llm_request} body the
  * recorder wrote for turn 12 carries the stub and no line of the file, and the
- * agent's event stream still carries the whole result.
+ * agent's event stream still carries the whole result. Card 600: the switch
+ * ships off, so the run that shows the stub turns it on, and a second run with
+ * nothing set shows the file going out whole.
  *
  * <p>A scripted OpenAI-compatible server answers twelve turns: a whole-file
  * read in turn 1, a small echo in turns 2 to 11, a closing answer in turn 12.
@@ -110,9 +112,12 @@ class ToolResultElisionWireTest {
         };
     }
 
-    @Test
-    void theWireShowsTheStubAsSentAndTheEventStreamKeepsTheWholeResult() throws IOException {
-        Path sidecar = dir.resolve("session.llm.jsonl");
+    /** The request bodies the recorder wrote for the main agent, and the events of the run. */
+    private record Run(List<JsonNode> requests, List<RunEvent> events) {
+    }
+
+    private Run run(String elision) throws IOException {
+        Path sidecar = dir.resolve("session-" + System.nanoTime() + ".llm.jsonl");
         ToolRegistry registry = new ToolRegistry();
         registry.register(tool("read_file", CLAUDE_MD));
         registry.register(tool("echo", "ok"));
@@ -126,8 +131,10 @@ class ToolResultElisionWireTest {
                     .cwd(dir)
                     .agentId("main")
                     .onPermission(request -> true)
+                    .providerName("llamacpp")
                     .llmWire(recorder)
                     .maxTurns(20)
+                    .toolResultElision(elision)
                     .build());
             try (EventStream stream = agent.run("read CLAUDE.md and keep going",
                     new RunOptions(new CancelSignal(), List.of()))) {
@@ -144,6 +151,14 @@ class ToolResultElisionWireTest {
             }
         }
         assertEquals(12, requests.size(), "premise: twelve exchanges on the record");
+        return new Run(requests, events);
+    }
+
+    @Test
+    void theWireShowsTheStubAsSentAndTheEventStreamKeepsTheWholeResult() throws IOException {
+        Run run = run("on");
+        List<JsonNode> requests = run.requests();
+        List<RunEvent> events = run.events();
 
         String turnTwo = requests.get(1).path("body").asText();
         String turnTwelve = requests.get(11).path("body").asText();
@@ -160,5 +175,15 @@ class ToolResultElisionWireTest {
         // these events (live or from the session file) and are not run here.
         assertEquals(CLAUDE_MD, result.output(),
                 "the event stream lost bytes of a result the request only stubbed");
+    }
+
+    @Test
+    void theShippedSwitchShowsTheWholeResultGoingOutAgain() throws IOException {
+        String turnTwelve = run(null).requests().get(11).path("body").asText();
+
+        assertTrue(turnTwelve.contains("LINE-OF-CLAUDE-MD"),
+                "card 600: with nothing set, turn 12 went out without the file");
+        assertFalse(turnTwelve.contains("is left out of this request"),
+                "card 600: with nothing set, turn 12 went out with a stub");
     }
 }

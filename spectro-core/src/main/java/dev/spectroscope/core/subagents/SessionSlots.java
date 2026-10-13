@@ -94,6 +94,28 @@ final class SessionSlots {
     }
 
     /**
+     * Card 581: whether the chat's count holds this helper back now. Its
+     * ticket must still be in line, and {@link #mustWait} must be true for it.
+     * A helper that only has not reached the pool yet, or that holds a slot,
+     * is not held back.
+     *
+     * @param ticket the helper's ticket, or null
+     * @param count  the chat's count now
+     * @return true while the count keeps this helper from its slot
+     */
+    boolean holdsBack(Ticket ticket, SessionCount count) {
+        if (ticket == null || !count.isSet()) {
+            return false;
+        }
+        lock.lock();
+        try {
+            return queue.contains(ticket) && mustWait(ticket, count);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    /**
      * Blocks until this helper holds a slot, or until the run is cancelled.
      *
      * @param ticket the helper's ticket

@@ -139,6 +139,8 @@ class StopReachesAWaitingBackendTest {
         final CountDownLatch ended = new CountDownLatch(1);
         volatile long endedAtNanos;
         volatile RunEvent.RunEnd runEnd;
+        /** How long the last {@link #stop} waited for run_end before it gave up. */
+        volatile long gaveUpAfterMs = GIVE_UP_MS;
 
         Watched(Agent agent, String prompt) {
             this(agent, prompt, null);
@@ -172,9 +174,15 @@ class StopReachesAWaitingBackendTest {
          *         run_end came within {@link #GIVE_UP_MS}
          */
         long stop() throws InterruptedException {
+            return stop(GIVE_UP_MS);
+        }
+
+        /** As {@link #stop()}, waiting up to {@code giveUpMs} for run_end. */
+        long stop(long giveUpMs) throws InterruptedException {
+            gaveUpAfterMs = giveUpMs;
             long pressed = System.nanoTime();
             Thread.ofVirtual().name("spectro-abort").start(signal::cancel);
-            if (!ended.await(GIVE_UP_MS, TimeUnit.MILLISECONDS) || runEnd == null) {
+            if (!ended.await(giveUpMs, TimeUnit.MILLISECONDS) || runEnd == null) {
                 return -1;
             }
             return TimeUnit.NANOSECONDS.toMillis(endedAtNanos - pressed);
@@ -191,9 +199,15 @@ class StopReachesAWaitingBackendTest {
      * aborted, no error shown, and the producer thread gone.
      */
     private static void assertStoppedCleanly(Watched run, long millis, String phase) throws InterruptedException {
-        System.out.println("card 557 measured: stop " + phase + ": " + millis + " ms to run_end");
+        assertStoppedCleanly(run, millis, phase, "557");
+    }
+
+    /** As above, logged under the card that measures it. */
+    private static void assertStoppedCleanly(Watched run, long millis, String phase, String card)
+            throws InterruptedException {
+        System.out.println("card " + card + " measured: stop " + phase + ": " + millis + " ms to run_end");
         assertTrue(millis >= 0 && millis < STOP_BUDGET_MS,
-                "stop " + phase + " took " + (millis < 0 ? "more than " + GIVE_UP_MS : millis)
+                "stop " + phase + " took " + (millis < 0 ? "more than " + run.gaveUpAfterMs : millis)
                         + " ms from the cancel to run_end; the budget is " + STOP_BUDGET_MS + " ms");
         assertEquals("aborted", run.runEnd.stopReason(), "a stopped run ends as aborted");
         assertTrue(run.events.stream().noneMatch(RunEvent.ErrorEvent.class::isInstance),
@@ -868,5 +882,105 @@ class StopReachesAWaitingBackendTest {
         Thread.sleep(300);
         assertEquals(1, runtime.requests("models.list").size(), "the stopped run asked for the model list again");
         assertTrue(runtime.requests("session.create").isEmpty(), "a runtime session was opened after the stop");
+    }
+
+    // ---- card 583: a runtime that ignores the stop's own questions ------------
+
+    /** Longer than the provider's old abort wait (5 s), so a red run prints the time it took. */
+    private static final long GIVE_UP_ABORT_MS = 8_000;
+
+    /** A turn that streams one delta and then goes quiet, as a model that thinks. */
+    private static java.util.function.Consumer<FakeCopilotRuntime.Turn> startsAndGoesQuiet() {
+        return turn -> turn.delta("partial");
+    }
+
+    /**
+     * Criterion 6 of card 557 for a prompt that ends on its own: it reaches the
+     * runtime within one second of the stop and is answered.
+     */
+    private void theNextCopilotPromptIsAnsweredAtOnce(Agent agent, FakeCopilotRuntime runtime, String nextAsks)
+            throws InterruptedException {
+        int before = runtime.requests().size();
+        long asked = System.nanoTime();
+        Watched next = new Watched(agent, "again");
+        while (runtime.requests().size() == before
+                && System.nanoTime() - asked < TimeUnit.SECONDS.toNanos(1)) {
+            Thread.sleep(5);
+        }
+        assertTrue(runtime.requests().size() > before,
+                "the next prompt did not reach the runtime within one second of the stop");
+        assertEquals(nextAsks, runtime.requests().get(before).path("method").asText(),
+                "what the next prompt asks the runtime first");
+        assertTrue(next.ended.await(ARRIVAL.toMillis(), TimeUnit.MILLISECONDS) && next.runEnd != null,
+                "the next prompt never ended");
+        assertEquals("end_turn", next.runEnd.stopReason(), "the next prompt is answered");
+        assertTrue(next.events.stream().noneMatch(RunEvent.ErrorEvent.class::isInstance),
+                "the next prompt failed: " + next.events);
+    }
+
+    /**
+     * Card 583: the runtime never answers {@code session.abort} and never goes
+     * idle. Before, the stop waited out the provider's whole abort settle
+     * (5,007 ms measured by the 0.15.3 review). The run ends at once; the
+     * runtime session the abort never settled is closed in the background,
+     * and the next prompt does not wait for that.
+     */
+    @Test
+    void copilotStopsWhenTheRuntimeIgnoresTheAbort() throws Exception {
+        FakeCopilotRuntime runtime = copilotRuntime().hold("session.abort");
+        runtime.onSend(startsAndGoesQuiet());
+        runtime.onSend(answers("again"));
+        Agent agent = agentOn(copilot(runtime), 100_000, null);
+        Watched run = new Watched(agent, "hello");
+        String stopped = runtime.await("session.send", ARRIVAL).path("sessionId").asText();
+        Thread.sleep(100);
+
+        long millis = run.stop(GIVE_UP_ABORT_MS);
+
+        assertStoppedCleanly(run, millis, "while the Copilot runtime ignores session.abort", "583");
+        assertEquals(1, runtime.requests("session.abort").size(), "the stopped run asked for the abort again");
+        theNextCopilotPromptIsAnsweredAtOnce(agent, runtime, "session.create");
+        assertEquals(1, runtime.requests("session.send").stream()
+                        .filter(send -> stopped.equals(send.path("sessionId").asText())).count(),
+                "a prompt went to the runtime session whose abort never settled");
+
+        // Nothing of the stopped run stays: its runtime session is closed once the
+        // provider's abort settle (5 s) has run out, and the settle with it.
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(7);
+        while (runtime.requests("session.detach").stream()
+                .noneMatch(detach -> stopped.equals(detach.path("sessionId").asText()))
+                && System.nanoTime() < deadline) {
+            Thread.sleep(20);
+        }
+        assertTrue(runtime.requests("session.detach").stream()
+                        .anyMatch(detach -> stopped.equals(detach.path("sessionId").asText())),
+                "the runtime session whose abort never settled is still open 7 s after the stop");
+    }
+
+    /**
+     * Card 583: the turn has gone quiet, the provider pings the runtime to
+     * tell a thinking model from a dead runtime, and the runtime never answers
+     * the ping. Before, the stop waited for the ping's own timeout (1,923 ms
+     * measured by the 0.15.3 review).
+     */
+    @Test
+    void copilotStopsWhileTheRuntimeIgnoresThePing() throws Exception {
+        FakeCopilotRuntime runtime = copilotRuntime().hold("ping");
+        runtime.onSend(startsAndGoesQuiet());
+        runtime.onSend(answers("again"));
+        Agent agent = agentOn(copilot(runtime), 100_000, null);
+        Watched run = new Watched(agent, "hello");
+        runtime.await("ping", ARRIVAL);
+        String stopped = runtime.requests("session.send").getFirst().path("sessionId").asText();
+        Thread.sleep(100);
+
+        long millis = run.stop();
+
+        assertStoppedCleanly(run, millis, "while the Copilot runtime ignores the ping", "583");
+        assertEquals(1, runtime.requests("session.abort").size(), "the stop asks the runtime to abort once");
+        // The runtime answered the abort at once, so its session takes the next prompt.
+        theNextCopilotPromptIsAnsweredAtOnce(agent, runtime, "session.send");
+        assertEquals(stopped, runtime.requests("session.send").getLast().path("sessionId").asText(),
+                "the next prompt did not go to the runtime session the abort settled");
     }
 }

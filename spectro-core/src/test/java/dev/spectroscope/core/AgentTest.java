@@ -892,6 +892,61 @@ class AgentTest {
     }
 
     @Test
+    void introspectionWithoutTextsKeepsEveryCountAndCarriesNoContent() {
+        // Card 593: a helper reports the sizes of its parts, not the texts. Two
+        // agents run the same script, so their counts have to agree part for
+        // part; only the content differs.
+        JsonNode input = JSON.createObjectNode().put("value", "42");
+        List<LlmProvider.ProviderEvent> first = List.of(
+                new LlmProvider.PToolCall("c1", "echo", input),
+                new LlmProvider.PStop(LlmProvider.PStop.StopReason.TOOL_USE));
+        List<LlmProvider.ProviderEvent> second = List.of(
+                new LlmProvider.PTextDelta("done"),
+                new LlmProvider.PStop(LlmProvider.PStop.StopReason.END_TURN));
+        List<RunEvent.ContextInfo> withTexts = contextInfos(true, first, second);
+        List<RunEvent.ContextInfo> sizesOnly = contextInfos(false, first, second);
+
+        assertEquals(2, sizesOnly.size(), "one context_info per turn, texts or not");
+        for (int turn = 0; turn < 2; turn++) {
+            RunEvent.ContextInfo full = withTexts.get(turn);
+            RunEvent.ContextInfo sizes = sizesOnly.get(turn);
+            assertEquals(full.estimatedTokens(), sizes.estimatedTokens(), "turn " + turn);
+            assertEquals(full.messages(), sizes.messages(), "turn " + turn);
+            assertEquals(3, sizes.parts().size());
+            for (int i = 0; i < 3; i++) {
+                RunEvent.ContextPart a = full.parts().get(i);
+                RunEvent.ContextPart b = sizes.parts().get(i);
+                assertEquals(a.label(), b.label());
+                assertEquals(a.chars(), b.chars(), "the full count stays on " + a.label());
+                assertEquals(a.estTokens(), b.estTokens(), "the estimate stays on " + a.label());
+                assertNull(b.text(), "no text on " + a.label());
+            }
+        }
+        assertTrue(withTexts.get(0).parts().get(0).chars() > 0, "the system prompt is counted");
+        assertEquals("test", withTexts.get(0).parts().get(0).text(), "an agent built with texts keeps them");
+    }
+
+    @SafeVarargs
+    private static List<RunEvent.ContextInfo> contextInfos(boolean texts, List<LlmProvider.ProviderEvent>... turns) {
+        FakeProvider provider = FakeProvider.scripted(turns);
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new EchoTool(false));
+        Agent agent = new Agent(AgentOptions.builder()
+                .provider(provider)
+                .systemPrompt("test")
+                .registry(registry)
+                .cwd(Path.of("."))
+                .onPermission(request -> true)
+                .introspection(true)
+                .introspectionTexts(texts)
+                .build());
+        return collect(agent).stream()
+                .filter(RunEvent.ContextInfo.class::isInstance)
+                .map(RunEvent.ContextInfo.class::cast)
+                .toList();
+    }
+
+    @Test
     void runStartStampsTheProvidersModel() {
         // Card 87: every run records WHICH model answered it — the provider
         // reports its live model id and run_start carries it additively.

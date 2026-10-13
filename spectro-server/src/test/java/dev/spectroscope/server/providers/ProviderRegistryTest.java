@@ -69,6 +69,19 @@ class ProviderRegistryTest {
         assertEquals("local", checked.kind());
     }
 
+    /** Card 584: the row carries the HTTP status of the failed check, for the start sheet. */
+    @Test
+    void aFailedCheckKeepsItsHttpStatus() throws IOException {
+        writeUserSettings("{ \"lmstudioBaseUrl\": \"http://127.0.0.1:1\" }");
+        ProviderRegistry registry = new ProviderRegistry(
+                (p, c) -> ListResult.failed("rejected-key", c.endpointFor(p), 401), now::get);
+        ProviderRow checked = registry.check("lmstudio", config());
+        assertEquals("rejected-key", checked.reason());
+        assertEquals(401, checked.httpStatus());
+        assertNull(registry.rows(config()).stream().filter(r -> r.id().equals("ollama")).findFirst().orElseThrow()
+                .httpStatus(), "a row that was not checked has no status");
+    }
+
     @Test
     void aFailedCheckKeepsItsReasonAndAddress() throws IOException {
         writeUserSettings("{ \"lmstudioBaseUrl\": \"http://127.0.0.1:1\" }");

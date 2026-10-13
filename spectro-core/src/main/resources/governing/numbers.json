@@ -100,6 +100,16 @@
     "explanation" : "How long one resolved answer is reused — the desktop hook's own window."
   },
   {
+    "owner" : "dev.spectroscope.core.codegraph.CodeGraphBackend",
+    "field" : "MAX_PAGE_BYTES",
+    "value" : "67108864",
+    "expression" : "64L * 1024 * 1024",
+    "kind" : "FIXED",
+    "unit" : "BYTES",
+    "key" : "",
+    "explanation" : "The largest graph page a folder may have and still count as having a code graph; the browser panel serves no larger page. graphify draws an aggregated page past 5000 nodes, so real pages stay far below (card 546)."
+  },
+  {
     "owner" : "dev.spectroscope.core.config.HeapBudget",
     "field" : "FLOOR_BYTES",
     "value" : "268435456",
@@ -1420,6 +1430,46 @@
     "explanation" : "The wall clock budget of one check line, in seconds."
   },
   {
+    "owner" : "dev.spectroscope.core.playbook.run.ModelPicks",
+    "field" : "MAX_MODEL_CHARS",
+    "value" : "200",
+    "expression" : "200",
+    "kind" : "FIXED",
+    "unit" : "CHARACTERS",
+    "key" : "",
+    "explanation" : "The longest model id a pick may name: a bound on untrusted input, above the model ids the providers list."
+  },
+  {
+    "owner" : "dev.spectroscope.core.playbook.run.ModelPicks",
+    "field" : "MAX_NODE_CHARS",
+    "value" : "128",
+    "expression" : "128",
+    "kind" : "FIXED",
+    "unit" : "CHARACTERS",
+    "key" : "",
+    "explanation" : "The longest node id a pick may name: a bound on untrusted input, above any node id a playbook uses."
+  },
+  {
+    "owner" : "dev.spectroscope.core.playbook.run.ModelPicks",
+    "field" : "MAX_PICKS",
+    "value" : "256",
+    "expression" : "256",
+    "kind" : "FIXED",
+    "unit" : "COUNT",
+    "key" : "",
+    "explanation" : "The most picks one start may carry: the page is untrusted input, and a playbook has far fewer steps and checks."
+  },
+  {
+    "owner" : "dev.spectroscope.core.playbook.run.ModelPicks",
+    "field" : "MAX_PROVIDER_CHARS",
+    "value" : "64",
+    "expression" : "64",
+    "kind" : "FIXED",
+    "unit" : "CHARACTERS",
+    "key" : "",
+    "explanation" : "The longest provider name a pick may name: a bound on untrusted input, above any registered provider name."
+  },
+  {
     "owner" : "dev.spectroscope.core.playbook.run.PlaybookRecorder",
     "field" : "DEFAULT_CEILING_BYTES",
     "value" : "16777216",
@@ -1428,6 +1478,16 @@
     "unit" : "BYTES",
     "key" : "",
     "explanation" : "The size at which the sidecar stops growing and writes one truncation line."
+  },
+  {
+    "owner" : "dev.spectroscope.core.playbook.run.RunSteps",
+    "field" : "TEXT_CAP",
+    "value" : "4000",
+    "expression" : "4_000",
+    "kind" : "FIXED",
+    "unit" : "CHARACTERS",
+    "key" : "",
+    "explanation" : "The longest input, output, error or detail a line carries: the run view shows the start of a text, the chat holds it whole."
   },
   {
     "owner" : "dev.spectroscope.core.progress.ProgressGuard",
@@ -1491,13 +1551,23 @@
   },
   {
     "owner" : "dev.spectroscope.core.provider.CopilotProvider",
+    "field" : "ABORT_GRACE_MS",
+    "value" : "200",
+    "expression" : "200",
+    "kind" : "UNEXAMINED",
+    "unit" : "MILLISECONDS",
+    "key" : "",
+    "explanation" : "How long a stop waits on the run's own thread for the runtime's idle. A runtime that takes longer, or never answers, settles in the background, so the stop does not wait for it (card 583)."
+  },
+  {
+    "owner" : "dev.spectroscope.core.provider.CopilotProvider",
     "field" : "ABORT_SETTLE_MS",
     "value" : "5000",
     "expression" : "5_000",
     "kind" : "UNEXAMINED",
     "unit" : "MILLISECONDS",
     "key" : "",
-    "explanation" : "How long a cancelled turn waits for the runtime's idle before it returns. Card 478 measured the idle 9 ms after abort; this is a ceiling, not that."
+    "explanation" : "How long a cancelled turn's runtime session may take to go idle after the abort before it is closed. Card 478 measured the idle 9 ms after abort; this is a ceiling, not that. Past ABORT_GRACE_MS the wait runs in the background (card 583)."
   },
   {
     "owner" : "dev.spectroscope.core.provider.CopilotProvider",
@@ -1941,6 +2011,16 @@
   },
   {
     "owner" : "dev.spectroscope.core.tools.CodeGraphTool",
+    "field" : "MAX_DEPTH",
+    "value" : "6",
+    "expression" : "6",
+    "kind" : "FIXED",
+    "unit" : "COUNT",
+    "key" : "",
+    "explanation" : "The most steps back affected may look; the skill names the same range."
+  },
+  {
+    "owner" : "dev.spectroscope.core.tools.CodeGraphTool",
     "field" : "MAX_OUTPUT_CHARS",
     "value" : "16000",
     "expression" : "16_000",
@@ -1958,6 +2038,46 @@
     "unit" : "CHARACTERS",
     "key" : "",
     "explanation" : "The longest question or node name the tool passes on."
+  },
+  {
+    "owner" : "dev.spectroscope.core.tools.CodeGraphTool",
+    "field" : "MAX_TOP",
+    "value" : "50",
+    "expression" : "50",
+    "kind" : "FIXED",
+    "unit" : "COUNT",
+    "key" : "",
+    "explanation" : "The most nodes god_nodes may list; the skill names the same range."
+  },
+  {
+    "owner" : "dev.spectroscope.core.tools.CodeGraphTool",
+    "field" : "MIN_BUDGET",
+    "value" : "100",
+    "expression" : "100",
+    "kind" : "FIXED",
+    "unit" : "TOKENS",
+    "key" : "",
+    "explanation" : "The smallest --budget a query may ask for, in graphify's tokens; the skill names the same range."
+  },
+  {
+    "owner" : "dev.spectroscope.core.tools.CodeGraphTool",
+    "field" : "MIN_DEPTH",
+    "value" : "1",
+    "expression" : "1",
+    "kind" : "FIXED",
+    "unit" : "COUNT",
+    "key" : "",
+    "explanation" : "The fewest steps back affected may look; the skill names the same range."
+  },
+  {
+    "owner" : "dev.spectroscope.core.tools.CodeGraphTool",
+    "field" : "MIN_TOP",
+    "value" : "1",
+    "expression" : "1",
+    "kind" : "FIXED",
+    "unit" : "COUNT",
+    "key" : "",
+    "explanation" : "The fewest nodes god_nodes may list; the skill names the same range."
   },
   {
     "owner" : "dev.spectroscope.core.tools.CodeGraphTool",

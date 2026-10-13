@@ -44,6 +44,18 @@ public interface MessagingSeat {
     }
 
     /**
+     * Card 581: the refusal for a child of the caller's session that has
+     * ended. Such a child has no row any more, so the name alone would read
+     * as unknown.
+     *
+     * @param name the name the caller wrote
+     * @return the refusal, or null when the name is no child that has ended
+     */
+    default String endedChild(String name) {
+        return null;
+    }
+
+    /**
      * Sends to a session.
      *
      * @param row     the session

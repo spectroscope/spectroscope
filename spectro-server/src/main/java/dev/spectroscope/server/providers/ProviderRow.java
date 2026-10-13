@@ -11,7 +11,8 @@ import java.util.List;
  * {@code signed-in} or {@code not-signed-in} for a provider whose credential
  * is a sign-in. {@code endpoint} is null for a provider that owns no address.
  * {@code reason} is null unless the state is {@code failed}. {@code checkedAt}
- * is 0 when no check has ever run.
+ * is 0 when no check has ever run. {@code httpStatus} is the HTTP status of a
+ * failed check that got an answer (card 584), else null.
  *
  * @param id         the provider name
  * @param kind       cloud, local or builtin
@@ -23,7 +24,28 @@ import java.util.List;
  * @param live       true only when the models came from the provider
  * @param reason     the reason code of a failed check, or null
  * @param checkedAt  the time of the last check in epoch milliseconds, or 0
+ * @param httpStatus the HTTP status of a failed check, or null
  */
 public record ProviderRow(String id, String kind, String state, boolean keyPresent, String credential,
-                          String endpoint, List<String> models, boolean live, String reason, long checkedAt) {
+                          String endpoint, List<String> models, boolean live, String reason, long checkedAt,
+                          Integer httpStatus) {
+
+    /**
+     * A row without an HTTP status, the shape before card 584.
+     *
+     * @param id         the provider name
+     * @param kind       cloud, local or builtin
+     * @param state      the derived state word
+     * @param keyPresent whether the provider's key is set, never its value
+     * @param credential the sign-in word, or null for a keyed provider
+     * @param endpoint   the address a check dials, or null
+     * @param models     the models of the last answer, possibly none
+     * @param live       true only when the models came from the provider
+     * @param reason     the reason code of a failed check, or null
+     * @param checkedAt  the time of the last check in epoch milliseconds, or 0
+     */
+    public ProviderRow(String id, String kind, String state, boolean keyPresent, String credential,
+                       String endpoint, List<String> models, boolean live, String reason, long checkedAt) {
+        this(id, kind, state, keyPresent, credential, endpoint, models, live, reason, checkedAt, null);
+    }
 }

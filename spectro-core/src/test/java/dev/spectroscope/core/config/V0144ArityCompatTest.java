@@ -31,14 +31,17 @@ class V0144ArityCompatTest {
     private static final List<String> APPENDED =
             List.of("sessionsPerChat", "careParagraph", "readSharePercent", "agentMessaging");
 
-    /** AgentOptions also carries card 502's peer inbox, appended after v0.15.1. */
+    /** AgentOptions also carries card 502's peer inbox, appended after v0.15.1, card 594's
+     *  peerReadOnSend, appended after v0.15.3, and card 593's text switch. */
     private static final List<String> APPENDED_TO_OPTIONS =
-            List.of("sessionsPerChat", "careParagraph", "readSharePercent", "peerInbox", "agentMessaging");
+            List.of("sessionsPerChat", "careParagraph", "readSharePercent", "peerInbox", "agentMessaging",
+                    "peerReadOnSend", "introspectionTexts");
 
     /** The config also carries what the Local mode switch wrote (card 493)
-     *  the speech runner (card 528) and the messaging switch (card 503). */
-    private static final List<String> APPENDED_TO_CONFIG =
-            List.of("sessionsPerChat", "careParagraph", "readSharePercent", "localModeKeys", "sttRunner", "agentMessaging");
+     *  the speech runner (card 528), the messaging switch (card 503) and the
+     *  code graph backend (card 587). */
+    private static final List<String> APPENDED_TO_CONFIG = List.of("sessionsPerChat", "careParagraph",
+            "readSharePercent", "localModeKeys", "sttRunner", "agentMessaging", "codeGraphBackend");
 
     private static Object[] nulls(Class<?>[] types) {
         Object[] args = new Object[types.length];
@@ -83,6 +86,7 @@ class V0144ArityCompatTest {
         assertEquals(List.of(), component(built, "localModeKeys"), "the switch wrote nothing");
         assertEquals(SpectroConfig.DEFAULT_STT_RUNNER, component(built, "sttRunner"),
                 "the speech runner ships auto");
+        assertEquals("graphify", component(built, "codeGraphBackend"), "the code graph ships on graphify");
     }
 
     @Test
@@ -92,6 +96,7 @@ class V0144ArityCompatTest {
         assertFalse(CareParagraph.enabled((String) component(built, "careParagraph")),
                 "the paragraph ships off");
         assertNull(component(built, "readSharePercent"), "null runs at the shipped share");
+        assertNull(component(built, "peerReadOnSend"), "null reads a peer message at the turn start");
     }
 
     @Test

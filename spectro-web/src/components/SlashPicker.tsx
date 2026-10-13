@@ -29,6 +29,19 @@
 // is written into the draft, and Enter on it whole is left to the composer,
 // whose submit is the one door a command leaves through.
 //
+// Card 588: the commands are read past the first word. A bare slash offers
+// one row per command; once a command's name is typed its subcommands follow,
+// the command first, also after the space and narrowed by the second word.
+// A row that takes words shows its template under it in the page's language,
+// and while a command's words are typed the popover keeps only that template
+// up, with the keys left to the composer. A row that has subcommands or takes
+// words is written with a space after it, the caret at the end.
+//
+// Card 588, fix round: rows are offered only where the caret ends the draft,
+// so Enter inside a command draft sends it; Escape puts the commands away
+// while the draft is a command and a skill list while its token is typed; the
+// keys of an input method and Shift+Enter are the composer's.
+//
 // Card 558: the skills are the session's own when it has sent its list
 // (session_items): the workspace's, the picked playbook's and the user's,
 // skills and commands alike, each under its effective name and with its
@@ -39,10 +52,10 @@
 
 import { Fragment, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { matchSkills, slashQueryAt, tokenInsert, type SkillOption } from "../state/slashCommands";
-import { matchCommands, spellingsOf, type ChatCommandName } from "../state/chatCommands";
+import { offerCommands, opensWithCommand, spellingsOf, type ChatCommandName } from "../state/chatCommands";
 import { useSkills } from "../state/skillList";
 import { slashItems, sourceLabel, wantsItems, type SessionItems } from "../state/sessionItems";
-import { useCommandList, type CommandRow } from "../state/commandList";
+import { helpOf, usageOf, useCommandList, webCommands, type CommandRow } from "../state/commandList";
 import { useViewMode } from "../state/viewMode";
 import { SLASH_TIP_W, SlashTip, slashTipBox, slashTipView, type SlashTipBox } from "./SlashTip";
 import { t } from "../i18n/i18n";
@@ -98,40 +111,76 @@ export function useSlashPicker(
       askItems();
     }
   }, [query, items, askItems]);
-  const options = query === null ? [] : matchSkills(query, skills);
   // Card 554: asked for when the composer mounts, so it is here by the first slash.
   const { rows, status } = useCommandList();
   const mode = useViewMode();
-  // Card 554, criterion 8h: a slash that opens the draft, with no list yet.
-  const loading = at !== null && at.start === 0 && onCommand !== undefined && rows === null;
-  // Card 471: the commands come first and share the one focus index with the
-  // skills, so the arrows walk from the last command into the first skill.
-  const commands: CommandRow[] =
-    at === null || onCommand === undefined || rows === null
-      ? []
-      : matchCommands(at.query, at.start, rows, mode);
-  const rowCount = commands.length + options.length;
+  // Card 588: a draft that opens with a slash is read as a command up to the
+  // caret, past spaces; a line break ends it.
+  const typed = draft.slice(0, caret);
+  const commandAsked = enabled && onCommand !== undefined && typed.startsWith("/") && !/[\r\n\t]/.test(typed);
 
   const [index, setIndex] = useState(0);
   // Esc closes the list and LEAVES the slash where it was typed, so the reader
   // can write a message that happens to start with one.
   //
-  // It stays closed until the draft stops being a command at all. Keying this
-  // on the query instead was tried and is worse: typing one more character
-  // reopened the list, so Esc meant almost nothing, and deleting back to the
-  // dismissed query closed it again — the same draft behaving two ways
+  // The commands stay away until the draft stops being a command at all.
+  // Keying this on the query instead was tried and is worse: typing one more
+  // character reopened the list, so Esc meant almost nothing, and deleting back
+  // to the dismissed query closed it again, the same draft behaving two ways
   // depending on which side it was approached from. Found by walking it.
-  const [dismissed, setDismissed] = useState(false);
-  const lastQuery = useRef<string | null>(null);
+  //
+  // Card 588, fix round: a skill list stays away while its token is typed, the
+  // token at the slash `skillsAwayAt`. A skill token later in a command draft
+  // opens its own list (card 247); the token that opens the draft is the
+  // command's word and stays away with the commands.
+  const [commandsAway, setCommandsAway] = useState(false);
+  const [skillsAwayAt, setSkillsAwayAt] = useState<number | null>(null);
+  const tokenAt = at === null ? null : at.start;
   useEffect(() => {
-    if (lastQuery.current !== query) {
-      lastQuery.current = query;
-      setIndex(0);
-      if (query === null) setDismissed(false);
-    }
-  }, [query]);
+    setSkillsAwayAt((away) => (away === tokenAt ? away : null));
+  }, [tokenAt]);
+  useEffect(() => {
+    if (!commandAsked) setCommandsAway(false);
+  }, [commandAsked]);
+  // Card 588, round 2: with the caret inside a draft whose first word names a
+  // command, no skill is offered for that word, so Enter sends the draft as
+  // the composer reads it and the command is never written over.
+  const keepsCommand =
+    commandAsked && rows !== null && draft.slice(caret).trim() !== "" && opensWithCommand(draft, rows);
+  const skillsAway =
+    tokenAt !== null &&
+    (tokenAt === skillsAwayAt || (tokenAt === 0 && commandAsked && (commandsAway || keepsCommand)));
+  const skillQuery = skillsAway ? null : query;
+  const options = skillQuery === null ? [] : matchSkills(skillQuery, skills);
 
-  const open = query !== null && !dismissed;
+  // Card 554, criterion 8h: a slash that opens the draft, with no list yet.
+  const loading = commandAsked && !commandsAway && rows === null;
+  const offer =
+    commandAsked && !commandsAway && rows !== null ? offerCommands(draft, caret, rows, mode) : null;
+  // Card 471: the commands come first and share the one focus index with the
+  // skills, so the arrows walk from the last command into the first skill.
+  const commands: CommandRow[] = offer?.rows ?? [];
+  // Card 588: the template of the command whose words are being typed.
+  const writing = offer !== null && offer.rows.length === 0 ? offer.writing : null;
+  const writingUsage = writing === null ? null : usageOf(writing, lang);
+  const rowCount = commands.length + options.length;
+
+  // Card 588: what is being completed, skill and command together; a change
+  // moves the focus back to the top.
+  const pickKey = query === null && !commandAsked ? null : `${query ?? ""}\u0000${commandAsked ? typed : ""}`;
+  const lastQuery = useRef<string | null>(null);
+  // Card 588, fix round: what moved the highlight last, the keys or the pointer.
+  const movedBy = useRef<"key" | "pointer">("key");
+  useEffect(() => {
+    if (lastQuery.current !== pickKey) {
+      lastQuery.current = pickKey;
+      movedBy.current = "key";
+      setIndex(0);
+    }
+  }, [pickKey]);
+
+  const showCommands = loading || commands.length > 0 || writingUsage !== null;
+  const open = skillQuery !== null || showCommands;
   const activeCommand = index < commands.length ? commands[index] : undefined;
   const active = index < commands.length ? undefined : options[index - commands.length];
 
@@ -166,6 +215,15 @@ export function useSlashPicker(
     };
   }, [open]);
 
+  // Card 588, fix round: wrapped help can make the list taller than the
+  // popover, so the row the keys move to is scrolled into view, the nearest
+  // way. A hover does not scroll: a row under a parked pointer would bounce the
+  // list (PlusMenuSettings.tsx measured that).
+  useEffect(() => {
+    if (!open || movedBy.current === "pointer") return;
+    popRef.current?.querySelector(".slash-row--on")?.scrollIntoView({ block: "nearest" });
+  }, [open, index, pickKey]);
+
   const tipView = activeCommand !== undefined ? null : slashTipView(options, index - commands.length);
   const tip = tipView === null || tipBox === null ? null : <SlashTip view={tipView} box={tipBox} />;
 
@@ -173,7 +231,6 @@ export function useSlashPicker(
     if (at === null) return;
     const picked = tokenInsert(draft, at, caret, skill);
     onPick(picked.text, picked.caret);
-    setDismissed(false);
     setIndex(0);
   };
 
@@ -187,29 +244,36 @@ export function useSlashPicker(
       return;
     }
     onCommand(name);
-    setDismissed(false);
     setIndex(0);
   };
 
   /** Writes a command into the draft without running it. A command only opens
    *  the draft, so it replaces everything up to the caret. Card 504: a command
-   *  that takes words gets a space after it. */
+   *  that takes words gets a space after it. Card 588: so does a subcommand,
+   *  and a command that has subcommands, which then follow it. */
   const complete = (command: CommandRow): void => {
     const spelling = `/${spellingsOf(command)[0]}`;
-    const text = command.takesArgs ? `${spelling} ` : spelling;
+    const more = command.takesArgs || command.sub !== null || hasSubs(command, webCommands(rows ?? [], mode));
+    const text = more ? `${spelling} ` : spelling;
     onPick(text + draft.slice(caret), text.length);
     setIndex(0);
   };
 
-  /** Whether the draft is exactly one of the row's spellings. */
+  /** Whether the draft is exactly one of the row's spellings, in any case. */
   const spelledOut = (command: CommandRow): boolean =>
-    spellingsOf(command).some((spelling) => draft.trim() === `/${spelling}`);
+    spellingsOf(command).some((spelling) => draft.trim().toLowerCase() === `/${spelling}`);
 
   const handleKey = (event: KeyboardEvent): boolean => {
     if (!open) return false;
+    // Card 588, fix round: an input method's keys and Shift+Enter belong to
+    // the composer, as composerKeys.ts reads them.
+    const native = event.nativeEvent as { isComposing?: boolean } | undefined;
+    if (native?.isComposing === true || event.keyCode === 229) return false;
+    if (event.key === "Enter" && event.shiftKey) return false;
     if (event.key === "Escape") {
       event.preventDefault();
-      setDismissed(true);
+      if (showCommands) setCommandsAway(true);
+      if (skillQuery !== null && at !== null) setSkillsAwayAt(at.start);
       return true;
     }
     if (rowCount === 0) {
@@ -219,6 +283,7 @@ export function useSlashPicker(
     }
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
+      movedBy.current = "key";
       const step = event.key === "ArrowDown" ? 1 : -1;
       setIndex((i) => (i + step + rowCount) % rowCount);
       return true;
@@ -251,18 +316,29 @@ export function useSlashPicker(
 
   // Card 471: with commands on offer, a skill section that has nothing to show
   // steps aside instead of saying "no skill matches" under a command that does.
-  const skillSection = (commands.length === 0 && !loading) || options.length > 0;
+  // Card 588: so does a skill section with no skill being typed.
+  const skillSection =
+    skillQuery !== null &&
+    ((commands.length === 0 && !loading && writingUsage === null) || options.length > 0);
   const grouped = new Set(commands.map((command) => command.group)).size > 1;
 
   const node = (
     <>
       <div className="wsg-pop slash-pop" role="dialog" aria-label={t(lang, "slash.title")} ref={popRef}>
-        {(commands.length > 0 || loading) && (
+        {showCommands && (
           <>
             <div className="settings-label">{t(lang, "slash.commands")}</div>
             {loading ? (
               <p className="settings-note slash-loading" role="status">
                 {t(lang, status === "failed" ? "slash.loadFailed" : "slash.loading")}
+              </p>
+            ) : writingUsage !== null && writing !== null ? (
+              // Card 588: the template while the command's words are typed.
+              <p className="slash-writing" role="status">
+                <span className="slash-usage mono">{writingUsage}</span>
+                <span className="slash-desc" title={helpOf(writing, lang)}>
+                  {helpOf(writing, lang)}
+                </span>
               </p>
             ) : (
               <ul className="slash-list" role="listbox" aria-label={t(lang, "slash.commands")}>
@@ -279,16 +355,26 @@ export function useSlashPicker(
                         type="button"
                         role="option"
                         aria-selected={at === index}
-                        className={`slash-row${at === index ? " slash-row--on" : ""}`}
+                        className={`slash-row slash-row--command${at === index ? " slash-row--on" : ""}`}
                         onMouseDown={(e) => e.preventDefault()}
-                        onMouseEnter={() => setIndex(at)}
+                        onMouseEnter={() => {
+                          movedBy.current = "pointer";
+                          setIndex(at);
+                        }}
                         onClick={() => run(command)}
                       >
                         <span className="slash-name mono">{`/${spellingsOf(command)[0]}`}</span>
                         {command.aliases.map((alias) => (
                           <span key={alias} className="slash-alias mono">{`/${alias}`}</span>
                         ))}
-                        <span className="slash-desc">{t(lang, `cmd.${command.id}.help`)}</span>
+                        <span className="slash-desc" title={helpOf(command, lang)}>
+                          {helpOf(command, lang)}
+                        </span>
+                        {/* Card 588: a row's template, under it. Fix round: on every
+                            row that has one, so moving the highlight moves no row. */}
+                        {usageOf(command, lang) !== null && (
+                          <span className="slash-usage mono">{usageOf(command, lang)}</span>
+                        )}
                       </button>
                     </li>
                   </Fragment>
@@ -316,7 +402,10 @@ export function useSlashPicker(
                     // The pointer must not take focus off the textarea, or the
                     // composer loses the caret the pick is about to write into.
                     onMouseDown={(e) => e.preventDefault()}
-                    onMouseEnter={() => setIndex(at)}
+                    onMouseEnter={() => {
+                      movedBy.current = "pointer";
+                      setIndex(at);
+                    }}
                     onClick={() => pick(skill)}
                   >
                     <span className="slash-name mono">{skill.name}</span>
@@ -349,7 +438,9 @@ export function useSlashPicker(
             })}
           </ul>
         )}
-        <p className="settings-note slash-hint">{t(lang, "slash.hint")}</p>
+        {(rowCount > 0 || skillSection) && (
+          <p className="settings-note slash-hint">{t(lang, "slash.hint")}</p>
+        )}
       </div>
       {/* A SIBLING of the list, never a child: .wsg-pop scrolls (overflow-y),
           and a box that hangs out of a scrolling box is clipped by it — the
@@ -358,6 +449,11 @@ export function useSlashPicker(
     </>
   );
   return { node, handleKey };
+}
+
+/** Card 588: whether a row's name has subcommands in the list, so picking it leads on to them. */
+function hasSubs(command: CommandRow, rows: readonly CommandRow[]): boolean {
+  return command.sub === null && rows.some((row) => row.name === command.name && row.sub !== null);
 }
 
 /** Card 554: the frame-of-its-own command a row is, or null for a row the composer sends. */

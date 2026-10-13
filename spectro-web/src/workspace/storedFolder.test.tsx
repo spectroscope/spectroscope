@@ -16,6 +16,7 @@ import { __resetForTests, openDockPanel, openRightPanel } from "../state/layout"
 import type { WorkspaceInfo } from "../state/reducer";
 import { paneState, recordedWorkspace } from "./paneState";
 import { storedCwdOf, storedFolderOf, storedWorkspace } from "./storedFolder";
+import { NO_SELECTION } from "../testkit/noSelection";
 
 const runStart = (fields: Record<string, unknown>): RunEvent =>
   ({
@@ -50,7 +51,7 @@ function filesPanel(props: { storedCwd?: string | null; recordedCwd?: string | n
   return renderToStaticMarkup(
     <RightPanel
       agents={[]}
-      plan={null}
+      {...NO_SELECTION}
       onClose={() => {}}
       thinking
       workspace={null}

@@ -61,6 +61,16 @@ final class FakeSeat implements MessagingSeat {
         return siblings.stream().anyMatch(id -> dev.spectroscope.core.peer.PeerNames.same(id, name));
     }
 
+    /** Card 581: children of the caller's session that have ended, by id, with their refusal. */
+    final java.util.Map<String, String> endedChildren = new java.util.LinkedHashMap<>();
+
+    @Override
+    public String endedChild(String name) {
+        return endedChildren.entrySet().stream()
+                .filter(entry -> dev.spectroscope.core.peer.PeerNames.same(entry.getKey(), name))
+                .map(java.util.Map.Entry::getValue).findFirst().orElse(null);
+    }
+
     @Override
     public Sent sendToSession(AgentRow row, String text, String summary) {
         if (failSession != null) {

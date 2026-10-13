@@ -10,6 +10,11 @@
 // /playbook list and /playbook show; /skills opens the Skills and Commands
 // view. A host without a line or without the view runs none of those, and
 // the composer keeps the draft.
+//
+// Card 576: the three frames are tagged as typed commands (typedCommand.ts),
+// so the record marks the errors that answer them.
+//
+// Card 587: /graph and its subcommands run in state/graphCommand.ts.
 
 import type { ClientMessage } from "../events";
 import { t, type Lang } from "../i18n/i18n";
@@ -21,6 +26,8 @@ import {
   type DraftDecision,
 } from "./chatCommands";
 import type { CommandRow } from "./commandList";
+import { asTypedCommand } from "./typedCommand";
+import { runGraphCommand } from "./graphCommand";
 import type { PlaybookPick } from "./playbookChat";
 import {
   currentLine,
@@ -74,7 +81,8 @@ export type PageDecision = Extract<
       | "playbookUse"
       | "playbookCurrent"
       | "playbookList"
-      | "playbookShow";
+      | "playbookShow"
+      | "graph";
   }
 >;
 
@@ -97,12 +105,19 @@ export function runPageCommand(decided: PageDecision, host: PageCommandHost): Pa
   switch (decided.kind) {
     case "runPlaybook":
       // An empty prompt goes too: the server answers it with the usage line (criterion 1).
-      return { accepted: host.sendSession(confirmPlaybookFrame(decided.prompt)), settled: DONE };
-    case "runWorkflow":
       return {
-        accepted: host.sendSession(startWorkflowFrame(decided.name, decided.input, host.lang)),
+        accepted: host.sendSession(asTypedCommand(confirmPlaybookFrame(decided.prompt))),
         settled: DONE,
       };
+    case "runWorkflow":
+      return {
+        accepted: host.sendSession(
+          asTypedCommand(startWorkflowFrame(decided.name, decided.input, host.lang)),
+        ),
+        settled: DONE,
+      };
+    case "graph":
+      return runGraphCommand(decided.action, decided.question, host);
     case "skills":
       if (host.openSkills === undefined) return { accepted: false, settled: DONE };
       host.openSkills();
@@ -161,7 +176,7 @@ async function answerOf(
         line({ text: resolved.refusal, tone: "warn" });
         return;
       }
-      if (!host.sendSession(setPlaybookFrame(resolved.dir))) {
+      if (!host.sendSession(asTypedCommand(setPlaybookFrame(resolved.dir)))) {
         line({ text: t(lang, "pbcmd.use.notSent"), tone: "warn" });
         return;
       }

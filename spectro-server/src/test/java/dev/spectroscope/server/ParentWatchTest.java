@@ -62,7 +62,8 @@ class ParentWatchTest {
         }
         command.addAll(List.of("-cp", System.getProperty("java.class.path"),
                 SpectroServerApplication.class.getName(),
-                "--server.port=0", "--server.address=127.0.0.1", "--SPECTRO_HUB_PORT="));
+                "--server.port=0", "--server.address=127.0.0.1", "--SPECTRO_HUB_ENABLED=",
+                "--SPECTRO_HUB_PORT="));
         ProcessBuilder builder = new ProcessBuilder(command).directory(work.toFile());
         builder.environment().put("SERVER_OUT", out.toString());
         Process parent = builder.start();

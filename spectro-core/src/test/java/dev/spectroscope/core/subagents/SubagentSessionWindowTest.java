@@ -31,9 +31,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * window the operator set for it. They share the parent's backend, so the
  * window the operator stated is theirs too.
  *
- * <p>Children run without introspection and emit no {@code context_info}, so
- * the measurement is the one {@code SubagentThresholdInheritanceTest} uses: a
- * run whose window is decided asks the backend nothing. With no session window
+ * <p>The measurement is the one {@code SubagentThresholdInheritanceTest} uses:
+ * a run whose window is decided asks the backend nothing. Since card 593 a
+ * child's {@code context_info} names its window too, and the count below needs
+ * no frame. With no session window
  * the parent's run and the child's run ask once each; with one, neither asks.
  * A child that did not get the holder would ask once, and the count would be
  * 1.</p>

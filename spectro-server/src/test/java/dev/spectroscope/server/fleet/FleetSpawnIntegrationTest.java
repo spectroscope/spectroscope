@@ -25,7 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * so the test proves the HTTP → NodeSpawner wiring without a child JVM or an LLM.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-        properties = {"SPECTRO_HUB_PORT=0", "SPECTRO_ALLOW_SPAWN=true"})
+        properties = {"SPECTRO_HUB_ENABLED=", "SPECTRO_HUB_PORT=0", "SPECTRO_ALLOW_SPAWN=true"})
 @Timeout(value = 60, unit = TimeUnit.SECONDS)
 class FleetSpawnIntegrationTest {
 

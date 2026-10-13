@@ -128,20 +128,30 @@ class PlaybookReadsInPlaceTest {
         return playbookDir.toRealPath();
     }
 
-    private JsonNode lastConfirm() throws IOException {
-        JsonNode last = null;
-        for (FakeSocket.Frame f : socket.frames()) {
-            JsonNode n = JSON.readTree(f.payload());
-            if ("playbook_confirm".equals(n.path("type").asText())) {
-                last = n;
+    /**
+     * The nth playbook_confirm frame, waited for: card 584 sends it from a
+     * virtual thread once every provider answered, not on the socket thread.
+     */
+    private JsonNode confirm(int nth) throws Exception {
+        long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+        while (true) {
+            List<JsonNode> found = new ArrayList<>();
+            for (FakeSocket.Frame f : socket.frames()) {
+                JsonNode n = JSON.readTree(f.payload());
+                if ("playbook_confirm".equals(n.path("type").asText())) {
+                    found.add(n);
+                }
             }
+            if (found.size() >= nth || System.nanoTime() > until) {
+                assertThat(found).as("playbook_confirm frames").hasSizeGreaterThanOrEqualTo(nth);
+                return found.get(nth - 1);
+            }
+            Thread.sleep(20);
         }
-        assertThat(last).as("a playbook_confirm frame").isNotNull();
-        return last;
     }
 
     @Test
-    void aStepSkillOnlyTheUsersFolderHoldsIsNotTakenAndTheStartIsRefused() throws IOException {
+    void aStepSkillOnlyTheUsersFolderHoldsIsNotTakenAndTheStartIsRefused() throws Exception {
         Files.createDirectories(userSkill);
         Files.writeString(userSkill.resolve("SKILL.md"), "---\nname: house-rules\n---\nStage explicit paths.");
         Path dir = registered(SKILL_STEP);
@@ -149,7 +159,7 @@ class PlaybookReadsInPlaceTest {
 
         connection.onConfirmPlaybook(dir.toString(), "add a CSV export");
 
-        JsonNode preview = lastConfirm().path("preview");
+        JsonNode preview = confirm(1).path("preview");
         assertThat(preview.path("skills").get(0).path("name").asText()).isEqualTo("house-rules");
         assertThat(preview.path("skills").get(0).path("source").asText())
                 .as("the user's copy is not read for a run").isEqualTo("missing");
@@ -157,20 +167,20 @@ class PlaybookReadsInPlaceTest {
     }
 
     @Test
-    void anAgentFileInTheFolderRunsWithoutAnInstallAndItsBytesAreInTheStartHash() throws IOException {
+    void anAgentFileInTheFolderRunsWithoutAnInstallAndItsBytesAreInTheStartHash() throws Exception {
         Path dir = registered(AGENT_STEP);
         Files.createDirectories(dir.resolve("agents"));
         Files.writeString(dir.resolve("agents/reviewer.md"), REVIEWER);
         SessionConnection connection = session("ws-558-agent");
 
         connection.onConfirmPlaybook(dir.toString(), "review the diff");
-        JsonNode first = lastConfirm().path("preview");
+        JsonNode first = confirm(1).path("preview");
 
         assertThat(first.path("refusals")).as("nothing installed, nothing refused").isEmpty();
 
         Files.writeString(dir.resolve("agents/reviewer.md"), REVIEWER.replace("never edit", "edit"));
         connection.onConfirmPlaybook(dir.toString(), "review the diff");
-        JsonNode second = lastConfirm().path("preview");
+        JsonNode second = confirm(2).path("preview");
 
         assertThat(second.path("hash").asText()).as("an edited preamble moves the start hash")
                 .isNotEqualTo(first.path("hash").asText());

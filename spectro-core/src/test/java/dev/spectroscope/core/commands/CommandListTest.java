@@ -24,11 +24,46 @@ class CommandListTest {
         List<String> ids = CommandList.all().stream().map(CommandList.Command::id).toList();
         assertTrue(ids.containsAll(List.of("help", "compact", "clear", "loop", "run-with-playbook",
                 "playbook-current", "playbook-list", "playbook-show", "playbook-use", "playbook-workflow",
-                "codegraph", "codegraph-show", "skills", "think", "peer")), ids.toString());
+                "graph", "graph-build", "graph-update", "graph-show", "graph-ask", "graph-help", "skills", "think",
+                "peer")), ids.toString());
         assertEquals(List.of("commands"), byId("help").aliases());
         assertEquals(List.of("playbook run"), byId("run-with-playbook").aliases());
         assertEquals(List.of("run-workflow"), byId("playbook-workflow").aliases());
-        assertEquals(List.of("graphify"), byId("codegraph").aliases());
+        assertEquals(List.of("codegraph", "graphify"), byId("graph").aliases());
+    }
+
+    /**
+     * Card 587, criterion 1: {@code /graph} is wired on the web with build,
+     * update, show, ask and help, and the reserved names {@code /codegraph}
+     * and {@code /graphify} are its aliases.
+     */
+    @Test
+    void theGraphCommandIsWiredOnTheWebWithItsFiveSubcommands() {
+        List<String> subs = new ArrayList<>();
+        for (CommandList.Command c : CommandList.all()) {
+            if ("graph".equals(c.name()) && c.sub() != null) {
+                subs.add(c.sub());
+            }
+        }
+        assertEquals(List.of("build", "update", "show", "ask", "help"), subs);
+        for (String id : List.of("graph", "graph-build", "graph-update", "graph-show", "graph-ask", "graph-help")) {
+            CommandList.Command c = byId(id);
+            assertTrue(c.wired(), id);
+            assertEquals("web", c.surfaces(), id);
+            assertEquals("codegraph", c.group(), id);
+            assertFalse(c.developerOnly(), id + " is offered in every mode, as the folder chip's rows are");
+            assertEquals(id.equals("graph-ask"), c.takesArgs(), id + ": only ask takes words");
+        }
+        assertTrue(CommandList.all().stream().noneMatch(c -> c.name().equals("codegraph")),
+                "the reserved rows are gone; their names live on as aliases");
+        CommandList.Match ask = CommandList.match("/graph ask who calls PlaybookRunner.step").orElseThrow();
+        assertEquals("graph-ask", ask.command().id());
+        assertEquals("who calls PlaybookRunner.step", ask.rest());
+        CommandList.Match alias = CommandList.match("/codegraph build").orElseThrow();
+        assertEquals("graph", alias.command().id(), "an alias names the command, the rest is its subcommand");
+        assertEquals("build", alias.rest());
+        assertEquals("graph", CommandList.match("/graphify").orElseThrow().command().id());
+        assertTrue(CommandList.webFirstWords().containsAll(Set.of("graph", "codegraph", "graphify")));
     }
 
     @Test
@@ -78,8 +113,90 @@ class CommandListTest {
         assertEquals(List.of(), broken);
     }
 
+    /**
+     * Card 588, criterion 3: the list gives every row's help in English and
+     * German; the web reads both from here and keeps no copy.
+     */
     @Test
-    void thePlaybookRowsAreWebAndDeveloperOnlyAndTheCodeGraphRowsAreNotWiredYet() {
+    void everyRowHasItsHelpInEnglishAndGerman() {
+        List<String> broken = new ArrayList<>();
+        for (CommandList.Command c : CommandList.all()) {
+            String de = c.help() == null ? null : c.help().de();
+            if (de == null || de.isBlank()) {
+                broken.add(c.id() + ": no German help");
+            } else if (de.matches(".*[\\u2013\\u2014].*")) {
+                broken.add(c.id() + ": a dash in the German help");
+            } else if (de.equals(c.help().en())) {
+                broken.add(c.id() + ": the German help is the English one");
+            }
+        }
+        assertFalse(CommandList.all().isEmpty(), "the list is not empty");
+        assertEquals(List.of(), broken);
+        // Fix round, M9: "transkribieren" is the German word for transcribe.
+        assertTrue(byId("voice").help().de().contains("transkribieren"), byId("voice").help().de());
+    }
+
+    /**
+     * Card 588, criteria 2 and 5: every row that takes words carries a
+     * template in both languages, and every template opens with how its row
+     * is typed.
+     */
+    @Test
+    void everyRowThatTakesWordsCarriesAUsageInBothLanguages() {
+        List<String> broken = new ArrayList<>();
+        int takesWords = 0;
+        for (CommandList.Command c : CommandList.all()) {
+            if (c.takesArgs()) {
+                takesWords++;
+                if (c.usage() == null) {
+                    broken.add(c.id() + ": takes words and has no usage");
+                    continue;
+                }
+            }
+            if (c.usage() == null) {
+                continue;
+            }
+            for (String text : new String[] {c.usage().en(), c.usage().de()}) {
+                if (text == null || text.isBlank()) {
+                    broken.add(c.id() + ": a usage without both languages");
+                } else if (!text.startsWith("/" + c.spelling() + " ")) {
+                    broken.add(c.id() + ": the usage " + text + " does not open with /" + c.spelling());
+                } else if (text.matches(".*[\\u2013\\u2014].*")) {
+                    broken.add(c.id() + ": a dash in the usage");
+                }
+            }
+        }
+        assertTrue(takesWords > 5, "premise: the list has rows that take words, " + takesWords);
+        assertEquals(List.of(), broken);
+        assertEquals("/graph ask <question>", byId("graph-ask").usage().en());
+        assertEquals("/loop [interval] <prompt>", byId("loop").usage().en());
+    }
+
+    /**
+     * Card 588, criterion 5: a row with a second word stands under a parent,
+     * the row of its first word alone, on the same faces and in the same group.
+     */
+    @Test
+    void everySubRowHasAParentRow() {
+        List<String> orphans = new ArrayList<>();
+        int subs = 0;
+        for (CommandList.Command c : CommandList.all()) {
+            if (c.sub() == null) {
+                continue;
+            }
+            subs++;
+            boolean parent = CommandList.all().stream().anyMatch(p -> p.sub() == null && p.name().equals(c.name())
+                    && p.surfaces().equals(c.surfaces()) && p.group().equals(c.group()));
+            if (!parent) {
+                orphans.add(c.id());
+            }
+        }
+        assertTrue(subs >= 9, "premise: the list has sub rows, " + subs);
+        assertEquals(List.of(), orphans);
+    }
+
+    @Test
+    void thePlaybookRowsAreWebAndDeveloperOnly() {
         for (String id : List.of("run-with-playbook", "playbook-current", "playbook-list", "playbook-show",
                 "playbook-use", "playbook-workflow")) {
             CommandList.Command c = byId(id);
@@ -94,8 +211,6 @@ class CommandListTest {
         assertFalse(byId("playbook-current").takesArgs(), "/playbook runs on Enter");
         assertFalse(byId("playbook-list").takesArgs());
         assertFalse(byId("playbook-show").takesArgs(), "/playbook show runs on Enter; a name is optional");
-        assertFalse(byId("codegraph").wired());
-        assertFalse(byId("codegraph-show").wired());
         assertTrue(byId("compact").wired(), "absent reads as wired");
         assertEquals("both", byId("clear").surfaces());
         assertTrue(byId("loop").help().en().contains("/loop stop ends it"),

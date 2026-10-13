@@ -458,6 +458,10 @@ final class EventRenderer {
             // Card 554: a playbook run starts from the web chat only, so this
             // arm is reached only by a replayed file.
             case RunEvent.PlaybookProgress e -> e.agentId();
+            // Card 586: the run view's line comes from a playbook or a workflow
+            // run, and the CLI starts neither, so this arm too is reached only
+            // by a replayed file.
+            case RunEvent.RunStep e -> e.agentId();
             case RunEvent.PlaybookPicked e -> null;
             case RunEvent.LaunchOutcome e -> null;
             case RunEvent.NoProgress e -> e.agentId();

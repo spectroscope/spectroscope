@@ -860,6 +860,26 @@
 .context-compacts { margin: 2px 0 0; font-size: var(--fs-12); color: var(--text-faint); }
 /* Card 521: said when the run learned no window, so the share above reads as one of the fallback. */
 .context-unknown { margin: 2px 0 0; font-size: var(--fs-12); color: var(--text-faint); }
+/* Card 593: the picker over the agents of the session, in the ring's popover and the Plan and System context panels. Block layout on purpose: the list pushes the content under it down and takes no side, so the popover's side rules stay as they are. */
+.agent-pick { position: relative; margin: 0 0 var(--sp-3); }
+.agent-pick-button { display: inline-flex; align-items: center; gap: var(--sp-2); max-width: 100%; background: none; border: 1px solid var(--border-strong); border-radius: 999px; padding: 2px var(--sp-3); color: var(--text); font-size: var(--fs-12); cursor: pointer; }
+.agent-pick-button:hover { background: var(--surface-2); }
+.agent-pick-button[aria-disabled="true"] { cursor: default; }
+.agent-pick-button[aria-disabled="true"]:hover { background: none; }
+.agent-pick-button[aria-disabled="true"] .agent-pick-chevron { opacity: 0.35; }
+.agent-pick-showing { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-pick-missing { margin: var(--sp-1) 0 0; font-size: var(--fs-12); color: var(--warn); }
+.agent-pick-list { list-style: none; margin: var(--sp-2) 0 0; padding: var(--sp-1); border: 1px solid var(--border-strong); border-radius: var(--radius-card); background: var(--surface); display: flex; flex-direction: column; gap: 2px; max-height: 240px; overflow-y: auto; }
+.agent-pick-row { display: flex; align-items: center; gap: var(--sp-2); padding: 4px var(--sp-2); border-radius: 6px; cursor: pointer; font-size: var(--fs-12); min-width: 0; }
+.agent-pick-row--active, .agent-pick-row:hover { background: var(--surface-2); }
+.agent-pick-row[aria-selected="true"] .agent-pick-name { font-weight: 600; }
+.agent-pick-name { flex: none; }
+.agent-pick-label, .agent-pick-task, .agent-pick-ended { color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* In the flex columns of the System context and run panels the column's gap spaces the picker. */
+.ctx > .agent-pick, .run-plan > .agent-pick { margin-bottom: 0; }
+.context-ring-agent { display: inline-flex; align-items: center; gap: 4px; color: var(--text-dim); }
+.context-ring-agent-dot { width: 6px; height: 6px; border-radius: 999px; background: var(--agent-color, var(--text-faint)); }
+.context-helper-model { margin: 2px 0 0; font-size: var(--fs-12); color: var(--text-faint); }
 .context-ring-mark { opacity: 0.75; }
 
 .context-parts { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; column-gap: var(--sp-3); row-gap: 2px; margin: var(--sp-3) 0; font-size: var(--fs-12); }

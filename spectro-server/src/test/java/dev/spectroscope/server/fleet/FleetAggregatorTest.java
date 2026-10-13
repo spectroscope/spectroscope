@@ -6,14 +6,18 @@ import ch.qos.logback.core.read.ListAppender;
 import dev.spectroscope.core.events.RunEvent;
 import dev.spectroscope.orchestrator.BusEnvelope;
 import dev.spectroscope.orchestrator.BusPublisher;
+import dev.spectroscope.orchestrator.HubSettings;
 import dev.spectroscope.orchestrator.NodeCard;
 import dev.spectroscope.orchestrator.ProcessBus;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
+import org.springframework.context.support.PropertySourcesPlaceholderConfigurer;
+import org.springframework.mock.env.MockEnvironment;
 
-import java.io.UncheckedIOException;
 import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -25,12 +29,12 @@ import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * The aggregator's pure-ish mechanics against a real loopback hub: opt-in
- * parsing (default OFF, invalid loud-but-off, bind failure fails the boot), the
+ * parsing (default OFF, card 585: never a port under 1024, never a dead boot), the
  * roster fold (join/leave/last-seen, leave observed at the LISTENER not just the
  * fold), card-announced topics tapped automatically, and per-node ring replay.
  * Latches only — the wire suite's discipline.
@@ -45,13 +49,20 @@ class FleetAggregatorTest {
         return new RunEvent.TextDelta("main", text, 42L);
     }
 
+    /** A loopback listener on an OS-assigned port, the way another program holds one. */
+    private static ServerSocket hold() throws Exception {
+        ServerSocket held = new ServerSocket();
+        held.bind(new InetSocketAddress(InetAddress.getByName("127.0.0.1"), 0));
+        return held;
+    }
+
     @Test
-    void theHubIsOptInAndAnInvalidPortIsLoudlyOff() {
+    void theHubIsOptInAndAnExplicitFalseWins() {
         try (FleetAggregator off = new FleetAggregator("")) {
-            assertFalse(off.enabled(), "no port configured — no listener, no attack surface");
+            assertFalse(off.enabled(), "no port configured: no listener, no attack surface");
         }
-        try (FleetAggregator invalid = new FleetAggregator("not-a-port")) {
-            assertFalse(invalid.enabled(), "an invalid port disables the hub");
+        try (FleetAggregator off = new FleetAggregator("false", "0")) {
+            assertFalse(off.enabled(), "SPECTRO_HUB_ENABLED=false wins over a port");
         }
         try (FleetAggregator on = new FleetAggregator("0")) {
             assertTrue(on.enabled());
@@ -60,41 +71,108 @@ class FleetAggregatorTest {
     }
 
     @Test
-    void anInvalidPortNamesItselfInAWarnNotASilentOff() {
+    void anAdminPortTurnsTheHubOnAtTheFirstFreePortFrom7700() {
+        // Card 585, the owner's file: SPECTRO_HUB_PORT=1 and no switch. The
+        // production constructor walks from 7700, never under 1024, never into
+        // 8080 to 8100, and the boot goes on.
+        try (FleetAggregator owner = new FleetAggregator("", "1")) {
+            assertTrue(owner.enabled(), "SPECTRO_HUB_PORT=1 means a hub, not a dead app");
+            assertTrue(owner.port() >= 7700, "picked " + owner.port());
+            assertFalse(owner.port() >= 8080 && owner.port() <= 8100, "picked " + owner.port());
+            assertEquals(HubSettings.Note.PORT_PRIVILEGED, owner.hubState().note());
+        }
+    }
+
+    @Test
+    void anInvalidPortNamesItselfAndThePortItTookInAWarn() throws Exception {
         ch.qos.logback.classic.Logger logger =
                 (ch.qos.logback.classic.Logger) LoggerFactory.getLogger(FleetAggregator.class);
         ListAppender<ILoggingEvent> appender = new ListAppender<>();
         appender.start();
         logger.addAppender(appender);
-        try (FleetAggregator invalid = new FleetAggregator("not-a-port")) {
-            assertFalse(invalid.enabled());
+        try (ServerSocket held = hold();
+             FleetAggregator invalid = new FleetAggregator("", "not-a-port", held.getLocalPort())) {
+            assertTrue(invalid.enabled(), "an unreadable port picks a free one");
+            assertTrue(invalid.port() > held.getLocalPort());
             assertTrue(appender.list.stream().anyMatch(event ->
                             event.getLevel() == Level.WARN
-                                    && event.getFormattedMessage().contains("not-a-port")),
-                    "the typo names itself in a WARN — a silent off would hide the mistake");
+                                    && event.getFormattedMessage().contains("not-a-port")
+                                    && event.getFormattedMessage().contains(String.valueOf(invalid.port()))),
+                    "the WARN names the written value and the port the hub took");
         } finally {
             logger.detachAppender(appender);
         }
     }
 
     @Test
-    void anOutOfRangePortIsLoudlyOffNotABootCrash() {
-        try (FleetAggregator huge = new FleetAggregator("70000")) {
-            assertFalse(huge.enabled(),
-                    "a numeric-but-impossible port joins the typo bucket, not an IllegalArgumentException past boot");
+    void anOutOfRangePortIsNeitherABootCrashNorBound() throws Exception {
+        try (ServerSocket held = hold();
+             FleetAggregator huge = new FleetAggregator("", "70000", held.getLocalPort())) {
+            assertTrue(huge.enabled());
+            assertEquals(HubSettings.Note.PORT_INVALID, huge.hubState().note());
         }
     }
 
     @Test
-    void aBindFailureFailsTheBootInsteadOfSilentlyOff() throws Exception {
-        // The operator explicitly asked for a hub — if the port cannot bind,
-        // failing the boot is honest; a silently missing hub is the worse
-        // surprise the code comment warns about.
-        try (ServerSocket taken = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
-            int occupied = taken.getLocalPort();
-            assertThrows(UncheckedIOException.class,
-                    () -> new FleetAggregator(String.valueOf(occupied)),
-                    "a hub that cannot bind fails the boot, never a quiet off");
+    void aPortHeldByAnotherSocketLeavesTheHubOffAndTheBeanAlive() throws Exception {
+        // Card 585 replaces the old rule "a bind failure fails the boot": the
+        // owner's app must start, with the hub off and the reason in the log.
+        ch.qos.logback.classic.Logger logger =
+                (ch.qos.logback.classic.Logger) LoggerFactory.getLogger(FleetAggregator.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try (ServerSocket held = hold()) {
+            int occupied = held.getLocalPort();
+            try (FleetAggregator aggregator = new FleetAggregator("true", String.valueOf(occupied))) {
+                assertFalse(aggregator.enabled(), "the hub stays off");
+                assertEquals(-1, aggregator.port());
+                assertEquals(HubSettings.Note.BIND_FAILED, aggregator.hubState().note());
+                assertTrue(appender.list.stream().anyMatch(event ->
+                                event.getLevel() == Level.WARN
+                                        && event.getFormattedMessage().contains(String.valueOf(occupied))
+                                        && event.getFormattedMessage().contains(aggregator.hubState().reason())),
+                        "the WARN names the port and the reason");
+            }
+        } finally {
+            logger.detachAppender(appender);
+        }
+    }
+
+    @Test
+    void aPlaceholderInAHubValueLeavesTheHubOffAndTheBeanAlive() {
+        // Review D6: "${nope}" in either value used to throw at bean creation
+        // and fail the boot. The strict placeholder configurer is the one
+        // Spring Boot registers.
+        for (String name : List.of("SPECTRO_HUB_ENABLED", "SPECTRO_HUB_PORT")) {
+            MockEnvironment env = new MockEnvironment();
+            env.setProperty(name, "${nope}");
+            try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext()) {
+                context.setEnvironment(env);
+                context.register(PropertySourcesPlaceholderConfigurer.class, FleetAggregator.class);
+                context.refresh();
+                FleetAggregator fleet = context.getBean(FleetAggregator.class);
+                assertFalse(fleet.enabled(), name);
+                assertEquals(HubSettings.Note.SETTING_UNREADABLE, fleet.hubState().note(), name);
+                assertTrue(fleet.hubState().describe().contains(name), fleet.hubState().describe());
+                fleet.close();
+            }
+        }
+    }
+
+    @Test
+    void theServersOwnPortIsNeverTheHubsPort() throws Exception {
+        // Review D1: a hub on the server's port took it before Tomcat did.
+        int serverPort;
+        try (ServerSocket probe = hold()) {
+            serverPort = probe.getLocalPort();
+        }
+        try (ServerSocket held = hold();
+             FleetAggregator fleet = new FleetAggregator("true", String.valueOf(serverPort),
+                     held.getLocalPort(), serverPort)) {
+            assertTrue(fleet.enabled());
+            assertNotEquals(serverPort, fleet.port());
+            assertEquals(HubSettings.Note.PORT_SERVER, fleet.hubState().note());
         }
     }
 

@@ -45,6 +45,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <p>The scripted provider records every request it is handed; the request is
  * the assertion. The llm wire half of the scenario is read off a real posted
  * body in {@code ToolResultElisionWireTest}.</p>
+ *
+ * <p>Card 600: the switch ships off. {@link #options} therefore builds an
+ * agent with the switch on; the test of the shipped value unsets it.</p>
  */
 @Timeout(value = 20, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
 class AgentToolResultElisionTest {
@@ -132,6 +135,7 @@ class AgentToolResultElisionTest {
                 .cwd(Path.of("."))
                 .agentId("main")
                 .onPermission(request -> true)
+                .toolResultElision("on")
                 .maxTurns(20);
     }
 
@@ -411,6 +415,31 @@ class AgentToolResultElisionTest {
 
         assertEquals(CLAUDE_MD, sent(provider.requests.get(11), "c1"),
                 "toolResultElision off still stubbed a result");
+    }
+
+    @Test
+    void theShippedSwitchSendsEveryResultInFull() {
+        Scripted provider = wholeFileReadThenTenSmallTurns(-1);
+
+        run(new Agent(options(provider).toolResultElision(null).build()));
+
+        assertEquals(12, provider.requests.size(), "premise: the run reached turn 12");
+        assertEquals(CLAUDE_MD, sent(provider.requests.get(11), "c1"),
+                "card 600: with nothing set, a result was stubbed");
+    }
+
+    @Test
+    void onStubsAnOldReadForALocalProviderToo() {
+        Scripted provider = wholeFileReadThenTenSmallTurns(-1);
+
+        run(new Agent(options(provider).providerName("llamacpp").build()));
+
+        assertEquals(12, provider.requests.size(), "premise: the run reached turn 12");
+        String turnTwelve = sent(provider.requests.get(11), "c1");
+        assertFalse(turnTwelve.contains("LINE-OF-CLAUDE-MD"),
+                "card 600: the switch is on and a request to llamacpp carried the 56 kB read");
+        assertTrue(turnTwelve.contains("is left out of this request"),
+                "the request to llamacpp carries no stub in place of the read: " + turnTwelve);
     }
 
     @Test

@@ -12,6 +12,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { DockPanelId, LayoutState } from "../state/layout";
+import { NO_SELECTION } from "../testkit/noSelection";
 
 const KEY = "spectroscope:layout";
 
@@ -56,7 +57,7 @@ function tabsSwitch(m: Loaded): string {
   const html = renderToStaticMarkup(
     <m.panel.RightPanel
       agents={[]}
-      plan={null}
+      {...NO_SELECTION}
       onClose={() => {}}
       thinking
       workspace={null}

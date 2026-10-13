@@ -113,20 +113,25 @@ class WorkflowRunnerTest {
         };
     }
 
-    private static SubagentManager manager(LlmProvider provider, Path cwd, PeerInbox inbox) {
+    static SubagentManager manager(LlmProvider provider, Path cwd, PeerInbox inbox) {
         SubagentManager m = new SubagentManager(SubagentConfig.builder().provider(provider).cwd(cwd)
                 .parentAgentId("main").onPermission(request -> true).baseTools(List.of(listDir())).build());
         m.parentInbox(inbox);
         return m;
     }
 
-    private static Workflow workflow(String json) {
+    static Workflow workflow(String json) {
         WorkflowReader.Read read = WorkflowReader.read(json);
         assertEquals(List.of(), read.findings());
         return read.workflow();
     }
 
-    private record Ran(WorkflowRunner.Outcome outcome, FakeHost host, Children children, List<String> sidecar) {
+    record Ran(WorkflowRunner.Outcome outcome, FakeHost host, Children children, List<String> sidecar) {
+    }
+
+    /** Card 586: the run the fan-out test makes, a prompt and then a fan-out with a join, for WorkflowRunStepsTest. */
+    static Ran promptThenFanout(Path tmp) throws IOException {
+        return run(tmp, RESEARCH, "q", new CancelSignal());
     }
 
     private static Ran run(Path tmp, String json, String input, CancelSignal signal) throws IOException {
@@ -181,8 +186,15 @@ class WorkflowRunnerTest {
         assertEquals("main", last.to());
         assertEquals("received", last.state());
         assertEquals(r.outcome().answer(), last.text());
-        RunEvent lastEvent = r.host().events.get(r.host().events.size() - 1);
-        assertEquals(last, lastEvent, "nothing of the run is drawn after the summary");
+        // Card 586: the run view's two closing lines, the fan-out's step_end and the run's run_end, come
+        // after the summary; no other event of the run does.
+        List<RunEvent> events = r.host().events;
+        List<String> after = events.subList(events.lastIndexOf(last) + 1, events.size()).stream()
+                .map(e -> e instanceof RunEvent.RunStep s ? s.phase() + (s.node() == null ? "" : ":" + s.node())
+                        : e.getClass().getSimpleName())
+                .toList();
+        assertEquals(List.of("step_end:explore", "run_end"), after,
+                "after the summary only the run's closing lines follow");
     }
 
     @Test
@@ -362,6 +374,14 @@ class WorkflowRunnerTest {
                 .toList();
     }
 
+    /** Card 586: holds the run's run_step lines to their pairing and returns the end line of one step. */
+    private static RunEvent.RunStep pairedEnd(FakeHost host, String node) {
+        List<RunEvent.RunStep> lines = PlaybookRunStepsTest.lines(host);
+        PlaybookRunStepsTest.assertPaired(lines);
+        return lines.stream().filter(l -> RunEvent.RunStep.STEP_END.equals(l.phase()) && node.equals(l.node()))
+                .findFirst().orElseThrow();
+    }
+
     @Test
     void aSpawnTheManagerRefusesEndsTheRunAsStepFailedWithNoSummariserAndNoAnswer(@TempDir Path tmp)
             throws IOException {
@@ -382,6 +402,7 @@ class WorkflowRunnerTest {
         JsonNode end = end(f.sidecar());
         assertEquals(RunStop.STEP_FAILED, end.path("stopReason").asText());
         assertTrue(end.path("detail").asText().contains("background is not available"), end.toString());
+        assertEquals(RunSteps.FAILED, pairedEnd(host, "explore").status());
     }
 
     @Test
@@ -412,6 +433,7 @@ class WorkflowRunnerTest {
         assertEquals(RunStop.STEP_FAILED, end.path("stopReason").asText());
         assertTrue(end.path("detail").asText().contains("the summariser failed"), end.toString());
         assertTrue(end.path("result").isNull(), end.toString());
+        assertEquals(RunSteps.FAILED, pairedEnd(host, "explore").status());
     }
 
     @Test

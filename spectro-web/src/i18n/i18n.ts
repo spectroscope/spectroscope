@@ -858,6 +858,9 @@ export const dict: Record<string, { de: string; en: string }> = {
   "doc.wsTemp": { de: "Temp-Ordner je Session", en: "per-session temp folder" },
   "doc.logging": { de: "Log-Level", en: "log level" },
   "doc.mode": { de: "Permission-Modus", en: "permission mode" },
+  "doc.hub": { de: "Flotten-Hub", en: "fleet hub" },
+  "doc.hubOn": { de: "an · Port {port}", en: "on · port {port}" },
+  "doc.hubOff": { de: "aus", en: "off" },
   "doc.unreachable": { de: "nicht erreichbar", en: "unreachable" },
   "doc.healthy": { de: "alle Linien ruhig", en: "all lines steady" },
   "doc.unhealthy": { de: "eine Linie schlägt aus", en: "one line is off" },
@@ -1350,6 +1353,53 @@ export const dict: Record<string, { de: string; en: string }> = {
   "plan.pending": { de: "offen", en: "open" },
   "plan.in_progress": { de: "läuft …", en: "running …" },
   "plan.completed": { de: "fertig", en: "done" },
+  "plan.helperNone": {
+    de: "{id} führt keinen Plan. Helfer arbeiten nach ihrem Auftrag; den Plan führt der Hauptagent.",
+    en: "{id} keeps no plan. Helpers work from their task; the main agent keeps the plan.",
+  },
+
+  // Card 586: the run panel in the plan tab, a playbook or workflow run beside the chat.
+  "run.panel.title": { de: "Lauf: {name}", en: "Run: {name}" },
+  "run.panel.wide": { de: "groß", en: "wide" },
+  "run.panel.small": { de: "klein", en: "small" },
+  "run.panel.runs": { de: "Läufe", en: "Runs" },
+  "run.panel.running": { de: "läuft {time}", en: "running {time}" },
+  "run.panel.ended": { de: "beendet nach {time}: {result}", en: "ended after {time}: {result}" },
+  "run.panel.unfinished": { de: "kein Ende verzeichnet", en: "no end recorded" },
+  "run.panel.chat": { de: "Chat", en: "Chat" },
+  "run.panel.picked": { de: "gewählt", en: "picked" },
+  "run.panel.in": { de: "rein", en: "in" },
+  "run.panel.out": { de: "raus", en: "out" },
+  "run.panel.created": { de: "neu", en: "new" },
+  "run.panel.changed": { de: "geändert", en: "changed" },
+  "run.panel.shell": {
+    de: "{n} Shell-Befehle, ihre Dateien sind nicht erfasst",
+    en: "{n} shell commands, their files are not captured",
+  },
+  "run.panel.round": { de: "Runde {round} von {max}", en: "round {round} of {max}" },
+  "run.panel.roundOnly": { de: "Runde {round}", en: "round {round}" },
+  "run.panel.limit": { de: "Grenze von {max} Runden erreicht", en: "limit of {max} rounds reached" },
+  "run.panel.limitReached": { de: "Rundengrenze erreicht", en: "round limit reached" },
+  "run.panel.waiting": { de: "wartet auf dich", en: "waits for you" },
+  "run.panel.skipped": { de: "übersprungen", en: "skipped" },
+  "run.panel.more": { de: "+{n} weitere", en: "+{n} more" },
+  "run.panel.modelPlan": { de: "Plan des Modells", en: "Plan of the model" },
+  // The status of a run, an entry or a node, as a word beside its mark.
+  "run.panel.status.done": { de: "fertig", en: "done" },
+  "run.panel.status.running": { de: "läuft", en: "running" },
+  "run.panel.status.waiting": { de: "wartet", en: "waiting" },
+  "run.panel.status.failed": { de: "fehlgeschlagen", en: "failed" },
+  "run.panel.status.stopped": { de: "gestoppt", en: "stopped" },
+  "run.panel.status.pending": { de: "noch nicht begonnen", en: "not started" },
+  // Card 586: the wide view of a run, its graph above the detail of one entry.
+  "run.wide.who": { de: "Wer", en: "Who" },
+  "run.wide.in": { de: "Rein", en: "In" },
+  "run.wide.out": { de: "Raus", en: "Out" },
+  "run.wide.files": { de: "Dateien", en: "Files" },
+  "run.wide.helpers": { de: "Helfer", en: "Helpers" },
+  "run.wide.inChat": { de: "Im Chat", en: "In the chat" },
+  "run.wide.noGraph": { de: "Dieser Lauf hat keinen Graphen.", en: "This run has no graph." },
+  "run.wide.cut": { de: "{shown} von {total} Zeichen", en: "{shown} of {total} characters" },
 
   // tool cards (chat)
   "gate.pending": { de: "Gate: wartet …", en: "gate: waiting …" },
@@ -1435,14 +1485,79 @@ export const dict: Record<string, { de: string; en: string }> = {
   "map.ctx.attached": { de: "mitgegebene Bilder", en: "pictures handed over" },
   "set.secFleet": { de: "Flotte", en: "Fleet" },
   "set.fleetHint": {
-    de: "Beides war bisher nur als Umgebungsvariable zu setzen. Beides wird beim Start gelesen — gespeichert wird auf die Platte, in Kraft ist es nach einem Neustart.",
-    en: "Both of these were env-var-only until now. Both are read at startup: saving puts the value on disk, and it takes effect on the next start.",
+    de: "Diese Werte gab es bisher nur als Umgebungsvariablen. Sie werden beim Start gelesen: gespeichert wird auf die Platte, in Kraft sind sie nach dem nächsten Start.",
+    en: "These were env vars only until now. They are read at startup: saving puts the value on disk, and it takes effect on the next start.",
   },
-  "set.hubPort": { de: "Hub-Port (SPECTRO_HUB_PORT)", en: "hub port (SPECTRO_HUB_PORT)" },
+  "set.hubEnabled": { de: "Flotten-Hub (SPECTRO_HUB_ENABLED)", en: "fleet hub (SPECTRO_HUB_ENABLED)" },
+  "set.hubPort": {
+    de: "Hub-Port (SPECTRO_HUB_PORT, Standard 7700)",
+    en: "hub port (SPECTRO_HUB_PORT, default 7700)",
+  },
+  "hub.on": { de: "Der Hub läuft auf Port {port}.", en: "The hub runs on port {port}." },
+  "hub.off": { de: "Der Hub ist aus.", en: "The hub is off." },
+  "hub.unset": { de: "nicht gesetzt", en: "not set" },
+  "hub.note.privileged": {
+    de: "SPECTRO_HUB_PORT={written} liegt unter 1024 und braucht Admin-Rechte, darum hat der Hub Port {port} genommen.",
+    en: "SPECTRO_HUB_PORT={written} is under 1024 and needs admin rights, so the hub took port {port}.",
+  },
+  "hub.note.invalid": {
+    de: "SPECTRO_HUB_PORT \"{written}\" ist keine Portnummer, darum hat der Hub Port {port} genommen.",
+    en: "SPECTRO_HUB_PORT \"{written}\" is not a port number, so the hub took port {port}.",
+  },
+  "hub.note.defaultTaken": {
+    de: "Port {from} ist belegt, darum hat der Hub Port {port} genommen.",
+    en: "Port {from} is in use, so the hub took port {port}.",
+  },
+  "hub.note.bindFailed": {
+    de: "Der Hub ist aus: Port {written} ließ sich nicht öffnen ({reason}). Die App läuft ohne ihn.",
+    en: "The hub is off: port {written} could not be opened ({reason}). The app runs without it.",
+  },
+  "hub.note.noFreePort": {
+    de: "Der Hub ist aus: ab Port {from} war kein Port frei.",
+    en: "The hub is off: no free port from {from} up.",
+  },
+  "hub.note.enabledUnreadable": {
+    de: "SPECTRO_HUB_ENABLED \"{value}\" ist weder true noch false, darum ist der Hub aus.",
+    en: "SPECTRO_HUB_ENABLED \"{value}\" is not true or false, so the hub is off.",
+  },
+  "hub.refuse.under-1024": {
+    de: "Ports unter 1024 brauchen Admin-Rechte. Nimm einen Port von 1024 bis 65535 oder lass das Feld leer für 7700.",
+    en: "Ports under 1024 need admin rights. Use a port from 1024 to 65535, or leave the field empty for 7700.",
+  },
+  "hub.refuse.not-a-port": {
+    de: "Das ist keine Portnummer. Nimm einen Port von 1024 bis 65535 oder lass das Feld leer für 7700.",
+    en: "That is not a port number. Use a port from 1024 to 65535, or leave the field empty for 7700.",
+  },
+  "hub.refuse.not-a-switch": { de: "Erlaubt sind true oder false.", en: "Use true or false." },
+  "hub.refuse.app-range": {
+    de: "Die Ports 8080 bis 8100 gehören dem Server der App. Nimm einen Port von 1024 bis 65535 oder lass das Feld leer für 7700.",
+    en: "Ports 8080 to 8100 belong to the app's own server. Use a port from 1024 to 65535, or leave the field empty for 7700.",
+  },
+  "hub.refuse.server-port": {
+    de: "Das ist der Port dieses Servers. Nimm einen anderen Port von 1024 bis 65535 oder lass das Feld leer für 7700.",
+    en: "That is this server's own port. Use another port from 1024 to 65535, or leave the field empty for 7700.",
+  },
+  "hub.note.appRange": {
+    de: "SPECTRO_HUB_PORT={written} liegt in 8080 bis 8100, wo der Server der App läuft, darum hat der Hub Port {port} genommen.",
+    en: "SPECTRO_HUB_PORT={written} is in 8080 to 8100, where the app's own server runs, so the hub took port {port}.",
+  },
+  "hub.note.serverPort": {
+    de: "SPECTRO_HUB_PORT={written} ist der Port dieses Servers, darum hat der Hub Port {port} genommen.",
+    en: "SPECTRO_HUB_PORT={written} is this server's own port, so the hub took port {port}.",
+  },
+  "hub.note.settingUnreadable": {
+    de: "Der Hub ist aus. Grund: {reason}.",
+    en: "The hub is off: {reason}.",
+  },
+  "hub.inUse": {
+    de: "Port {port} ist gerade belegt. Bleibt er belegt, bleibt der Hub nach dem Neustart aus.",
+    en: "Port {port} is in use right now. If it stays in use, the hub stays off after the restart.",
+  },
+  "hub.saveAnyway": { de: "trotzdem speichern", en: "save anyway" },
   "set.allowSpawn": { de: "Nodes aus der UI starten", en: "start nodes from the UI" },
   "set.allowSpawnWhat": {
-    de: "SPECTRO_ALLOW_SPAWN — braucht zusätzlich einen laufenden Hub",
-    en: "SPECTRO_ALLOW_SPAWN — also needs a running hub",
+    de: "SPECTRO_ALLOW_SPAWN: braucht zusätzlich einen laufenden Hub",
+    en: "SPECTRO_ALLOW_SPAWN: also needs a running hub",
   },
   "set.allowSpawnWarn": {
     de: "Das erlaubt dieser Oberfläche, auf deiner Maschine Prozesse zu starten. Jeder so gestartete Node läuft erzwungen mit --permissions readonly: er darf lesen, aber nie schreiben oder Kommandos ausführen. Der Server nimmt den Befehl trotzdem nur von dieser Maschine an.",
@@ -1453,8 +1568,8 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "Greyed out means a real environment variable holds that value. It wins for as long as this process runs.",
   },
   "set.restartNeeded": {
-    de: "gespeichert — in Kraft nach einem Neustart des Servers",
-    en: "saved — in force after the server restarts",
+    de: "gespeichert, in Kraft nach einem Neustart des Servers",
+    en: "saved, in force after the server restarts",
   },
   "set.saveFailed": { de: "konnte nicht gespeichert werden", en: "could not be saved" },
   "set.secObservability": { de: "Observability", en: "Observability" },
@@ -2611,6 +2726,25 @@ export const dict: Record<string, { de: string; en: string }> = {
   "ctx.rule.task": { de: "AUFTRAG", en: "TASK" },
   "ctx.rule.roles": { de: "SUBAGENTEN-ROLLEN", en: "SUBAGENT ROLES" },
   "ctx.chars": { de: "{n} Zeichen", en: "{n} chars" },
+  // The picker over the agents of the session, in the ring's popover and the Plan and System context panels.
+  "pick.showing": { de: "Zeigt: {name}", en: "Showing: {name}" },
+  "pick.main": { de: "Hauptagent", en: "Main agent" },
+  "pick.aria": { de: "Agenten zum Anzeigen wählen", en: "Choose the agent to show" },
+  "pick.ended": { de: "beendet", en: "ended" },
+  "pick.missing": {
+    de: "{id} ist nicht in dieser Session. Gezeigt wird der Hauptagent.",
+    en: "{id} is not in this session. Showing the main agent.",
+  },
+  "ctx.helperModel": { de: "Modell {model}", en: "model {model}" },
+  "ctx.helperNoParts": {
+    de: "Helfer zeichnen die Größen ihrer Teile auf, nicht die Texte.",
+    en: "Helpers record the sizes of their parts, not the texts.",
+  },
+  "ctx.helperNoSnapshot": {
+    de: "Für {id} wurden in dieser Session keine Teile aufgezeichnet.",
+    en: "No parts were recorded for {id} in this session.",
+  },
+  "ring.aria": { de: "Kontext von {name}, {pct} Prozent voll", en: "Context of {name}, {pct} percent full" },
   "ctx.copy": { de: "kopieren", en: "copy" },
   "ctx.copied": { de: "kopiert ✓", en: "copied ✓" },
 
@@ -3081,6 +3215,8 @@ export const dict: Record<string, { de: string; en: string }> = {
   "slash.src.workspace": { de: "Arbeitsordner", en: "workspace" },
   "slash.src.user": { de: "eigene", en: "user" },
   "slash.src.playbook": { de: "Playbook", en: "playbook" },
+  // Card 587: a skill the app itself ships, such as code-graph.
+  "slash.src.app": { de: "eingebaut", en: "built in" },
   "slash.kind.command": { de: "Befehl", en: "command" },
   // Card 471: the chat's two commands, above the skills in the slash picker.
   "slash.commands": { de: "Befehle", en: "Commands" },
@@ -3099,7 +3235,6 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Die Befehle konnten nicht gelesen werden. Ein Entwurf mit / am Anfang wartet, bis sie da sind; eine neue Verbindung fragt erneut.",
     en: "The commands could not be read. A draft that starts with / waits until they are here; a new connection asks again.",
   },
-  "cmd.compact.help": { de: "Verlauf jetzt zusammenfassen und Kontext frei machen", en: "Summarize the history now to free the context" },
   // Card 504: the goal section of the gear, the goal line and the loop chip.
   "goal.title": { de: "Ziel", en: "Goal" },
   "goal.none": {
@@ -3129,27 +3264,8 @@ export const dict: Record<string, { de: string; en: string }> = {
   "loop.chip.waiting": { de: "wartet auf schedule_wakeup", en: "waiting for schedule_wakeup" },
   "loop.chip.stop": { de: "Stopp", en: "Stop" },
   "loop.chip.stopTitle": { de: "Schleife beenden", en: "End the loop" },
-  "cmd.loop.help": {
-    de: "/loop [Intervall] <Auftrag> wiederholt einen Auftrag; ohne Intervall bestimmt das Modell den Takt; /loop stop beendet ihn",
-    en: "/loop [interval] <prompt> repeats a prompt; without an interval the model sets the pace; /loop stop ends it",
-  },
-  "cmd.clear.help": { de: "Frischer Kontext in dieser Session, der Verlauf bleibt sichtbar", en: "Start a fresh context in this session, the history stays visible" },
-  // Card 554: the German help of the commands in the core list, keyed by the
-  // row's id; the English is the list's own (commandHelp.drift.test.ts).
-  "cmd.help.help": { de: "Jeden Befehl mit einer kurzen Hilfe auflisten", en: "List every command with a short help" },
-  "cmd.skills.help": { de: "Die installierten Skills zeigen", en: "Show the installed skills" },
-  "cmd.run-with-playbook.help": {
-    de: "Deinen Auftrag Schritt für Schritt durch das Playbook dieser Session laufen lassen",
-    en: "Run your prompt through this session's playbook, step by step",
-  },
-  "cmd.playbook-current.help": { de: "Zeigen, welches Playbook diese Session nutzt", en: "Show which playbook this session uses" },
-  "cmd.playbook-list.help": { de: "Die Playbooks auflisten, die du nutzen kannst", en: "List the playbooks you can use" },
-  "cmd.playbook-show.help": {
-    de: "/playbook show [Name] fasst ein Playbook zusammen, ohne Namen das aktuelle: Schritte, Prüfungen, Modelle und Inhalte",
-    en: "/playbook show [name] summarizes a playbook, the current one without a name: steps, gates, models and contents",
-  },
-  "cmd.playbook-use.help": { de: "Dieses Playbook in dieser Session nutzen", en: "Use this playbook in this session" },
-  "cmd.playbook-workflow.help": { de: "Einen Workflow dieses Playbooks ausführen", en: "Run a workflow of this playbook" },
+  // Card 588: the help of the commands and their templates come from the core
+  // list in both languages; this dictionary keeps no copy (commandHelp.drift.test.ts).
   // Card 554: the chat commands on the Skills and Commands page.
   "skv.commands": { de: "Chat-Befehle", en: "Chat commands" },
   // Card 563 (owner decision): the first tab of the Playbook view.
@@ -3162,8 +3278,8 @@ export const dict: Record<string, { de: string; en: string }> = {
   // Card 558: the session's own skills, commands and agents on the same page.
   "skv.session": { de: "Diese Session", en: "This session" },
   "skv.sessionClaim": {
-    de: "Was die Session im Blick bei ihrem nächsten Zug liest: aus dem Arbeitsordner, dem gewählten Playbook und deinen eigenen Ordnern. Ein Name, den es mehrfach gibt, steht unter jeder Quelle. Nur zum Lesen.",
-    en: "What the session in view reads at its next turn: from its working folder, the picked playbook and your own folders. A name that exists more than once stands under each source. Read only.",
+    de: "Was die Session im Blick bei ihrem nächsten Zug liest: aus dem Arbeitsordner, dem gewählten Playbook, deinen eigenen Ordnern und, solange der Ordner einen Code-Graphen hat, dem in die App eingebauten Skill. Ein Name, den es mehrfach gibt, steht unter jeder Quelle. Nur zum Lesen.",
+    en: "What the session in view reads at its next turn: from its working folder, the picked playbook, your own folders and, while the folder has a code graph, the skill built into the app. A name that exists more than once stands under each source. Read only.",
   },
   "skv.sessionNone": {
     de: "Die Session im Blick hat noch keine Liste geschickt.",
@@ -3196,6 +3312,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   "cmd.helpTitle": { de: "Befehle, die du hier tippen kannst", en: "Commands you can type here" },
   "cmd.group.chat": { de: "Chat", en: "Chat" },
   "cmd.group.playbook": { de: "Playbook", en: "Playbook" },
+  "cmd.group.codegraph": { de: "Code-Graph", en: "Code graph" },
   "cmd.group.skills": { de: "Skills", en: "Skills" },
   // Card 554, integrator decision c: /help outside developer mode marks the
   // playbook rows, which only developer mode offers in the picker.
@@ -3263,6 +3380,73 @@ export const dict: Record<string, { de: string; en: string }> = {
   },
   "pbcmd.show.open": { de: "Im Tab Schritte öffnen", en: "Open in the Steps tab" },
   "pbcmd.readFailed": { de: "Die Playbook-Ordner ließen sich nicht lesen.", en: "The playbook folders could not be read." },
+  // Card 587: what /graph answers in the chat (state/graphCommand.ts).
+  "gcmd.help.title": { de: "Befehle für den Code-Graphen", en: "Code graph commands" },
+  "gcmd.and": { de: "und", en: "and" },
+  "gcmd.help.aliases": { de: "{aliases} wirken genauso wie /graph.", en: "{aliases} work the same as /graph." },
+  "gcmd.askUsage": { de: "/graph ask braucht eine Frage: /graph ask <Frage>", en: "/graph ask needs a question: /graph ask <question>" },
+  "gcmd.notSent": {
+    de: "Die Frage ist nicht abgegangen: die Session ist nicht verbunden.",
+    en: "The question did not leave: the session is not connected.",
+  },
+  "gcmd.unread": { de: "Der Stand des Code-Graphen ließ sich nicht lesen.", en: "The code graph status could not be read." },
+  "gcmd.noGraph": {
+    de: "Dieser Ordner hat noch keinen Code-Graphen. /graph build baut ihn.",
+    en: "This folder has no code graph yet. /graph build builds it.",
+  },
+  "gcmd.opened": { de: "Code-Graph von {folder} im Browser-Panel geöffnet.", en: "Opened the code graph of {folder} in the browser panel." },
+  "gcmd.busy": {
+    de: "Für diesen Ordner läuft schon ein Build des Code-Graphen. Sein Ergebnis folgt hier.",
+    en: "A code graph build is already running for this folder. Its result follows here.",
+  },
+  "gcmd.notInstalled": {
+    de: "{backend} ist nicht installiert. Installiere es im Terminal mit {install} und tippe danach noch einmal {command}.",
+    en: "{backend} is not installed. Install it in a terminal with {install}, then type {command} again.",
+  },
+  "gcmd.notStarted": { de: "Der Build des Code-Graphen ist nicht gestartet: {reason}", en: "The code graph build did not start: {reason}" },
+  "gcmd.started.full": {
+    de: "Der Code-Graph von {folder} wird gebaut. Das Ergebnis folgt hier, den Fortschritt zeigt die Kopfzeile.",
+    en: "Building the code graph of {folder}. The result follows here; the header shows the progress.",
+  },
+  "gcmd.started.update": {
+    de: "Der Code-Graph von {folder} wird aktualisiert. Das Ergebnis folgt hier, den Fortschritt zeigt die Kopfzeile.",
+    en: "Updating the code graph of {folder}. The result follows here; the header shows the progress.",
+  },
+  "gcmd.built": { de: "Code-Graph von {folder} gebaut.", en: "Built the code graph of {folder}." },
+  "gcmd.built.counts": { de: "Code-Graph von {folder} gebaut: {counts}.", en: "Built the code graph of {folder}: {counts}." },
+  "gcmd.updated": { de: "Code-Graph von {folder} aktualisiert.", en: "Updated the code graph of {folder}." },
+  "gcmd.updated.counts": {
+    de: "Code-Graph von {folder} aktualisiert: {counts}.",
+    en: "Updated the code graph of {folder}: {counts}.",
+  },
+  "gcmd.current": {
+    de: "Der Code-Graph von {folder} ist schon aktuell: die Struktur des Codes ist dieselbe wie beim letzten Build.",
+    en: "The code graph of {folder} is already current: the structure of the code is the same as at the last build.",
+  },
+  "gcmd.finished": {
+    de: "Die Aktualisierung des Code-Graphen von {folder} ist abgeschlossen.",
+    en: "The update of the code graph of {folder} finished.",
+  },
+  "gcmd.error": {
+    de: "Der Befehl /graph brach mit einem Fehler ab: {reason}",
+    en: "The /graph command stopped with an error: {reason}",
+  },
+  "gcmd.counts": {
+    de: "{nodes} Knoten, {edges} Kanten, {communities} Gruppen",
+    en: "{nodes} nodes, {edges} edges, {communities} communities",
+  },
+  "gcmd.failed": {
+    de: "Der Build des Code-Graphen ist fehlgeschlagen ({exit}): {last}. Der Chip in der Kopfzeile zeigt die letzten Zeilen.",
+    en: "The code graph build failed ({exit}): {last}. The chip in the header shows the last lines.",
+  },
+  "gcmd.lost": {
+    de: "Der Server meldet diesen Build nicht mehr, sein Ergebnis ist unbekannt. Die Kopfzeile zeigt den Stand des Graphen.",
+    en: "The server no longer reports this build, so its result is unknown. The header shows the state of the graph.",
+  },
+  "gcmd.lostRead": {
+    de: "Der Stand des Code-Graphen ließ sich nicht mehr lesen, dieser Chat verfolgt den Build deshalb nicht weiter. Die Kopfzeile zeigt den Stand des Graphen.",
+    en: "The code graph status could not be read any more, so this chat stopped following the build. The header shows the state of the graph.",
+  },
   // Card 554: a playbook run in the chat of its session (criterion 8f).
   "chat.pb.start": { de: "Playbook {playbook} gestartet mit der Aufgabe: {task}", en: "Playbook {playbook} started on the task: {task}" },
   "chat.pb.startNoTask": { de: "Playbook {playbook} gestartet", en: "Playbook {playbook} started" },
@@ -3272,6 +3456,12 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Der Playbook-Lauf endete. Ergebnis: {result}. Grund: {ref}.{more}",
     en: "The playbook run ended. Result: {result}. Stop reason: {ref}.{more}",
   },
+  // Card 586: a workflow run's start and end lines (run_step), and the link a
+  // run's start line carries to the run panel. {ref} is the stop reason in words.
+  "chat.wf.start": { de: "Workflow {name} gestartet auf: {task}", en: "Workflow {name} started on: {task}" },
+  "chat.wf.startNoTask": { de: "Workflow {name} gestartet", en: "Workflow {name} started" },
+  "chat.wf.end": { de: "Der Workflow ist beendet: {ref}.{more}", en: "The workflow ended: {ref}.{more}" },
+  "chat.run.open": { de: "Lauf ansehen", en: "open the run" },
   // Card 554: the eyebrow over a prompt a playbook step sent (task 13 draws it).
   "chat.byPlaybook": { de: "Playbook", en: "Playbook" },
   // Card 471: the divider a /clear leaves in the chat, followed by the time.
@@ -3347,6 +3537,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   "msg.status.delivered": { de: "zugestellt", en: "delivered" },
   "msg.status.refused": { de: "abgewiesen", en: "refused" },
   "msg.status.dropped": { de: "verworfen", en: "dropped" },
+  "msg.status.returned": { de: "ungelesen zurück", en: "returned unread" },
   "msg.deliver": { de: "Zustellen", en: "Deliver" },
   "msg.decline": { de: "Ablehnen", en: "Decline" },
   "msg.reply": { de: "Antworten", en: "Reply" },
@@ -3359,6 +3550,10 @@ export const dict: Record<string, { de: string; en: string }> = {
   },
   "msg.mainLine": { de: "{from} an {to}: {summary}", en: "{from} to {to}: {summary}" },
   "msg.sendFailed": { de: "Nicht an {to} gesendet: {reason}", en: "Not sent to {to}: {reason}" },
+  "msg.returned": {
+    de: "Nicht an {helper} zugestellt: der Helfer endete, bevor er die Nachricht las ({reason}). Die Nachricht begann: \u00ab{start}\u00bb",
+    en: "Not delivered to {helper}: it ended before it read the message ({reason}). The message began: \u00ab{start}\u00bb",
+  },
   "msg.idleNotice": { de: "{name} hat den Zug beendet und wartet.", en: "{name} finished its turn and is waiting." },
   "msg.renamed": { de: "{old} heißt jetzt {name}.", en: "{old} is now called {name}." },
   "chat.steerUndelivered": { de: "Zuruf, nicht angekommen", en: "Steering message, not delivered" },
@@ -4665,6 +4860,16 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "{model} is not trained to call tools. The agent may not be able to use any tool in this chat.",
   },
   "wsg.lm.belowFloor": { de: "Mindestens {floor}.", en: "At least {floor}." },
+  // Card 600: the tool results cache switch below the Local mode rows.
+  "wsg.lm.cacheTitle": {
+    de: "Cache für Werkzeugergebnisse optimieren (nur mit Cloud-Modellen nutzen)",
+    en: "Optimize tool results cache (use with cloud models only)",
+  },
+  "wsg.lm.cacheNote": {
+    de: "Eingeschaltet kürzt die App alte, große Werkzeugergebnisse in jeder Anfrage. Das spart Tokens bei Cloud-Modellen und bricht den Prompt-Cache lokaler Modelle.",
+    en: "When on, the app shortens old, large tool results in every request. This saves tokens with cloud models and breaks the prompt cache of local models.",
+  },
+  "wsg.lm.cacheReadFailed": { de: "Nicht gelesen: {reason}", en: "Not read: {reason}" },
   "wsg.lm.wholeNumber": { de: "Eine ganze Zahl.", en: "A whole number." },
   "wsg.rules.title": { de: "Immer erlauben", en: "Always allow" },
   "wsg.rules.scope": { de: "[projekt]", en: "[project]" },
@@ -5316,15 +5521,10 @@ export const dict: Record<string, { de: string; en: string }> = {
   "pb.run.refusals": { de: "Der Lauf startet nicht, weil", en: "The run does not start because" },
   "pb.run.start": { de: "Starten", en: "Start" },
   "pb.run.close": { de: "Schließen", en: "Close" },
-  "pb.run.live": { de: "Der Lauf läuft.", en: "The run is in progress." },
-  // Card 554: what the run was asked, under its status line.
+  // Card 554: what the run was asked, in the start sheet.
   "pb.run.task": { de: "Auftrag: {task}", en: "Asked: {task}" },
-  "pb.run.stopped": { de: "Der Lauf endete: {reason}", en: "The run ended: {reason}" },
-  "pb.run.ended": {
-    de: "Der Lauf endete. Ergebnis: {result}. Grund: {reason}.",
-    en: "The run ended. Result: {result}. Stop reason: {reason}.",
-  },
-  "pb.run.unrecorded": { de: "Der Lauf endete ohne Eintrag.", en: "The run ended without a record." },
+  // Card 586: the Playbook segment's line that shows the session's runs beside the chat.
+  "pb.run.segmentLink": { de: "Läufe dieser Session: öffnen", en: "Runs of this session: open" },
   "pb.run.stop.done": { de: "ein Ende wurde erreicht", en: "an end was reached" },
   "pb.run.stop.aborted": { de: "gestoppt", en: "stopped" },
   "pb.run.stop.step_failed": { de: "ein Schritt ist fehlgeschlagen", en: "a step failed" },
@@ -5342,8 +5542,89 @@ export const dict: Record<string, { de: string; en: string }> = {
   "pb.run.stop.nod_refused": { de: "eine Übergabe wurde nicht freigegeben", en: "a handover was not approved" },
   "pb.run.stop.recursion_limit": { de: "die Schrittgrenze der Engine", en: "the engine's step limit" },
   "pb.run.stop.refused": { de: "der Lauf durfte nicht starten", en: "the run was not allowed to start" },
+  // Card 586: a workflow loop whose rounds ran out (WorkflowRunner.EXHAUSTED).
+  "pb.run.stop.exhausted": { de: "die Rundengrenze wurde erreicht", en: "the round limit was reached" },
   "pb.run.private": { de: "privat", en: "private" },
   "pb.run.cheap": { de: "günstig", en: "cheap" },
+  // Card 584: why a step's model does not serve, the model picker per row and
+  // what keeps Start disabled. The server checks every model list first.
+  "pb.run.review": { de: "Prüfung", en: "review check" },
+  "pb.run.why.rejectedKey": {
+    de: "{provider} hat den Key abgelehnt (HTTP {status}).",
+    en: "{provider} rejected the key (HTTP {status}).",
+  },
+  "pb.run.why.rejectedKeyBare": { de: "{provider} hat den Key abgelehnt.", en: "{provider} rejected the key." },
+  "pb.run.keyFrom.environment": {
+    de: "Der Key kommt aus der Umgebung der App.",
+    en: "The key comes from the environment of the app.",
+  },
+  "pb.run.keyFrom.saved": { de: "Der Key ist der in der App gespeicherte.", en: "The key is the one saved in the app." },
+  "pb.run.why.refused": {
+    de: "{provider} antwortet nicht: die Verbindung wurde abgelehnt.",
+    en: "{provider} does not answer: the connection was refused.",
+  },
+  "pb.run.why.timeout": {
+    de: "{provider} antwortet nicht: Zeitüberschreitung bei der Prüfung.",
+    en: "{provider} does not answer: the check timed out.",
+  },
+  "pb.run.why.http": {
+    de: "{provider} beantwortete die Abfrage der Modellliste mit HTTP {status}.",
+    en: "{provider} answered the model list check with HTTP {status}.",
+  },
+  "pb.run.why.badAnswer": {
+    de: "{provider} antwortete, aber nicht mit einer Modellliste.",
+    en: "{provider} answered, but not with a model list.",
+  },
+  "pb.run.why.notListed": {
+    de: "{provider} antwortet, aber {model} steht nicht in seiner Modellliste.",
+    en: "{provider} answers, but its model list does not have {model}.",
+  },
+  "pb.run.why.privateOnCloud": {
+    de: "Dieser Schritt ist privat, und {provider} ist ein Cloud-Anbieter.",
+    en: "This step is private, and {provider} is a cloud provider.",
+  },
+  "pb.run.why.needsKey": { de: "Für {provider} ist kein Key gesetzt.", en: "No key is set for {provider}." },
+  "pb.run.why.needsSignin": { de: "{provider} ist nicht angemeldet.", en: "{provider} is not signed in." },
+  "pb.run.why.needsDownload": {
+    de: "Die eingebaute Laufzeit hat noch kein Modell auf der Platte.",
+    en: "The built-in runtime has no model on disk yet.",
+  },
+  "pb.run.why.unknown": {
+    de: "{provider} ist kein Anbieter, den diese App kennt.",
+    en: "{provider} is not a provider this app knows.",
+  },
+  "pb.run.why.notChecked": { de: "{provider} wurde nicht geprüft.", en: "{provider} was not checked." },
+  "pb.run.why.other": { de: "{provider} antwortet nicht ({reason}).", en: "{provider} does not answer ({reason})." },
+  "pb.run.via": {
+    de: "Läuft auf dem Ersatzmodell {provider} {model}.",
+    en: "Runs on the fallback {provider} {model}.",
+  },
+  "pb.run.pickLabel": { de: "Modell für diesen Lauf", en: "Model for this run" },
+  "pb.run.pickDefault": {
+    de: "{provider} {model} (Standard des Playbooks)",
+    en: "{provider} {model} (playbook default)",
+  },
+  "pb.run.picked": {
+    de: "{provider} führt {model} in seiner Liste. Gilt nur für diesen Lauf.",
+    en: "{provider} lists {model}. It holds for this run only.",
+  },
+  "pb.run.blocked": {
+    de: "Diese Schritte und Prüfungen haben kein Modell, das dieser Lauf nutzen kann: {steps}. Wähle eins in ihrer Zeile.",
+    en: "These steps and checks have no model this run can use: {steps}. Pick one in their row.",
+  },
+  "pb.run.starting": { de: "Startet", en: "Starting" },
+  "pb.run.startRefused": {
+    de: "Der Server hat den Lauf nicht gestartet: {reason}",
+    en: "The server did not start the run: {reason}",
+  },
+  "pb.run.why.checkTimeout": {
+    de: "{provider} hat die Prüfung seiner Modellliste nicht rechtzeitig beendet.",
+    en: "{provider} did not finish the check of its model list in time.",
+  },
+  "pb.run.why.checkError": {
+    de: "Die Prüfung der Modellliste von {provider} brach ohne Antwort ab.",
+    en: "The check of the model list of {provider} broke off without an answer.",
+  },
   "pb.findings": { de: "Befunde", en: "Findings" },
   "pb.steps": { de: "Schritte", en: "Steps" },
   "pb.col.step": { de: "Schritt", en: "Step" },
@@ -5899,8 +6180,8 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "Divisor: {limit}, the window the operator set for this session. This run compacts below it, not at it.",
   },
   "lab.ctx.note.childrenNoWindow": {
-    de: "Kind-Agenten zeigen keinen Prozentwert: sie laufen ohne Introspektion und melden keine Schwelle, also gibt es nichts, wodurch man ehrlich teilen könnte.",
-    en: "Children show no percentage: they run without introspection and report no threshold, so there is nothing to divide by honestly.",
+    de: "Kind-Agenten zeigen hier keinen Prozentwert: dieses Panel teilt nur durch die gemessene Schwelle des Hauptagenten und liest die eigene Meldung eines Kind-Agenten nicht.",
+    en: "Children show no percentage here: this panel divides only by the threshold measured for the main agent and does not read the report of a child.",
   },
 
   // Card 301: the dock's tab strip, and the two panels it grew.

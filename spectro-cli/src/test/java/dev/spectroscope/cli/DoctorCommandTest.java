@@ -12,6 +12,7 @@ import java.net.ServerSocket;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -97,14 +98,63 @@ class DoctorCommandTest {
     }
 
     @Test
-    void theHubHostingLineNamesTheBoundPortOrTheTypo() {
-        // The server-side twin of the probe (block C): SPECTRO_HUB_PORT is
-        // what spectro-server BINDS, not what a node dials — the line says
-        // which, and a typo is named instead of silently keeping the hub off.
-        assertTrue(DoctorCommand.hubHostingLine("7331").contains("7331"));
-        assertTrue(DoctorCommand.hubHostingLine("7331").contains("binds"),
-                "the line explains the server will bind it");
-        assertTrue(DoctorCommand.hubHostingLine("um-what").contains("invalid"),
-                "a typo is named — the operator must not believe the fleet is on");
+    void theHubHostingLineNamesBothSettingsAndWhatTheServerOpens() {
+        // Card 585: SPECTRO_HUB_ENABLED and SPECTRO_HUB_PORT, and what
+        // spectro-server makes of them on boot. A port under 1024 is never
+        // bound: the line says so and names where the hub goes instead.
+        String off = DoctorCommand.hubHostingLine(null, null);
+        assertTrue(off.contains("off"), off);
+        assertTrue(off.contains("SPECTRO_HUB_ENABLED") && off.contains("SPECTRO_HUB_PORT"), off);
+
+        String written = DoctorCommand.hubHostingLine("true", "7331");
+        assertTrue(written.contains("SPECTRO_HUB_ENABLED=true"), written);
+        assertTrue(written.contains("SPECTRO_HUB_PORT=7331"), written);
+        assertTrue(written.contains("loopback:7331"), written);
+
+        String admin = DoctorCommand.hubHostingLine(null, "1");
+        assertTrue(admin.contains("under 1024"), admin);
+        assertTrue(admin.contains("7700"), admin);
+        assertTrue(!admin.contains("loopback:1 "), "port 1 is never what the server binds: " + admin);
+
+        String typo = DoctorCommand.hubHostingLine("true", "um-what");
+        assertTrue(typo.contains("um-what") && typo.contains("7700"), typo);
+
+        String switchedOff = DoctorCommand.hubHostingLine("false", "7331");
+        assertTrue(switchedOff.contains("off"), switchedOff);
+
+        for (String line : new String[] {off, written, admin, typo, switchedOff}) {
+            assertTrue(!line.contains("\u2014") && !line.contains("\u2013"), "no dashes: " + line);
+        }
+    }
+
+    @Test
+    void theHubSettingsAreReadTheWayTheServerReadsThem() throws IOException {
+        // Review N2: the server takes the LAST line and keeps quotes, and a
+        // variable in the environment wins even when it is blank. The doctor
+        // used to take the first line and strip the quotes, so it promised
+        // loopback:7745 for SPECTRO_HUB_PORT="7745" while the server walked.
+        java.nio.file.Path file = Files.createTempFile("doctor-585-", ".env");
+        try {
+            Files.writeString(file, "SPECTRO_HUB_PORT=1\nSPECTRO_HUB_PORT=\"7745\"\nSPECTRO_HUB_ENABLED=true\n");
+            java.util.Map<String, String> read = DoctorCommand.hubSettingsFrom(java.util.Map.of(), file);
+            assertEquals("\"7745\"", read.get("SPECTRO_HUB_PORT"));
+            assertEquals("true", read.get("SPECTRO_HUB_ENABLED"));
+            String line = DoctorCommand.hubHostingLine(read.get("SPECTRO_HUB_ENABLED"), read.get("SPECTRO_HUB_PORT"));
+            assertTrue(line.contains("not a port number"), line);
+
+            java.util.Map<String, String> fromEnv = DoctorCommand.hubSettingsFrom(
+                    java.util.Map.of("SPECTRO_HUB_PORT", "7746", "SPECTRO_HUB_ENABLED", ""), file);
+            assertEquals("7746", fromEnv.get("SPECTRO_HUB_PORT"), "the environment wins");
+            assertEquals("", fromEnv.get("SPECTRO_HUB_ENABLED"), "a blank variable wins too, as in the server");
+        } finally {
+            Files.deleteIfExists(file);
+        }
+    }
+
+    @Test
+    void anAppRangePortIsNamedInTheHostingLine() {
+        String line = DoctorCommand.hubHostingLine("true", "8080");
+        assertTrue(line.contains("8080") && line.contains("7700"), line);
+        assertTrue(!line.contains("loopback:8080"), line);
     }
 }

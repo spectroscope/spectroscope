@@ -6,7 +6,7 @@
 
 import { describe, expect, it } from "vitest";
 import { initialState, type UiState } from "../state/reducer";
-import { labChatState, liveGoalLoopShown } from "./labChatState";
+import { labChatState, liveGoalLoopShown, withCommandMarks } from "./labChatState";
 import { read, stripComments } from "../testkit/source";
 
 const LIVE: UiState = {
@@ -85,5 +85,45 @@ describe("the wiring", () => {
 
   it("App passes the live record's state to the Lab", () => {
     expect(app).toMatch(/liveStatus=\{viewingLive \? live : null\}/);
+  });
+});
+
+// Card 576, fix round: the Lab's own fold never sees a frame leave, so its
+// error turns take the live record's marks, the k-th error onto the k-th.
+describe("the marks of errors that answer a typed command", () => {
+  const failed = { kind: "error", text: "the provider is down" } as const;
+  const refused = { kind: "error", text: "Usage: /run-with-playbook <prompt>" } as const;
+  const said = { kind: "user", text: "go" } as const;
+  const lab: UiState = { ...initialState, turns: [said, failed, said, refused] };
+  const live = [
+    said,
+    failed,
+    { kind: "info", text: "a line", tone: "neutral" } as const,
+    said,
+    { ...refused, afterCommand: true } as const,
+  ];
+
+  it("go onto the Lab's errors by their order", () => {
+    expect(withCommandMarks(lab, live).turns).toEqual([
+      said,
+      failed,
+      said,
+      { ...refused, afterCommand: true },
+    ]);
+  });
+
+  it("reach an error the Lab has stepped, while later ones still wait", () => {
+    const stepped: UiState = { ...initialState, turns: [said, failed] };
+    expect(withCommandMarks(stepped, [{ ...failed, afterCommand: true }, refused]).turns).toEqual([
+      said,
+      { ...failed, afterCommand: true },
+    ]);
+  });
+
+  it("leave the same object for an archive, without marks, or when every mark is there", () => {
+    expect(withCommandMarks(lab, null)).toBe(lab);
+    expect(withCommandMarks(lab, [said, failed, refused])).toBe(lab);
+    const done = withCommandMarks(lab, live);
+    expect(withCommandMarks(done, live)).toBe(done);
   });
 });

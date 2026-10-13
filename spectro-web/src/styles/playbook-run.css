@@ -1,30 +1,18 @@
 /* ============================================================ playbook run
    A playbook run (card 482): playbook/PlaybookStartSheet.tsx, the confirmation
-   before a run, and playbook/PlaybookRunView.tsx, the run under the graph.
+   before a run. The run itself is drawn beside the chat (card 586,
+   run-panel.css); the Playbook segment keeps a link to it, .pb-run-link.
    Imported by app.css, because a surface chunk may carry no stylesheet of its
    own (surfaceChunks.guard.test.ts).
 
    Tokens only, the rule playbook.css states: colour on lines, no shadows,
    depth as a surface step plus a hairline, both designs from the same names. */
 
-/* ---------- run view ---------- */
-.pb-run-status {
+/* ---------- the segment's link to the runs (card 586) ---------- */
+.pb-run-link {
   margin: 0 0 var(--sp-2);
   font-size: var(--fs-12);
   color: var(--text-dim);
-  border-left: 2px solid var(--border-strong);
-  padding-left: var(--sp-2);
-}
-.pb-run-status.is-live {
-  color: var(--text);
-  border-left-color: var(--accent);
-}
-.pb-run-graph {
-  height: 520px;
-  min-height: 0;
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-card);
 }
 
 /* ---------- confirmation sheet ---------- */
@@ -167,6 +155,49 @@
   margin-bottom: var(--sp-1);
   overflow-wrap: anywhere;
 }
+/* Card 584: why a row's model does not serve, its picker, and the line that
+   names the rows keeping Start disabled. Colour stays on the lines. */
+.pb-run-why,
+.pb-run-picked,
+.pb-run-blocked,
+.pb-run-start-refused {
+  font-size: var(--fs-12);
+  line-height: 1.5;
+  color: var(--text);
+  white-space: normal;
+  overflow-wrap: anywhere;
+  border-left: 2px solid var(--warn);
+  padding: 0 0 0 var(--sp-2);
+}
+.pb-run-why[data-why="fallback"] {
+  color: var(--text-dim);
+  border-left-color: var(--border-strong);
+}
+.pb-run-picked {
+  border-left-color: var(--ok);
+}
+.pb-run-pick {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: var(--sp-1);
+}
+.pb-run-pick-label {
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+}
+.pb-run-pick-select {
+  max-width: 100%;
+  font-size: var(--fs-12);
+}
+.pb-run-blocked,
+.pb-run-start-refused {
+  flex-basis: 100%;
+  margin: 0;
+}
+.pb-run-start-refused {
+  border-left-color: var(--error);
+}
 .pb-sheet-foot {
   display: flex;
   flex-wrap: wrap;
@@ -221,22 +252,6 @@
   }
 }
 
-/* Under the state graph's narrow breakpoint (stategraph.css, 900px) its side
-   panel stacks under the canvas, and a fixed box gave the whole height to the
-   header, the transport and the panel: the canvas measured 0 px at 390 px.
-   Here the box grows and the canvas keeps a reserved height. */
-@media (max-width: 900px) {
-  .pb-run-graph {
-    height: auto;
-  }
-  .pb-run-graph .sg {
-    height: auto;
-  }
-  .pb-run-graph .sg-canvas {
-    min-height: var(--pb-run-canvas-min);
-  }
-}
-
 /* ---------- workflows (card 506) ----------
    The workflow list under the contents row: one row per file with its name
    and hash, a text field and Run for a step list. Tokens only. */
@@ -270,15 +285,6 @@
   font-family: var(--font-mono);
   font-size: var(--fs-12);
   color: var(--text);
-  overflow-wrap: anywhere;
-}
-
-/* Card 554: what the run was asked, under its status; the task keeps its line breaks. */
-.pb-run-task {
-  margin: 0;
-  color: var(--text-dim);
-  font-size: var(--fs-13);
-  white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 

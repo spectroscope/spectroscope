@@ -350,6 +350,6 @@ public final class ProviderRegistry {
                     null, s.checkedAt());
         }
         return new ProviderRow(provider, kind, "failed", key, credential, endpoint, List.of(), false,
-                r.outcome(), s.checkedAt());
+                r.outcome(), s.checkedAt(), r.httpStatus());
     }
 }

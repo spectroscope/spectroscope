@@ -179,6 +179,18 @@ describe("the wire", () => {
     });
   });
 
+  // Card 587: /graph build follows the build it started, so the start hands it back.
+  it("hands back the running build the server started", async () => {
+    const accept = (async () =>
+      new Response(JSON.stringify(JOB), { status: 202 })) as unknown as typeof fetch;
+    expect(await postCodeGraphStart(startBody("s-1", "full", null, null), accept)).toEqual({
+      status: 202,
+      job: JOB,
+    });
+    const bare = (async () => new Response("", { status: 202 })) as unknown as typeof fetch;
+    expect(await postCodeGraphStart(startBody("s-1", "full", null, null), bare)).toEqual({ status: 202 });
+  });
+
   it("asks about the live session, or a stored one opened read-only, and never a scenario or an import", () => {
     // AC5: a stored session opened from the list shows the ready chip for its
     // folder before its next message; the server reads the folder from its record.

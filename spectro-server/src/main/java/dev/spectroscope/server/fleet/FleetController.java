@@ -3,6 +3,7 @@ package dev.spectroscope.server.fleet;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.spectroscope.orchestrator.BusEnvelope;
+import dev.spectroscope.orchestrator.HubSettings;
 import dev.spectroscope.server.web.LocalOrigin;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
@@ -12,6 +13,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.io.IOException;
@@ -59,7 +61,64 @@ public class FleetController {
         // into the exact `spectro node --hub 127.0.0.1:<port>` command for a
         // full-power node, since the UI spawn is deliberately readonly-only.
         body.put("hubPort", fleet.enabled() ? fleet.port() : null);
+        body.put("hub", hubJson(fleet.hubState()));
         body.put("nodes", fleet.snapshot().stream().map(FleetAggregator::nodeJson).toList());
+        return ResponseEntity.ok(body);
+    }
+
+    /**
+     * Card 585: both hub settings as the server read them, the port in use,
+     * and why the hub differs from what was written. The web turns {@code note}
+     * into its own words; {@code message} is the server's English sentence.
+     *
+     * @param state the aggregator's outcome
+     * @return the {@code hub} block of the roster
+     */
+    static Map<String, Object> hubJson(HubSettings.Outcome state) {
+        Map<String, Object> hub = new LinkedHashMap<>();
+        hub.put("enabledSetting", state.plan().enabledSetting());
+        hub.put("portSetting", state.plan().portSetting());
+        hub.put("on", state.on());
+        hub.put("port", state.on() ? state.port() : null);
+        hub.put("pickFrom", state.plan().pickFrom());
+        hub.put("note", state.note().wire());
+        hub.put("reason", state.reason());
+        hub.put("message", state.describe());
+        return hub;
+    }
+
+    /**
+     * Card 585: whether a hub port is free right now, asked by the fleet
+     * settings before they save one. A port this server's own hub holds is
+     * {@code thisHub}, not a conflict.
+     *
+     * @param port    the port to check
+     * @param request the servlet request, must be a local origin
+     * @return {@code {port, free, thisHub}} · 400 with {@code reason} for a port the hub
+     *         may not take (under 1024, 8080 to 8100, this server's own port)
+     */
+    @GetMapping("/api/fleet/port-check")
+    public ResponseEntity<Map<String, Object>> portCheck(@RequestParam("port") String port,
+                                                         HttpServletRequest request) {
+        if (!LocalOrigin.isLocalOrigin(request)) {
+            return ResponseEntity.notFound().build();
+        }
+        // Refused before any bind: under 1024, 8080 to 8100, and the port this
+        // request reached the server on (review D1).
+        String problem = port.isBlank() ? "not-a-port" : HubSettings.portProblem(port, request.getLocalPort());
+        if (problem != null) {
+            Map<String, Object> refused = new LinkedHashMap<>();
+            refused.put("reason", problem);
+            refused.put("message", HubSettings.refusal(problem));
+            return ResponseEntity.badRequest().body(refused);
+        }
+        int number = Integer.parseInt(port.strip());
+        // 0 asks the system for a port at start: there is nothing to check now.
+        boolean thisHub = number != 0 && fleet.enabled() && fleet.port() == number;
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("port", number);
+        body.put("free", number == 0 || thisHub || HubSettings.free(number));
+        body.put("thisHub", thisHub);
         return ResponseEntity.ok(body);
     }
 

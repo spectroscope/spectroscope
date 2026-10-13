@@ -198,6 +198,41 @@ Selecting a card jumps to the System context tab for that agent.</p>
 
 <!--SHOT:21-panel-plan-live|The agent's published plan, live: three steps in the three states (done, running …, open). The capture is from a real run against a local model through ollama, with one update_plan call.-->
 
+<p>While the session has a playbook or workflow run, the Plan panel shows the run. It opens by
+itself when a run starts, once per run: after you close it, later lines of the same run leave it
+closed, and a new run opens it again. The head names the run and its task, how long it has been
+running or how it ended (<em>ended after 4:12: done</em>, <em>stopped</em> or <em>failed</em>, read
+from how the run stopped), and a picker when the session holds more than one run. A strip below
+it has one mark per node of the forward path, decisions as diamonds: done, running, waiting for
+you, failed, skipped and not started.</p>
+
+<p>Then one card per entry, in the order the entries ran, and the nodes not started yet in grey.
+A loop gives a node a second card. A card says who works on the step (<em>Chat</em> or the
+helper with its role), the model, and <em>picked</em> when you chose it in the start sheet; under
+<em>in</em> the documents the step reads, under <em>out</em> the documents it wrote, each
+<em>new</em> or <em>changed</em>, then the files its agents changed with the write and edit tools
+and the number of shell commands, whose files are not captured. A running card shows the last
+line its agent wrote. A decision names its round and outcome, for example <em>round 2 of 5</em>,
+and a loop that ran out of rounds reads <em>limit of 2 rounds reached</em>. A press on a card shows
+the step in the chat and marks it for two seconds: the prompt a chat step sent, or the thread of
+a child step's helper. A press on a document or a file opens it in the Files panel. A path under
+a dot folder such as <code>.superpowers/</code> opens only when the run recorded it as a document
+it wrote (<code>GET /api/run-document</code>, chapter 26); everything else opens as the Files panel
+opens it.</p>
+
+<p><strong>wide</strong> puts the run in the chat's place. A playbook run draws the graph file its
+runner writes, a workflow run its steps as a chain. Under the graph one entry is shown in full:
+by default the one that runs, else the last. It has who and which model, the input text, the
+documents it reads, the output, the documents it wrote, the files and the helpers. A press on a
+node shows that node's latest entry. <em>In the chat</em> goes back to the chat at that entry, and
+<strong>small</strong> brings the chat back. The panel and the wide view show the same run: a run
+picked in one is picked in the other. The keys the State graph segment answers (space, the arrows, Home
+and End) do nothing here, and the view loads no files.</p>
+
+<p>A plan the model writes with <code>update_plan</code> shows under the run as <em>Plan of the
+model</em>. A session without a run, among them every session recorded before runs wrote
+<code>run_step</code> lines, shows only that plan:</p>
+
 <p>The read-only, latest-wins snapshot of the agent's plan, fed by the permission-free
 <code>update_plan</code> tool: each step with a status dot and badge — <em>done</em>,
 coral <em>running …</em>, <em>open</em>. The wire statuses stay canonical English

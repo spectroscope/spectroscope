@@ -127,7 +127,7 @@ describe("the headline divides by the window the run states (card 377)", () => {
   it("says the same 57 on the chip and in the label, where the popover is shut", () => {
     const html = renderRing(HIS_RUN, 143_000);
     expect(html).toContain(">57%</span>");
-    expect(html).toContain('aria-label="Context 57 percent full');
+    expect(html).toContain('aria-label="Context of Main agent, 57 percent full"');
   });
 
   it("names the published window the same way for a cloud run", () => {

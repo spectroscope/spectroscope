@@ -210,6 +210,8 @@ export const OFF_PAGE_SETTING_KEYS = {
   toolGroupsOff: "ToolGroupsSection.tsx",
   // Card 503: agent messaging, after the rtk switch in the same menu.
   agentMessaging: "AgentMessagingSection.tsx",
+  // Card 600: the tool results cache switch under Local mode in the gear.
+  toolResultElision: "LocalModeSection.tsx",
 } as const satisfies Partial<Record<SettingKey, string>>;
 
 /** Card 493: the saveable keys the settings page draws no field for and no
@@ -232,12 +234,12 @@ export const OFF_PAGE_NO_REACH_KEYS = {
   sessionsPerChat: "LocalModeSection.tsx",
   readSharePercent: "LocalModeSection.tsx",
   careParagraph: "LocalModeSection.tsx",
-  // Read where the agent is built; set in a settings file.
-  toolResultElision: null,
   // Card 476: read by the cron daemon; set in a settings file.
   desktopNotifications: null,
   // Card 493: written by the Local mode switch, never by a control.
   localModeKeys: null,
+  // Card 587: set in a settings file; graphify is its only value today.
+  codeGraphBackend: null,
 } as const satisfies Partial<Record<SettingKey, string | null>>;
 
 /** The room a section stands in, read off the grouping table. */

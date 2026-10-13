@@ -100,6 +100,12 @@ public final class SessionSeat implements MessagingSeat {
     }
 
     @Override
+    public String endedChild(String name) {
+        SubagentManager manager = subagents.get();
+        return manager == null ? null : manager.endedChild(name);
+    }
+
+    @Override
     public Sent sendToSession(AgentRow row, String text, String summary) {
         PeerNode peers = node.get();
         String own = sessionId.get();

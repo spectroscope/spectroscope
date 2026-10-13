@@ -3,6 +3,7 @@ package dev.spectroscope.core.playbook.run;
 import dev.spectroscope.core.CancelSignal;
 import dev.spectroscope.core.events.RunEvent;
 import dev.spectroscope.core.peer.PeerFrames;
+import dev.spectroscope.core.playbook.Playbook;
 import dev.spectroscope.core.playbook.Workflow;
 import dev.spectroscope.core.subagents.AgentType;
 import dev.spectroscope.core.subagents.SubagentManager;
@@ -20,6 +21,11 @@ import java.util.Map;
  * hands the joined results to one summariser child; an {@code end} step ends
  * the run. The runner writes the session's sidecar and nothing else: no file
  * goes into the working folder.
+ *
+ * <p>Card 586: the run view beside the chat reads the run from its
+ * {@code run_step} lines: {@code run_start} with the step list, one
+ * {@code step_start} and one {@code step_end} for every round of a step, and
+ * {@code run_end}, on every way out.
  */
 public final class WorkflowRunner {
 
@@ -61,6 +67,7 @@ public final class WorkflowRunner {
     private final Setup setup;
     private final PlaybookHost host;
     private final SubagentManager manager;
+    private final RunSteps lines;
     private int ran;
 
     /**
@@ -72,19 +79,53 @@ public final class WorkflowRunner {
         this.setup = setup;
         this.host = host;
         this.manager = manager;
+        this.lines = new RunSteps(setup.runId(), "workflow");
     }
 
-    /** @return how the run ended; never throws */
+    /**
+     * @return how the run ended. A failing step ends the run with an outcome;
+     *         a throw no step handles (from the host, the sidecar or an Error)
+     *         goes on to the caller after the run's run_end line.
+     */
     public Outcome run() {
         long began = System.currentTimeMillis();
         Workflow w = setup.workflow();
-        Map<String, Object> start = new LinkedHashMap<>();
-        start.put("run", setup.runId());
-        start.put("workflow", w.name());
-        start.put("file", setup.file());
-        start.put("hash", setup.hash());
-        start.put("inputChars", setup.input() == null ? 0 : setup.input().length());
-        setup.recorder().record("workflow_start", start);
+        boolean opened = false;
+        Outcome ended = null;
+        Throwable thrown = null;
+        try {
+            Map<String, Object> start = new LinkedHashMap<>();
+            start.put("run", setup.runId());
+            start.put("workflow", w.name());
+            start.put("file", setup.file());
+            start.put("hash", setup.hash());
+            start.put("inputChars", setup.input() == null ? 0 : setup.input().length());
+            setup.recorder().record("workflow_start", start);
+            host.emit(lines.runStart(w.name(), task(), nodes(w), host.workspace()));
+            opened = true;
+            ended = steps(w, began);
+            return ended;
+        } catch (RuntimeException | Error broken) {
+            thrown = broken;
+            throw broken;
+        } finally {
+            // Card 586: the one place run_end goes out, so every run ends once,
+            // also one that threw before its start line or past its steps.
+            if (!opened) {
+                host.emit(lines.runStart(w.name(), task(), nodes(w), host.workspace()));
+            }
+            long took = System.currentTimeMillis() - began;
+            host.emit(ended != null ? lines.runEnd(ended.stopReason(), ended.result(), ended.detail(), took)
+                    : lines.runEnd(setup.signal().isCancelled() ? RunStop.ABORTED : RunStop.STEP_FAILED, null,
+                            errorOf(thrown), took));
+        }
+    }
+
+    /**
+     * The steps in order. Every way out records workflow_end through
+     * {@link #end}, except an Error and a throw out of end(...) itself.
+     */
+    private Outcome steps(Workflow w, long began) {
         String previous = "";
         try {
             for (Workflow.Step step : w.steps()) {
@@ -98,7 +139,7 @@ public final class WorkflowRunner {
                 boolean met = until == null;
                 for (int round = 1; round <= rounds; round++) {
                     stopIfCancelled(step.id());
-                    previous = runStep(step, previous, round);
+                    previous = runStep(step, previous, round, until == null ? null : max);
                     if (until != null && previous.contains(until)) {
                         met = true;
                         break;
@@ -118,34 +159,83 @@ public final class WorkflowRunner {
         }
     }
 
-    private String runStep(Workflow.Step step, String previous, int round) {
+    /**
+     * One round of a step. Card 586: the round is one entry of the step on the
+     * run view, and its end goes out on every way out of here. The start and
+     * the end of a step that repeats carry its round and its ceiling; a step
+     * that does not repeat carries neither.
+     *
+     * @param round     1 for a step that does not repeat; the sidecar records it
+     * @param maxRounds the step's ceiling when it repeats, else null
+     */
+    private String runStep(Workflow.Step step, String previous, int round, Integer maxRounds) {
+        if (step instanceof Workflow.End) {
+            return previous; // an end runs no body; steps() ends the run on it
+        }
         ran++;
         long t0 = System.currentTimeMillis();
         CancelSignal stepSignal = new CancelSignal();
         Runnable unhook = setup.signal().onCancel(stepSignal::cancel);
+        String kind = kindOf(step);
+        String name = nameOf(step);
+        int entry = lines.enter(step.id());
+        Integer lineRound = maxRounds == null ? null : round;
+        String input = null;
         String answer = null;
         List<String> children = new ArrayList<>();
+        boolean opened = false;
+        boolean closed = false;
+        Throwable thrown = null;
         try {
+            List<String> tasks = step instanceof Workflow.Fanout f ? tasks(f, previous) : List.of();
+            input = step instanceof Workflow.Prompt p ? fill(p.template().in(setup.lang()), previous, null)
+                    : String.join("\n", tasks);
+            Playbook.ModelRef chat = host.chatModel();
+            host.emit(lines.stepStart(step.id(), name, kind, entry, new RunSteps.Start(performerOf(step), null,
+                    chat.provider(), chat.model(), false, input, List.of(), lineRound, maxRounds)));
+            opened = true;
             answer = switch (step) {
-                case Workflow.Prompt p -> prompt(p, previous, stepSignal);
-                case Workflow.Fanout f -> fanout(f, previous, stepSignal, children);
-                case Workflow.End e -> previous;
+                case Workflow.Prompt p -> prompt(p, input, stepSignal);
+                case Workflow.Fanout f -> fanout(f, tasks, previous, stepSignal, children);
+                case Workflow.End e -> previous; // returned above
             };
             record(step, round, true, null, children, t0);
+            host.emit(lines.stepEnd(step.id(), name, kind, entry, new RunSteps.End(RunSteps.DONE,
+                    System.currentTimeMillis() - t0, null, children, answer, List.of(), null, null, lineRound,
+                    maxRounds)));
+            closed = true;
             return answer;
         } catch (RunStopped stopped) {
+            thrown = stopped;
             record(step, round, false, stopped.getMessage(), children, t0);
             throw stopped;
         } catch (RuntimeException failure) {
+            thrown = failure;
             record(step, round, false, String.valueOf(failure.getMessage()), children, t0);
             throw failure;
+        } catch (Error broken) {
+            thrown = broken;
+            throw broken;
         } finally {
-            unhook.run();
+            try {
+                if (!closed) {
+                    if (!opened) {
+                        // The round failed before its start line went out: the start
+                        // goes out first, without a model, so the end never stands alone.
+                        host.emit(lines.stepStart(step.id(), name, kind, entry, new RunSteps.Start(
+                                performerOf(step), null, null, null, false, input, List.of(), lineRound, maxRounds)));
+                    }
+                    host.emit(lines.stepEnd(step.id(), name, kind, entry, new RunSteps.End(statusOf(thrown),
+                            System.currentTimeMillis() - t0, null, children, answer, List.of(), null,
+                            errorOf(thrown), lineRound, maxRounds)));
+                }
+            } finally {
+                unhook.run();
+            }
         }
     }
 
-    private String prompt(Workflow.Prompt p, String previous, CancelSignal signal) {
-        String text = fill(p.template().in(setup.lang()), previous, null);
+    private String prompt(Workflow.Prompt p, String text, CancelSignal signal) {
         PlaybookHost.ChatTurn turn = host.chatTurn(text, text, signal);
         stopIfCancelled(p.id());
         if ("aborted".equals(turn.stopReason())) {
@@ -157,10 +247,17 @@ public final class WorkflowRunner {
         return turn.lastText();
     }
 
-    private String fanout(Workflow.Fanout f, String previous, CancelSignal signal, List<String> children) {
+    /** Card 586: the filled tasks of a fan-out's children, in the order of its agents. */
+    private List<String> tasks(Workflow.Fanout f, String previous) {
+        return f.agents().stream().map(a -> fill(a.task().in(setup.lang()), previous, null)).toList();
+    }
+
+    /** @param tasks the filled tasks, one per agent, in the order of {@code f.agents()} */
+    private String fanout(Workflow.Fanout f, List<String> tasks, String previous, CancelSignal signal,
+                          List<String> children) {
         List<SubagentManager.Spawn> spawns = new ArrayList<>();
-        for (Workflow.Agent a : f.agents()) {
-            spawns.add(new SubagentManager.Spawn(a.roleOrDefault(), fill(a.task().in(setup.lang()), previous, null)));
+        for (int i = 0; i < f.agents().size(); i++) {
+            spawns.add(new SubagentManager.Spawn(f.agents().get(i).roleOrDefault(), tasks.get(i)));
         }
         String results;
         try (SubagentManager.Orchestration o = manager.orchestrate(host::emit, signal)) {
@@ -190,7 +287,7 @@ public final class WorkflowRunner {
         }
         String answer = summary.answer().strip();
         // The summary reaches the chat as a message the run received from its
-        // summariser, the block card 503 draws, and the last one of the run.
+        // summariser, the block card 503 draws. The fan-out's step_end follows it.
         host.emit(new RunEvent.AgentMessage(summary.childId(), manager.parentAgentId(), "peer", "received",
                 answer, PeerFrames.newMsgId(), System.currentTimeMillis()));
         return answer;
@@ -249,5 +346,47 @@ public final class WorkflowRunner {
         f.put("durationMs", System.currentTimeMillis() - began);
         setup.recorder().record("workflow_end", f);
         return new Outcome(setup.runId(), stop, result, ran, answer, detail);
+    }
+
+    /** Card 586: what the run was asked, for run_start; null when the input is blank, as for a playbook run. */
+    private String task() {
+        String input = setup.input();
+        return input == null || input.isBlank() ? null : input;
+    }
+
+    /** Card 586: the run's forward path, its steps in order without the end. */
+    private static List<RunEvent.RunNode> nodes(Workflow w) {
+        return w.steps().stream().filter(s -> !(s instanceof Workflow.End))
+                .map(s -> new RunEvent.RunNode(s.id(), nameOf(s), kindOf(s))).toList();
+    }
+
+    /** Card 586: {@code prompt} or {@code fanout}. */
+    private static String kindOf(Workflow.Step step) {
+        return step instanceof Workflow.Prompt ? "prompt" : "fanout";
+    }
+
+    /** Card 586: a fan-out's label, else the step id. */
+    private static String nameOf(Workflow.Step step) {
+        return step instanceof Workflow.Fanout f && f.label() != null ? f.label() : step.id();
+    }
+
+    /** Card 586: the chat works on a prompt, children on a fan-out. */
+    private static String performerOf(Workflow.Step step) {
+        return step instanceof Workflow.Prompt ? "chat" : "child";
+    }
+
+    /** Card 586: stopped when the owner pressed Stop or the turn was aborted, else failed. */
+    private String statusOf(Throwable thrown) {
+        return setup.signal().isCancelled()
+                || (thrown instanceof RunStopped stopped && RunStop.ABORTED.equals(stopped.reason()))
+                ? RunSteps.STOPPED : RunSteps.FAILED;
+    }
+
+    /** Card 586: what a person reads about a throw, its type when it carries no message. */
+    private static String errorOf(Throwable thrown) {
+        if (thrown == null) {
+            return null;
+        }
+        return thrown.getMessage() != null ? thrown.getMessage() : thrown.toString();
     }
 }

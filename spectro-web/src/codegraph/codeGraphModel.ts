@@ -30,6 +30,17 @@ export interface CodeGraphBackend {
   reason: string | null;
 }
 
+/**
+ * Card 587: what the last build meant, read by the server off graphify's
+ * output. Fix round: "finished" is an update that printed neither the size of
+ * a new graph nor that nothing changed.
+ */
+export interface CodeGraphResult {
+  kind: "built" | "updated" | "current" | "finished" | "failed";
+  /** The size graphify printed last, such as "6 nodes, 8 edges, 2 communities", or null. */
+  counts: string | null;
+}
+
 /** GET /api/codegraph/status. Folder, graph and job are null without a session. */
 export interface CodeGraphStatus {
   installed: boolean;
@@ -40,6 +51,10 @@ export interface CodeGraphStatus {
   graph: { exists: boolean; modifiedAt: string | null } | null;
   job: CodeGraphJob | null;
   backends: CodeGraphBackend[];
+  /** Card 587: the backend the codeGraphBackend setting names. */
+  backend?: string;
+  /** Card 587: what the last build meant, or null while it runs or when none ran. */
+  result?: CodeGraphResult | null;
 }
 
 /** What the header draws beside the folder chip. */
@@ -148,20 +163,27 @@ export function startBody(
 /**
  * Starts a build.
  *
- * @returns the status code, 0 when the server is unreachable, and the server's
- *   own sentence when it refused
+ * @returns the status code, 0 when the server is unreachable, the server's
+ *   own sentence when it refused, and the running build it started (card 587)
  */
 export async function postCodeGraphStart(
   body: StartBody,
   fetchFn: typeof fetch = fetch,
-): Promise<{ status: number; message?: string }> {
+): Promise<{ status: number; message?: string; job?: CodeGraphJob }> {
   try {
     const res = await fetchFn("/api/codegraph/start", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
-    if (res.status === 202) return { status: 202 };
+    if (res.status === 202) {
+      try {
+        const job = (await res.json()) as CodeGraphJob;
+        return typeof job?.startedAt === "string" ? { status: 202, job } : { status: 202 };
+      } catch {
+        return { status: 202 };
+      }
+    }
     let message: string | undefined;
     try {
       const said = (await res.json()) as { message?: unknown };

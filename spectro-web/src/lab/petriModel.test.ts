@@ -125,6 +125,23 @@ describe("petriModel", () => {
     expect(child.marking.llm).toBe(1); // main token untouched
   });
 
+  it("a child's sizes-only context_info is one more child line: a tool pulse, one log token (card 593)", () => {
+    let m = initialMarking();
+    m = fire(m, runStart()).marking;
+    const info = fire(m, {
+      type: "context_info",
+      agentId: "explore-1",
+      turn: 1,
+      messages: 2,
+      estimatedTokens: 60,
+      threshold: 100_000,
+      parts: [{ label: "system prompt", chars: 120, estTokens: 30 }],
+      ts: T,
+    } as RunEvent);
+    expect(info.firing).toEqual({ transition: "sub", from: null, to: null, pulse: "tool", isError: false });
+    expect(info.marking).toEqual({ ...m, log: m.log + 1 });
+  });
+
   it("errors collapse the token back to the user from wherever it sits", () => {
     let m = initialMarking();
     m = fire(m, runStart()).marking;

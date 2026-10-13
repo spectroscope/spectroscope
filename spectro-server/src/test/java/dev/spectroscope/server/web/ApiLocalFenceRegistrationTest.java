@@ -52,8 +52,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         // Pinned blank for the same reason SpectroServerIntegrationTest pins it:
         // an inlined property beats the OS environment, so a shell exporting
-        // SPECTRO_HUB_PORT cannot turn the hub on underneath this test.
-        properties = {"server.address=127.0.0.1", "SPECTRO_HUB_PORT="})
+        // SPECTRO_HUB_ENABLED and SPECTRO_HUB_PORT cannot turn the hub on underneath this test.
+        properties = {"server.address=127.0.0.1", "SPECTRO_HUB_ENABLED=", "SPECTRO_HUB_PORT="})
 @Timeout(value = 30, unit = TimeUnit.SECONDS)
 class ApiLocalFenceRegistrationTest {
 
@@ -186,6 +186,20 @@ class ApiLocalFenceRegistrationTest {
         // The positive side: the listing misses its parameter (400) and the import is not a GET (405).
         assertEquals(400, statusOf("/api/playbooks/plugin-sources", "localhost:" + port));
         assertEquals(405, statusOf("/api/playbooks/import-plugin", "localhost:" + port));
+    }
+
+    @Test
+    void theRunDocumentRouteRefusesAReboundHost() throws IOException {
+        // Card 586: the route that opens a run's documents, dot folders included. A rebound Host
+        // is refused at the filter: without it, the missing parameters would answer 400 here.
+        assertEquals(404, statusOf("/api/run-document", "evil.example.com"));
+    }
+
+    @Test
+    void theRunDocumentRouteReachesTheHandlerFromLocalhost() throws IOException {
+        // The positive side: from localhost the request reaches Spring's dispatch, which answers
+        // the missing parameters (400). A route that does not exist would answer 404 here.
+        assertEquals(400, statusOf("/api/run-document", "localhost:" + port));
     }
 
     private int putStatusOf(String target, long declared, String body) throws IOException {

@@ -60,6 +60,28 @@ public final class PeerNotices {
     }
 
     /**
+     * Card 594: the line a sender reads when a helper of its run ended with
+     * the sender's message still unread in its inbox. It names the helper, why
+     * the helper ended and the start of the message, cut at
+     * {@link PeerLimits#SUMMARY_CAP} like a message's summary and marked when
+     * cut; the reason stops at the same length. The chat shows the same line.
+     *
+     * @param helper  the helper's id
+     * @param why     how the helper ended, in the words of its result
+     * @param text    the message
+     * @param toModel true for the line the sending model reads, which also says what to do now
+     * @return the line
+     */
+    public static String returned(String helper, String why, String text, boolean toModel) {
+        String name = field(helper, PeerLimits.LISTING_LINE_CAP);
+        String start = field(text, PeerLimits.SUMMARY_CAP);
+        boolean cut = field(text, Integer.MAX_VALUE).length() > start.length();
+        return PREFIX + "Your message to " + name + " was not delivered: " + name + " ended before it read it ("
+                + field(why, PeerLimits.SUMMARY_CAP) + "). The message began: «" + start + (cut ? "…" : "")
+                + "»." + (toModel ? DO_NOT_WAIT : "");
+    }
+
+    /**
      * Whether a status is handed to the sending model. A plain delivery is
      * not: the result of the send already said it was queued.
      *
@@ -189,8 +211,8 @@ public final class PeerNotices {
 
     /**
      * The first {@code cap} characters, one fewer when the last would be half
-     * of a pair. The cut of every text that stops at a cap in the messaging
-     * and peer packages ({@code PairSafeCutDriftTest}).
+     * of a pair. {@code PairSafeCutDriftTest} accepts this cut in every
+     * package it scans.
      *
      * @param text a text longer than {@code cap}
      * @param cap  the most characters to keep, at least 1

@@ -22,7 +22,7 @@ import { heldLlmWire, releaseHeldWires } from "./wire/heldWire";
 import { foundSentence, holdImportWires, type ImportWires } from "./import/wireImport";
 import { llmWireSessionOf } from "./state/wireSession";
 import { windowOverrideFrame } from "./wire/windowOverride";
-import { seedResumedLive, summarizeHistory } from "./state/resume";
+import { pageLinesOf, seedResumedLive, summarizeHistory, withPageLines } from "./state/resume";
 import { AppHeader } from "./components/AppHeader";
 import { Chat } from "./components/Chat";
 import { ChatV2 } from "./components/ChatV2";
@@ -113,6 +113,13 @@ import { Sidebar } from "./components/Sidebar";
 import { Resizer } from "./components/Resizer";
 import { AnalyzeRun } from "./components/AnalyzeRun";
 import { RightPanel } from "./components/RightPanel";
+import {
+  closedViewKeys,
+  forgetShownAgent,
+  setShownAgent,
+  shownAgentOf,
+  useShownAgent,
+} from "./state/shownAgent";
 import { fetchSettings, putSettings } from "./state/serverSettings";
 import { reasoningFrame, useReasoningChoice, wireChoice } from "./state/reasoning";
 import {
@@ -136,7 +143,8 @@ import {
 } from "./state/chatCommands";
 import { useCommandsOnConnect } from "./state/commandList";
 import type { LocalLine } from "./state/pageCommands";
-import type { PlaybookConfirm } from "./state/playbookChat";
+import { markStarting, nextStartAsk, type PlaybookConfirm } from "./state/playbookChat";
+import type { Picks } from "./state/playbookPicks";
 import { composerMoves, headerPlaybook } from "./state/playbookHost";
 import { sessionItemsOf } from "./state/sessionItems";
 import { showFolder } from "./state/playbooks";
@@ -148,7 +156,9 @@ import {
   openRightPanel,
   setDockBounds,
   setRightPanelW,
+  setRunWide,
   setSidebarW,
+  showsRunWide,
   toggleRightPanel,
   useDockBounds,
   useLayout,
@@ -177,6 +187,7 @@ import {
   PlaybookChatSheet,
   PlaybookPane,
   prefetchSurfaces,
+  RunWideView,
   SpectrolyzrPage,
   SpectrumView,
   StateGraphPane,
@@ -213,6 +224,11 @@ import {
 } from "./state/fleetStore";
 import { browserCuePushLive } from "./state/browserCue";
 import { browserRevealPushLive, revealBrowserPanel } from "./state/browserReveal";
+import { runRevealPushLive } from "./state/runReveal";
+import type { RunEntry, RunTrack } from "./state/runView";
+import { requestChatFocus } from "./state/chatFocus";
+import { requestOpenFile } from "./state/fileOpenRequest";
+import { runDocumentUrl } from "./workspace/preview";
 import { liveSessionsPushLive, startLiveSessionsPoll, useLiveSessions } from "./state/liveSessions";
 import { swapTracePayloads, useTranslatedEvents, useTranslation } from "./state/translate";
 import type { ImportKind, ImportSource } from "./import/detect";
@@ -227,6 +243,7 @@ import {
 import { ImportNoteBar } from "./components/ImportNoteBar";
 import type { ImportedRunSummary } from "./import/claudeCodeRun";
 import { importedPhasesOf, type WorkflowDeclaration } from "./lab/workflowGraph";
+import { withCommandMarks } from "./lab/labChatState";
 import { collectImages, imageLines, indexOf, withSourceLines } from "./state/sessionImages";
 import { useImageRequest } from "./state/imageViewer";
 import { ImageLightbox } from "./components/ImageLightbox";
@@ -293,6 +310,9 @@ interface Replay {
   /** Card 435: this record's trace, built when it is first needed. `state`
    *  holds no trace rows; the rows come from `useRecordedTrace`. */
   archiveTrace: ArchiveTrace;
+  /** Card 577: the lines the page added to this chat (addLocalLine), in
+   *  order. The stored file never holds them; the resume carries them over. */
+  pageLines?: LocalLine[];
 }
 
 /** What `traceEntries` falls back to while an archive's rows are not built.
@@ -331,6 +351,14 @@ export function App() {
   const heldRows = useSyncExternalStore(sessions.subscribe, sessions.heldRows, sessions.heldRows);
   // Card 498: every record, for the one a wake opened out of view.
   const allSlots = useSyncExternalStore(sessions.subscribe, sessions.slots, sessions.slots);
+  // Card 593: a closed record forgets its agent choice; a new chat is a new key.
+  const liveViewKeys = allSlots.map((s) => `live:${s.key}`).join("|");
+  const knownViewKeys = useRef<string[]>([]);
+  useEffect(() => {
+    const now = liveViewKeys === "" ? [] : liveViewKeys.split("|");
+    for (const key of closedViewKeys(knownViewKeys.current, now)) forgetShownAgent(key);
+    knownViewKeys.current = now;
+  }, [liveViewKeys]);
   const live: UiState = slot.state;
   const [replay, setReplay] = useState<Replay | null>(null);
   // Card 554 fix round 3: the stored session on screen now, for a sender bound
@@ -704,6 +732,7 @@ export function App() {
     if (info.inView) {
       browserCuePushLive(batch); // card 226: an agent drove the browser — the web view re-watches
       browserRevealPushLive(batch); // card 241: …and the dock's browser panel reveals — the only door left
+      runRevealPushLive(batch); // card 586: a run that starts opens the run panel, once per run
     }
     // Card 89: a tool result or a run end may have changed the workspace on
     // disk — nudge the Files tab (it throttles + dedupes on its side).
@@ -829,9 +858,21 @@ export function App() {
   const closePlaybookSheet = (): void => {
     sessions.update(slot.key, (held) => ({ ...held, playbookConfirm: null }));
   };
-  const startConfirmedPlaybook = (confirm: PlaybookConfirm): void => {
-    if (sessionFrame(startPlaybookFrame(confirm.dir, confirm.preview.hash ?? "", confirm.prompt))) {
-      closePlaybookSheet();
+  // Card 584: with the models picked per step in the sheet, for this run only.
+  // Fix round (review N7): the sheet stays open, marked as starting, until the
+  // run's start closes it or the server's refusal shows in it (reducer).
+  // Second fix round: the start asks with an id, and only the refusal that
+  // answers it shows in the sheet.
+  const startConfirmedPlaybook = (confirm: PlaybookConfirm, picks: Picks): void => {
+    const ask = nextStartAsk();
+    if (
+      sessionFrame(startPlaybookFrame(confirm.dir, confirm.preview.hash ?? "", confirm.prompt, picks, ask))
+    ) {
+      sessions.update(slot.key, (held) =>
+        held.playbookConfirm === null
+          ? held
+          : { ...held, playbookConfirm: markStarting(held.playbookConfirm, ask) },
+      );
     }
   };
   // Card 554, task 13: the answer of a command the page answers itself, as a
@@ -844,7 +885,13 @@ export function App() {
     const more = { tone: line.tone, openPlaybook: line.openPlaybook };
     if (lineReplay !== null) {
       setReplay((r) =>
-        r !== null && r.id === lineReplay ? { ...r, state: foldLocalLine(r.state, line.text, more) } : r,
+        r !== null && r.id === lineReplay
+          ? {
+              ...r,
+              state: foldLocalLine(r.state, line.text, more),
+              pageLines: [...(r.pageLines ?? []), line],
+            }
+          : r,
       );
       return;
     }
@@ -870,6 +917,12 @@ export function App() {
   const openPlaybookSteps = (dir: string): void => {
     showFolder(dir, "playbook");
     pickSegment("playbook");
+  };
+  // Card 586: the Playbook segment's link to the runs goes back to the chat,
+  // where the runs are drawn beside it.
+  const showChat = (): void => {
+    pickSegment("sessions");
+    setTab("chat");
   };
   const abort = (): void => {
     sessions.abort(sessions.view().key);
@@ -1877,6 +1930,9 @@ export function App() {
           ? returnToLearn(seeded, events, currentLiveTraceWanted())
           : enterLight(seeded);
       }
+      // Card 577: the lines the page added to the stored chat, the waking
+      // command's included, stay in the live chat; the file never held them.
+      seeded = withPageLines(seeded, pageLinesOf(replayRef.current, id));
       // The fold above is finite and keeps every row; what it becomes is not.
       setOpening(null); // in the same update as the live view below
       // A record on its own socket with ?resume=<id>, the message in its queue.
@@ -2258,8 +2314,50 @@ export function App() {
   const view = useMemo(() => {
     if (!showingTranslation || enteredFleet !== null) return recordedView;
     const folded = reduceAllUntraced(initialState, shownEvents);
-    return replay === null ? folded : normalizeReplay(folded);
+    // Card 576: this fold never saw a frame leave; the record's marks stay.
+    return replay === null ? withCommandMarks(folded, recordedView.turns) : normalizeReplay(folded);
   }, [showingTranslation, enteredFleet, recordedView, replay, shownEvents]);
+  // Card 593: the agent the agent views show, one choice per record in view,
+  // resolved once and handed to the chat's composer row and the right panel.
+  const chosenAgent = useShownAgent(viewKey);
+  const shownAgent = useMemo(() => shownAgentOf(view, chosenAgent), [view, chosenAgent]);
+  const onPickAgent = useCallback((id: string | null) => setShownAgent(viewKey, id), [viewKey]);
+  // Card 586: the run in the plan panel goes wide and takes the chat's place.
+  const runWide = showsRunWide(layout, view.runs.length);
+  // The folder the Files panel shows; a run's document opens from its session.
+  const filesWorkspace = dockWorkspace({
+    viewingLive,
+    viewWorkspace: view.workspace,
+    continuable,
+    replayId: replay?.id ?? null,
+    woken: wokenSlot?.state.workspace ?? null,
+  });
+  // Card 586: a press on a run's card brings the chat back and shows the
+  // entry there: a child step's helper thread, else the prompt of a chat step.
+  const onJumpToRunEntry = (entry: RunEntry): void => {
+    setRunWide(false);
+    requestChatFocus(
+      entry.performer === "child" && entry.agents[0] !== undefined
+        ? { kind: "agent", agentId: entry.agents[0] }
+        : { kind: "entry", key: entry.key },
+    );
+  };
+  // Card 586: a press on a run's document or file opens it in the Files panel.
+  // /api/file refuses a path under a dot folder, so such a path is read through
+  // the run's document route, which opens what that run recorded as written.
+  // Wide hides the dock, so the press turns wide off first, as a card's press does.
+  const onOpenRunPath = (run: RunTrack, path: string): void => {
+    const hidden = path.split("/").some((segment) => segment.startsWith("."));
+    const session = filesWorkspace?.sessionId ?? null;
+    setRunWide(false);
+    requestOpenFile(
+      path,
+      hidden && session !== null ? runDocumentUrl(session, run.runId, path) : undefined,
+      session,
+    );
+    openRightPanel();
+    openDockPanel("files");
+  };
   // Card 554: the workspace and the playbook the header's chips draw. The
   // composer's playbook commands read the same workspace for its pin.
   const chipWorkspace = headerWorkspace({
@@ -2780,7 +2878,7 @@ export function App() {
           <PlaybookChatSheet
             confirm={playbookSheet}
             workspace={live.workspace?.path ?? null}
-            onStart={() => startConfirmedPlaybook(playbookSheet)}
+            onStart={(picks) => startConfirmedPlaybook(playbookSheet, picks)}
             onClose={closePlaybookSheet}
           />
         </ChunkBoundary>
@@ -3007,6 +3105,8 @@ export function App() {
                 (viewingLive ? view.workspace : null)?.sessionId ?? null,
                 replay?.id ?? null,
               )}
+              onShowChat={showChat}
+              hasRun={view.runs.length > 0}
               wizard={
                 <ChunkBoundary>
                   <SpectrolyzrPage />
@@ -3112,6 +3212,7 @@ export function App() {
              The right panel (agents + system context) docks on the far right. */
               <div
                 className="chat-row"
+                data-run-wide={runWide ? "" : undefined}
                 data-reveal
                 ref={chatRowRef}
                 style={
@@ -3179,6 +3280,8 @@ export function App() {
                     composerMeta: {
                       provider: chip.provider,
                       model: chip.model,
+                      shown: shownAgent,
+                      onPickAgent,
                       status: conn.status,
                       providerStatus: providerStatus ?? undefined,
                       providerAddress: providerAddress ?? undefined,
@@ -3229,6 +3332,25 @@ export function App() {
                     <Chat {...chatProps} />
                   );
                 })()}
+                {/* Card 586: the run in the chat's place. The chat and the
+                    dock stay mounted beside it and step aside (run-panel.css). */}
+                {runWide && (
+                  <div className="run-wide-slot">
+                    <ChunkBoundary>
+                      <RunWideView
+                        runs={view.runs}
+                        sessionId={playbookSessionId(
+                          (viewingLive ? view.workspace : null)?.sessionId ?? null,
+                          replay?.id ?? null,
+                        )}
+                        live={viewingLive}
+                        onSmall={() => setRunWide(false)}
+                        onJump={onJumpToRunEntry}
+                        onOpenPath={onOpenRunPath}
+                      />
+                    </ChunkBoundary>
+                  </div>
+                )}
                 {layout.rightPanelOpen && (
                   <>
                     <Resizer
@@ -3249,19 +3371,20 @@ export function App() {
                           <AnalyzeRun viewKey={replay.id} events={shownEvents} />
                         ) : undefined
                       }
-                      plan={view.plan}
+                      plans={view.plans}
+                      shown={shownAgent}
+                      onPickAgent={onPickAgent}
+                      runs={view.runs}
+                      runWide={layout.runWide}
+                      onToggleRunWide={() => setRunWide(!layout.runWide)}
+                      onJumpToRunEntry={onJumpToRunEntry}
+                      onOpenRunPath={onOpenRunPath}
                       onClose={toggleRightPanel}
                       provider={curProvider}
                       model={curModel}
                       thinking={thinking}
                       toolGroups={view.toolGroups}
-                      workspace={dockWorkspace({
-                        viewingLive,
-                        viewWorkspace: view.workspace,
-                        continuable,
-                        replayId: replay?.id ?? null,
-                        woken: wokenSlot?.state.workspace ?? null,
-                      })}
+                      workspace={filesWorkspace}
                       recordedCwd={shownRecordedCwd}
                       storedCwd={shownStoredCwd}
                       onPickFolder={viewingLive ? pickWorkspace : undefined}

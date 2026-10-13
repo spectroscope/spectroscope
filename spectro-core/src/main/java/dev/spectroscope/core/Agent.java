@@ -145,6 +145,15 @@ public final class Agent {
     // Multi-turn history lives in the agent, across runs on the same instance.
     private final List<ProviderMessage> messages = new ArrayList<>();
 
+    /**
+     * Card 594: the peer messages this run took for a request that has not
+     * gone out yet, with {@link AgentOptions#peerReadOnSend}. They count as
+     * read once the request that carries them goes out
+     * ({@link #commitPeerReads}); a run that ends first puts them back into
+     * its inbox ({@link #loop}). Only the loop's own thread touches it.
+     */
+    private final List<dev.spectroscope.core.peer.PeerEnvelope> peerUnsent = new ArrayList<>();
+
     /** Live reasoning override — null defers to the build-time option. ON is
      *  the only visible state; OFF additionally spends the provider's wire-level
      *  off switch (DEFAULT says nothing and merely hides the deltas). */
@@ -445,7 +454,10 @@ public final class Agent {
             }
             // Card 502: the peer inbox closes on the same way out; what the run
             // did not read goes back to the host through the inbox's own hook.
+            // Card 594: so do the messages taken for a request that never went out.
             if (options.peerInbox() != null) {
+                options.peerInbox().putBack(List.copyOf(peerUnsent));
+                peerUnsent.clear();
                 options.peerInbox().close();
             }
             // One operator line per run (the JSONL stays the source of truth).
@@ -480,14 +492,83 @@ public final class Agent {
         if (taken.isEmpty()) {
             return !notices.isEmpty();
         }
+        appendUserText(messages, dev.spectroscope.core.peer.PeerInbox.attributed(taken, true));
+        if (Boolean.TRUE.equals(options.peerReadOnSend())) {
+            // Card 594: read once the request that carries them goes out.
+            peerUnsent.addAll(taken);
+        } else {
+            markPeerRead(taken, peers, agentId, emit);
+        }
+        return true;
+    }
+
+    /**
+     * Records peer messages as read: one {@code agent_message} line per
+     * message (role {@code peer}, state {@code received}, the {@code msg_id}
+     * in {@code label}), then tells the host what was absorbed.
+     */
+    private static void markPeerRead(List<dev.spectroscope.core.peer.PeerEnvelope> taken,
+                                     dev.spectroscope.core.peer.PeerInbox peers, String agentId,
+                                     Consumer<RunEvent> emit) {
         for (dev.spectroscope.core.peer.PeerEnvelope message : taken) {
             String from = message.fromName() != null ? message.fromName() : message.fromSession();
             emit.accept(new RunEvent.AgentMessage(from, agentId, "peer", "received",
                     message.text(), message.msgId(), now()));
         }
-        appendUserText(messages, dev.spectroscope.core.peer.PeerInbox.attributed(taken, true));
         peers.absorbed(taken);
-        return true;
+    }
+
+    /**
+     * Card 594: the request that carries the messages taken since the last
+     * one went out, so they are read now.
+     */
+    private void commitPeerReads(dev.spectroscope.core.peer.PeerInbox peers, String agentId,
+                                 Consumer<RunEvent> emit) {
+        List<dev.spectroscope.core.peer.PeerEnvelope> sent = List.copyOf(peerUnsent);
+        peerUnsent.clear();
+        markPeerRead(sent, peers, agentId, emit);
+    }
+
+    /**
+     * Card 594: whether a provider event answers the request, which proves it
+     * went out. A stop that ended the exchange answers nothing.
+     *
+     * @param event one event of the provider's stream
+     * @return false only for an aborted stop
+     */
+    private static boolean answers(ProviderEvent event) {
+        return !(event instanceof PStop stop && stop.reason() == PStop.StopReason.ABORTED);
+    }
+
+    /**
+     * Card 594: a request tap that notes when the provider dials the request,
+     * and passes the call on to the run's own tap when it has one. The four
+     * shipped providers call {@link LlmWireTap#begin} right before they send
+     * and never for a request a stop ended first.
+     */
+    private static final class DialNotingTap implements LlmWireTap {
+        private static final Exchange NOTHING = new Exchange() {
+            @Override
+            public void line(String rawLine) {
+            }
+
+            @Override
+            public void end(WireOutcome outcome) {
+            }
+        };
+        private final LlmWireTap own;
+        private final java.util.concurrent.atomic.AtomicBoolean dialled;
+
+        private DialNotingTap(LlmWireTap own, java.util.concurrent.atomic.AtomicBoolean dialled) {
+            this.own = own;
+            this.dialled = dialled;
+        }
+
+        @Override
+        public Exchange begin(WireRequest request) {
+            dialled.set(true);
+            return own == null ? NOTHING : own.begin(request);
+        }
     }
 
     /**
@@ -902,6 +983,12 @@ public final class Agent {
                 // turn number turn_start carries; the provider records the real
                 // exchange through it and knows neither agent nor turn itself.
                 LlmWireTap tap = recorder == null ? null : recorder.bound(agentId, turn);
+                // Card 594: with peer messages waiting to be read, the tap also
+                // notes when the provider dials this turn's request.
+                java.util.concurrent.atomic.AtomicBoolean dialled = new java.util.concurrent.atomic.AtomicBoolean();
+                if (!peerUnsent.isEmpty()) {
+                    tap = new DialNotingTap(tap, dialled);
+                }
                 // Card 252, the fence. Asked per turn, and asked of the PROVIDER,
                 // because it is the only party that can know (ollama probes
                 // /api/show; an openai-compatible endpoint remembers its own
@@ -971,44 +1058,56 @@ public final class Agent {
                 long exchangeStartedAt = now();
                 // Blocking for-each over the provider stream — text deltas are passed
                 // through one by one; tool calls and usage arrive at the end of the turn.
-                for (ProviderEvent event : options.provider().stream(request)) {
-                    switch (event) {
-                        case PTextDelta delta -> {
-                            text.append(delta.text());
-                            emit.accept(new TextDelta(agentId, delta.text(), now()));
+                try {
+                    for (ProviderEvent event : options.provider().stream(request)) {
+                        // Card 594: an answer proves the request went out.
+                        if (!peerUnsent.isEmpty() && answers(event)) {
+                            commitPeerReads(peers, agentId, emit);
                         }
-                        // Reasoning stream: surfaced as its own event, but NEVER appended to
-                        // `text` — thinking does not re-enter the provider history (only the
-                        // answer text and tool calls do), exactly as today. With thinking OFF
-                        // the delta is dropped HERE: some models reason unconditionally
-                        // (Ollama's gpt-oss streams message.thinking regardless of the
-                        // request), so the visibility switch must hold at the harness level.
-                        case PThinkingDelta t -> {
-                            if (thinkingEnabled()) {
-                                emit.accept(new ThinkingDelta(agentId, t.text(), now()));
+                        switch (event) {
+                            case PTextDelta delta -> {
+                                text.append(delta.text());
+                                emit.accept(new TextDelta(agentId, delta.text(), now()));
                             }
+                            // Reasoning stream: surfaced as its own event, but NEVER appended to
+                            // `text`: thinking does not re-enter the provider history (only the
+                            // answer text and tool calls do), exactly as today. With thinking OFF
+                            // the delta is dropped HERE: some models reason unconditionally
+                            // (Ollama's gpt-oss streams message.thinking regardless of the
+                            // request), so the visibility switch must hold at the harness level.
+                            case PThinkingDelta t -> {
+                                if (thinkingEnabled()) {
+                                    emit.accept(new ThinkingDelta(agentId, t.text(), now()));
+                                }
+                            }
+                            case PToolCall call -> {
+                                toolCalls.add(call);
+                                emit.accept(new ToolCall(agentId, call.callId(), call.name(),
+                                        call.input(), now()));
+                            }
+                            case PUsage usage -> {
+                                // The trigger sees the REAL context size (cached tokens still
+                                // occupy the window); the wire keeps the uncached input count
+                                // and carries the cache counts ADDITIVELY (absent when the
+                                // provider reported none; those sessions stay byte-identical).
+                                lastInputTokens = contextTokens(usage);
+                                lastRequestChars = requestChars;
+                                lastRequestAttachmentTokens = attachmentTokens;
+                                emit.accept(new Usage(agentId,
+                                        usage.inputTokens(), usage.outputTokens(),
+                                        usage.cacheReadTokens() > 0 ? usage.cacheReadTokens() : null,
+                                        usage.cacheCreationTokens() > 0 ? usage.cacheCreationTokens() : null,
+                                        usage.aiCredits(),
+                                        now()));
+                            }
+                            case PStop stop -> stopReason = stop.reason();
                         }
-                        case PToolCall call -> {
-                            toolCalls.add(call);
-                            emit.accept(new ToolCall(agentId, call.callId(), call.name(),
-                                    call.input(), now()));
-                        }
-                        case PUsage usage -> {
-                            // The trigger sees the REAL context size (cached tokens still
-                            // occupy the window); the wire keeps the uncached input count
-                            // and carries the cache counts ADDITIVELY (absent when the
-                            // provider reported none — those sessions stay byte-identical).
-                            lastInputTokens = contextTokens(usage);
-                            lastRequestChars = requestChars;
-                            lastRequestAttachmentTokens = attachmentTokens;
-                            emit.accept(new Usage(agentId,
-                                    usage.inputTokens(), usage.outputTokens(),
-                                    usage.cacheReadTokens() > 0 ? usage.cacheReadTokens() : null,
-                                    usage.cacheCreationTokens() > 0 ? usage.cacheCreationTokens() : null,
-                                    usage.aiCredits(),
-                                    now()));
-                        }
-                        case PStop stop -> stopReason = stop.reason();
+                    }
+                } finally {
+                    // Card 594: a dialled request went out, also when it was then
+                    // stopped, failed or ended before any answer.
+                    if (!peerUnsent.isEmpty() && dialled.get()) {
+                        commitPeerReads(peers, agentId, emit);
                     }
                 }
 
@@ -1899,13 +1998,19 @@ public final class Agent {
                 .flatMap(message -> message.content().stream())
                 .mapToInt(Agent::charsOf)
                 .sum();
-        String schemaText = advertised.stream()
-                .map(spec -> spec.name() + " — " + spec.description() + "\n" + spec.inputSchema())
-                .reduce((a, b) -> a + "\n\n" + b).orElse("");
+        // Card 593: a helper reports sizes only. The texts of its parts stay
+        // off the wire and are not rendered at all, so its line costs a few
+        // hundred bytes where the main agent's costs tens of kilobytes.
+        boolean texts = !Boolean.FALSE.equals(options.introspectionTexts());
+        String schemaText = texts
+                ? advertised.stream()
+                        .map(spec -> spec.name() + " — " + spec.description() + "\n" + spec.inputSchema())
+                        .reduce((a, b) -> a + "\n\n" + b).orElse("")
+                : null;
         List<ContextPart> parts = List.of(
-                part("system prompt", systemChars, systemForGauge),
+                part("system prompt", systemChars, texts ? systemForGauge : null),
                 part("tool schemas", schemaChars, schemaText),
-                part("conversation", conversationChars, renderConversation(messages)));
+                part("conversation", conversationChars, texts ? renderConversation(messages) : null));
         int estimatedTokens = parts.stream().mapToInt(ContextPart::estTokens).sum();
         return new ContextInfo(options.agentId(), turn, messages.size(),
                 estimatedTokens, compaction.tokens(), parts, now(),
@@ -1967,13 +2072,14 @@ public final class Agent {
     private static final int CONTEXT_PART_TEXT_CAP = 16_384;
 
     /** Builds one labeled slice of the context estimate, deriving its tokens as
-     *  chars/4 and carrying the (capped) content itself — what actually rides
+     *  chars/4 and carrying the (capped) content itself, what actually rides
      *  to the provider, readable in the trace (card 86 follow-up).
      *  @param label the slice name shown by the introspection UI
      *  @param chars the raw character count behind the estimate
-     *  @param text  the slice's content, capped here */
+     *  @param text  the slice's content, capped here; null when the agent sends
+     *               sizes only (card 593), and the wire then carries no text key */
     private static ContextPart part(String label, int chars, String text) {
-        return new ContextPart(label, chars, chars / 4, capped(text));
+        return new ContextPart(label, chars, chars / 4, text == null ? null : capped(text));
     }
 
     /** Caps a part text with an honest marker naming the full size. */

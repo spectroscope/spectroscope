@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ChatCommandsSection } from "./ChatCommandsSection";
 import { SkillsPane } from "./SkillsPane";
-import { dict, t } from "../i18n/i18n";
+import { dict } from "../i18n/i18n";
 import { setLang } from "../state/lang";
 import { __resetCommandList, __setCommandRows, webCommands } from "../state/commandList";
 import { spellingsOf } from "../state/chatCommands";
@@ -50,7 +50,7 @@ describe("the chat commands on the Skills and Commands page", () => {
     expect(web.length).toBeGreaterThan(5);
     for (const row of web) {
       expect(html, row.id).toContain(`data-command="${row.id}"`);
-      expect(html, row.id).toContain(esc(t("en", `cmd.${row.id}.help`)));
+      expect(html, row.id).toContain(esc(row.help.en));
     }
     expect([...html.matchAll(/data-command="([^"]+)"/g)].map((m) => m[1])).toEqual(
       [...new Set(web.map((r) => r.group))].flatMap((g) => web.filter((r) => r.group === g).map((r) => r.id)),
@@ -83,10 +83,23 @@ describe("the chat commands on the Skills and Commands page", () => {
     expect(row("clear")).not.toContain("developer mode");
   });
 
-  it("leaves out the terminal's own commands and the rows another card wires", () => {
+  it("leaves out the terminal's own commands", () => {
     const html = section();
     expect(html).not.toContain('data-command="goal"');
-    expect(html).not.toContain('data-command="codegraph"');
+    expect(html).not.toContain('data-command="peer"');
+  });
+
+  // Card 588: a command that takes words shows how it is written.
+  it("shows the template of every command that has one, in the page's language", () => {
+    const html = section();
+    const withUsage = webCommands(ROWS).filter((r) => r.usage !== null);
+    expect(withUsage.length).toBeGreaterThan(3);
+    for (const row of withUsage) {
+      expect(html, row.id).toContain(`<code class="skills-command-usage">${esc(row.usage?.en ?? "")}</code>`);
+    }
+    expect(html.match(/skills-command-usage/g)?.length).toBe(withUsage.length);
+    setLang("de");
+    expect(section()).toContain('<code class="skills-command-usage">/graph ask &lt;Frage&gt;</code>');
   });
 
   it("speaks German", () => {

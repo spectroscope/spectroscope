@@ -8,6 +8,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -50,6 +51,23 @@ class SessionCatalogueTest {
     /** Effective name to source, for every item of the catalogue. */
     private static Map<String, String> names(SessionCatalogue c) {
         return c.items().stream().collect(Collectors.toMap(SessionCatalogue.Item::name, SessionCatalogue.Item::source));
+    }
+
+    /**
+     * Card 587, fix round (M7): the source words are one closed list, which the
+     * web's session items are held to (sessionItems.drift.test.ts). A layer
+     * from any other source is refused, so a fifth source has to join the list.
+     */
+    @Test
+    void aLayerComesFromOneOfTheFourSources() {
+        assertEquals(List.of(SessionCatalogue.WORKSPACE, SessionCatalogue.PLAYBOOK, SessionCatalogue.USER,
+                SessionCatalogue.APP), SessionCatalogue.SOURCES);
+        assertThrows(IllegalArgumentException.class,
+                () -> new SessionCatalogue.Layer("team", "team", List.of(skill("lint"))));
+        for (String source : SessionCatalogue.SOURCES) {
+            assertEquals(source, new SessionCatalogue.Layer(source, source, List.of()).source(),
+                    "premise: every listed source makes a layer");
+        }
     }
 
     @Test
@@ -207,6 +225,20 @@ class SessionCatalogueTest {
         assertEquals(Map.of("workspace:review", "workspace", "workspace:command:review", "workspace",
                 "user:review", "user"), names(c));
         assertEquals(SessionCatalogue.COMMAND, c.find("workspace:command:review").orElseThrow().kind());
+    }
+
+    /** Card 587: the skills the app itself ships are a fourth source, under the same rule. */
+    @Test
+    void theAppsOwnSkillIsAFourthSourceUnderTheSameRule() {
+        SessionCatalogue.Layer app = new SessionCatalogue.Layer(SessionCatalogue.APP, SessionCatalogue.APP,
+                List.of(skill("code-graph")));
+        SessionCatalogue alone = SessionCatalogue.of(List.of(workspace(), user(skill("x")), app));
+        assertEquals(Map.of("x", "user", "code-graph", "app"), names(alone));
+
+        SessionCatalogue doubled = SessionCatalogue.of(List.of(workspace(skill("code-graph")), user(), app));
+        assertEquals(Map.of("workspace:code-graph", "workspace", "app:code-graph", "app"), names(doubled),
+                "no source wins, the app's included");
+        assertEquals("playbook-app", SessionCatalogue.playbookNamespace("app"));
     }
 
     @Test

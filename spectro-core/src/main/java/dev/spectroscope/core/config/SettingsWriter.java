@@ -103,7 +103,9 @@ public final class SettingsWriter {
             // Card 528: what runs whisper on the local live route.
             "sttRunner",
             // Card 503: whether agents message each other, on or off.
-            "agentMessaging");
+            "agentMessaging",
+            // Card 587: the program behind the code graph.
+            "codeGraphBackend");
 
     /** Fields that apply to the whole process, not one workspace — a
      *  {@code PROJECT}/{@code LOCAL} patch setting any of them is refused. This is
@@ -321,6 +323,7 @@ public final class SettingsWriter {
             case "sttProvider" -> requireOneOf(key, value.asText(), SpectroConfig.KNOWN_STT_PROVIDERS);
             case "sttLanguage" -> requireOneOf(key, value.asText(), SpectroConfig.KNOWN_STT_LANGUAGES);
             case "sttRunner" -> requireOneOf(key, value.asText(), SpectroConfig.KNOWN_STT_RUNNERS);
+            case "codeGraphBackend" -> requireOneOf(key, value.asText(), SpectroConfig.KNOWN_CODE_GRAPH_BACKENDS);
             case "logLevel" -> requireOneOf(key, value.asText(), SpectroConfig.KNOWN_LOG_LEVELS);
             case "permissionMode" -> requireOneOf(key, value.asText(), SpectroConfig.KNOWN_PERMISSION_MODES);
             case "rtkFilter" -> requireOneOf(key, value.asText(), SpectroConfig.KNOWN_RTK_FILTER_VALUES);

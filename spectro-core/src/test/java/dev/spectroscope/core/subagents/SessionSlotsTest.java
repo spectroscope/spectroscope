@@ -71,4 +71,29 @@ class SessionSlotsTest {
                 "the ticket behind a cancelled one never reached the head of the queue");
         assertEquals(1, slots.running());
     }
+
+    /**
+     * Card 581: the count holds a helper back only while its ticket is in line
+     * and no slot would come free for it. A helper with a slot, a helper first
+     * in line with a free slot, and any helper of a chat without a count are
+     * not held back.
+     */
+    @Test
+    void onlyATicketInLineThatTheCountKeepsFromASlotIsHeldBack() {
+        SessionSlots slots = new SessionSlots();
+        SessionCount two = SessionCount.of(2); // one helper at a time
+        SessionSlots.Ticket first = slots.enqueue();
+        SessionSlots.Ticket second = slots.enqueue();
+        assertFalse(slots.holdsBack(first, two), "first in line with the slot free");
+        assertTrue(slots.holdsBack(second, two), "behind the first, with one slot");
+
+        assertTrue(slots.acquire(first, () -> two, new CancelSignal()));
+        assertFalse(slots.holdsBack(first, two), "it holds the slot now");
+        assertTrue(slots.holdsBack(second, two), "the only slot is taken");
+
+        slots.release();
+        assertFalse(slots.holdsBack(second, two), "the slot is free and it is first in line");
+        assertFalse(slots.holdsBack(second, SessionCount.UNSET), "no count, no limit");
+        assertFalse(slots.holdsBack(null, two), "no ticket");
+    }
 }

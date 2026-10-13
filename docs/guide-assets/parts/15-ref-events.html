@@ -102,6 +102,34 @@ stays in its sidecar.</p></div></div>
 without <code>dir</code> withdraws the pick, and a line with <code>none: true</code> is the explicit
 "No playbook", which no pinned folder stands in for.</p></div></div>
 
+<div class="ref"><div class="ref-head"><code class="name">run_step</code><span class="meta">additive · card 586</span></div><div class="ref-body">
+<p><code>agentId</code> (<code>"playbook"</code> for both kinds), <code>runId</code>, <code>runKind</code>
+(<code>playbook</code> or <code>workflow</code>), <code>phase</code>. One line per moment of a playbook or
+workflow run, for the run panel beside the chat; <code>playbook_progress</code> and <code>plan</code>
+are written as before. Phase <code>run_start</code> carries <code>name</code>, <code>task</code> (absent
+without one), <code>nodes</code> (the forward path, <code>[{id, name, kind}]</code>) and
+<code>workspaceFingerprint</code> (the first 16 hex digits of the SHA-256 of the run's real working
+folder, never the path). Phase <code>step_start</code> carries <code>node</code>, <code>name</code>,
+<code>kind</code> (<code>step</code>, <code>decision</code>, <code>prompt</code> or <code>fanout</code>),
+<code>entry</code> (1, then 2 and on for a loop), <code>performer</code> (<code>chat</code> or
+<code>child</code>), <code>role</code>, <code>provider</code>, <code>model</code>, <code>picked</code>,
+<code>input</code> with <code>inputChars</code>, <code>reads</code> (<code>[{doc, path}]</code>, the path
+only for a file inside the working folder) and, on a decision or a repeating workflow step,
+<code>round</code> and <code>maxRounds</code>. Phase <code>step_end</code> carries the same <code>node</code>, <code>name</code>,
+<code>kind</code> and <code>entry</code>, <code>status</code> (<code>done</code>, <code>failed</code> or
+<code>stopped</code>), <code>durationMs</code>, <code>childId</code> or <code>children</code>,
+<code>output</code> with <code>outputChars</code>, <code>documents</code> (<code>[{doc, path, change}]</code>,
+<code>change</code> <code>created</code> or <code>changed</code>), <code>label</code> (a decision's
+outcome, <code>exhausted</code> included), <code>error</code>, and <code>round</code> and
+<code>maxRounds</code> as at the start. Phase <code>run_end</code> carries <code>stopReason</code>,
+<code>result</code>, <code>detail</code> and <code>durationMs</code>. Every <code>step_start</code> has one
+<code>step_end</code> with the same node and entry, also when the step fails, is stopped or the host
+throws. A refused run writes <code>run_start</code> and <code>run_end</code> with
+<code>stopReason</code> <code>refused</code> and no steps. <code>input</code>, <code>output</code>,
+<code>error</code> and <code>detail</code> are cut at 4,000 characters; the full texts stay in the chat
+turn, the child's thread and the llm wire. Fields a phase does not set are left off the line. The
+documents of <code>step_end</code> lines are what <code>GET /api/run-document</code> opens.</p></div></div>
+
 <div class="ref"><div class="ref-head"><code class="name">voice_input</code><span class="meta">additive · bonus 2</span></div><div class="ref-body">
 <p><code>agentId</code>, <code>durationMs</code>, <code>model</code> (e.g. <code>"ggml-small"</code>).
 Written <em>before</em> the <code>run_start</code> of a spoken turn; pure provenance — a
@@ -165,7 +193,12 @@ set, the automatic source after a clear. A resumed session takes its window from
 <code>task</code> (parent→child, state <code>submitted</code>), <code>status</code>
 (child→parent, <code>working</code>, fed by <code>report_status</code>), <code>result</code>
 (child→parent, <code>completed</code>/<code>failed</code>). <code>label</code> names the dev
-tool (<code>build_plan</code>…) and is absent on plain spawns.</p></div></div>
+tool (<code>build_plan</code>…) and is absent on plain spawns. Role <code>peer</code> is a
+message between agents: state <code>sent</code> or <code>received</code>, the message's
+<code>msg_id</code> in <code>label</code>, and state <code>returned</code> when a helper ended
+with the message still unread. A <code>returned</code> line runs from the helper to the
+sender (the parent's id, or <code>operator</code> for a reply typed on the page), and its
+<code>text</code> is the line the sender reads.</p></div></div>
 
 <div class="ref"><div class="ref-head"><code class="name">plan</code><span class="meta">additive · full build</span></div><div class="ref-body">
 <p><code>agentId</code>, <code>steps[]</code> (<code>{text, status}</code>). Latest-wins full

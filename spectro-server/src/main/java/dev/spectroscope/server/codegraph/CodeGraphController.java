@@ -1,11 +1,13 @@
 package dev.spectroscope.server.codegraph;
 
+import dev.spectroscope.core.codegraph.CodeGraphBackend;
 import dev.spectroscope.core.config.SpectroConfig;
 import dev.spectroscope.core.tools.ToolPath;
 import dev.spectroscope.server.session.SessionWorkspaces;
 import dev.spectroscope.server.session.SessionsController;
 import dev.spectroscope.server.web.AppPageTickets;
 import dev.spectroscope.server.web.LocalOrigin;
+import jakarta.annotation.PreDestroy;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
@@ -53,11 +55,8 @@ public class CodeGraphController {
     /** Same session-id shape guard as the files, image and folder-chip endpoints. */
     private static final Pattern SESSION_ID = Pattern.compile("[A-Za-z0-9][A-Za-z0-9-]*");
 
-    /** The graph page graphify writes into a folder it built. */
-    static final Path GRAPH_HTML = Path.of("graphify-out", "graph.html");
-
-    /** The largest graph page served; graphify aggregates past 5000 nodes, so real pages stay far below. */
-    static final long MAX_PAGE_BYTES = 64L * 1024 * 1024;
+    /** The largest graph page served; the backend's one rule holds the same cap (card 587, fix round). */
+    static final long MAX_PAGE_BYTES = CodeGraphBackend.MAX_PAGE_BYTES;
 
     /**
      * The policy the graph page is served under. A {@code graph.html} can come
@@ -80,11 +79,11 @@ public class CodeGraphController {
     }
 
     /**
-     * Whether the folder has a graph page.
+     * Whether the folder has a code graph.
      *
-     * @param exists     whether {@code graphify-out/graph.html} is a file inside the folder,
-     *                   no larger than {@code MAX_PAGE_BYTES}
-     * @param modifiedAt its modification time, ISO-8601 to the second, or null
+     * @param exists     card 587, fix round: whether the backend's one rule finds the graph and
+     *                   its page inside the folder ({@link CodeGraphBackend#lookup})
+     * @param modifiedAt the page's modification time, ISO-8601 to the second, or null
      */
     public record Graph(boolean exists, String modifiedAt) {
     }
@@ -100,19 +99,24 @@ public class CodeGraphController {
      * @param graph     the folder's graph page, or null without a session
      * @param job       the folder's last build since the server started, or null
      * @param backends  the providers the sheet offers for community names
+     * @param backend   card 587: the code graph backend the {@code codeGraphBackend} setting names
+     * @param result    card 587: what the last build meant (built, updated, current, finished, failed), or null
      */
     public record Status(boolean installed, String binary, List<String> searched, String install,
                          String folder, Graph graph, CodeGraphJobs.Snapshot job,
-                         List<GraphifyBackends.Choice> backends) {
+                         List<GraphifyBackends.Choice> backends, String backend, GraphifyCommand.Result result) {
     }
 
     private final CodeGraphJobs jobs;
-    private final Supplier<ToolPath.Lookup> graphify;
+    private final Function<Path, CodeGraphBackend> backends;
+    private final Function<CodeGraphBackend, ToolPath.Lookup> programs;
     private final Supplier<Function<String, String>> endpoints;
     private final Function<String, String> keys;
     private final Function<String, List<String>> models;
     private final AppPageTickets tickets;
     private final Function<String, String> recorded;
+    /** Card 587, round 2 (N4): what stops the builds telling the live sessions. */
+    private volatile Runnable stopTelling = () -> { };
 
     /**
      * Production wiring: the shared builds, the tool PATH lookup, the saved
@@ -123,12 +127,38 @@ public class CodeGraphController {
      */
     @Autowired
     public CodeGraphController(SessionsController sessions) {
-        this(CodeGraphJobs.shared(), () -> ToolPath.locate("graphify"), () -> {
+        this(CodeGraphJobs.shared(), dev.spectroscope.core.codegraph.CodeGraphSetting::backendFor,
+                backend -> ToolPath.locate(backend.binary()), () -> {
             SpectroConfig config = SpectroConfig.load(SpectroConfig.Overrides.none());
             return config::endpointFor;
         }, SpectroConfig::resolveApiKey, sessions::models, AppPageTickets.shared(),
                 dev.spectroscope.core.session.SessionStore::recordedWorkspace);
     }
+
+    /**
+     * Card 587, fix round (M12): the live sessions of this server, told when a
+     * build of this controller's jobs ends, so each looks again at its
+     * folder's graph.
+     *
+     * @param live the process's registry; Spring hands it in
+     */
+    @Autowired(required = false)
+    public synchronized void useLiveSessions(dev.spectroscope.server.session.LiveSessions live) {
+        stopTelling.run();
+        stopTelling = jobs.onEnded(live::checkCodeGraphs);
+    }
+
+    /**
+     * Card 587, round 2 (N4): the context closes, and the shared builds stop
+     * telling its live sessions, so nothing of a closed context stays
+     * reachable from them.
+     */
+    @PreDestroy
+    public synchronized void stop() {
+        stopTelling.run();
+        stopTelling = () -> { };
+    }
+
 
     /**
      * Seam for tests.
@@ -145,8 +175,30 @@ public class CodeGraphController {
                         Supplier<Function<String, String>> endpoints, Function<String, String> keys,
                         Function<String, List<String>> models, AppPageTickets tickets,
                         Function<String, String> recorded) {
+        this(jobs, folder -> CodeGraphBackend.GRAPHIFY, backend -> graphify.get(), endpoints, keys, models,
+                tickets, recorded);
+    }
+
+    /**
+     * Seam for tests, with the backend per folder (card 587, fix round).
+     *
+     * @param jobs      the builds
+     * @param backends  the backend a folder uses, asked per request; the folder is null without a session
+     * @param programs  where a backend's program is, looked up per request
+     * @param endpoints the address per provider, read per request
+     * @param keys      a saved key per environment variable name
+     * @param models    the models a provider lists
+     * @param tickets   the chip's one-shot tickets, spent by {@link #view}
+     * @param recorded  the folder a stored session's record names, by session id
+     */
+    CodeGraphController(CodeGraphJobs jobs, Function<Path, CodeGraphBackend> backends,
+                        Function<CodeGraphBackend, ToolPath.Lookup> programs,
+                        Supplier<Function<String, String>> endpoints, Function<String, String> keys,
+                        Function<String, List<String>> models, AppPageTickets tickets,
+                        Function<String, String> recorded) {
         this.jobs = jobs;
-        this.graphify = graphify;
+        this.backends = backends;
+        this.programs = programs;
         this.endpoints = endpoints;
         this.keys = keys;
         this.models = models;
@@ -169,11 +221,12 @@ public class CodeGraphController {
         if (!LocalOrigin.isLocalOrigin(request)) {
             return ResponseEntity.notFound().build();
         }
-        ToolPath.Lookup found = graphify.get();
         List<GraphifyBackends.Choice> offered = GraphifyBackends.offered(keys);
         if (sessionId == null || sessionId.isBlank()) {
+            CodeGraphBackend chosen = backends.apply(null);
+            ToolPath.Lookup found = programs.apply(chosen);
             return ResponseEntity.ok(new Status(found.isFound(), found.found(), found.searched(),
-                    GraphifyCommand.INSTALL_LINE, null, null, null, offered));
+                    chosen.install(), null, null, null, offered, chosen.name(), null));
         }
         if (!SESSION_ID.matcher(sessionId).matches()) {
             return ResponseEntity.badRequest().body(Map.of("message", "Malformed session id."));
@@ -182,10 +235,13 @@ public class CodeGraphController {
         if (folder == null) {
             return ResponseEntity.notFound().build();
         }
-        Path page = graphPage(folder);
+        CodeGraphBackend chosen = backends.apply(folder);
+        ToolPath.Lookup found = programs.apply(chosen);
+        Path page = pageOf(folder, chosen);
         Graph graph = new Graph(page != null, page == null ? null : modified(page));
+        CodeGraphJobs.Snapshot job = jobs.get(folder);
         return ResponseEntity.ok(new Status(found.isFound(), found.found(), found.searched(),
-                GraphifyCommand.INSTALL_LINE, folder.toString(), graph, jobs.get(folder), offered));
+                chosen.install(), folder.toString(), graph, job, offered, chosen.name(), GraphifyCommand.result(job)));
     }
 
     /**
@@ -219,11 +275,12 @@ public class CodeGraphController {
         if (folder == null) {
             return ResponseEntity.notFound().build();
         }
-        ToolPath.Lookup found = graphify.get();
+        CodeGraphBackend chosen = backends.apply(folder);
+        ToolPath.Lookup found = programs.apply(chosen);
         if (!found.isFound()) {
             Map<String, Object> missing = new LinkedHashMap<>();
-            missing.put("message", "graphify is not installed. Install it with: " + GraphifyCommand.INSTALL_LINE);
-            missing.put("install", GraphifyCommand.INSTALL_LINE);
+            missing.put("message", chosen.name() + " is not installed. Install it with: " + chosen.install());
+            missing.put("install", chosen.install());
             missing.put("searched", found.searched());
             return ResponseEntity.status(503).body(missing);
         }
@@ -273,7 +330,7 @@ public class CodeGraphController {
             return ResponseEntity.notFound().build();
         }
         Path folder = folderOf(sessionId);
-        Path page = folder == null ? null : graphPage(folder);
+        Path page = folder == null ? null : pageOf(folder, backends.apply(folder));
         if (page == null) {
             return ResponseEntity.notFound().build();
         }
@@ -313,19 +370,13 @@ public class CodeGraphController {
     }
 
     /**
-     * The folder's graph page, realised, or null when it is absent, resolves
-     * outside the folder, or is larger than {@code MAX_PAGE_BYTES}. Status and
-     * view both ask here, so a page the view would refuse is no graph to show
-     * (card 546).
+     * The folder's graph page, realised, or null when the folder has no code
+     * graph by the backend's one rule (card 587, fix round, M9): the graph and
+     * its page inside the folder, the page within the cap. Status and view both
+     * ask here, so a page the view would refuse is no graph to show (card 546).
      */
-    private static Path graphPage(Path folder) {
-        try {
-            Path real = folder.resolve(GRAPH_HTML).toRealPath();
-            return real.startsWith(folder) && Files.isRegularFile(real)
-                    && Files.size(real) <= MAX_PAGE_BYTES ? real : null;
-        } catch (IOException | RuntimeException absent) {
-            return null;
-        }
+    private static Path pageOf(Path folder, CodeGraphBackend backend) {
+        return backend.lookup(folder) instanceof CodeGraphBackend.Found found ? found.page() : null;
     }
 
     /** A file's modification time to the second, or null when it cannot be read. */

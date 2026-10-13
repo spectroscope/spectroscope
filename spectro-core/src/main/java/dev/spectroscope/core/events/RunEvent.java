@@ -69,7 +69,8 @@ import java.util.List;
     @JsonSubTypes.Type(value = RunEvent.SteeringMessage.class, name = "steering_message"), // additive (card 380)
     @JsonSubTypes.Type(value = RunEvent.ContextCleared.class,  name = "context_cleared"),  // additive (card 471)
     @JsonSubTypes.Type(value = RunEvent.PlaybookProgress.class, name = "playbook_progress"), // additive (card 554)
-    @JsonSubTypes.Type(value = RunEvent.PlaybookPicked.class,   name = "playbook_picked")    // additive (card 554)
+    @JsonSubTypes.Type(value = RunEvent.PlaybookPicked.class,   name = "playbook_picked"),   // additive (card 554)
+    @JsonSubTypes.Type(value = RunEvent.RunStep.class,          name = "run_step")         // additive (card 586)
 })
 public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart, RunEvent.TurnStart,
         RunEvent.TextDelta, RunEvent.ThinkingDelta, RunEvent.ToolCall, RunEvent.PermissionRequest,
@@ -82,7 +83,7 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
         RunEvent.Continuation, RunEvent.GoalCheck,
         RunEvent.SettingsIgnored, RunEvent.LaunchOutcome,
         RunEvent.SteeringMessage, RunEvent.ContextCleared, RunEvent.PlaybookProgress,
-        RunEvent.PlaybookPicked {
+        RunEvent.PlaybookPicked, RunEvent.RunStep {
 
     /** Epoch millis of the moment the event was emitted. */
     long ts();
@@ -1204,7 +1205,8 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
      *  @param estTokens the chars/4 token estimate
      *  @param text      the slice's CONTENT (additive, card 86 follow-up) — what
      *                   actually rides to the provider, capped by the emitter;
-     *                   null in pre-content sessions */
+     *                   null in pre-content sessions and in a helper's frames,
+     *                   which carry sizes only (card 593) */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     record ContextPart(String label, int chars, int estTokens, String text) {}
 
@@ -1223,10 +1225,17 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
      * {@code received}; on a {@code peer} line {@code label} carries the
      * message's {@code msg_id}. No component changes.</p>
      *
+     * <p>Card 594 adds the state word {@code returned}: a helper ended with the
+     * message still unread in its inbox. The line goes from the helper to the
+     * sender (the parent's id, or {@code operator} for a reply typed on the
+     * page), {@code text} is the line the sender reads, and {@code label} the
+     * message's {@code msg_id}.</p>
+     *
      * @param from  the sending agent's id
      * @param to    the receiving agent's id
      * @param role  {@code task}, {@code status}, {@code result} or {@code peer}
-     * @param state the A2A lifecycle state: submitted, working, completed or failed
+     * @param state the A2A lifecycle state: submitted, working, completed or failed; on a peer line
+     *              sent, received or returned
      * @param text  the message content — the task text, a status line, or the result
      * @param label the dev tool that spawned the child; null on plain spawns
      * @param ts    epoch millis of emission
@@ -1468,6 +1477,179 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
             return Boolean.TRUE.equals(none) && (dir == null || dir.isBlank());
         }
     }
+
+    /**
+     * Card 586: one line of a playbook or workflow run for the run view beside
+     * the chat. A run says that it started (its name, task and forward path),
+     * that a step or decision starts (who works on it, on which model, with
+     * which input and which documents to read), how it ended (status,
+     * duration, output, the documents it wrote, a decision's label and round),
+     * and how the run ended. {@code phase} decides which fields are set; every
+     * other field is null and left off the wire. The input, the output, the
+     * error and the detail are cut at 4,000 characters; the input and the
+     * output carry their full length beside them. The task, label and result
+     * pass uncut.
+     *
+     * @param agentId    {@code "playbook"} for both run kinds
+     * @param runId      the run, the id its sidecar lines carry
+     * @param runKind    {@code playbook} or {@code workflow}
+     * @param phase      {@link #RUN_START}, {@link #STEP_START}, {@link #STEP_END} or {@link #RUN_END}
+     * @param name       the run's name on run_start; the node's name on a step
+     * @param task       what the run was asked, on run_start; null when none
+     * @param nodes      the forward path on run_start
+     * @param node       the node id, on a step
+     * @param kind       {@code step}, {@code decision}, {@code prompt} or {@code fanout}, on a step
+     * @param entry      1 for a node's first entry, 2 and on for a loop, on a step
+     * @param performer  {@code chat} or {@code child}, on step_start
+     * @param role       worker, explore, research, or the agent name, on step_start of a child
+     * @param provider   the provider, on step_start
+     * @param model      the model, on step_start
+     * @param picked     true when the owner picked the model in the start sheet
+     * @param input      the step's record text, cut
+     * @param inputChars the full length of the record text
+     * @param reads      the documents the step is told to read; a path only for a file inside the workspace
+     * @param round      a decision's round, the same on its start and its end
+     * @param maxRounds  a decision's ceiling
+     * @param status     {@code done}, {@code failed} or {@code stopped}, on step_end
+     * @param durationMs the step's or the run's duration
+     * @param childId    the child of a child step or a review, on step_end
+     * @param children   the children of a fan-out, on step_end
+     * @param output     the answer, the child's result or the check's detail, cut
+     * @param outputChars the full length of the output
+     * @param documents  the documents the step wrote, on step_end
+     * @param label      a decision's outcome, on step_end
+     * @param error      what failed, on step_end, cut
+     * @param stopReason how the run stopped, on run_end
+     * @param result     the end's result, on run_end
+     * @param detail     what a person reads about the stop, on run_end, cut
+     * @param ts         epoch millis of emission
+     * @param workspaceFingerprint the run's folder on run_start, as {@link #fingerprintOf} of
+     *                   its real path, never the path itself; null on every other line and
+     *                   on lines written before card 586's straggler round
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    record RunStep(String agentId, String runId, String runKind, String phase,
+                   String name, String task, List<RunNode> nodes,
+                   String node, String kind, Integer entry,
+                   String performer, String role, String provider, String model, Boolean picked,
+                   String input, Integer inputChars, List<RunDoc> reads,
+                   Integer round, Integer maxRounds,
+                   String status, Long durationMs, String childId, List<String> children,
+                   String output, Integer outputChars, List<RunDoc> documents,
+                   String label, String error,
+                   String stopReason, String result, String detail,
+                   long ts, String workspaceFingerprint) implements RunEvent {
+
+        /** The phase of the line that opens a run. */
+        public static final String RUN_START = "run_start";
+        /** The phase of the line that opens a step or decision. */
+        public static final String STEP_START = "step_start";
+        /** The phase of the line that closes a step or decision. */
+        public static final String STEP_END = "step_end";
+        /** The phase of the line that closes a run. */
+        public static final String RUN_END = "run_end";
+
+        /**
+         * The line without a folder fingerprint, the shape every line had before
+         * card 586's straggler round; Jackson keeps using the canonical.
+         *
+         * @param agentId    {@code "playbook"} for both run kinds
+         * @param runId      the run
+         * @param runKind    {@code playbook} or {@code workflow}
+         * @param phase      the line's phase
+         * @param name       the run's or the node's name
+         * @param task       what the run was asked, on run_start
+         * @param nodes      the forward path on run_start
+         * @param node       the node id, on a step
+         * @param kind       the node's kind, on a step
+         * @param entry      the node's entry, on a step
+         * @param performer  {@code chat} or {@code child}, on step_start
+         * @param role       the child's role, on step_start
+         * @param provider   the provider, on step_start
+         * @param model      the model, on step_start
+         * @param picked     true when the owner picked the model
+         * @param input      the step's record text, cut
+         * @param inputChars the full length of the record text
+         * @param reads      the documents the step is told to read
+         * @param round      a decision's round
+         * @param maxRounds  a decision's ceiling
+         * @param status     the step's status, on step_end
+         * @param durationMs the step's or the run's duration
+         * @param childId    the child of a child step or a review
+         * @param children   the children of a fan-out
+         * @param output     the step's output, cut
+         * @param outputChars the full length of the output
+         * @param documents  the documents the step wrote, on step_end
+         * @param label      a decision's outcome
+         * @param error      what failed, cut
+         * @param stopReason how the run stopped, on run_end
+         * @param result     the end's result, on run_end
+         * @param detail     what a person reads about the stop, cut
+         * @param ts         epoch millis of emission
+         */
+        public RunStep(String agentId, String runId, String runKind, String phase,
+                       String name, String task, List<RunNode> nodes,
+                       String node, String kind, Integer entry,
+                       String performer, String role, String provider, String model, Boolean picked,
+                       String input, Integer inputChars, List<RunDoc> reads,
+                       Integer round, Integer maxRounds,
+                       String status, Long durationMs, String childId, List<String> children,
+                       String output, Integer outputChars, List<RunDoc> documents,
+                       String label, String error,
+                       String stopReason, String result, String detail,
+                       long ts) {
+            this(agentId, runId, runKind, phase, name, task, nodes, node, kind, entry,
+                    performer, role, provider, model, picked, input, inputChars, reads,
+                    round, maxRounds, status, durationMs, childId, children,
+                    output, outputChars, documents, label, error, stopReason, result, detail, ts, null);
+        }
+
+        /**
+         * The fingerprint a run_start carries for its folder: the first sixteen
+         * hex digits of the SHA-256 of the path as written. The caller passes the
+         * real path, so the runner and the server that compares compute it alike.
+         *
+         * @param realWorkspace the folder's real path
+         * @return sixteen lowercase hex digits
+         */
+        public static String fingerprintOf(java.nio.file.Path realWorkspace) {
+            try {
+                byte[] digest = java.security.MessageDigest.getInstance("SHA-256")
+                        .digest(realWorkspace.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                String hex = java.util.HexFormat.of().formatHex(digest);
+                return hex.substring(0, 16); // the wire format: sixteen hex digits, not a run setting
+            } catch (java.security.NoSuchAlgorithmException missing) {
+                throw new IllegalStateException("every Java platform has SHA-256", missing);
+            }
+        }
+    }
+
+    /**
+     * Card 586: one node of a run's forward path. It sits outside the sealed
+     * union, so the union's {@code ignoreUnknown} does not reach it and it
+     * carries its own: a field a later version adds here must not make an
+     * older reader drop the whole {@code run_step} line.
+     *
+     * @param id   the node id
+     * @param name the node's name
+     * @param kind {@code step}, {@code decision}, {@code prompt} or {@code fanout}
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    record RunNode(String id, String name, String kind) {}
+
+    /**
+     * Card 586: a document a step reads or wrote. It carries its own
+     * {@code ignoreUnknown} for the reason {@link RunNode} does.
+     *
+     * @param doc    the playbook's document id
+     * @param path   workspace-relative path; null for a read document whose location is not a file
+     *               inside the workspace, and then the key stays off the wire
+     * @param change {@code created} or {@code changed} for a written one; null for a read one
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    record RunDoc(String doc, String path, String change) {}
 
     /** Present from day one so the wire format never changes later.
      *  @param kind      the attachment kind — {@code "image"} today

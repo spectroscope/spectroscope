@@ -327,6 +327,8 @@ class SessionContextCommandsTest {
             assertThat(frames(socket, "compaction_state").getFirst().path("active").asBoolean()).isTrue();
             assertThat(live.snapshot()).as("the rail shows the session as busy")
                     .anyMatch(session -> session.id().equals(id) && session.running());
+            assertThat(live.snapshot()).as("card 578: and its status line says working")
+                    .anyMatch(session -> session.id().equals(id) && "working".equals(session.statusLine()));
             connection.onClearContext();
             assertThat(frames(socket, "error").stream().map(node -> node.path("message").asText()))
                     .as("a command during the compaction meets the run refusal")
@@ -343,6 +345,8 @@ class SessionContextCommandsTest {
             assertThat(recorded(id, "compaction")).isEmpty();
             assertThat(live.snapshot()).as("the rail is quiet again")
                     .noneMatch(session -> session.id().equals(id) && session.running());
+            assertThat(live.snapshot()).as("card 578: and its status line says idle")
+                    .anyMatch(session -> session.id().equals(id) && "idle".equals(session.statusLine()));
 
             connection.onUserMessage("AFTER the stop", null);
             await(socket, "run_end", 1);

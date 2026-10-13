@@ -38,7 +38,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * frame ever appears there.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-        properties = "SPECTRO_HUB_PORT=0")
+        properties = {"SPECTRO_HUB_ENABLED=", "SPECTRO_HUB_PORT=0"})
 @Timeout(value = 60, unit = TimeUnit.SECONDS)
 class FleetIntegrationTest {
 

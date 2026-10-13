@@ -31,6 +31,7 @@ import type { DockPanelId, LayoutState } from "../state/layout";
 import { revealImagesPanel, toggleImagesPanel } from "../state/imagesPanel";
 import { __resetBrowserRevealForTests, revealBrowserPanel } from "../state/browserReveal";
 import { dict } from "../i18n/i18n";
+import { NO_SELECTION } from "../testkit/noSelection";
 
 beforeEach(() => {
   __resetForTests();
@@ -48,7 +49,7 @@ function renderDock(extra: Record<string, unknown> = {}): string {
   return renderToStaticMarkup(
     <RightPanel
       agents={[]}
-      plan={null}
+      {...NO_SELECTION}
       onClose={() => {}}
       thinking
       workspace={null}

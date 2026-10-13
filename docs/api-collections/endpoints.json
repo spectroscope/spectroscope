@@ -5,7 +5,7 @@
     "collectionName": "spectroscope REST API",
     "measuredOn": "2026-08-04",
     "measuredAgainst": "the spectro-server built from this tree, on 127.0.0.1:8236, fresh throwaway home (card 74: one filter fences every /api path, /api/health excepted)",
-    "endpointCount": 87,
+    "endpointCount": 89,
     "wsEndpoints": [
       "/ws",
       "/ws/shell"
@@ -197,7 +197,7 @@
     {
       "id": "fleet",
       "name": "fleet",
-      "description": "The fleet roster, per-node replay, and node control (stop / gate / spawn). The hub is opt-in via SPECTRO_HUB_PORT; without it the roster answers enabled:false and node routes answer 404."
+      "description": "The fleet roster, per-node replay, node control (stop / gate / spawn) and the hub port check. The hub is opt-in via SPECTRO_HUB_ENABLED (or, the older way, SPECTRO_HUB_PORT on its own); without it the roster answers enabled:false and node routes answer 404."
     },
     {
       "id": "translate",
@@ -758,17 +758,17 @@
       "path": "/api/settings/env",
       "area": "settings",
       "name": "save one operator setting",
-      "description": "Write one named setting into ~/.spectro/.env (0600). 404 for a refused caller, 400 for an unknown name or a value that is not the shape that name takes.",
+      "description": "Write one named setting into ~/.spectro/.env (0600): SPECTRO_HUB_ENABLED (true or false; on, off, yes, no, 1 and 0 are saved as true or false), SPECTRO_HUB_PORT (blank, 0, or 1024 to 65535 except 8080 to 8100 and this server's own port) or SPECTRO_ALLOW_SPAWN (true or false). 404 for a refused caller, 400 for an unknown name or a value that is not the shape that name takes, with reason (under-1024, app-range, server-port, not-a-port, not-a-switch) and message. One locked write to a temporary file, moved over the old one: every other line of the file is kept, and an unset hub setting is left as a commented default line (# SPECTRO_HUB_ENABLED=false, # SPECTRO_HUB_PORT=7700), once.",
       "fence": "host+origin+json",
       "writes": true,
       "caution": "Writes ~/.spectro/.env. Only names on the writable allow-list are accepted.",
       "pathVars": [],
       "query": [],
       "body": {
-        "name": "SPECTRO_OTLP_ENDPOINT",
-        "value": "http://localhost:4318"
+        "name": "SPECTRO_HUB_ENABLED",
+        "value": "true"
       },
-      "bodyNote": "{name, value} — one setting per call."
+      "bodyNote": "{name, value}, one setting per call."
     },
     {
       "id": "settings-env-get",
@@ -776,7 +776,7 @@
       "path": "/api/settings/env",
       "area": "settings",
       "name": "read the operator settings",
-      "description": "The operator settings the UI may save, and for each one whether the value came from the process environment (which the UI cannot change) or from ~/.spectro/.env. Only the writable allow-list is ever read or reported.",
+      "description": "The operator settings the UI may save, and for each one whether the value came from the process environment (which the UI cannot change) or from ~/.spectro/.env. SPECTRO_HUB_ENABLED also carries effective (whether the saved values turn the hub on at the next start) and SPECTRO_HUB_PORT carries default (7700). Only the writable allow-list is ever read or reported.",
       "fence": "host",
       "writes": false,
       "pathVars": [],
@@ -1048,6 +1048,38 @@
           "required": false,
           "example": "prospective",
           "note": "session (default) or prospective — the configured folder the first run will use, before any session exists"
+        }
+      ],
+      "body": null
+    },
+    {
+      "id": "files-run-document",
+      "method": "GET",
+      "path": "/api/run-document",
+      "area": "workspace-files",
+      "name": "a document a run wrote (preview)",
+      "description": "One document a playbook or workflow run recorded as written, for the run view's preview, also under a dot folder such as .superpowers/. It opens only when a run_step step_end line of that run in the session's own file names exactly this path; a document a step only reads is no record. Never open, recorded or not, in any letter case, checked on the asked path and on its real path: a file named .env, .envrc, .netrc or .npmrc, a name starting with .env. or .env-, a name ending .pem, .key, .p12 or .pfx, and a path with a .git, .aws or .ssh segment; a .git segment anywhere on the absolute real path refuses too. When the run's run_start line carries a workspace fingerprint, the session's current folder must be the run's folder. Otherwise the sandbox and the answer of GET /api/file: real path inside the session's workspace, CSP-sandboxed, the same typed bytes. 400 malformed session or run id, 404 not recorded, another folder than the run's, a secret name, outside, a directory, missing, or no workspace resolved for the session, 413 over caps (2 MB text / 25 MB image), 415 binary.",
+      "fence": "host",
+      "writes": false,
+      "pathVars": [],
+      "query": [
+        {
+          "name": "session",
+          "required": true,
+          "example": "{{sessionId}}",
+          "note": "the session whose file holds the record and whose resolved workspace holds the document"
+        },
+        {
+          "name": "run",
+          "required": true,
+          "example": "0123456789ab",
+          "note": "the run id, twelve lowercase hex digits, as its run_step lines carry it"
+        },
+        {
+          "name": "path",
+          "required": true,
+          "example": "docs/plan.md",
+          "note": "workspace-relative, exactly as the run's step_end documents name it"
         }
       ],
       "body": null
@@ -1438,11 +1470,31 @@
       "path": "/api/fleet",
       "area": "fleet",
       "name": "fleet roster",
-      "description": "The fleet roster: {enabled, hubPort, nodes[]}. enabled:false with empty roster is a valid answer (hub is opt-in via SPECTRO_HUB_PORT).",
+      "description": "The fleet roster: {enabled, hubPort, hub, nodes[]}. enabled:false with an empty roster is a valid answer (the hub is opt-in via SPECTRO_HUB_ENABLED). hub carries both settings as read (enabledSetting, portSetting), the port in use, and why the hub differs from what was written: note (port-privileged, port-invalid, port-app-range, port-server, default-taken, bind-failed, no-free-port, enabled-unreadable, setting-unreadable), reason (the bind error, or what could not be read) and message (one English sentence). A port under 1024, a port in 8080 to 8100, the server's own port or one that is not a number is never bound: the hub takes the first free loopback port from 7700 up. A written port that cannot open, or that another program already listens on, leaves the hub off; the server starts anyway.",
       "fence": "host",
       "writes": false,
       "pathVars": [],
       "query": [],
+      "body": null
+    },
+    {
+      "id": "fleet-port-check",
+      "method": "GET",
+      "path": "/api/fleet/port-check",
+      "area": "fleet",
+      "name": "hub port check",
+      "description": "Whether a hub port is free on loopback right now: {port, free, thisHub}. free is false when the port cannot be bound or another program answers on 127.0.0.1 or [::1]; thisHub is true when this server's own hub holds it. 400 with reason (under-1024, app-range, server-port, not-a-port) and message for a port the hub may not take, refused before any bind. The fleet settings ask this before they save a port.",
+      "fence": "host",
+      "writes": false,
+      "pathVars": [],
+      "query": [
+        {
+          "name": "port",
+          "required": true,
+          "example": "7700",
+          "note": "the port to check, 1024 to 65535"
+        }
+      ],
       "body": null
     },
     {

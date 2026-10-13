@@ -56,6 +56,7 @@ import {
   type ToolUseAnswer,
 } from "../state/localMode";
 import { LocalModeSection } from "./LocalModeSection";
+import { useToolResultCache } from "../state/toolResultCache";
 import { GoalSection } from "./GoalSection";
 import type { GoalInfo } from "../state/goalLoop";
 
@@ -190,6 +191,8 @@ export function ComposerGear({
   // popover is open with Local mode on. A server that does not answer leaves
   // the warning out rather than guessing.
   const [toolUse, setToolUse] = useState<ToolUseAnswer | null>(null);
+  // Card 600: the tool results cache switch under Local mode, read on open.
+  const toolResultCache = useToolResultCache(open);
   const localOn = localMode?.on === true;
   useEffect(() => {
     if (!open || !localOn || provider === "" || modelName === "") {
@@ -503,6 +506,7 @@ export function ComposerGear({
             onSwitch={(on) => switchLocalMode(on, sendFrame)}
             onEdit={(key, value) => editLocalModeValue(key, value, sendFrame)}
             onReset={(key) => resetLocalModeValue(key, sendFrame)}
+            cache={toolResultCache}
           />
 
           <div className="wsg-section">

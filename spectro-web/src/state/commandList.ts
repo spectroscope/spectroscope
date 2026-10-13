@@ -11,15 +11,22 @@
 // loading, and a draft that starts with a slash is held in the composer. A
 // /clear typed in the first second must not reach the model as a prompt.
 //
-// German help texts are not in the list: they live in the web dictionary as
-// cmd.<id>.help, and commandHelp.drift.test.ts holds the dictionary to the list.
+// Card 588: the list gives every row's help, and the template of a row that
+// takes words, in English and German; the web keeps no copy of either.
 
 import { useEffect, useSyncExternalStore } from "react";
+import type { Lang } from "../i18n/i18n";
 import type { ViewMode } from "./viewMode";
+
+/** A text of the list in both languages (CommandList.Text). */
+export interface CommandText {
+  en: string;
+  de: string;
+}
 
 /** One command, as GET /api/commands answers it (CommandList.Command). */
 export interface CommandRow {
-  /** Unique; names the help key cmd.<id>.help. */
+  /** A stable key, unique in the list. */
   id: string;
   /** The first word, without the slash. */
   name: string;
@@ -37,7 +44,39 @@ export interface CommandRow {
   developerOnly: boolean;
   /** False for a row another card builds: no face lists or runs it yet. */
   wired: boolean;
-  help: { en: string };
+  /** The one-line help. */
+  help: CommandText;
+  /** Card 588: how the command is written, such as "/graph ask <question>"; null when it takes no words. */
+  usage: CommandText | null;
+}
+
+/** A text in both languages, read defensively: no English is no text, no German reads as the English. */
+function textOf(raw: unknown): CommandText | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const r = raw as { en?: unknown; de?: unknown };
+  if (typeof r.en !== "string" || r.en === "") return null;
+  return { en: r.en, de: typeof r.de === "string" && r.de !== "" ? r.de : r.en };
+}
+
+/**
+ * Card 588: a row's help in the page's language.
+ *
+ * @param row  the row
+ * @param lang the page's language
+ */
+export function helpOf(row: CommandRow, lang: Lang): string {
+  return row.help[lang];
+}
+
+/**
+ * Card 588: how a row is written, in the page's language.
+ *
+ * @param row  the row
+ * @param lang the page's language
+ * @returns the template, or null for a row that takes no words
+ */
+export function usageOf(row: CommandRow, lang: Lang): string | null {
+  return row.usage === null ? null : row.usage[lang];
 }
 
 /** Never asked · in flight · answered · the last request failed. */
@@ -66,7 +105,8 @@ function subscribe(listener: () => void): () => void {
 
 /**
  * One row of the answer, read defensively: a row without an id or a name is
- * dropped, an absent list of aliases reads as none, an absent `wired` as true.
+ * dropped, an absent list of aliases reads as none, an absent `wired` as true,
+ * an absent German as the English, an absent or broken template as none.
  *
  * @param raw one element of the answer
  * @returns the row, or null when it cannot be one
@@ -75,7 +115,6 @@ export function rowOf(raw: unknown): CommandRow | null {
   if (typeof raw !== "object" || raw === null) return null;
   const r = raw as Record<string, unknown>;
   if (typeof r.id !== "string" || r.id === "" || typeof r.name !== "string" || r.name === "") return null;
-  const help = r.help as { en?: unknown } | undefined;
   return {
     id: r.id,
     name: r.name,
@@ -86,7 +125,8 @@ export function rowOf(raw: unknown): CommandRow | null {
     surfaces: typeof r.surfaces === "string" ? r.surfaces : "both",
     developerOnly: r.developerOnly === true,
     wired: r.wired !== false,
-    help: { en: typeof help?.en === "string" ? help.en : "" },
+    help: textOf(r.help) ?? { en: "", de: "" },
+    usage: textOf(r.usage),
   };
 }
 

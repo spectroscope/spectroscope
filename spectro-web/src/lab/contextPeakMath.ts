@@ -13,13 +13,13 @@
 // THE THREE HONESTY RULES.
 //
 // 1. A CHILD GETS NO PERCENTAGE. The harness carries a measured threshold for
-//    the ROOT only: SubagentConfig builds children without introspection, and
-//    they emit no context_info at all (its own javadoc says so, in the sentence
-//    that explains why the parent's explicit threshold had to be passed down).
-//    A child's model is often on the wire, and reading the published table for
-//    it would produce a percentage that looks measured and is not. So a child
-//    prints its peak, a bar relative to the biggest peak on the panel, and no
-//    percent sign — and the panel says why in one line.
+//    the ROOT in UiState.context; a child's context_info (sizes only since
+//    card 593) lands in the ring's helper slot, and this module does not read
+//    it yet, a card of its own. A child's model is often on the wire, and
+//    reading the published table for it would produce a percentage that looks
+//    measured and is not. So a child prints its peak, a bar relative to the
+//    biggest peak on the panel, and no percent sign, and the panel says why in
+//    one line.
 //
 // 2. THE RUN'S OWN THRESHOLD BEATS ANY PUBLISHED FIGURE — and since card 366
 //    that is structural rather than a rule this module enforces. The window

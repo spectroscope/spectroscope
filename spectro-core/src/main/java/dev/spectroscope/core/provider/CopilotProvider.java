@@ -187,11 +187,21 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
     private static final long PING_TIMEOUT_MS = 2_000;
 
     /**
-     * How long a cancelled turn waits for the runtime's idle before it returns.
-     * Card 478 measured the idle 9 ms after abort; this is a ceiling, not that.
+     * How long a cancelled turn's runtime session may take to go idle after the
+     * abort before it is closed. Card 478 measured the idle 9 ms after abort;
+     * this is a ceiling, not that. Past {@link #ABORT_GRACE_MS} the wait runs
+     * in the background (card 583).
      */
     @Governs(kind = Governs.Kind.UNEXAMINED, unit = Governs.Unit.MILLISECONDS)
     private static final long ABORT_SETTLE_MS = 5_000;
+
+    /**
+     * How long a stop waits on the run's own thread for the runtime's idle.
+     * A runtime that takes longer, or never answers, settles in the
+     * background, so the stop does not wait for it (card 583).
+     */
+    @Governs(kind = Governs.Kind.UNEXAMINED, unit = Governs.Unit.MILLISECONDS)
+    private static final long ABORT_GRACE_MS = 200;
 
     /**
      * How long closing a conversation waits for the SDK to attach its reply
@@ -226,6 +236,10 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
     private final List<Conversation> conversations = new ArrayList<>();
     private CopilotClient client;
     private Thread shutdownHook;
+    /** Held while a runtime starts; a waiting thread leaves it on an interrupt (card 583). */
+    private final java.util.concurrent.locks.ReentrantLock starting = new java.util.concurrent.locks.ReentrantLock();
+    /** How often {@link #close()} ran; a retry that sees it move does not start a runtime (card 583). */
+    private int closes;
     private volatile List<CopilotModel> models;
     private volatile long modelsFailedAtNanos;
     private volatile boolean modelsFailed;
@@ -483,7 +497,11 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
      * @return the runtime's answer
      */
     public AuthStatus authStatus() {
-        GetAuthStatusResponse status = await(client().getAuthStatus(), CALL_TIMEOUT_S, "read the sign-in");
+        return authStatus(client());
+    }
+
+    private static AuthStatus authStatus(CopilotClient running) {
+        GetAuthStatusResponse status = await(running.getAuthStatus(), CALL_TIMEOUT_S, "read the sign-in");
         noteAuthHost(status.getHost());
         String message = status.getStatusMessage();
         return new AuthStatus(status.isAuthenticated(), status.getAuthType(), status.getLogin(),
@@ -494,32 +512,39 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
      * Refuses a run that has no credential this provider may use: neither a
      * token source nor the user's choice of the CLI's stored sign-in, or that
      * choice when the runtime would sign in some other way, such as with the
-     * GitHub CLI's account (card 495).
+     * GitHub CLI's account (card 495). The runtime is asked for only when the
+     * stored sign-in must be checked.
      */
-    private void requireSignIn() {
-        if (options.tokenSource() != null) {
+    private void requireSignIn(java.util.function.Supplier<CopilotClient> runtime) {
+        refuseWithoutACredential();
+        if (options.tokenSource() != null || !options.useStoredLogin()) {
             return;
-        }
-        if (!options.useStoredLogin()) {
-            if (cliUrl != null) {
-                // A runtime that was already listening manages its own sign-in (the SDK refuses a
-                // token or the stored-login switch together with a cliUrl).
-                return;
-            }
-            throw new IllegalStateException("copilot: not signed in; sign in to GitHub Copilot first");
         }
         synchronized (this) {
             if (storedLoginChecked) {
                 return;
             }
         }
-        AuthStatus status = authStatus();
+        AuthStatus status = authStatus(runtime.get());
         if (!status.authenticated() || !"user".equals(status.authType())) {
             throw new IllegalStateException("copilot: not signed in; the Copilot CLI has no sign-in of its own"
                     + (status.authenticated() ? " (the runtime would sign in through " + status.authType() + ")" : ""));
         }
         synchronized (this) {
             storedLoginChecked = true;
+        }
+    }
+
+    /**
+     * Refuses a run that has no credential at all (neither a token source nor
+     * the user's choice of the CLI's stored sign-in) before anything starts a
+     * runtime (card 495, card 583). A runtime that was already listening
+     * manages its own sign-in (the SDK refuses a token or the stored-login
+     * switch together with a cliUrl).
+     */
+    private void refuseWithoutACredential() {
+        if (options.tokenSource() == null && !options.useStoredLogin() && cliUrl == null) {
+            throw new IllegalStateException("copilot: not signed in; sign in to GitHub Copilot first");
         }
     }
 
@@ -543,6 +568,7 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
      */
     public List<CopilotModel> models() {
         requireSupportedPlatform();
+        refuseWithoutACredential();
         List<CopilotModel> known = models;
         if (known == null) {
             try {
@@ -657,11 +683,47 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
 
     // ---- the runtime --------------------------------------------------------
 
-    private synchronized CopilotClient client() {
+    /**
+     * The running client, started when there is none. The start runs outside
+     * the provider's monitor, under a lock that a waiting thread leaves on an
+     * interrupt, so a runtime that does not answer its connect holds no other
+     * chat's stop (card 583). One start at a time.
+     */
+    private CopilotClient client() {
         requireSupportedPlatform();
-        if (client != null) {
-            return client;
+        synchronized (this) {
+            if (client != null) {
+                return client;
+            }
         }
+        try {
+            starting.lockInterruptibly();
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new WaitInterrupted("start the runtime");
+        }
+        try {
+            synchronized (this) {
+                if (client != null) {
+                    return client;
+                }
+            }
+            CopilotClient started = startRuntime();
+            // The runtime is a child process: it goes when this JVM goes, even
+            // when nobody calls close().
+            Thread hook = new Thread(started::forceStop, "copilot-runtime-stop");
+            Runtime.getRuntime().addShutdownHook(hook);
+            synchronized (this) {
+                client = started;
+                shutdownHook = hook;
+            }
+            return started;
+        } finally {
+            starting.unlock();
+        }
+    }
+
+    private CopilotClient startRuntime() {
         CopilotClientOptions clientOptions;
         if (cliUrl != null) {
             clientOptions = new CopilotClientOptions().setCliUrl(cliUrl);
@@ -689,12 +751,7 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
             }
             throw failure;
         }
-        client = started;
-        // The runtime is a child process: it goes when this JVM goes, even
-        // when nobody calls close().
-        shutdownHook = new Thread(started::forceStop, "copilot-runtime-stop");
-        Runtime.getRuntime().addShutdownHook(shutdownHook);
-        return client;
+        return started;
     }
 
     /** Stops every runtime session and the runtime process. */
@@ -702,12 +759,16 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
     public void close() {
         List<Conversation> open;
         CopilotClient running;
+        Thread hook;
         synchronized (this) {
             open = new ArrayList<>(conversations);
             conversations.clear();
             running = client;
             client = null;
+            hook = shutdownHook;
+            shutdownHook = null;
             storedLoginChecked = false;
+            closes++;
         }
         open.forEach(Conversation::close);
         if (running != null) {
@@ -717,8 +778,12 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
                 log.debug("copilot: runtime did not stop in time, forcing it", slow);
                 running.forceStop();
             }
-            removeShutdownHook();
         }
+        removeHook(hook);
+    }
+
+    private synchronized int closes() {
+        return closes;
     }
 
     /**
@@ -730,11 +795,14 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
             return;
         }
         List<Conversation> open;
+        Thread hook;
         synchronized (this) {
             if (client != dead) {
                 return;
             }
             client = null;
+            hook = shutdownHook;
+            shutdownHook = null;
             storedLoginChecked = false;
             open = new ArrayList<>(conversations);
             conversations.clear();
@@ -748,17 +816,60 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
         } catch (RuntimeException already) {
             log.debug("copilot: the dead runtime did not stop cleanly", already);
         }
-        removeShutdownHook();
+        removeHook(hook);
     }
 
-    private synchronized void removeShutdownHook() {
-        if (shutdownHook != null) {
+    /**
+     * Runs one request on the runtime, which the request asks for only when it
+     * needs it. A runtime whose connection closed (its process exited or was
+     * killed) fails every request with an I/O error underneath; the dead
+     * client is then dropped, with every session on it, and the request runs
+     * once more on a new runtime (card 583). Once, not in a loop, and not
+     * after {@link #close()}: a closed provider starts no runtime for a
+     * request it already had.
+     */
+    private <T> T onALiveRuntime(
+            java.util.function.Function<java.util.function.Supplier<CopilotClient>, T> request) {
+        int closesBefore = closes();
+        CopilotClient[] used = new CopilotClient[1];
+        java.util.function.Supplier<CopilotClient> runtime = () -> used[0] != null ? used[0] : (used[0] = client());
+        try {
+            return request.apply(runtime);
+        } catch (RuntimeException failure) {
+            if (used[0] == null || !connectionLost(failure) || closes() != closesBefore) {
+                throw failure;
+            }
+            log.debug("copilot: the runtime's connection is closed; a new runtime takes the request", failure);
+            runtimeGone(used[0]);
+            used[0] = null;
+            return request.apply(runtime);
+        }
+    }
+
+    /**
+     * Whether a failed request says the runtime's connection is gone. The SDK
+     * fails every request on a closed connection with an {@link java.io.IOException}
+     * ("Client closed", or the failed write); an answer the runtime refused
+     * comes as the SDK's own exception, and an answer it could not read as a
+     * JSON error.
+     */
+    static boolean connectionLost(Throwable failure) {
+        for (Throwable t = failure; t != null; t = t.getCause() == t ? null : t.getCause()) {
+            if (t instanceof java.io.IOException && !(t instanceof JsonProcessingException)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Removes the hook of a runtime this provider let go of; the caller took it with the client. */
+    private static void removeHook(Thread hook) {
+        if (hook != null) {
             try {
-                Runtime.getRuntime().removeShutdownHook(shutdownHook);
+                Runtime.getRuntime().removeShutdownHook(hook);
             } catch (IllegalStateException shuttingDown) {
                 // the JVM is already stopping and runs the hook itself
             }
-            shutdownHook = null;
         }
     }
 
@@ -850,7 +961,6 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
     }
 
     private Conversation open(ProviderRequest request, String system, String effort) {
-        requireSignIn();
         Conversation conversation = new Conversation(system, effort);
         conversation.tools(request.tools());
         SessionConfig config = new SessionConfig()
@@ -886,7 +996,12 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
                 }
             }));
         }
-        CopilotSession session = await(client().createSession(config), CALL_TIMEOUT_S, "create a session");
+        CopilotSession session = onALiveRuntime(runtime -> {
+            requireSignIn(runtime);
+            CopilotClient running = runtime.get();
+            conversation.client = running;
+            return await(running.createSession(config), CALL_TIMEOUT_S, "create a session");
+        });
         conversation.attach(session);
         List<Conversation> evicted = new ArrayList<>();
         synchronized (this) {
@@ -935,6 +1050,8 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
         final String system;
         String effort;
         CopilotSession session;
+        /** The runtime this session lives on. */
+        CopilotClient client;
         Closeable subscription;
         List<ProviderMessage> seen = List.of();
         volatile Set<String> toolNames = Set.of();
@@ -1093,6 +1210,10 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
         private String finishReason;
         private boolean finished;
         private volatile CopilotClient deadClient;
+        /** The ping in flight, or null. */
+        private CompletableFuture<?> ping;
+        /** The runtime went idle after this turn's abort. */
+        private boolean idle;
 
         TurnIterator(ProviderRequest request) {
             this.request = request;
@@ -1129,6 +1250,56 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
             conversation.turn = queue;
             this.unhookCancel = request.signal() == null ? () -> { }
                     : request.signal().onCancel(() -> queue.add(Signal.CANCEL));
+            String chosen = effort;
+            int closesBefore = closes();
+            LlmWireTap.Exchange opened = null;
+            RuntimeException failed = null;
+            try {
+                opened = send(plan, chosen);
+            } catch (RuntimeException failure) {
+                failed = failure;
+            }
+            if (failed != null && !stopped() && connectionLost(failed) && closes() == closesBefore) {
+                // Card 583: the runtime this session lived on is gone. It is
+                // dropped, and the request runs once more on a new runtime, in a
+                // fresh session that gets the whole history. What the dead
+                // session sent meanwhile is dropped; a stop is kept.
+                conversation.turn = null;
+                runtimeGone(conversation.client);
+                failed = null;
+                try {
+                    String system = request.system() == null ? "" : request.system();
+                    this.conversation = CancelInterrupt.call(request.signal(), () -> open(request, system, chosen));
+                    queue.removeIf(item -> !(item instanceof Signal));
+                    conversation.turn = queue;
+                    opened = send(new Plan(conversation, false, null), chosen);
+                } catch (RuntimeException again) {
+                    failed = again;
+                }
+            }
+            if (failed != null) {
+                if (stopped()) {
+                    // What the runtime made of a request the stop cut short is
+                    // unknown, so the conversation goes. Closing it waits on the
+                    // runtime as well, so that happens off this thread.
+                    abandonOffThread();
+                    this.exchange = null;
+                    pending.add(new PStop(StopReason.ABORTED));
+                    finished = true;
+                    return;
+                }
+                abandon();
+                throw failed;
+            }
+            this.exchange = opened;
+        }
+
+        /**
+         * Sends what the plan asks of the runtime: the tools and the effort
+         * when they changed, then the tool results or the message. A failure
+         * closes the wire record and is thrown.
+         */
+        private LlmWireTap.Exchange send(Plan plan, String effort) {
             LlmWireTap.Exchange opened = null;
             // Card 557: each of these waits on the runtime for up to a minute,
             // so each runs inside a scope a stop can reach. The scopes close
@@ -1155,23 +1326,11 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
                     CancelInterrupt.call(signal, () -> await(conversation.session.send(message), CALL_TIMEOUT_S,
                             "send the message"));
                 }
+                return opened;
             } catch (RuntimeException failure) {
-                if (stopped()) {
-                    // What the runtime made of a request the stop cut short is
-                    // unknown, so the conversation goes. Closing it waits on the
-                    // runtime as well, so that happens off this thread.
-                    end(opened, true, null);
-                    abandonOffThread();
-                    this.exchange = null;
-                    pending.add(new PStop(StopReason.ABORTED));
-                    finished = true;
-                    return;
-                }
-                end(opened, false, failure.getMessage());
-                abandon();
+                end(opened, stopped(), stopped() ? null : failure.getMessage());
                 throw failure;
             }
-            this.exchange = opened;
         }
 
         /** @return true once the run's stop was pressed */
@@ -1300,23 +1459,37 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
             }
         }
 
-        /** A silence: ask the runtime whether it is still there. */
+        /**
+         * A silence: ask the runtime whether it is still there. The stream
+         * does not wait for the answer, so a stop is read at once also while
+         * the runtime ignores the ping (card 583); a failed ping comes back
+         * through the queue. One ping in flight per turn. The ping goes to the
+         * runtime this conversation lives on: once the provider has dropped
+         * that runtime, the turn has nothing left to wait for (card 583).
+         */
         private void probe() {
-            CopilotClient running;
-            synchronized (CopilotProvider.this) {
-                running = client;
+            if (ping != null && !ping.isDone()) {
+                return;
             }
-            if (running == null) {
+            CopilotClient running = conversation.client;
+            boolean current;
+            synchronized (CopilotProvider.this) {
+                current = client == running;
+            }
+            if (!current) {
                 queue.add(Signal.RUNTIME_GONE);
                 return;
             }
             try {
-                running.ping(null).get(PING_TIMEOUT_MS, TimeUnit.MILLISECONDS);
-            } catch (TimeoutException slow) {
-                // busy, not gone
-            } catch (InterruptedException interrupted) {
-                Thread.currentThread().interrupt();
-            } catch (ExecutionException | RuntimeException gone) {
+                ping = running.ping(null).orTimeout(PING_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+                        .whenComplete((answer, failure) -> {
+                            if (failure != null && !(causeOf(failure) instanceof TimeoutException)) {
+                                deadClient = running;
+                                queue.add(Signal.RUNTIME_GONE);
+                            }
+                            // a timeout is a busy runtime, not a gone one
+                        });
+            } catch (RuntimeException gone) {
                 deadClient = running;
                 queue.add(Signal.RUNTIME_GONE);
             }
@@ -1412,32 +1585,130 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
             }
         }
 
-        /** Cancel: abort the runtime turn, wait for its idle, drop whatever it still sends. */
+        /**
+         * Cancel: abort the runtime turn and end this one as aborted. The
+         * runtime's idle is awaited here for {@link #ABORT_GRACE_MS} only. A
+         * runtime that is slower, or never answers, settles in the background
+         * (card 583); its session stays busy meanwhile, so no prompt lands on
+         * it and nothing it still sends reaches another turn.
+         */
         private void abort() {
-            CompletableFuture<Void> aborting = conversation.session.abort();
-            long deadline = System.currentTimeMillis() + ABORT_SETTLE_MS;
+            long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(ABORT_SETTLE_MS);
+            CompletableFuture<Void> aborting;
             try {
-                while (System.currentTimeMillis() < deadline) {
-                    Object item = queue.poll(Math.max(1, deadline - System.currentTimeMillis()),
-                            TimeUnit.MILLISECONDS);
-                    if (item instanceof SessionIdleEvent || item == Signal.RUNTIME_GONE || item == null) {
-                        break;
-                    }
-                }
-                aborting.get(Math.max(1, deadline - System.currentTimeMillis()), TimeUnit.MILLISECONDS);
-            } catch (InterruptedException interrupted) {
-                Thread.currentThread().interrupt();
-            } catch (ExecutionException | TimeoutException | RuntimeException slow) {
-                log.debug("copilot: abort did not settle", slow);
-            }
-            for (Parked p : conversation.takeParked()) {
-                p.result().complete(ToolResultObject.error("aborted"));
+                aborting = conversation.session.abort();
+            } catch (RuntimeException closed) {
+                aborting = CompletableFuture.failedFuture(closed);
             }
             pending.clear();
-            finish(StopReason.ABORTED);
+            boolean over = settle(aborting,
+                    Math.min(deadline, System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(ABORT_GRACE_MS)));
+            if (over && idle) {
+                failParked(conversation.takeParked());
+                finish(StopReason.ABORTED);
+                return;
+            }
+            finish(StopReason.ABORTED, false);
+            if (over) {
+                // The wait ended without the idle: the runtime is gone, or this
+                // thread was interrupted. The session takes no further prompt.
+                letGo(true);
+                return;
+            }
+            CompletableFuture<Void> answer = aborting;
+            Thread.ofVirtual().name("copilot-abort-settle").start(() -> settleInBackground(answer, deadline));
+        }
+
+        /**
+         * Reads the aborted turn's queue until the runtime is idle and has
+         * answered the abort, dropping whatever else it sends.
+         *
+         * @return true when the wait is over: settled, or the runtime gone;
+         *         false when {@code deadline} came first
+         */
+        private boolean settle(CompletableFuture<Void> aborting, long deadline) {
+            try {
+                while (!idle) {
+                    long left = deadline - System.nanoTime();
+                    Object item = left > 0 ? queue.poll(left, TimeUnit.NANOSECONDS) : null;
+                    if (item == null) {
+                        return false;
+                    }
+                    if (item == Signal.RUNTIME_GONE) {
+                        return true;
+                    }
+                    if (item instanceof SessionIdleEvent) {
+                        idle = true;
+                    }
+                }
+                aborting.get(Math.max(1, deadline - System.nanoTime()), TimeUnit.NANOSECONDS);
+            } catch (TimeoutException slow) {
+                return false;
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            } catch (ExecutionException | RuntimeException failed) {
+                log.debug("copilot: the runtime refused the abort", failed);
+            }
+            return true;
+        }
+
+        /**
+         * The rest of a slow abort, off the run's thread. An idle runtime
+         * session is free again; one that never went idle is closed, because
+         * what it still does is unknown, and with it the whole runtime when a
+         * ping found that gone.
+         */
+        private void settleInBackground(CompletableFuture<Void> aborting, long deadline) {
+            settle(aborting, deadline);
+            if (!idle) {
+                log.debug("copilot: the runtime did not go idle within {} ms of the abort; its session closes",
+                        ABORT_SETTLE_MS);
+                letGo(false);
+                return;
+            }
+            List<Parked> waiting = conversation.takeParked();
+            synchronized (CopilotProvider.this) {
+                conversation.turn = null;
+                conversation.busy = false;
+            }
+            failParked(waiting);
+        }
+
+        /**
+         * Takes the conversation of a stop that did not settle out of use;
+         * closing it answers the calls it parked. When a ping found the
+         * runtime gone, the runtime goes with it, as in {@link #translate}, so
+         * the next request starts a new one. Its parked calls are answered
+         * first: no reply reaches a gone runtime, and close() could wait on
+         * this thread up to REPLY_ATTACH_WAIT_MS for the SDK's reply hook.
+         */
+        private void letGo(boolean offThread) {
+            conversation.turn = null;
+            if (deadClient != null) {
+                failParked(conversation.takeParked());
+                runtimeGone(deadClient);
+            } else if (offThread) {
+                abandonOffThread();
+            } else {
+                forget(conversation);
+            }
+        }
+
+        private static void failParked(List<Parked> waiting) {
+            for (Parked p : waiting) {
+                p.result().complete(ToolResultObject.error("aborted"));
+            }
         }
 
         private void finish(StopReason reason) {
+            finish(reason, true);
+        }
+
+        /**
+         * Ends the turn. Without {@code release} the conversation stays busy
+         * and keeps this turn's queue, for an abort that still settles.
+         */
+        private void finish(StopReason reason, boolean release) {
             if (finished) {
                 return;
             }
@@ -1446,7 +1717,9 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
             }
             pending.add(new PStop(reason));
             finished = true;
-            conversation.turn = null;
+            if (release) {
+                conversation.turn = null;
+            }
             unhookCancel.run();
             List<ProviderMessage> seen = new ArrayList<>(request.messages());
             if (reason != StopReason.ABORTED) {
@@ -1461,7 +1734,9 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
             }
             synchronized (CopilotProvider.this) {
                 conversation.seen = List.copyOf(seen);
-                conversation.busy = false;
+                if (release) {
+                    conversation.busy = false;
+                }
             }
             end(exchange, reason == StopReason.ABORTED, null);
         }
@@ -1594,6 +1869,11 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
         WaitInterrupted(String what) {
             super("copilot runtime: interrupted while waiting to " + what);
         }
+    }
+
+    private static Throwable causeOf(Throwable failure) {
+        return failure instanceof java.util.concurrent.CompletionException && failure.getCause() != null
+                ? failure.getCause() : failure;
     }
 
     private static <T> T await(CompletableFuture<T> future, long seconds, String what) {

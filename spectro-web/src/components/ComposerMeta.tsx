@@ -10,6 +10,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ConnectionStatus } from "../transport/ws";
 import type { UiState } from "../state/reducer";
+import type { RingView } from "../state/shownAgent";
 import type { Lang } from "../i18n/i18n";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
@@ -226,10 +227,18 @@ export function ComposerMeta(props: {
    *  snapshot alone. */
   announcedWindow?: UiState["announcedWindow"];
   onWindowOverride?: (tokens: number | null) => void;
+  /** Card 593: the picker and the figures of the agent the ring shows;
+   *  absent draws the root's figures without a picker (the Lab's chat). */
+  ring?: RingView;
 }) {
   const provider = props.provider ?? FALLBACK_PROVIDER_LABEL;
   const model = props.model ?? "";
   const switchable = canSwitchModel(props.liveView, props.continuable);
+  const figures = props.ring?.figures ?? {
+    lastInputTokens: props.lastInputTokens,
+    context: props.context,
+    announcedWindow: props.announcedWindow ?? null,
+  };
   return (
     <div className="composer-meta">
       {switchable ? (
@@ -255,10 +264,11 @@ export function ComposerMeta(props: {
       {props.liveView && model !== "" && <ThinkingPicker provider={provider} model={model} />}
       {props.lastInputTokens > 0 && (
         <ContextRing
-          lastInputTokens={props.lastInputTokens}
-          context={props.context}
-          announcedWindow={props.announcedWindow}
+          lastInputTokens={figures.lastInputTokens}
+          context={figures.context}
+          announcedWindow={figures.announcedWindow}
           aiCredits={props.aiCredits}
+          picker={props.ring?.picker}
           onWindowOverride={ringWindowOverride(props.liveView, props.onWindowOverride)}
         />
       )}

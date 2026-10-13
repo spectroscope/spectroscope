@@ -24,8 +24,9 @@
 // Card 506: under the contents row the workflows of the playbook. Card 554
 // (criterion 8): the pane starts nothing. A playbook runs from the chat of a
 // session with /run-with-playbook, which opens the start sheet there, and a
-// workflow with /playbook workflow; the list names that command. Under the
-// graph the run view draws this session's latest run.
+// workflow with /playbook workflow; the list names that command. Card 586:
+// the run view went to the run panel beside the chat; the pane keeps a line
+// that opens it there, wide.
 //
 // Card 524: Export saves the shown folder as <id>.playbook.zip; Import ZIP
 // reads a chosen .zip and BundleImport shows it and writes it into an empty
@@ -53,6 +54,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { t } from "../i18n/i18n";
 import { chooseFolder, usePickNote } from "../state/folderPick";
 import { useLang } from "../state/lang";
+import { openDockPanel, openRightPanel, setRunWide } from "../state/layout";
 import { fileDirty, loadTree, PANE_TABS, useBundleEditor } from "../state/bundleEditor";
 import { closeEditor, loadView, openEditor, useEditorState } from "../state/playbookEditor";
 import {
@@ -75,7 +77,6 @@ import { BundleTab, KindTools } from "./BundleTab";
 import type { PlaybookDoc } from "./editor/doc";
 import { EditorShell } from "./editor/EditorShell";
 import { PlaybookGraph } from "./PlaybookGraph";
-import { PlaybookRunView } from "./PlaybookRunView";
 import { PluginReport, PluginTab } from "./PluginTab";
 import { StepTable } from "./StepTable";
 import { WorkflowList } from "./WorkflowList";
@@ -96,16 +97,22 @@ function messageOf(error: unknown): string {
  *
  * @param props.workspace the workspace the folder chip in the header shows
  * @param props.wizard    the Spectrolyzr page App built under a ChunkBoundary; the New tab draws it (cards 484, 515)
- * @param props.sessionId the live or stored session whose runs the run view draws (card 482)
+ * @param props.sessionId  the live or stored session; with one, the pane links to its runs (cards 482, 586)
+ * @param props.onShowChat card 586: shows the chat, where the runs are drawn beside it
+ * @param props.hasRun     card 586: the session holds a run; without one the pane has no link to runs
  */
 export function PlaybookPane({
   workspace,
   wizard,
   sessionId,
+  onShowChat,
+  hasRun = false,
 }: {
   workspace: string | null;
   wizard?: ReactNode;
   sessionId: string | null;
+  onShowChat?: () => void;
+  hasRun?: boolean;
 }) {
   const lang = useLang();
   const { tab: chosenTab, picked } = usePaneView();
@@ -201,9 +208,27 @@ export function PlaybookPane({
   const here = contents !== null && loaded !== null && contents.dir === loaded.dir ? contents : null;
   const count = (kind: ContentKind): number => here?.items.filter((i) => i.kind === kind).length ?? 0;
 
-  // The run view needs only the session: a stored session opened from the
-  // list has no workspace, so no playbook loads, and its runs still show.
-  const runView = sessionId !== null ? <PlaybookRunView key={sessionId} sessionId={sessionId} /> : null;
+  // Card 586: a run is drawn beside the chat now. The pane keeps one line that
+  // goes there, with the run wide, for a session that holds a run. It needs no
+  // workspace: a stored session opened from the list has none, so no playbook
+  // loads, and its runs still show.
+  const runLink =
+    sessionId !== null && hasRun ? (
+      <p className="pb-run-link">
+        <button
+          type="button"
+          className="link"
+          onClick={() => {
+            onShowChat?.();
+            setRunWide(true);
+            openRightPanel();
+            openDockPanel("plan");
+          }}
+        >
+          {t(lang, "pb.run.segmentLink")}
+        </button>
+      </p>
+    ) : null;
 
   const tabs = (
     <div className="pb-tabs" role="tablist" aria-label={t(lang, "lyzr.title")}>
@@ -462,7 +487,7 @@ export function PlaybookPane({
             </section>
           )}
 
-          {(loaded === null || p === null) && runView}
+          {(loaded === null || p === null) && runLink}
 
           {doc !== null && (
             <section className="pb-section pb-canvas">
@@ -471,7 +496,7 @@ export function PlaybookPane({
           )}
           {loaded !== null && p !== null && (
             <>
-              {runView}
+              {runLink}
               <section className="pb-section">
                 <h3 className="pb-h">{t(lang, "pb.steps")}</h3>
                 <StepTable loaded={loaded} />

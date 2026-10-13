@@ -12,9 +12,11 @@ import dev.spectroscope.core.hooks.HookRunner;
 import dev.spectroscope.core.permission.Allowlist;
 import dev.spectroscope.core.permission.ToolTier;
 import dev.spectroscope.core.permission.ToolTierMap;
+import dev.spectroscope.server.session.LiveSessions;
 import dev.spectroscope.server.session.SessionWorkspaces;
 import dev.spectroscope.server.web.LocalOrigin;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -128,6 +130,22 @@ public class SettingsController {
         this.launchDir = launchDir;
         this.workspacePin = workspacePin;
         this.workspaceResolved = workspaceResolved;
+    }
+
+    /** Card 580: the live sessions told of every write; null tells nobody. */
+    private volatile LiveSessions liveSessions;
+
+    /**
+     * Card 580: the live sessions of this server, told of every write through
+     * this controller so a chat that has not run yet takes the settings as
+     * they are now. The writes a session makes itself (allowlist, tool
+     * groups, local mode) do not go through here and tell nobody.
+     *
+     * @param live the process's registry; Spring hands it in
+     */
+    @Autowired(required = false)
+    public void useLiveSessions(LiveSessions live) {
+        this.liveSessions = live;
     }
 
     /**
@@ -530,7 +548,8 @@ public class SettingsController {
      * Applies a patch through {@link SettingsWriter#patch}, translating its
      * checked failure modes into the settings API's HTTP contract: a rejected
      * patch is a client error carrying the exact validation message, an I/O
-     * failure is a server error.
+     * failure is a server error. A write that landed tells the live sessions
+     * (card 580).
      *
      * @param file  the settings file to read-modify-write
      * @param scope which scope {@code file} represents
@@ -546,6 +565,11 @@ public class SettingsController {
         } catch (IOException io) {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,
                     "could not write settings: " + io.getMessage());
+        }
+        // Card 580: a chat that has not run takes the settings as they are now.
+        LiveSessions live = liveSessions;
+        if (live != null) {
+            live.settingsWritten();
         }
     }
 }

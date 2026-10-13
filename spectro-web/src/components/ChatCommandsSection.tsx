@@ -2,6 +2,7 @@
 // Commands page, from the one shared list the server serves. Every row the web
 // chat runs, grouped, each with its spellings and its help in the page
 // language; the rows the picker offers in developer mode only are marked.
+// Card 588: a row that has a template shows it, in the page's language.
 // Read-only: a command is typed in the chat.
 //
 // Its own component so the page keeps no reader of its own; the list's store
@@ -9,7 +10,7 @@
 
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
-import { useCommandList, webCommands } from "../state/commandList";
+import { helpOf, usageOf, useCommandList, webCommands } from "../state/commandList";
 import { spellingsOf } from "../state/chatCommands";
 
 export function ChatCommandsSection() {
@@ -43,7 +44,10 @@ export function ChatCommandsSection() {
                         <span className="wsg-scope-tag">{t(lang, "skv.developerOnly")}</span>
                       )}
                     </span>
-                    <span className="skills-command-help">{t(lang, `cmd.${row.id}.help`)}</span>
+                    <span className="skills-command-help">{helpOf(row, lang)}</span>
+                    {usageOf(row, lang) !== null && (
+                      <code className="skills-command-usage">{usageOf(row, lang)}</code>
+                    )}
                   </li>
                 ))}
             </ul>

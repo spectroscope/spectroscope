@@ -2196,3 +2196,202 @@ describe("a run that did not finish says so in the transcript", () => {
     });
   });
 });
+
+// Card 586: the run view folds run_step lines into `runs`, and the prompt a
+// chat step sends names the run entry it belongs to.
+describe("a playbook step's prompt names its run entry (card 586)", () => {
+  const RUN = "abcdefabcdef";
+  const runStep = (fields: Record<string, unknown>): RunEvent =>
+    ({
+      type: "run_step",
+      agentId: "playbook",
+      runId: RUN,
+      runKind: "playbook",
+      ...fields,
+    }) as unknown as RunEvent;
+  const opened = runStep({
+    phase: "run_start",
+    name: "spectro",
+    task: "add a CSV export",
+    nodes: [{ id: "brainstorm", name: "Brainstorm", kind: "step" }],
+    ts: 1,
+  });
+  const chatStep = runStep({
+    phase: "step_start",
+    node: "brainstorm",
+    name: "Brainstorm",
+    kind: "step",
+    entry: 1,
+    performer: "chat",
+    ts: 2,
+  });
+  const prompt = (origin?: string): RunEvent => ({
+    type: "run_start",
+    runId: "r1",
+    agentId: "main",
+    prompt: "Brainstorm the task",
+    ...(origin === undefined ? {} : { origin }),
+    ts: 3,
+  });
+
+  it("tags the turn a chat step sends with the step's entry, and draws nothing for the run_step lines", () => {
+    const state = reduceAll(initialState, [opened, chatStep, prompt("playbook")]);
+    expect(state.runs.map((run) => run.entries.map((entry) => entry.key))).toEqual([[`${RUN}:brainstorm:1`]]);
+    expect(state.turns).toEqual([
+      { kind: "user", text: "Brainstorm the task", by: "playbook", runEntry: `${RUN}:brainstorm:1` },
+    ]);
+  });
+
+  it("leaves a typed prompt and a step's prompt without a run_step line untagged", () => {
+    const typed = reduceAll(initialState, [opened, chatStep, prompt()]);
+    expect(typed.turns).toEqual([{ kind: "user", text: "Brainstorm the task" }]);
+    expect(Object.keys(typed.turns[0])).not.toContain("runEntry");
+    const before586 = reduceAll(initialState, [prompt("playbook")]);
+    expect(before586.turns).toEqual([{ kind: "user", text: "Brainstorm the task", by: "playbook" }]);
+    expect(Object.keys(before586.turns[0])).not.toContain("runEntry");
+  });
+
+  it("puts no agent for the run_step lines on the roster", () => {
+    const state = reduceAll(initialState, [opened, chatStep, prompt("playbook")]);
+    expect(state.agents.map((agent) => agent.id)).toEqual(["main"]);
+  });
+});
+
+// Card 586: a workflow run has no playbook_progress, so its start and end lines
+// in the chat come from its run_step lines. A playbook run keeps its own lines.
+describe("a workflow run's lines in the chat (card 586)", () => {
+  const RUN = "abcdefabcdef";
+  const line = (runKind: string, fields: Record<string, unknown>): RunEvent =>
+    ({ type: "run_step", agentId: "playbook", runId: RUN, runKind, ts: 1, ...fields }) as unknown as RunEvent;
+  const infosOf = (state: UiState) => state.turns.filter((t) => t.kind === "info");
+
+  it("opens with the workflow's name and task, and names the run", () => {
+    const state = reduceAll(initialState, [
+      line("workflow", { phase: "run_start", name: "fanout-review", task: "check the PR", nodes: [] }),
+    ]);
+    expect(infosOf(state)).toEqual([
+      {
+        kind: "info",
+        text: "Workflow fanout-review started on: check the PR",
+        tone: "neutral",
+        infoKey: "chat.wf.start",
+        infoVars: { name: "fanout-review", task: "check the PR" },
+        runId: RUN,
+      },
+    ]);
+  });
+
+  it("opens without a task", () => {
+    const state = reduceAll(initialState, [
+      line("workflow", { phase: "run_start", name: "fanout-review", nodes: [] }),
+    ]);
+    expect(infosOf(state)).toEqual([
+      {
+        kind: "info",
+        text: "Workflow fanout-review started",
+        tone: "neutral",
+        infoKey: "chat.wf.startNoTask",
+        infoVars: { name: "fanout-review" },
+        runId: RUN,
+      },
+    ]);
+  });
+
+  it("closes with how it stopped in words, and the detail", () => {
+    const done = reduceAll(initialState, [line("workflow", { phase: "run_end", stopReason: "done" })]);
+    expect(infosOf(done)).toEqual([
+      {
+        kind: "info",
+        text: "The workflow ended: an end was reached.",
+        tone: "neutral",
+        infoKey: "chat.wf.end",
+        infoVars: { more: "" },
+        infoRefKey: "pb.run.stop.done",
+      },
+    ]);
+    const failed = reduceAll(initialState, [
+      line("workflow", {
+        phase: "run_end",
+        stopReason: "step_failed",
+        detail: "explore: the model did not answer",
+      }),
+    ]);
+    expect(infosOf(failed)).toEqual([
+      {
+        kind: "info",
+        text: "The workflow ended: a step failed. explore: the model did not answer",
+        tone: "warn",
+        infoKey: "chat.wf.end",
+        infoVars: { more: " explore: the model did not answer" },
+        infoRefKey: "pb.run.stop.step_failed",
+      },
+    ]);
+  });
+
+  it("prints a stop reason the dictionary does not know as it came", () => {
+    const state = reduceAll(initialState, [line("workflow", { phase: "run_end", stopReason: "brand_new" })]);
+    expect(infosOf(state)).toEqual([
+      {
+        kind: "info",
+        text: "The workflow ended: brand_new.",
+        tone: "warn",
+        infoKey: "chat.wf.end",
+        infoVars: { more: "", ref: "brand_new" },
+      },
+    ]);
+  });
+
+  it("draws no line for a workflow's steps", () => {
+    const state = reduceAll(initialState, [
+      line("workflow", { phase: "step_start", node: "explore", name: "explore", kind: "prompt", entry: 1 }),
+      line("workflow", {
+        phase: "step_end",
+        node: "explore",
+        name: "explore",
+        kind: "prompt",
+        entry: 1,
+        status: "done",
+      }),
+    ]);
+    expect(infosOf(state)).toEqual([]);
+  });
+
+  it("draws no line for a playbook run: its playbook_progress lines are the chat's", () => {
+    const state = reduceAll(initialState, [
+      line("playbook", { phase: "run_start", name: "spectro", task: "add a CSV export", nodes: [] }),
+      line("playbook", { phase: "run_end", stopReason: "done" }),
+    ]);
+    expect(state.runs, "premise: the run is folded").toHaveLength(1);
+    expect(infosOf(state)).toEqual([]);
+  });
+
+  it("has every key it uses in both languages", () => {
+    for (const key of [
+      "chat.wf.start",
+      "chat.wf.startNoTask",
+      "chat.wf.end",
+      "chat.run.open",
+      "pb.run.segmentLink",
+    ]) {
+      expect(dict[key]?.de, key).toBeTruthy();
+      expect(dict[key]?.en, key).toBeTruthy();
+    }
+    expect(dict["chat.wf.start"]).toEqual({
+      de: "Workflow {name} gestartet auf: {task}",
+      en: "Workflow {name} started on: {task}",
+    });
+    expect(dict["chat.wf.startNoTask"]).toEqual({
+      de: "Workflow {name} gestartet",
+      en: "Workflow {name} started",
+    });
+    expect(dict["chat.wf.end"]).toEqual({
+      de: "Der Workflow ist beendet: {ref}.{more}",
+      en: "The workflow ended: {ref}.{more}",
+    });
+    expect(dict["chat.run.open"]).toEqual({ de: "Lauf ansehen", en: "open the run" });
+    expect(dict["pb.run.segmentLink"]).toEqual({
+      de: "Läufe dieser Session: öffnen",
+      en: "Runs of this session: open",
+    });
+  });
+});

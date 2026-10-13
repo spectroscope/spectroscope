@@ -268,7 +268,9 @@ import java.util.function.Function;
  *                              result out of the outgoing request as a one-line
  *                              stub, while the history and the session file keep
  *                              it whole; {@code "off"} sends every result in
- *                              full on every turn. Ships on
+ *                              full on every turn. Ships off (card 600), for
+ *                              every provider either way; user scope, refused
+ *                              in a workspace scope
  * @param toolGroupsOff         card 466: the tool groups a session leaves out of
  *                              every provider request, by their wire names
  *                              ({@link dev.spectroscope.core.ToolGroup#wireNames()}).
@@ -304,6 +306,10 @@ import java.util.function.Function;
  *                              list_agents and takes messages from other
  *                              sessions; off, both tools leave the request and
  *                              the process refuses every message. Ships on
+ * @param codeGraphBackend      card 587: the program that builds and answers
+ *                              the code graph, one of
+ *                              {@link dev.spectroscope.core.codegraph.CodeGraphBackend#names()}.
+ *                              Ships {@code graphify}, the only one
  */
 public record SpectroConfig(
         String provider,
@@ -380,7 +386,96 @@ public record SpectroConfig(
         // Card 528: auto, cli or server. Appended last, same rule.
         String sttRunner,
         // Card 503: agent messaging on or off. Appended last, same rule.
-        boolean agentMessaging) {
+        boolean agentMessaging,
+        // Card 587: the code graph backend. Appended last, same rule.
+        String codeGraphBackend) {
+
+    /** Compat: the v0.15.2 arity, which knew no code graph backend (card 587).
+     *  Every caller that built a config positionally against v0.15.2 keeps
+     *  compiling and gets the shipped {@code graphify}.
+     *
+     * @param provider              the LLM backend
+     * @param model                 the model id
+     * @param baseUrl               the legacy provider address
+     * @param compactionThreshold   input-token level that triggers compaction
+     * @param permissionMode        ask / auto / readonly
+     * @param autoApprove           the allowlist rules
+     * @param imageProvider         the image backend
+     * @param thinking              TRUE requests the reasoning stream
+     * @param mcpServers            the configured MCP servers
+     * @param maxRetries            provider retries
+     * @param promptCaching         TRUE asks the provider to cache the prompt
+     * @param hooks                 the configured shell hooks
+     * @param workspace             the workspace directory
+     * @param logLevel              file-diagnostics level
+     * @param imageModel            the image model id
+     * @param sttModel              the transcription model id
+     * @param sttProvider           auto / local / openai
+     * @param sttLanguage           auto or a language code
+     * @param chromeBinary          the browser binary
+     * @param otlpEndpoint          the trace endpoint
+     * @param otlpBasicAuth         the trace credentials
+     * @param ollamaBaseUrl         ollama's address
+     * @param lmstudioBaseUrl       LM Studio's address
+     * @param searxngUrl            the SearXNG instance
+     * @param allowLocalhost        TRUE lets the net fence dial loopback
+     * @param headlessMcp           TRUE mounts MCP servers in unattended runs
+     * @param progressGuardWrites   identical-write count that speaks
+     * @param progressGuardFailures failing-call count that speaks
+     * @param progressGuardPlanTurns planless turns that speak
+     * @param continuationBudget    continuations per run
+     * @param maxTurns              the run's turn limit
+     * @param llamacppBaseUrl       llama.cpp's address
+     * @param questionsPerRun       questions per run
+     * @param maxQuestionOptions    options per question
+     * @param maxQuestionChars      characters per question
+     * @param commandTimeoutSeconds the shell budget per run_command call
+     * @param chatReserveWidth      pixels of chat the dock may never take
+     * @param dockMaxWidth          the dock's ceiling
+     * @param maxTokens             the completion budget
+     * @param subagentBudgetSeconds the child run budget floor
+     * @param rtkFilter             the rtk proxy switch
+     * @param subagentBudgetTokens  a child agent's token budget
+     * @param desktopNotifications  the cron end notification switch
+     * @param toolResultElision     the switch that leaves old, large tool results out
+     * @param toolGroupsOff         the switched-off tool groups
+     * @param sessionsPerChat       the session count of one chat
+     * @param careParagraph         the care paragraph switch
+     * @param readSharePercent      the read share
+     * @param localModeKeys         what the Local mode switch wrote
+     * @param sttRunner             what runs whisper on the local live route
+     * @param agentMessaging        whether agents message each other */
+    public SpectroConfig(String provider, String model, String baseUrl,
+                         Integer compactionThreshold, String permissionMode,
+                         List<String> autoApprove, String imageProvider, boolean thinking,
+                         List<McpServerConfig> mcpServers, int maxRetries, boolean promptCaching,
+                         List<HookConfig> hooks, String workspace, String logLevel,
+                         String imageModel, String sttModel, String sttProvider,
+                         String sttLanguage, String chromeBinary, String otlpEndpoint,
+                         String otlpBasicAuth, String ollamaBaseUrl, String lmstudioBaseUrl,
+                         String searxngUrl, boolean allowLocalhost, boolean headlessMcp,
+                         int progressGuardWrites, int progressGuardFailures,
+                         int progressGuardPlanTurns, int continuationBudget, int maxTurns,
+                         String llamacppBaseUrl, int questionsPerRun, int maxQuestionOptions,
+                         int maxQuestionChars, int commandTimeoutSeconds, int chatReserveWidth,
+                         int dockMaxWidth, int maxTokens, int subagentBudgetSeconds,
+                         String rtkFilter, int subagentBudgetTokens,
+                         String desktopNotifications, String toolResultElision,
+                         List<String> toolGroupsOff, Integer sessionsPerChat, String careParagraph,
+                         int readSharePercent, List<String> localModeKeys, String sttRunner,
+                         boolean agentMessaging) {
+        this(provider, model, baseUrl, compactionThreshold, permissionMode, autoApprove,
+                imageProvider, thinking, mcpServers, maxRetries, promptCaching, hooks, workspace,
+                logLevel, imageModel, sttModel, sttProvider, sttLanguage, chromeBinary,
+                otlpEndpoint, otlpBasicAuth, ollamaBaseUrl, lmstudioBaseUrl, searxngUrl,
+                allowLocalhost, headlessMcp, progressGuardWrites, progressGuardFailures,
+                progressGuardPlanTurns, continuationBudget, maxTurns, llamacppBaseUrl,
+                questionsPerRun, maxQuestionOptions, maxQuestionChars, commandTimeoutSeconds,
+                chatReserveWidth, dockMaxWidth, maxTokens, subagentBudgetSeconds, rtkFilter,
+                subagentBudgetTokens, desktopNotifications, toolResultElision, toolGroupsOff,
+                sessionsPerChat, careParagraph, readSharePercent, localModeKeys, sttRunner,
+                agentMessaging, DEFAULT_CODE_GRAPH_BACKEND);
+    }
 
     /** Compat: the v0.15.1 arity, which knew no speech runner (card 528)
      *  and no agent messaging switch (card 503).
@@ -465,7 +560,8 @@ public record SpectroConfig(
                 chatReserveWidth, dockMaxWidth, maxTokens, subagentBudgetSeconds, rtkFilter,
                 subagentBudgetTokens, desktopNotifications, toolResultElision, toolGroupsOff,
                 sessionsPerChat, careParagraph, readSharePercent, localModeKeys,
-                DEFAULT_STT_RUNNER, DEFAULT_AGENT_MESSAGING);
+                DEFAULT_STT_RUNNER, DEFAULT_AGENT_MESSAGING,
+                DEFAULT_CODE_GRAPH_BACKEND);
     }
 
     /** Compat: the v0.14.4 arity, which knew no session count per chat
@@ -547,7 +643,8 @@ public record SpectroConfig(
                 chatReserveWidth, dockMaxWidth, maxTokens, subagentBudgetSeconds, rtkFilter,
                 subagentBudgetTokens, desktopNotifications, toolResultElision, toolGroupsOff,
                 null, DEFAULT_CARE_PARAGRAPH, DEFAULT_READ_SHARE_PERCENT,
-                List.of(), DEFAULT_STT_RUNNER, DEFAULT_AGENT_MESSAGING);
+                List.of(), DEFAULT_STT_RUNNER, DEFAULT_AGENT_MESSAGING,
+                DEFAULT_CODE_GRAPH_BACKEND);
     }
 
     /** Compat: the arity main had before cards 476, 467 and 466, which knew
@@ -625,7 +722,8 @@ public record SpectroConfig(
                 commandTimeoutSeconds, chatReserveWidth, dockMaxWidth, maxTokens,
                 subagentBudgetSeconds, rtkFilter, subagentBudgetTokens,
                 DEFAULT_DESKTOP_NOTIFICATIONS, DEFAULT_TOOL_RESULT_ELISION, List.of(), null,
-                DEFAULT_CARE_PARAGRAPH, DEFAULT_READ_SHARE_PERCENT, List.of(), DEFAULT_STT_RUNNER, DEFAULT_AGENT_MESSAGING);
+                DEFAULT_CARE_PARAGRAPH, DEFAULT_READ_SHARE_PERCENT, List.of(), DEFAULT_STT_RUNNER, DEFAULT_AGENT_MESSAGING,
+                DEFAULT_CODE_GRAPH_BACKEND);
     }
 
     /** Compat: the pre-card-394 arity, which knew no token budget for a child.
@@ -1576,21 +1674,33 @@ public record SpectroConfig(
     public static final Set<String> KNOWN_TOOL_RESULT_ELISION_VALUES =
             Set.of(TOOL_RESULT_ELISION_ON, TOOL_RESULT_ELISION_OFF);
 
-    /** The shipped {@code toolResultElision}: on.
+    /** The shipped {@code toolResultElision}: off (card 600).
      *
-     *  <p>Measured on 2026-10-09 by replaying 1,387 main-agent requests from
-     *  368 local session files with the shipped rule, each recorded
-     *  compaction applied where it happened, counting conversation chars only
-     *  (no system prompt, tool schemas or images): pooled over all requests
-     *  the saving is 25.7 %, carried by one session of 525 requests; without
-     *  it the saving is 4.9 %, and the per-session mean is 0.37 %. The
-     *  compaction points are those of runs without elision.
+     *  <p>Card 467 shipped it on. Measured on 2026-10-13 on a session the
+     *  owner fetched from another machine, a local llama.cpp model, counting
+     *  the uncached prompt tokens its llm wire recorded (numbers in
+     *  {@code kanban/evidence/feedback-2026-10-13/}): the requests right after
+     *  a batch of stubs carried on average 19.5k and 19.1k uncached prompt
+     *  tokens against 1.8k and 1.5k otherwise, 83 to 87 percent of the
+     *  re-processed tokens of the two helpers that ran out of their budget,
+     *  and 16 of 16 exact repeated reads came while the earlier result was
+     *  stubbed. A batch of stubs changes the request prefix, and the backend
+     *  re-processes the prompt from there. On applies to every provider.</p>
+     *
+     *  <p>Card 467's saving, measured on 2026-10-09 by replaying 1,387
+     *  main-agent requests from 368 local session files with the shipped rule,
+     *  each recorded compaction applied where it happened, counting
+     *  conversation chars only (no system prompt, tool schemas or images):
+     *  pooled over all requests the saving is 25.7 %, carried by one session
+     *  of 525 requests; without it the saving is 4.9 %, and the per-session
+     *  mean is 0.37 %. The compaction points are those of runs without
+     *  elision.
      *  The history, the session file, the trace and the Lab keep every byte;
      *  only the request changes, so turning it off restores the old requests
      *  exactly. The rule itself is
      *  {@link dev.spectroscope.core.session.ToolResultElision}.</p> */
     @Governs(kind = Governs.Kind.SETTABLE, unit = Governs.Unit.NONE, key = "toolResultElision")
-    public static final String DEFAULT_TOOL_RESULT_ELISION = TOOL_RESULT_ELISION_ON;
+    public static final String DEFAULT_TOOL_RESULT_ELISION = TOOL_RESULT_ELISION_OFF;
 
     /** {@code careParagraph} on: every run appends the care paragraph to its
      *  system prompt (card 492). */
@@ -1614,6 +1724,15 @@ public record SpectroConfig(
     /** The shipped {@code agentMessaging}: on, the owner's word of 2026-10-10
      *  ("aktiviere das per Default"). Card 503. */
     public static final boolean DEFAULT_AGENT_MESSAGING = true;
+
+    /** {@code codeGraphBackend}'s known values (card 587): the single source for
+     *  the load-time check and {@link SettingsWriter}'s write-time check. */
+    public static final Set<String> KNOWN_CODE_GRAPH_BACKENDS =
+            dev.spectroscope.core.codegraph.CodeGraphBackend.names();
+
+    /** The shipped {@code codeGraphBackend}: graphify, the only backend (card 587). */
+    @Governs(kind = Governs.Kind.SETTABLE, unit = Governs.Unit.NONE, key = "codeGraphBackend")
+    public static final String DEFAULT_CODE_GRAPH_BACKEND = dev.spectroscope.core.codegraph.CodeGraphBackend.DEFAULT;
 
     /** The shipped {@code readSharePercent} (card 493): the value of
      *  {@link dev.spectroscope.core.tools.ReadBudget#WINDOW_SHARE_PERCENT},
@@ -1713,7 +1832,7 @@ public record SpectroConfig(
                 commandTimeoutSeconds, chatReserveWidth, dockMaxWidth, maxTokens,
                 subagentBudgetSeconds, value, subagentBudgetTokens, desktopNotifications,
                 toolResultElision, toolGroupsOff, sessionsPerChat, careParagraph,
-                readSharePercent, localModeKeys, sttRunner, agentMessaging);
+                readSharePercent, localModeKeys, sttRunner, agentMessaging, codeGraphBackend);
     }
 
     /**
@@ -1742,7 +1861,7 @@ public record SpectroConfig(
                 commandTimeoutSeconds, chatReserveWidth, dockMaxWidth, maxTokens,
                 subagentBudgetSeconds, rtkFilter, subagentBudgetTokens, value,
                 toolResultElision, toolGroupsOff, sessionsPerChat, careParagraph,
-                readSharePercent, localModeKeys, sttRunner, agentMessaging);
+                readSharePercent, localModeKeys, sttRunner, agentMessaging, codeGraphBackend);
     }
 
     /**
@@ -1774,7 +1893,7 @@ public record SpectroConfig(
                 commandTimeoutSeconds, chatReserveWidth, dockMaxWidth, maxTokens,
                 subagentBudgetSeconds, rtkFilter, subagentBudgetTokens, desktopNotifications,
                 toolResultElision, value, sessionsPerChat, careParagraph,
-                readSharePercent, localModeKeys, sttRunner, agentMessaging);
+                readSharePercent, localModeKeys, sttRunner, agentMessaging, codeGraphBackend);
     }
 
     private static final ObjectMapper JSON = new ObjectMapper();
@@ -2263,6 +2382,10 @@ public record SpectroConfig(
                 CARE_PARAGRAPH_ON + ", " + CARE_PARAGRAPH_OFF);
         validateKnown("sttRunner", base.sttRunner(), KNOWN_STT_RUNNERS,
                 STT_RUNNER_AUTO + ", " + STT_RUNNER_CLI + ", " + STT_RUNNER_SERVER);
+        // Card 587: a backend the app knows.
+        validateKnown("codeGraphBackend", base.codeGraphBackend(), KNOWN_CODE_GRAPH_BACKENDS,
+                String.join(", ", dev.spectroscope.core.codegraph.CodeGraphBackend.ALL.stream()
+                        .map(dev.spectroscope.core.codegraph.CodeGraphBackend::name).toList()));
 
         // Local providers without an explicitly set model: use sensible local defaults
         // instead of the Claude id.
@@ -2291,7 +2414,7 @@ public record SpectroConfig(
                         base.toolResultElision(), base.toolGroupsOff(),
                         base.sessionsPerChat(), base.careParagraph(),
                         base.readSharePercent(), base.localModeKeys(),
-                        base.sttRunner(), base.agentMessaging());
+                        base.sttRunner(), base.agentMessaging(), base.codeGraphBackend());
             }
         }
         return base;
@@ -2388,7 +2511,9 @@ public record SpectroConfig(
             // Card 528, appended last, same rule.
             new FieldProbe("sttRunner", p -> p.sttRunner),
             // Card 503, appended last, same rule.
-            new FieldProbe("agentMessaging", p -> p.agentMessaging));
+            new FieldProbe("agentMessaging", p -> p.agentMessaging),
+            // Card 587, appended last, same rule.
+            new FieldProbe("codeGraphBackend", p -> p.codeGraphBackend));
 
     /** The provenance probes' field names, in {@link #FIELD_PROBES} order — for
      *  the reflective pin only: {@code KnownKeysDriftTest} holds the probe list
@@ -2498,7 +2623,16 @@ public record SpectroConfig(
                     p -> p.desktopNotifications = null,
                     "is process-global and not allowed in a workspace scope",
                     "desktop notifications belong in ~/.spectro/settings.json, not in a"
-                            + " folder the agent writes into."));
+                            + " folder the agent writes into."),
+            // Card 600, fix round 1: the owner's rule is on everywhere or off
+            // everywhere, so the one place the value comes from is the user
+            // settings, which the checkbox under Local mode writes.
+            new ProcessGlobal("toolResultElision", p -> p.toolResultElision,
+                    p -> p.toolResultElision = null,
+                    "is user scope only and not allowed in a workspace scope",
+                    "the tool results cache switch belongs in ~/.spectro/settings.json, set"
+                            + " by the checkbox under Local mode in the composer gear, so it is"
+                            + " on for every folder or off for every folder."));
 
     /**
      * Card 453: values a workspace scope may not hold for a key it otherwise
@@ -2823,7 +2957,42 @@ public record SpectroConfig(
                 commandTimeoutSeconds, chatReserveWidth, dockMaxWidth, maxTokens,
                 subagentBudgetSeconds, rtkFilter, subagentBudgetTokens, desktopNotifications,
                 toolResultElision, toolGroupsOff, sessionsPerChat, careParagraph,
-                readSharePercent, localModeKeys, sttRunner, agentMessaging);
+                readSharePercent, localModeKeys, sttRunner, agentMessaging, codeGraphBackend);
+    }
+
+    /** The four components a provider address is resolved from ({@link #endpointFor}), card 579. */
+    public static final List<String> ENDPOINT_FIELDS =
+            List.of("baseUrl", "ollamaBaseUrl", "lmstudioBaseUrl", "llamacppBaseUrl");
+
+    /**
+     * A copy of this config with the provider addresses of {@code settings}
+     * (card 579): the four {@link #ENDPOINT_FIELDS}, the fields
+     * {@link #endpointFor} reads. Each is taken as it is, null included, so an
+     * address the settings removed is gone. Every other component stays this
+     * config's own.
+     *
+     * @param settings the settings as they are now
+     * @return a new config identical to this one except the four addresses
+     */
+    public SpectroConfig withEndpointsOf(SpectroConfig settings) {
+        return new SpectroConfig(provider, model,
+                settings.baseUrl(),
+                compactionThreshold, permissionMode, autoApprove,
+                imageProvider, thinking, mcpServers,
+                maxRetries, promptCaching, hooks,
+                workspace, logLevel, imageModel, sttModel, sttProvider, sttLanguage,
+                chromeBinary, otlpEndpoint, otlpBasicAuth,
+                settings.ollamaBaseUrl(),
+                settings.lmstudioBaseUrl(),
+                searxngUrl, allowLocalhost, headlessMcp,
+                progressGuardWrites, progressGuardFailures, progressGuardPlanTurns,
+                continuationBudget, maxTurns,
+                settings.llamacppBaseUrl(),
+                questionsPerRun, maxQuestionOptions, maxQuestionChars,
+                commandTimeoutSeconds, chatReserveWidth, dockMaxWidth, maxTokens,
+                subagentBudgetSeconds, rtkFilter, subagentBudgetTokens, desktopNotifications,
+                toolResultElision, toolGroupsOff, sessionsPerChat, careParagraph,
+                readSharePercent, localModeKeys, sttRunner, agentMessaging, codeGraphBackend);
     }
 
     /** Whether {@code provider} is a selectable LLM backend — the single source
@@ -3444,6 +3613,43 @@ public record SpectroConfig(
         return dotEnvValue(keyEnv);
     }
 
+    /** Card 584: the key of {@link #apiKeySource} comes from the process environment of the app. */
+    public static final String KEY_FROM_ENVIRONMENT = "environment";
+    /** Card 584: the key of {@link #apiKeySource} is the one saved in the app, in {@link #dotEnvPath()}. */
+    public static final String KEY_SAVED = "saved";
+
+    /**
+     * Card 584: where the key {@link #resolveApiKey} would use comes from, as a
+     * word, never the value: {@link #KEY_FROM_ENVIRONMENT} when the process
+     * environment carries it, {@link #KEY_SAVED} when only {@link #dotEnvPath()}
+     * does, null when neither does.
+     *
+     * @param keyEnv the env var name (e.g. ANTHROPIC_API_KEY), or null
+     * @return the source word, or null when no key is set
+     */
+    public static String apiKeySource(String keyEnv) {
+        return apiKeySource(keyEnv, System.getenv());
+    }
+
+    /**
+     * {@link #apiKeySource(String)} over an injectable environment, for tests.
+     *
+     * @param keyEnv the env var name, or null
+     * @param env    the process environment to read
+     * @return the source word, or null when no key is set
+     */
+    public static String apiKeySource(String keyEnv, Map<String, String> env) {
+        if (keyEnv == null) {
+            return null;
+        }
+        String fromEnv = env == null ? null : env.get(keyEnv);
+        if (fromEnv != null && !fromEnv.isBlank()) {
+            return KEY_FROM_ENVIRONMENT;
+        }
+        String saved = dotEnvValue(keyEnv);
+        return saved != null && !saved.isBlank() ? KEY_SAVED : null;
+    }
+
     /** Presence of an API key across env and {@link #dotEnvPath()} — never the value.
      *  @param keyEnv the env var name, or null
      *  @return true when set and non-blank somewhere */
@@ -3513,23 +3719,162 @@ public record SpectroConfig(
         return null;
     }
 
-    /** Upsert an API key into {@link #dotEnvPath()} (0600) — the write half of the
-     *  UI "save key". The caller validates {@code keyEnv} against {@link #keyEnvFor}.
+    /**
+     * Reads named settings out of a {@code .env} file the one way the server
+     * reads them (card 585): {@code NAME=value} per line, {@code #} comments
+     * and blank lines skipped, the name is the text before the first
+     * {@code =} with the spaces around it dropped, the value is everything
+     * after it, verbatim (no quote stripping), and the last line wins. The CLI
+     * doctor and the server both read the hub settings through this, so they
+     * cannot describe two different machines.
+     *
+     * @param file  the env file
+     * @param names the names to read; every other line is ignored
+     * @return the values found, in the order first seen; empty when the file
+     *         is absent or unreadable
+     */
+    public static Map<String, String> readDotEnv(Path file, java.util.Collection<String> names) {
+        Map<String, String> found = new LinkedHashMap<>();
+        if (!Files.isRegularFile(file)) {
+            return found;
+        }
+        List<String> lines;
+        try {
+            lines = Files.readAllLines(file);
+        } catch (IOException | RuntimeException unreadable) {
+            return found;
+        }
+        for (String line : lines) {
+            String name = envName(line);
+            if (name != null && names.contains(name)) {
+                String trimmed = line.strip();
+                found.put(name, trimmed.substring(trimmed.indexOf('=') + 1));
+            }
+        }
+        return found;
+    }
+
+    /**
+     * The name a {@code .env} line assigns: the text before the first
+     * {@code =}, stripped. Comments, blank lines and lines without a name
+     * assign nothing.
+     *
+     * @param line one line of the file
+     * @return the name, or null when the line assigns nothing
+     */
+    public static String envName(String line) {
+        String trimmed = line.strip();
+        int at = trimmed.indexOf('=');
+        if (trimmed.isEmpty() || trimmed.startsWith("#") || at <= 0) {
+            return null;
+        }
+        String name = trimmed.substring(0, at).strip();
+        return name.isEmpty() ? null : name;
+    }
+
+    /** One lock for every write of a {@code .env} file in this process (card 585). */
+    private static final Object DOT_ENV_LOCK = new Object();
+
+    /**
+     * Changes a {@code .env} file in one step. The file holds API keys, so
+     * this never loses a line: every write in this process holds one lock,
+     * reads the file, applies {@code change}, writes the result to an
+     * owner-only temporary file in the same folder and moves it over the old
+     * one in one atomic step. A crash leaves the old file or the new one,
+     * never half of either. A link is followed, so the file it points at gets
+     * the new content and the link stays. Nothing is written when the change
+     * leaves the lines as they were.
+     *
+     * @param file   the env file; created with its folder when absent
+     * @param change the new lines, from the current ones (empty when absent)
+     * @throws IOException when the file cannot be read or written
+     */
+    public static void updateDotEnv(Path file, java.util.function.UnaryOperator<List<String>> change)
+            throws IOException {
+        synchronized (DOT_ENV_LOCK) {
+            Path target = Files.isSymbolicLink(file) ? file.toRealPath() : file;
+            boolean exists = Files.exists(target);
+            List<String> before = exists ? splitLines(Files.readString(target)) : List.of();
+            List<String> after = change.apply(new ArrayList<>(before));
+            if (exists && after.equals(before)) {
+                return;
+            }
+            Path folder = target.toAbsolutePath().getParent();
+            Files.createDirectories(folder);
+            Path temp;
+            try {
+                temp = Files.createTempFile(folder, ".env-", ".tmp",
+                        PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-------")));
+            } catch (UnsupportedOperationException nonPosix) {
+                temp = Files.createTempFile(folder, ".env-", ".tmp");
+            }
+            try {
+                StringBuilder text = new StringBuilder();
+                for (String line : after) {
+                    text.append(line).append('\n');
+                }
+                Files.writeString(temp, text.toString());
+                try {
+                    Files.move(temp, target, java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                            java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                } catch (java.nio.file.AtomicMoveNotSupportedException noAtomicMove) {
+                    Files.move(temp, target, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                }
+            } finally {
+                Files.deleteIfExists(temp);
+            }
+        }
+    }
+
+    /** The file's lines; a final newline does not count as an empty last line. */
+    private static List<String> splitLines(String text) {
+        if (text.isEmpty()) {
+            return List.of();
+        }
+        List<String> lines = new ArrayList<>(List.of(text.split("\n", -1)));
+        if (text.endsWith("\n")) {
+            lines.remove(lines.size() - 1);
+        }
+        return lines;
+    }
+
+    /**
+     * The lines with every assignment of {@code name} dropped and
+     * {@code name=value} appended. Comments and every other line stay.
+     *
+     * @param lines the current lines
+     * @param name  the name to set
+     * @param value the value, written verbatim
+     * @return the new lines
+     */
+    public static List<String> withEnvValue(List<String> lines, String name, String value) {
+        List<String> out = new ArrayList<>(lines);
+        out.removeIf(line -> name.equals(envName(line)));
+        out.add(name + "=" + value);
+        return out;
+    }
+
+    /**
+     * Upserts {@code name=value} into a {@code .env} file, locked and atomic
+     * ({@link #updateDotEnv}).
+     *
+     * @param file  the env file
+     * @param name  the name
+     * @param value the value
+     * @throws IOException when the file cannot be written
+     */
+    public static void writeEnvValue(Path file, String name, String value) throws IOException {
+        updateDotEnv(file, lines -> withEnvValue(lines, name, value));
+    }
+
+    /** Upsert an API key into {@link #dotEnvPath()} (0600), locked and atomic
+     *  ({@link #updateDotEnv}): the write half of the UI "save key". The caller
+     *  validates {@code keyEnv} against {@link #keyEnvFor}.
      *  @param keyEnv the env var name
      *  @param value  the secret (never logged)
      *  @throws IOException if the file cannot be written */
     public static void writeApiKey(String keyEnv, String value) throws IOException {
-        Path env = dotEnvPath();
-        Files.createDirectories(env.getParent());
-        List<String> lines = Files.exists(env) ? new ArrayList<>(Files.readAllLines(env)) : new ArrayList<>();
-        lines.removeIf(l -> l.strip().startsWith(keyEnv + "="));
-        lines.add(keyEnv + "=" + value);
-        Files.write(env, lines);
-        try {
-            Files.setPosixFilePermissions(env, PosixFilePermissions.fromString("rw-------"));
-        } catch (UnsupportedOperationException | IOException nonPosix) {
-            // Windows / non-POSIX: best effort — the file stays under the user's home.
-        }
+        writeEnvValue(dotEnvPath(), keyEnv, value);
     }
 
     /** This provider's API key from the environment — {@code OPENROUTER_API_KEY}
@@ -3865,6 +4210,8 @@ public record SpectroConfig(
         public String sttRunner;
         // Card 503: agent messaging on or off.
         public Boolean agentMessaging;
+        // Card 587: the code graph backend.
+        public String codeGraphBackend;
         // Jackson deserializes the Claude-Desktop-shaped object here; the key is the
         // server name (folded in by toServerList). LinkedHashMap preserves order.
         // A layer that defines mcpServers replaces the whole block below it — the
@@ -3945,6 +4292,7 @@ public record SpectroConfig(
             out.localModeKeys = Optional.ofNullable(higher.localModeKeys).orElse(localModeKeys);
             out.sttRunner = Optional.ofNullable(higher.sttRunner).orElse(sttRunner);
             out.agentMessaging = Optional.ofNullable(higher.agentMessaging).orElse(agentMessaging);
+            out.codeGraphBackend = Optional.ofNullable(higher.codeGraphBackend).orElse(codeGraphBackend);
             // Whole-block replacement: the higher layer's mcpServers, if it defines one
             // at all, replaces this layer's block wholesale.
             out.mcpServers = Optional.ofNullable(higher.mcpServers).orElse(mcpServers);
@@ -4018,7 +4366,8 @@ public record SpectroConfig(
                     Optional.ofNullable(readSharePercent).orElse(DEFAULTS.readSharePercent()),
                     Optional.ofNullable(localModeKeys).orElse(DEFAULTS.localModeKeys()),
                     Optional.ofNullable(sttRunner).orElse(DEFAULTS.sttRunner()),
-                    Optional.ofNullable(agentMessaging).orElse(DEFAULTS.agentMessaging()));
+                    Optional.ofNullable(agentMessaging).orElse(DEFAULTS.agentMessaging()),
+                    Optional.ofNullable(codeGraphBackend).orElse(DEFAULTS.codeGraphBackend()));
         }
 
         /**

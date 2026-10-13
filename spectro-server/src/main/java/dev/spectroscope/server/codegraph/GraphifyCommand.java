@@ -4,6 +4,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
@@ -42,8 +43,36 @@ public final class GraphifyCommand {
     /** The graphify version whose {@code --help} the drift test holds these steps against. */
     public static final String PINNED_VERSION = "0.9.67";
 
-    /** How graphify is installed, the line the sheet and doctor print when it is missing. */
-    public static final String INSTALL_LINE = "uv tool install graphifyy";
+    /** How graphify is installed, the line the sheet and doctor print when it is missing (card 587: the backend's own). */
+    public static final String INSTALL_LINE = dev.spectroscope.core.codegraph.CodeGraphBackend.GRAPHIFY.install();
+
+    /** Card 587: a full build that ended well. */
+    public static final String BUILT = "built";
+    /** Card 587: an update that printed the size of the graph it wrote. */
+    public static final String UPDATED = "updated";
+    /** Card 587: an update that printed that nothing changed. */
+    public static final String CURRENT = "current";
+    /** Card 587: a build that failed. */
+    public static final String FAILED = "failed";
+    /** Card 587, fix round: an update that ended well without saying whether it changed the graph. */
+    public static final String FINISHED = "finished";
+
+    /** What graphify 0.9.67 prints when an update changes nothing; it still exits 0. */
+    static final String NO_CHANGES = "No code-graph topology changes detected";
+
+    /** The size graphify prints after a build or an update that wrote the graph. */
+    private static final Pattern COUNTS = Pattern.compile("(\\d+ nodes, \\d+ edges, \\d+ communities)");
+
+    /**
+     * Card 587: what a finished build means for the chat.
+     *
+     * @param kind   {@link GraphifyCommand#BUILT}, {@link GraphifyCommand#UPDATED},
+     *               {@link GraphifyCommand#CURRENT}, {@link GraphifyCommand#FINISHED} or
+     *               {@link GraphifyCommand#FAILED}
+     * @param counts the size graphify printed last, such as {@code 6 nodes, 8 edges, 2 communities}, or null
+     */
+    public record Result(String kind, String counts) {
+    }
 
     /** The graphify backends the harness maps its providers to (graphify's own names). */
     public static final Set<String> BACKENDS = Set.of("claude", "openai", "gemini", "ollama");
@@ -107,6 +136,40 @@ public final class GraphifyCommand {
     }
 
     private GraphifyCommand() {
+    }
+
+    /**
+     * Card 587: reads what a finished build meant off what graphify printed.
+     * Fix round: an update is updated only when graphify printed the size of
+     * the graph it wrote, and current only when it printed its no-change line;
+     * with neither, or both, it is only finished.
+     *
+     * @param job the folder's last build, or null
+     * @return the result, or null while it runs or when there was none
+     */
+    public static Result result(CodeGraphJobs.Snapshot job) {
+        if (job == null || CodeGraphJobs.RUNNING.equals(job.state())) {
+            return null;
+        }
+        if (!CodeGraphJobs.OK.equals(job.state())) {
+            return new Result(FAILED, null);
+        }
+        String counts = null;
+        boolean unchanged = false;
+        for (String line : job.tail()) {
+            Matcher size = COUNTS.matcher(line);
+            if (size.find()) {
+                counts = size.group(1);
+            }
+            unchanged |= line.contains(NO_CHANGES);
+        }
+        if (!"update".equals(job.mode())) {
+            return new Result(BUILT, counts);
+        }
+        if (counts != null && !unchanged) {
+            return new Result(UPDATED, counts);
+        }
+        return unchanged && counts == null ? new Result(CURRENT, null) : new Result(FINISHED, null);
     }
 
     /**

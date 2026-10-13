@@ -1,6 +1,7 @@
 package dev.spectroscope.core.local;
 
 import dev.spectroscope.core.config.governing.Governs;
+import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -49,6 +50,9 @@ public final class LocalRuntime {
     @Governs(kind = Governs.Kind.LOOKS_SETTABLE, unit = Governs.Unit.SECONDS)
     private static final Duration DEFAULT_HEALTH_BUDGET = Duration.ofSeconds(60);
 
+    /** The address the launcher binds and the health check dials. */
+    private static final String LOOPBACK = "127.0.0.1";
+
     private final Launcher launcher;
     private final String model;
     private final Duration healthBudget;
@@ -83,7 +87,10 @@ public final class LocalRuntime {
         }
         try {
             int port;
-            try (ServerSocket probe = new ServerSocket(0)) {
+            // Probe at the address the launcher binds. On macOS a wildcard
+            // probe is handed ports that a 127.0.0.1 listener holds, and the
+            // launch then fails to bind (card 582).
+            try (ServerSocket probe = new ServerSocket(0, 1, InetAddress.getByName(LOOPBACK))) {
                 port = probe.getLocalPort();
             }
             // A fresh secret per launch. llama.cpp answers every origin with
@@ -94,7 +101,7 @@ public final class LocalRuntime {
             process = launcher.start(modelFile, port, key);
             reaper = new Thread(this::shutdown, "spectro-local-reaper");
             Runtime.getRuntime().addShutdownHook(reaper);
-            String base = "http://127.0.0.1:" + port;
+            String base = "http://" + LOOPBACK + ":" + port;
             if (!healthy(base, key)) {
                 shutdown();
                 return Optional.empty();

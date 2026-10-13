@@ -7,6 +7,7 @@
 // -> the transcript lands IN THE INPUT, never straight at the agent).
 
 import { ComposerMeta } from "./ComposerMeta";
+import { ringOf, type ShownAgent } from "../state/shownAgent";
 import type { ConnectionStatus } from "../transport/ws";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
@@ -39,6 +40,7 @@ import {
 import { agentAccent, answerLineSegments, clockTime } from "../format";
 import { MessageBlock, replyFrame, replyTargetOf, decisionFrame, type ReplyTarget } from "./MessageBlock";
 import { decideDraft, loopFrame, loopStopFrame, type ChatCommandName } from "../state/chatCommands";
+import { asTypedCommand } from "../state/typedCommand";
 import { loadCommands, useCommandList } from "../state/commandList";
 import { runPageCommand, type LocalLine } from "../state/pageCommands";
 import { prefilledDraft, useTakePrefill } from "../state/composerPrefill";
@@ -101,6 +103,18 @@ import { useLang } from "../state/lang";
 import { useRecordedMode } from "../state/recordedMode";
 import { bundleLink } from "./rowMenuItems";
 import { AnswerExchange } from "./AnswerExchange";
+import { claimChatFocus, useChatFocus } from "../state/chatFocus";
+import { setRunWide } from "../state/layout";
+import { pickRunById } from "../state/runPick";
+import { revealRunPanel } from "../state/runReveal";
+
+/** Card 586: how long a place the run view jumped to stays marked. */
+const FOCUS_MARK_MS = 2000;
+
+/** A value for a double-quoted attribute selector: a quote or a backslash is escaped. */
+function attributeValue(value: string): string {
+  return value.replace(/["\\]/g, "\\$&");
+}
 
 /** What a v2 chip may do about its own fold (card 271) — the whole surface, so
  *  the chip stays a control and Chat stays the only renderer of turns. */
@@ -224,6 +238,9 @@ export function Chat(props: {
     providerAddress?: Record<string, string>;
     onApplyProvider: (provider: string, model: string) => void;
     onOpenSettings?: () => void;
+    /** Card 593: the agent the ring shows and the pick that changes every agent view. */
+    shown?: ShownAgent;
+    onPickAgent?: (id: string | null) => void;
   };
   /** Card 390: sets or clears the window of this session from the ring. */
   onWindowOverride?: (tokens: number | null) => void;
@@ -250,7 +267,7 @@ export function Chat(props: {
   onAbort?: () => void;
   /** True from the stop click until run_end: the button reads "stopping …". */
   stopRequested?: boolean;
-  /** Live check 0.15.3 D6: the message that left and whose run has not
+  /** Live check D6 (card 557): the message that left and whose run has not
    *  started, or null. Drawn at the live edge with Stop in the seat, because
    *  the server can ask the backend for its window for seconds first. */
   starting?: string | null;
@@ -687,6 +704,33 @@ export function Chat(props: {
     el.scrollIntoView({ block: "center", behavior: "smooth" });
   }, [currentHit]);
 
+  // Card 586: a press in the run view shows its place here: the prompt a chat
+  // step sent, or a child step's helper. Like a search jump, it releases the
+  // live pin, so the next streamed token does not drag the reader away. The
+  // first chat that holds the place claims the request.
+  const focus = useChatFocus();
+  const focusSeq = focus?.seq ?? 0;
+  useEffect(() => {
+    if (focus === null) return;
+    const selector =
+      focus.target.kind === "entry"
+        ? `[data-run-entry="${attributeValue(focus.target.key)}"]`
+        : `[data-agent-thread="${attributeValue(focus.target.agentId)}"]`;
+    const el = scrollRef.current?.querySelector(selector);
+    // A request is shown once: a chat that comes to it later leaves it alone.
+    if (el == null || !claimChatFocus(focus.seq)) return;
+    setPin(false);
+    el.scrollIntoView({ block: "center", behavior: "smooth" });
+    el.classList.add("chat-focus");
+    const timer = window.setTimeout(() => el.classList.remove("chat-focus"), FOCUS_MARK_MS);
+    return () => {
+      window.clearTimeout(timer);
+      el.classList.remove("chat-focus");
+    };
+    // Keyed by the request's seq alone: a new view or a new token is no new press.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusSeq]);
+
   /** The hit classes for a turn at flat index `i` — "" when not searching. */
   const hitClass = (i: number): string =>
     hitSet.has(i) ? (i === currentHit ? " chat-hit chat-hit--current" : " chat-hit") : "";
@@ -730,7 +774,10 @@ export function Chat(props: {
   // belonged to.
   // Card 554 fix round 3: where the turns stood when a command left since the
   // last prompt. An error from there on answers a command, not a prompt, and
-  // offers no "Send again".
+  // offers no "Send again". Card 576: the record marks such an error itself
+  // (afterCommand, from the frames tagged with asTypedCommand below), which
+  // survives a view switch, a wake and the Lab's tab (lab/labChatState.ts).
+  // This local mark holds only while this Chat stays mounted on one view.
   const [commandsFrom, setCommandsFrom] = useState<number | null>(null);
   const commandLeft = (): void => setCommandsFrom((from) => from ?? state.turns.length);
   useEffect(() => {
@@ -891,7 +938,7 @@ export function Chat(props: {
     // runs the prompt now. The draft empties only when the frame left.
     // Fix round 1: /loop stop ends the loop, as the chip's Stop does.
     if (decided.kind === "loopStop") {
-      if (sendSession(loopStopFrame())) {
+      if (sendSession(asTypedCommand(loopStopFrame()))) {
         commandLeft();
         setDraft("");
         setWalk(atDraft());
@@ -900,7 +947,7 @@ export function Chat(props: {
     }
     if (decided.kind === "loop") {
       setPin(true);
-      if (sendSession(loopFrame(decided))) {
+      if (sendSession(asTypedCommand(loopFrame(decided)))) {
         commandLeft();
         setDraft("");
         setWalk(atDraft());
@@ -1000,6 +1047,13 @@ export function Chat(props: {
     [grouping, state.turns, state.cards, state.agents],
   );
 
+  /** Card 586: the chat comes back from the wide view, and the run shows in the dock's plan panel. */
+  const openRun = (runId: string): void => {
+    setRunWide(false);
+    pickRunById(state.runs, runId);
+    revealRunPanel(runId, true);
+  };
+
   const renderTurn = (turn: Turn, i: number, inThread = false) => {
     switch (turn.kind) {
       case "user":
@@ -1007,6 +1061,7 @@ export function Chat(props: {
           <div
             key={`${vk}:${i}`}
             className={`user-turn${turn.by === "playbook" ? " user-turn--playbook" : ""}${hitClass(i)}`}
+            data-run-entry={turn.runEntry}
           >
             {/* Card 554, criterion 8f: a playbook step's prompt is the playbook's, not the owner's. */}
             <div className="eyebrow">{t(lang, turn.by === "playbook" ? "chat.byPlaybook" : "chat.you")}</div>
@@ -1158,6 +1213,19 @@ export function Chat(props: {
                 </button>
               </>
             )}
+            {/* Card 586: a run's start line opens that run in the panel beside the chat. */}
+            {turn.runId !== undefined && (
+              <>
+                {"\n"}
+                <button
+                  type="button"
+                  className="link info-line-link chat-run-open"
+                  onClick={() => openRun(turn.runId ?? "")}
+                >
+                  {t(lang, "chat.run.open")}
+                </button>
+              </>
+            )}
           </div>
         );
       case "message":
@@ -1182,6 +1250,7 @@ export function Chat(props: {
             <div className="error-text">{turn.text}</div>
             {liveView &&
               !state.running &&
+              turn.afterCommand !== true &&
               (commandsFrom === null || i < commandsFrom) &&
               lastUserText() !== null && (
                 <button
@@ -1398,7 +1467,7 @@ export function Chat(props: {
                   className="chat-thread"
                   style={{ "--agent-color": agentAccent(b.agentId) } as CSSProperties}
                 >
-                  <div className="chat-thread-head">
+                  <div className="chat-thread-head" data-agent-thread={b.agentId}>
                     <span
                       className="agent-badge"
                       style={{ "--agent-color": agentAccent(b.agentId) } as CSSProperties}
@@ -1431,7 +1500,7 @@ export function Chat(props: {
                   <div className="steer-state steer-state--pending">{t(lang, "chat.steerPending")}</div>
                 </div>
               ))}
-            {/* Live check 0.15.3 D6: the message is on the screen from the
+            {/* Live check D6 (card 557): the message is on the screen from the
                 moment it left. The run's own user turn takes its place. */}
             {startPending !== null && (
               <div key={`${vk}:start-pending`} className="user-turn user-turn--start-pending" role="status">
@@ -1851,6 +1920,7 @@ export function Chat(props: {
                     context={state.context}
                     announcedWindow={state.announcedWindow}
                     onWindowOverride={props.onWindowOverride}
+                    ring={ringOf(props.composerMeta, state)}
                   />
                 )}
               </div>
@@ -1935,6 +2005,7 @@ export function Chat(props: {
                   aiCredits={state.aiCredits}
                   context={state.context}
                   announcedWindow={state.announcedWindow}
+                  ring={ringOf(props.composerMeta, state)}
                 />
               )}
             </div>

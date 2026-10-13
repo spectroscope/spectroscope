@@ -15,6 +15,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -170,6 +171,7 @@ public final class CodeGraphJobs {
     private final Clock clock;
     private final Duration limit;
     private final Map<Path, Job> jobs = new ConcurrentHashMap<>();
+    private final List<Runnable> endListeners = new CopyOnWriteArrayList<>();
 
     /**
      * The builds of this server process; the controller and the jobs-state
@@ -216,8 +218,13 @@ public final class CodeGraphJobs {
             jobs.put(folder, job);
         }
         Snapshot started = job.snapshot();
-        Thread.ofPlatform().daemon().name("codegraph-" + folder.getFileName())
-                .start(() -> run(job, List.copyOf(steps), Map.copyOf(env)));
+        Thread.ofPlatform().daemon().name("codegraph-" + folder.getFileName()).start(() -> {
+            try {
+                run(job, List.copyOf(steps), Map.copyOf(env));
+            } finally {
+                ended();
+            }
+        });
         Thread.ofVirtual().name("codegraph-limit").start(() -> {
             try {
                 Thread.sleep(limit);
@@ -282,6 +289,29 @@ public final class CodeGraphJobs {
         job.line("stopped: the build ran longer than "
                 + (minutes > 0 ? minutes + " minutes" : limit.toMillis() + " ms"));
         job.end(FAILED, code);
+    }
+
+    /**
+     * Card 587, fix round (M12): someone to tell when a build ends, well or
+     * not, after its state is final. Told on the build's thread; it must not
+     * block.
+     *
+     * @param listener told once per ended build
+     * @return round 2 (N4): what removes the listener again
+     */
+    public Runnable onEnded(Runnable listener) {
+        endListeners.add(listener);
+        return () -> endListeners.remove(listener);
+    }
+
+    private void ended() {
+        for (Runnable listener : endListeners) {
+            try {
+                listener.run();
+            } catch (RuntimeException ignored) {
+                // a listener's failure is its own; the build has ended either way
+            }
+        }
     }
 
     /**

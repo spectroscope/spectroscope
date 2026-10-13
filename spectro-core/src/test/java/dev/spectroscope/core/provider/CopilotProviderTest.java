@@ -415,6 +415,802 @@ class CopilotProviderTest {
                 new PStop(PStop.StopReason.END_TURN)), next);
     }
 
+    /** How long a stopped turn may take to end (card 557's budget, card 583). */
+    private static final long STOP_BUDGET_MS = 1_000;
+
+    /** Reads a stream, presses stop at its first text delta, and returns the milliseconds from the stop to its end. */
+    private static long stopAtTheFirstDelta(Iterable<ProviderEvent> stream, CancelSignal signal,
+                                            List<ProviderEvent> events, String what) {
+        long pressed = 0;
+        for (ProviderEvent event : stream) {
+            events.add(event);
+            if (event instanceof PTextDelta && !signal.isCancelled()) {
+                pressed = System.nanoTime();
+                signal.cancel();
+            }
+        }
+        long millis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - pressed);
+        System.out.println("card 583 measured: stop with " + what + ": " + millis + " ms to the end of the stream");
+        return millis;
+    }
+
+    /**
+     * Card 583: the runtime answers the abort but goes idle only 1.5 s later.
+     * The stopped turn ends at once; the wait for the idle goes on in the
+     * background, a tool call the stopped turn parked is answered as an
+     * error once the runtime is idle, and then the session takes the next prompt.
+     */
+    @Test
+    void aStopEndsTheTurnBeforeALateIdleAndTheSessionIsKeptOnceItSettles() throws Exception {
+        start("claude-sonnet-5");
+        List<JsonNode> delivered = new CopyOnWriteArrayList<>();
+        runtime.onSend(turn -> {
+            String requestId = turn.requestTool("toolu_1", "read_file", Map.of("path", "a.txt"));
+            turn.delta("x");
+            delivered.add(turn.awaitToolResult(requestId, Duration.ofSeconds(10)));
+        });
+        runtime.onSend(turn -> {
+            turn.delta("fresh");
+            turn.usage(20, 1, 0, 0, "stop");
+            turn.idle();
+        });
+        runtime.abortTail(turn -> {
+            FakeCopilotRuntime.sleep(1_500);
+            turn.delta("late");
+        });
+
+        CancelSignal signal = new CancelSignal();
+        List<ProviderEvent> events = new ArrayList<>();
+        List<ProviderMessage> history = new ArrayList<>(List.of(user("Write an essay.")));
+        long millis = stopAtTheFirstDelta(provider.stream(ask(history, List.of(readFileSpec()), signal)), signal,
+                events, "an idle 1.5 s after the abort");
+
+        assertTrue(millis < STOP_BUDGET_MS, "the stop took " + millis + " ms while the runtime went idle 1.5 s"
+                + " after the abort; the budget is " + STOP_BUDGET_MS + " ms");
+        assertEquals(new PStop(PStop.StopReason.ABORTED), events.getLast());
+        assertEquals(1, stops(events));
+        assertTrue(events.stream().noneMatch(PToolCall.class::isInstance), events.toString());
+
+        awaitCount(delivered::size, 1);
+        assertEquals("error", delivered.getFirst().path("result").path("resultType").asText(),
+                "the parked call of the stopped turn is answered as an error: " + delivered);
+
+        history.add(user("Something short instead."));
+        List<ProviderEvent> next = drain(provider.stream(ask(history, List.of(readFileSpec()), new CancelSignal())));
+        assertEquals(List.of(new PTextDelta("fresh"), new PUsage(20, 1, 0, 0),
+                new PStop(PStop.StopReason.END_TURN)), next);
+        assertEquals(1, runtime.requests("session.create").size(),
+                "the session the abort settled in the background takes the next prompt");
+        assertTrue(runtime.scriptFailures().isEmpty(), runtime.scriptFailures().toString());
+    }
+
+    /**
+     * Card 583: the next prompt comes while the stopped turn still waits for
+     * the runtime's late idle. It does not wait, it gets a runtime session of
+     * its own, and nothing the stopped turn's runtime session still sends
+     * reaches it: the next turn is still streaming when the late deltas come
+     * (1.5 s after the abort), and none of them is in it.
+     */
+    @Test
+    void aPromptDuringALateSettleGetsAFreshSessionAndNothingOfTheStoppedTurn() throws Exception {
+        start("claude-sonnet-5");
+        runtime.onSend(turn -> {
+            for (int i = 0; i < 400 && !turn.aborted(); i++) {
+                turn.delta("x");
+                FakeCopilotRuntime.sleep(25);
+            }
+        });
+        runtime.onSend(turn -> {
+            turn.delta("fresh");
+            FakeCopilotRuntime.sleep(2_000);
+            turn.usage(20, 1, 0, 0, "stop");
+            turn.idle();
+        });
+        runtime.abortTail(turn -> {
+            FakeCopilotRuntime.sleep(1_500);
+            turn.delta("late");
+            turn.delta("late");
+        });
+
+        CancelSignal signal = new CancelSignal();
+        List<ProviderEvent> events = new ArrayList<>();
+        List<ProviderMessage> history = new ArrayList<>(List.of(user("Write an essay.")));
+        long millis = stopAtTheFirstDelta(provider.stream(ask(history, List.of(), signal)), signal, events,
+                "an idle 1.5 s after the abort");
+
+        assertTrue(millis < STOP_BUDGET_MS, "the stop took " + millis + " ms while the runtime went idle 1.5 s"
+                + " after the abort; the budget is " + STOP_BUDGET_MS + " ms");
+        assertEquals(new PStop(PStop.StopReason.ABORTED), events.getLast());
+
+        history.add(user("Something short instead."));
+        List<ProviderEvent> next = drain(provider.stream(ask(history, List.of(), new CancelSignal())));
+        assertEquals(List.of(new PTextDelta("fresh"), new PUsage(20, 1, 0, 0),
+                new PStop(PStop.StopReason.END_TURN)), next);
+        assertEquals(2, runtime.requests("session.create").size(),
+                "the next prompt went to the runtime session that was still settling");
+    }
+
+    /**
+     * Card 583: the stream no longer waits on the ping, so it must not send a
+     * new one every half second while the runtime has not answered the last.
+     * Each unanswered ping stays pending in the SDK until the runtime answers.
+     */
+    @Test
+    void aRuntimeThatDoesNotAnswerThePingIsAskedOnceNotEveryHalfSecond() throws Exception {
+        start("claude-sonnet-5");
+        runtime.hold("ping");
+        runtime.onSend(turn -> {
+            turn.delta("thinking");
+            FakeCopilotRuntime.sleep(1_800);
+            turn.delta(" done");
+            turn.usage(20, 2, 0, 0, "stop");
+            turn.idle();
+        });
+
+        List<ProviderEvent> events = drain(provider.stream(ask(List.of(user("Think.")), List.of(),
+                new CancelSignal())));
+
+        assertEquals(new PStop(PStop.StopReason.END_TURN), events.getLast());
+        assertEquals(1, runtime.requests("ping").size(),
+                "pings sent during 1.8 s of silence while the first one had no answer");
+    }
+
+    /**
+     * A ping that gets no answer within its timeout is a busy runtime, not a
+     * dead one: the turn goes on and ends as the runtime says (card 583 moved
+     * the wait off the stream, this pins what the timeout still means).
+     */
+    @Test
+    void aPingThatTimesOutIsABusyRuntimeNotADeadOne() throws Exception {
+        start("claude-sonnet-5");
+        runtime.hold("ping");
+        runtime.onSend(turn -> {
+            turn.delta("thinking");
+            FakeCopilotRuntime.sleep(3_000);
+            turn.delta(" done");
+            turn.usage(20, 2, 0, 0, "stop");
+            turn.idle();
+        });
+
+        List<ProviderEvent> events = drain(provider.stream(ask(List.of(user("Think hard.")), List.of(),
+                new CancelSignal())));
+
+        assertEquals(List.of(new PTextDelta("thinking"), new PTextDelta(" done"), new PUsage(20, 2, 0, 0),
+                new PStop(PStop.StopReason.END_TURN)), events);
+    }
+
+    /**
+     * Card 583: the runtime dies right after it answered the abort, while a
+     * ping is still waiting. The stop ends the turn as aborted, not as an
+     * error, and the dead runtime is let go, so the next prompt starts a new
+     * one instead of failing on the old. The same death with no ping in
+     * flight is the next test but one. Because the ping already found the
+     * runtime gone, the stop does not wait out its 200 ms grace, and the
+     * runtime is dropped at once: a call that is not a prompt (the sign-in
+     * sheet's) reaches a new runtime too.
+     */
+    @Test
+    void aRuntimeThatDiesWhileAPingIsPendingDuringTheStopIsStartedAgain() throws Exception {
+        start("claude-sonnet-5");
+        runtime.hold("ping");
+        runtime.onSend(turn -> turn.delta("partial"));
+        runtime.onSend(says("back"));
+        runtime.abortTail(FakeCopilotRuntime.Turn::die);
+
+        CancelSignal signal = new CancelSignal();
+        List<ProviderEvent> events = new CopyOnWriteArrayList<>();
+        List<Throwable> failures = new CopyOnWriteArrayList<>();
+        long[] endedAt = new long[1];
+        Thread reader = Thread.ofVirtual().start(() -> {
+            try {
+                provider.stream(ask(List.of(user("hi")), List.of(), signal)).forEach(events::add);
+            } catch (Throwable failure) {
+                failures.add(failure);
+            } finally {
+                endedAt[0] = System.nanoTime();
+            }
+        });
+        runtime.await("ping", Duration.ofSeconds(10));
+        long pressed = System.nanoTime();
+        signal.cancel();
+        boolean ended = reader.join(Duration.ofSeconds(4));
+        long millis = ended ? TimeUnit.NANOSECONDS.toMillis(endedAt[0] - pressed) : -1;
+        System.out.println("card 583 measured: stop with a runtime that dies while a ping is pending: " + millis
+                + " ms to the end of the stream");
+        assertTrue(ended && millis < STOP_BUDGET_MS, "the stopped turn took " + (ended ? millis : "more than 4000")
+                + " ms to end; the budget is " + STOP_BUDGET_MS + " ms");
+        assertTrue(millis < 150, "the stop took " + millis + " ms although a ping had found the runtime gone;"
+                + " it waited out the grace");
+
+        assertEquals(List.of(), failures, "a stop is not an error");
+        assertEquals(new PStop(PStop.StopReason.ABORTED), events.getLast());
+        assertFalse(provider.authStatus().authenticated(), "the fake runtime's sign-in answer");
+        assertEquals(2, runtime.requests("connect").size(), "the dead runtime was not dropped at the stop");
+        List<ProviderEvent> next = drain(provider.stream(ask(List.of(user("hi again")), List.of(),
+                new CancelSignal())));
+        assertEquals(List.of(new PTextDelta("back"), new PUsage(10, 1, 0, 0),
+                new PStop(PStop.StopReason.END_TURN)), next);
+        assertEquals(2, runtime.requests("connect").size(), "a second runtime connection");
+    }
+
+    /**
+     * A stop that comes after the provider closed the turn's runtime session
+     * (the session's provider was replaced mid-run) ends the turn as aborted:
+     * the SDK refuses {@code abort} on a closed session, and that is not an
+     * error the operator should see.
+     */
+    @Test
+    void aStopAfterTheProviderClosedTheSessionEndsAsAbortedNotAsAnError() throws Exception {
+        start("claude-sonnet-5");
+        runtime.onSend(turn -> {
+            for (int i = 0; i < 400 && !turn.aborted(); i++) {
+                turn.delta("x");
+                FakeCopilotRuntime.sleep(25);
+            }
+        });
+
+        CancelSignal signal = new CancelSignal();
+        List<ProviderEvent> events = new ArrayList<>();
+        for (ProviderEvent event : provider.stream(ask(List.of(user("Write an essay.")), List.of(), signal))) {
+            events.add(event);
+            if (event instanceof PTextDelta && !signal.isCancelled()) {
+                provider.close();
+                signal.cancel();
+            }
+        }
+
+        assertEquals(new PStop(PStop.StopReason.ABORTED), events.getLast());
+        assertEquals(1, stops(events));
+    }
+
+    /** A turn that streams until the runtime hears the abort. */
+    private static Consumer<FakeCopilotRuntime.Turn> streamsUntilAborted() {
+        return turn -> {
+            for (int i = 0; i < 400 && !turn.aborted(); i++) {
+                turn.delta("x");
+                FakeCopilotRuntime.sleep(25);
+            }
+        };
+    }
+
+    /** A turn that parks one call of the harness's read_file, streams one delta and waits for the call's answer. */
+    private static Consumer<FakeCopilotRuntime.Turn> parksACall(List<JsonNode> delivered) {
+        return turn -> {
+            String requestId = turn.requestTool("toolu_1", "read_file", Map.of("path", "a.txt"));
+            turn.delta("x");
+            delivered.add(turn.awaitToolResult(requestId, Duration.ofSeconds(10)));
+        };
+    }
+
+    private static ProviderMessage assistant(String text) {
+        return new ProviderMessage(ProviderMessage.Role.ASSISTANT, List.of(new TextContent(text)));
+    }
+
+    /** Waits up to five seconds until the fake runtime's connection has ended {@code count} times. */
+    private void awaitDeaths(int count) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (runtime.clientsGone() < count && System.nanoTime() < deadline) {
+            Thread.sleep(5);
+        }
+        assertEquals(count, runtime.clientsGone(), "runtime connections that ended");
+    }
+
+    /** Waits up to {@code seconds} until the runtime saw {@code session.detach} for {@code sessionId}. */
+    private boolean detachedWithin(String sessionId, int seconds) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(seconds);
+        while (runtime.requests("session.detach").stream()
+                .noneMatch(detach -> sessionId.equals(detach.path("sessionId").asText()))
+                && System.nanoTime() < deadline) {
+            Thread.sleep(10);
+        }
+        return runtime.requests("session.detach").stream()
+                .anyMatch(detach -> sessionId.equals(detach.path("sessionId").asText()));
+    }
+
+    /**
+     * Card 583 (review D1): the runtime dies right after it answered the abort,
+     * while the turn was streaming, so no ping is in flight and nothing tells
+     * the provider. The next prompt meets the dead client when it creates its
+     * session; the provider drops that client and creates the session once
+     * more on a new runtime. The stopped turn's settle runs out 5 s after the
+     * abort, and a prompt after that still finds the new runtime.
+     */
+    @Test
+    void aRuntimeThatDiesAtTheAbortWithNoPingInFlightIsReplacedForTheNextPrompt() throws Exception {
+        start("claude-sonnet-5");
+        runtime.onSend(streamsUntilAborted());
+        runtime.onSend(says("back"));
+        runtime.onSend(says("back later"));
+        runtime.abortTail(FakeCopilotRuntime.Turn::die);
+
+        CancelSignal signal = new CancelSignal();
+        List<ProviderEvent> events = new ArrayList<>();
+        long millis = stopAtTheFirstDelta(provider.stream(ask(List.of(user("Write an essay.")), List.of(), signal)),
+                signal, events, "a runtime that dies at the abort, no ping in flight");
+        assertTrue(millis < STOP_BUDGET_MS, "the stop took " + millis + " ms; the budget is " + STOP_BUDGET_MS + " ms");
+        assertEquals(new PStop(PStop.StopReason.ABORTED), events.getLast());
+        assertEquals(0, runtime.requests("ping").size(), "a ping went out, so this is not the case without one");
+        awaitDeaths(1);
+
+        List<ProviderEvent> next = drain(provider.stream(ask(List.of(user("hi again")), List.of(),
+                new CancelSignal())));
+        assertEquals(List.of(new PTextDelta("back"), new PUsage(10, 1, 0, 0),
+                new PStop(PStop.StopReason.END_TURN)), next);
+        assertEquals(2, runtime.requests("connect").size(), "the next prompt runs on a new runtime");
+
+        Thread.sleep(6_000);
+        List<ProviderEvent> later = drain(provider.stream(ask(List.of(user("hi later")), List.of(),
+                new CancelSignal())));
+        assertEquals(List.of(new PTextDelta("back later"), new PUsage(10, 1, 0, 0),
+                new PStop(PStop.StopReason.END_TURN)), later);
+        assertEquals(2, runtime.requests("connect").size(), "the prompt 6 s later started yet another runtime");
+    }
+
+    /**
+     * Card 583 (review D1): one provider serves every chat of a model
+     * ({@code CopilotAccount.shared}). The runtime dies between prompts. Each
+     * chat's next prompt continues its own runtime session, finds it dead,
+     * and is answered on one new runtime, in a fresh session that gets the
+     * chat's history.
+     */
+    @Test
+    void everyChatThatSharesTheProviderIsAnsweredOnTheNewRuntime() throws Exception {
+        start("claude-sonnet-5");
+        runtime.onSend(says("one"));
+        runtime.onSend(turn -> {
+            says("two").accept(turn);
+            FakeCopilotRuntime.sleep(100);
+            turn.die();
+        });
+        runtime.onSend(says("one again"));
+        runtime.onSend(says("two again"));
+        List<ProviderMessage> chatOne = new ArrayList<>(List.of(user("chat one")));
+        List<ProviderMessage> chatTwo = new ArrayList<>(List.of(user("chat two")));
+        drain(provider.stream(ask(chatOne, List.of(), new CancelSignal())));
+        drain(provider.stream(ask(chatTwo, List.of(), new CancelSignal())));
+        awaitDeaths(1);
+
+        chatOne.addAll(List.of(assistant("one"), user("more")));
+        chatTwo.addAll(List.of(assistant("two"), user("more")));
+        List<ProviderEvent> one = drain(provider.stream(ask(chatOne, List.of(), new CancelSignal())));
+        List<ProviderEvent> two = drain(provider.stream(ask(chatTwo, List.of(), new CancelSignal())));
+
+        assertEquals(List.of(new PTextDelta("one again"), new PUsage(10, 1, 0, 0),
+                new PStop(PStop.StopReason.END_TURN)), one);
+        assertEquals(List.of(new PTextDelta("two again"), new PUsage(10, 1, 0, 0),
+                new PStop(PStop.StopReason.END_TURN)), two);
+        assertEquals(2, runtime.requests("connect").size(), "both chats run on one new runtime");
+        List<JsonNode> sends = runtime.requests("session.send");
+        assertTrue(sends.get(sends.size() - 2).path("prompt").asText().contains("chat one"),
+                "the fresh session of chat one did not get its history: " + sends.get(sends.size() - 2));
+    }
+
+    /**
+     * Card 583 (review D1): a chat waits on a turn when the runtime dies, and
+     * another chat's prompt replaces the dead runtime before the waiting chat
+     * pings. The waiting chat asks its own runtime, not the provider's new
+     * one, so its turn ends with an error instead of waiting forever.
+     */
+    @Test
+    void aChatWaitingOnADeadRuntimeEndsEvenWhenAnotherChatAlreadyStartedANewOne() throws Exception {
+        start("claude-sonnet-5");
+        runtime.onSend(turn -> {
+            turn.delta("thinking");
+            FakeCopilotRuntime.sleep(100);
+            turn.die();
+        });
+        runtime.onSend(says("hello"));
+        List<Throwable> failures = new CopyOnWriteArrayList<>();
+        long[] endedAt = new long[1];
+        Thread waiting = Thread.ofVirtual().start(() -> {
+            try {
+                drain(provider.stream(ask(List.of(user("Think.")), List.of(), new CancelSignal())));
+            } catch (Throwable failure) {
+                failures.add(failure);
+            } finally {
+                endedAt[0] = System.nanoTime();
+            }
+        });
+        awaitDeaths(1);
+        long died = System.nanoTime();
+
+        List<ProviderEvent> other = drain(provider.stream(ask(List.of(user("Hello.")), List.of(),
+                new CancelSignal())));
+        assertEquals(List.of(new PTextDelta("hello"), new PUsage(10, 1, 0, 0),
+                new PStop(PStop.StopReason.END_TURN)), other);
+        assertEquals(2, runtime.requests("connect").size(), "the other chat runs on a new runtime");
+
+        boolean ended = waiting.join(Duration.ofSeconds(3));
+        long millis = ended ? TimeUnit.NANOSECONDS.toMillis(endedAt[0] - died) : -1;
+        assertTrue(ended, "the waiting chat still waits more than 3000 ms after its runtime died");
+        System.out.println("card 583 measured: a chat on a dead runtime ended " + millis + " ms after the death");
+        assertEquals(1, failures.size(), "the waiting chat's turn ends with an error");
+        assertTrue(failures.getFirst().getMessage().contains("copilot runtime"), failures.getFirst().getMessage());
+    }
+
+    /**
+     * Card 583 (review D2): the runtime goes idle within the stop's grace (50 ms
+     * after the abort), so the stop settles on the run's thread. The call the
+     * stopped turn parked is answered as an error, and the session takes the
+     * next prompt.
+     */
+    @Test
+    void aStopThatSettlesWithinTheGraceAnswersTheParkedCallAndKeepsTheSession() throws Exception {
+        start("claude-sonnet-5");
+        List<JsonNode> delivered = new CopyOnWriteArrayList<>();
+        runtime.onSend(parksACall(delivered));
+        runtime.onSend(says("fresh"));
+        runtime.abortTail(turn -> FakeCopilotRuntime.sleep(50));
+
+        CancelSignal signal = new CancelSignal();
+        List<ProviderEvent> events = new ArrayList<>();
+        List<ProviderMessage> history = new ArrayList<>(List.of(user("Write an essay.")));
+        long millis = stopAtTheFirstDelta(provider.stream(ask(history, List.of(readFileSpec()), signal)), signal,
+                events, "an idle within the grace and one parked call");
+
+        assertTrue(millis < STOP_BUDGET_MS, "the stop took " + millis + " ms; the budget is " + STOP_BUDGET_MS + " ms");
+        assertEquals(new PStop(PStop.StopReason.ABORTED), events.getLast());
+        awaitCount(delivered::size, 1);
+        assertEquals("error", delivered.getFirst().path("result").path("resultType").asText(), delivered.toString());
+        history.add(user("Something short instead."));
+        List<ProviderEvent> next = drain(provider.stream(ask(history, List.of(readFileSpec()), new CancelSignal())));
+        assertEquals(List.of(new PTextDelta("fresh"), new PUsage(10, 1, 0, 0),
+                new PStop(PStop.StopReason.END_TURN)), next);
+        assertEquals(1, runtime.requests("session.create").size(),
+                "the session of a stop that settled within the grace was not reused");
+    }
+
+    /**
+     * Card 583 (review D2): the runtime never answers the abort. Once the
+     * settle runs out (5 s), the session closes, and the call the stopped
+     * turn parked is answered as an error before it does.
+     */
+    @Test
+    void aStopTheRuntimeNeverSettlesAnswersTheParkedCallWhenTheSessionCloses() throws Exception {
+        start("claude-sonnet-5");
+        runtime.hold("session.abort");
+        List<JsonNode> delivered = new CopyOnWriteArrayList<>();
+        runtime.onSend(parksACall(delivered));
+
+        CancelSignal signal = new CancelSignal();
+        List<ProviderEvent> events = new ArrayList<>();
+        long millis = stopAtTheFirstDelta(provider.stream(ask(List.of(user("Write an essay.")),
+                List.of(readFileSpec()), signal)), signal, events, "a runtime that ignores the abort and one parked call");
+        String stopped = runtime.requests("session.send").getFirst().path("sessionId").asText();
+
+        assertTrue(millis < STOP_BUDGET_MS, "the stop took " + millis + " ms; the budget is " + STOP_BUDGET_MS + " ms");
+        assertEquals(new PStop(PStop.StopReason.ABORTED), events.getLast());
+        awaitCount(delivered::size, 1);
+        assertEquals("error", delivered.getFirst().path("result").path("resultType").asText(), delivered.toString());
+        assertTrue(detachedWithin(stopped, 3), "the session whose abort never settled is still open");
+    }
+
+    /**
+     * Card 583 (review D2): the run's thread is interrupted while the stop
+     * waits out its grace. The wait ends without the idle, the session goes,
+     * and the call the stopped turn parked is answered as an error.
+     */
+    @Test
+    void aStopInterruptedDuringTheGraceAnswersTheParkedCallWhenTheSessionCloses() throws Exception {
+        start("claude-sonnet-5");
+        runtime.hold("session.abort");
+        List<JsonNode> delivered = new CopyOnWriteArrayList<>();
+        runtime.onSend(parksACall(delivered));
+
+        CancelSignal signal = new CancelSignal();
+        List<ProviderEvent> events = new CopyOnWriteArrayList<>();
+        List<Throwable> failures = new CopyOnWriteArrayList<>();
+        // A platform thread: an interrupt must not close the runtime's socket.
+        Thread reader = new Thread(() -> {
+            try {
+                for (ProviderEvent event : provider.stream(ask(List.of(user("Write an essay.")),
+                        List.of(readFileSpec()), signal))) {
+                    events.add(event);
+                    if (event instanceof PTextDelta && !signal.isCancelled()) {
+                        Thread self = Thread.currentThread();
+                        Thread.ofVirtual().start(() -> {
+                            FakeCopilotRuntime.sleep(50);
+                            self.interrupt();
+                        });
+                        signal.cancel();
+                    }
+                }
+            } catch (Throwable failure) {
+                failures.add(failure);
+            }
+        }, "copilot-test-reader");
+        reader.start();
+
+        assertTrue(reader.join(Duration.ofSeconds(1)), "the interrupted stop did not end within one second");
+        assertEquals(List.of(), failures, "a stop is not an error");
+        assertEquals(new PStop(PStop.StopReason.ABORTED), events.getLast());
+        awaitCount(delivered::size, 1);
+        assertEquals("error", delivered.getFirst().path("result").path("resultType").asText(), delivered.toString());
+        assertTrue(detachedWithin(runtime.requests("session.send").getFirst().path("sessionId").asText(), 3),
+                "the session of the interrupted stop is still open");
+    }
+
+    /** Waits up to five seconds until the runtime saw {@code count} requests of {@code method}. */
+    private void awaitRequests(String method, int count) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (runtime.requests(method).size() < count && System.nanoTime() < deadline) {
+            Thread.sleep(5);
+        }
+        assertEquals(count, runtime.requests(method).size(), "requests of " + method);
+    }
+
+    /** One chat's request, read on its own thread so the test can press stop in it. */
+    private final class Chat {
+        final CancelSignal signal = new CancelSignal();
+        final List<ProviderEvent> events = new CopyOnWriteArrayList<>();
+        final List<Throwable> failures = new CopyOnWriteArrayList<>();
+        final Thread thread;
+        volatile long endedAt;
+
+        Chat(List<ProviderMessage> history) {
+            thread = Thread.ofVirtual().start(() -> {
+                try {
+                    provider.stream(ask(history, List.of(readFileSpec()), signal)).forEach(events::add);
+                } catch (Throwable failure) {
+                    failures.add(failure);
+                } finally {
+                    endedAt = System.nanoTime();
+                }
+            });
+        }
+
+        /** Presses stop; returns the milliseconds from the stop to the end, or -1 when it did not end in time. */
+        long stop(Duration giveUp) throws InterruptedException {
+            long pressed = System.nanoTime();
+            signal.cancel();
+            return thread.join(giveUp) ? TimeUnit.NANOSECONDS.toMillis(endedAt - pressed) : -1;
+        }
+    }
+
+    /**
+     * Card 583 (second review F1; the owner's rule that a stop never waits):
+     * chat C's runtime dies, chat A's next prompt starts the new runtime, and
+     * that start gets no answer. A stop in chat C ends C within one second; it
+     * does not wait for A's start, and neither does a stop in A.
+     */
+    @Test
+    void aStopInOneChatDoesNotWaitWhileAnotherChatStartsTheNewRuntime() throws Exception {
+        start("claude-sonnet-5");
+        runtime.onSend(turn -> {
+            turn.delta("thinking");
+            turn.die();
+        });
+        Chat c = new Chat(List.of(user("chat c")));
+        awaitDeaths(1);
+        runtime.hold("connect");
+        Chat a = new Chat(List.of(user("chat a")));
+        awaitRequests("connect", 2);
+
+        long pressed = System.nanoTime();
+        c.signal.cancel();
+        c.thread.join(Duration.ofSeconds(3));
+        long aMillis = a.stop(Duration.ofSeconds(5));
+        boolean cEnded = c.thread.join(Duration.ofSeconds(5));
+        long cMillis = cEnded ? TimeUnit.NANOSECONDS.toMillis(c.endedAt - pressed) : -1;
+        System.out.println("card 583 measured: stop of a chat while another chat starts the runtime: " + cMillis
+                + " ms to the end of the stream; the starting chat's own stop: " + aMillis + " ms");
+
+        assertTrue(cEnded && cMillis < STOP_BUDGET_MS, "the stop of chat C took " + (cEnded ? cMillis : "more than 8000")
+                + " ms while chat A started a new runtime; the budget is " + STOP_BUDGET_MS + " ms");
+        assertEquals(List.of(), c.failures, "a stop is not an error");
+        assertEquals(new PStop(PStop.StopReason.ABORTED), c.events.getLast());
+        assertTrue(aMillis >= 0 && aMillis < STOP_BUDGET_MS, "the stop of chat A, whose runtime start gets no answer,"
+                + " took " + (aMillis < 0 ? "more than 5000" : aMillis) + " ms");
+        assertEquals(new PStop(PStop.StopReason.ABORTED), a.events.getLast());
+    }
+
+    /**
+     * Card 583 (second review F1): chat A starts the runtime and the start
+     * gets no answer; chat B's prompt waits for that start. A stop in chat B
+     * ends B within one second instead of waiting for A's start.
+     */
+    @Test
+    void aStopInAChatWaitingForAnotherChatsRuntimeStartEndsAtOnce() throws Exception {
+        start("claude-sonnet-5");
+        runtime.hold("connect");
+        Chat a = new Chat(List.of(user("chat a")));
+        awaitRequests("connect", 1);
+        Chat b = new Chat(List.of(user("chat b")));
+        Thread.sleep(200);
+
+        long pressed = System.nanoTime();
+        b.signal.cancel();
+        b.thread.join(Duration.ofSeconds(3));
+        long aMillis = a.stop(Duration.ofSeconds(5));
+        boolean bEnded = b.thread.join(Duration.ofSeconds(5));
+        long millis = bEnded ? TimeUnit.NANOSECONDS.toMillis(b.endedAt - pressed) : -1;
+        System.out.println("card 583 measured: stop of a chat waiting for another chat's runtime start: "
+                + millis + " ms to the end of the stream");
+
+        assertTrue(bEnded && millis < STOP_BUDGET_MS, "the stop of chat B took "
+                + (bEnded ? millis : "more than 8000") + " ms while it waited for chat A's runtime start;"
+                + " the budget is " + STOP_BUDGET_MS + " ms");
+        assertEquals(List.of(), b.failures, "a stop is not an error");
+        assertEquals(List.of(new PStop(PStop.StopReason.ABORTED)), b.events);
+        assertTrue(aMillis >= 0 && aMillis < STOP_BUDGET_MS, "the stop of chat A took " + aMillis + " ms");
+        assertEquals(1, runtime.requests("connect").size(), "chat B started a runtime of its own");
+    }
+
+    /**
+     * Card 583 (second review F2): a runtime that refuses {@code session.create}
+     * with a JSON-RPC error is alive. The refusal reaches the caller once, no
+     * new runtime starts, and another chat's session takes its next prompt.
+     */
+    @Test
+    void aRuntimeThatRefusesTheSessionCreateIsKeptAndTheRefusalReachesTheCaller() throws Exception {
+        start("claude-sonnet-5");
+        runtime.onSend(says("one"));
+        List<ProviderMessage> chatOne = new ArrayList<>(List.of(user("chat one")));
+        drain(provider.stream(ask(chatOne, List.of(), new CancelSignal())));
+        runtime.refuseNext("session.create", "the model is not available");
+
+        RuntimeException refused = assertThrows(RuntimeException.class,
+                () -> drain(provider.stream(ask(List.of(user("chat two")), List.of(), new CancelSignal()))));
+
+        assertTrue(refused.getMessage().contains("the model is not available"), refused.getMessage());
+        assertEquals(2, runtime.requests("session.create").size(), "the refused session create was asked again");
+        assertEquals(1, runtime.requests("connect").size(), "a refusal started a new runtime");
+        runtime.onSend(says("one again"));
+        chatOne.addAll(List.of(assistant("one"), user("more")));
+        assertEquals(List.of(new PTextDelta("one again"), new PUsage(10, 1, 0, 0),
+                new PStop(PStop.StopReason.END_TURN)), drain(provider.stream(ask(chatOne, List.of(),
+                new CancelSignal()))));
+        assertEquals(2, runtime.requests("session.create").size(), "the other chat lost its session to the refusal");
+    }
+
+    /**
+     * Card 583 (second review F2): a runtime that refuses {@code session.send}
+     * with a JSON-RPC error is alive. The refusal reaches the caller once, the
+     * message is not sent again, no new runtime starts, and another chat's
+     * session takes its next prompt.
+     */
+    @Test
+    void aRuntimeThatRefusesTheSendIsKeptAndTheRefusalReachesTheCaller() throws Exception {
+        start("claude-sonnet-5");
+        runtime.onSend(says("one"));
+        runtime.onSend(says("two"));
+        List<ProviderMessage> chatOne = new ArrayList<>(List.of(user("chat one")));
+        List<ProviderMessage> chatTwo = new ArrayList<>(List.of(user("chat two")));
+        drain(provider.stream(ask(chatOne, List.of(), new CancelSignal())));
+        drain(provider.stream(ask(chatTwo, List.of(), new CancelSignal())));
+        runtime.refuseNext("session.send", "you are rate limited");
+        chatOne.addAll(List.of(assistant("one"), user("more")));
+
+        RuntimeException refused = assertThrows(RuntimeException.class,
+                () -> drain(provider.stream(ask(chatOne, List.of(), new CancelSignal()))));
+
+        assertTrue(refused.getMessage().contains("you are rate limited"), refused.getMessage());
+        assertEquals(3, runtime.requests("session.send").size(), "the refused message was sent again");
+        assertEquals(1, runtime.requests("connect").size(), "a refusal started a new runtime");
+        runtime.onSend(says("two again"));
+        chatTwo.addAll(List.of(assistant("two"), user("more")));
+        assertEquals(List.of(new PTextDelta("two again"), new PUsage(10, 1, 0, 0),
+                new PStop(PStop.StopReason.END_TURN)), drain(provider.stream(ask(chatTwo, List.of(),
+                new CancelSignal()))));
+        assertEquals(2, runtime.requests("session.create").size(), "the other chat lost its session to the refusal");
+    }
+
+    /**
+     * Card 583 (second review F3): a continued prompt finds its runtime dead,
+     * and the send retry starts a new runtime that gets no answer. A stop
+     * reaches that start and ends the turn as aborted within one second.
+     */
+    @Test
+    void aStopReachesTheRuntimeStartOfTheSendRetry() throws Exception {
+        start("claude-sonnet-5");
+        runtime.onSend(turn -> {
+            says("one").accept(turn);
+            FakeCopilotRuntime.sleep(100);
+            turn.die();
+        });
+        List<ProviderMessage> history = new ArrayList<>(List.of(user("chat one")));
+        drain(provider.stream(ask(history, List.of(readFileSpec()), new CancelSignal())));
+        history.addAll(List.of(assistant("one"), user("more")));
+        awaitDeaths(1);
+        runtime.hold("connect");
+        Chat chat = new Chat(history);
+        awaitRequests("connect", 2);
+
+        long millis = chat.stop(Duration.ofSeconds(4));
+        System.out.println("card 583 measured: stop while the send retry starts a new runtime: " + millis
+                + " ms to the end of the stream");
+
+        assertTrue(millis >= 0 && millis < STOP_BUDGET_MS, "the stop took " + (millis < 0 ? "more than 4000" : millis)
+                + " ms while the send retry started a runtime that gets no answer; the budget is "
+                + STOP_BUDGET_MS + " ms");
+        assertEquals(List.of(), chat.failures, "a stop is not an error");
+        assertEquals(new PStop(PStop.StopReason.ABORTED), chat.events.getLast());
+    }
+
+    /**
+     * Card 583 (second review F4): the dead session streamed a delta and asked
+     * for a tool while the send waited, then the runtime died. The send runs
+     * again in a fresh session, and the retried turn streams only what that
+     * session sends: no stale text, no call the live session never made.
+     */
+    @Test
+    void whatTheDeadSessionSentBeforeTheSendFailedDoesNotReachTheRetriedTurn() throws Exception {
+        start("claude-sonnet-5");
+        runtime.onSend(says("one"));
+        List<ProviderMessage> history = new ArrayList<>(List.of(user("chat one")));
+        drain(provider.stream(ask(history, List.of(readFileSpec()), new CancelSignal())));
+        history.addAll(List.of(assistant("one"), user("more")));
+        runtime.hold("session.send");
+        Chat chat = new Chat(history);
+        awaitRequests("session.send", 2);
+        String dying = runtime.requests("session.send").get(1).path("sessionId").asText();
+        runtime.release("session.send");
+        runtime.onSend(says("fresh"));
+
+        FakeCopilotRuntime.Turn old = runtime.new Turn(dying);
+        old.delta("stale ");
+        old.requestTool("toolu_stale", "read_file", Map.of("path", "stale.txt"));
+        Thread.sleep(300);
+        old.die();
+
+        assertTrue(chat.thread.join(Duration.ofSeconds(10)), "the retried turn did not end");
+        assertEquals(List.of(), chat.failures);
+        assertEquals(List.of(new PTextDelta("fresh"), new PUsage(10, 1, 0, 0),
+                new PStop(PStop.StopReason.END_TURN)), chat.events);
+    }
+
+    /**
+     * Card 583 (second review F5): the provider is closed while a continued
+     * send waits (the credential choice changed). The send fails with the
+     * closed connection, and the turn ends with that error instead of starting
+     * a runtime on the closed provider.
+     */
+    @Test
+    void aProviderClosedDuringAContinuedSendStartsNoNewRuntime() throws Exception {
+        start("claude-sonnet-5");
+        runtime.onSend(says("one"));
+        List<ProviderMessage> history = new ArrayList<>(List.of(user("chat one")));
+        drain(provider.stream(ask(history, List.of(readFileSpec()), new CancelSignal())));
+        history.addAll(List.of(assistant("one"), user("more")));
+        runtime.hold("session.send");
+        Chat chat = new Chat(history);
+        awaitRequests("session.send", 2);
+        runtime.release("session.send");
+        runtime.onSend(says("after close"));
+
+        provider.close();
+
+        assertTrue(chat.thread.join(Duration.ofSeconds(5)), "the turn in flight did not end after close()");
+        assertEquals(1, runtime.requests("connect").size(),
+                "the closed provider started a new runtime for the turn in flight: " + chat.events);
+        assertEquals(1, chat.failures.size(), "the turn in flight ends with an error: " + chat.events);
+    }
+
+    /**
+     * Card 583 (second review F5): the provider is closed while a new chat's
+     * session create waits. The create fails with the closed connection, and
+     * the prompt ends with that error instead of starting a runtime on the
+     * closed provider.
+     */
+    @Test
+    void aProviderClosedDuringASessionCreateStartsNoNewRuntime() throws Exception {
+        start("claude-sonnet-5");
+        runtime.onSend(says("one"));
+        drain(provider.stream(ask(List.of(user("chat one")), List.of(), new CancelSignal())));
+        runtime.hold("session.create");
+        Chat chat = new Chat(List.of(user("chat two")));
+        awaitRequests("session.create", 2);
+        runtime.release("session.create");
+        runtime.onSend(says("after close"));
+
+        provider.close();
+
+        assertTrue(chat.thread.join(Duration.ofSeconds(5)), "the prompt in flight did not end after close()");
+        assertEquals(1, runtime.requests("connect").size(),
+                "the closed provider started a new runtime for the prompt in flight: " + chat.events);
+        assertEquals(1, chat.failures.size(), "the prompt in flight ends with an error: " + chat.events);
+    }
+
     // ---- the model list --------------------------------------------------------
 
     @Test

@@ -783,6 +783,14 @@
 .chat-hit--current {
   outline: 2px solid var(--accent);
 }
+/* Card 586: the place a press in the run view jumped to, marked for two
+   seconds (Chat.tsx, FOCUS_MARK_MS). An outline, like a search hit, so the mark
+   never reflows the column. */
+.chat-focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: var(--radius-card);
+}
 /* Inside a user turn the text IS a plain string, so its occurrences mark too —
    a refinement of the outline, never a second thing to step through. */
 .chat-mark {
@@ -966,7 +974,8 @@
 .msg-status--refused,
 .msg-status--dropped,
 .msg-status--denied,
-.msg-status--expired {
+.msg-status--expired,
+.msg-status--returned {
   border-left-color: var(--error);
 }
 .msg-head {
