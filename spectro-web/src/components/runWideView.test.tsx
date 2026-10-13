@@ -232,9 +232,9 @@ const text = (markup: string): string =>
     .replace(/<[^>]+>/g, " ")
     .replace(/&quot;/g, '"')
     .replace(/&#x27;/g, "'")
-    .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&")
     .replace(/\s+/g, " ");
 
 /** The detail part of the markup: everything after the graph area. */
