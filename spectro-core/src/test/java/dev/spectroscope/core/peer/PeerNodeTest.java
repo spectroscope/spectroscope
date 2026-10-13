@@ -47,7 +47,7 @@ class PeerNodeTest {
     }
 
     /** One hosted session the test drives by hand. */
-    static final class FakeSession implements PeerSession {
+    static class FakeSession implements PeerSession {
         final String id;
         final String cwd;
         volatile String title;
@@ -313,6 +313,55 @@ class PeerNodeTest {
         p.a().send(p.sa().id, p.b().nameOf(p.sb().id), "push the branch", null);
         await(() -> p.sa().statuses().size() == 2, "the expiry");
         assertEquals(PeerStatus.EXPIRED, p.sa().statuses().get(1).status());
+    }
+
+    /**
+     * A session whose run ends while the node places a message: running when
+     * the node decides and when place first looks, idle from the second look
+     * in place on. The flip is keyed on the calling method, not on a clock.
+     */
+    static final class EndingSession extends FakeSession {
+        private final java.util.concurrent.atomic.AtomicInteger placeReads = new java.util.concurrent.atomic.AtomicInteger();
+
+        EndingSession(String id, String cwd, String mode) {
+            super(id, cwd, mode);
+        }
+
+        @Override public boolean running() {
+            String caller = StackWalker.getInstance().walk(frames -> frames
+                    .filter(f -> f.getClassName().equals(PeerNode.class.getName()))
+                    .map(StackWalker.StackFrame::getMethodName).findFirst().orElse(""));
+            if (caller.equals("receive")) {
+                return true;
+            }
+            if (caller.equals("place")) {
+                return placeReads.incrementAndGet() == 1;
+            }
+            return false;
+        }
+
+        @Override public boolean startRun(String prompt) {
+            startedRuns.add(prompt);
+            return true;
+        }
+    }
+
+    /** The 0.15.3 gate: a message that lands while the receiver's run ends starts a run, it is not held. */
+    @Test
+    void aMessageThatArrivesWhileTheRunEndsStartsARunWhenTheSessionIsIdle() throws Exception {
+        Pair p = pair("auto", "auto", Duration.ofMinutes(10));
+        EndingSession ending = new EndingSession("20261011-091000-cccccccc", home.resolve("ForgeDemo").toString(),
+                "auto");
+        p.hostB().sessions.clear();
+        p.hostB().sessions.add(ending);
+        p.b().flush();
+        PeerNode.SendResult sent = p.a().send(p.sa().id, p.b().nameOf(ending.id), "please run the tests", null);
+        assertTrue(sent.sent(), String.valueOf(sent.error()));
+        PeerEvent status = onlyStatus(p.sa());
+        assertEquals(PeerStatus.DELIVERED, status.status(), "statuses " + p.sa().statuses());
+        assertEquals(1, ending.startedRuns.size());
+        assertTrue(ending.startedRuns.getFirst().contains("please run the tests"), ending.startedRuns.getFirst());
+        assertTrue(ending.events.stream().noneMatch(e -> "held".equals(e.kind())), "held: " + ending.events);
     }
 
     @Test
