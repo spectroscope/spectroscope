@@ -64,6 +64,20 @@ public interface MessagingSeat {
     Sent sendInRun(AgentRow row, String text, String summary);
 
     /**
+     * Sends to an agent of the run, as {@code send_message} does.
+     *
+     * @param row      the agent
+     * @param text     the body
+     * @param summary  the preview line
+     * @param recorded true when the caller records the message as sent once it is delivered; the
+     *                 run's stream then keeps the receiver's record of it behind that one
+     * @return what happened
+     */
+    default Sent sendInRun(AgentRow row, String text, String summary, boolean recorded) {
+        return sendInRun(row, text, summary);
+    }
+
+    /**
      * Asks a session for one notice when it is next idle.
      *
      * @param row the session

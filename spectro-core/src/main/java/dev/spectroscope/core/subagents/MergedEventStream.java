@@ -8,7 +8,10 @@ import java.util.Iterator;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * The shared-queue merge: ONE BlockingQueue, many producers
@@ -47,20 +50,66 @@ final class MergedEventStream implements EventStream {
     private volatile boolean ended = false;
 
     /**
+     * In-run peer messages announced before their delivery, by msg id, each
+     * with a latch that opens once the sender's {@code sent} record is in the
+     * queue. The receiver takes a message in on its own thread and its record
+     * comes through its own forwarder, so without the latch its
+     * {@code received} record could be queued before the {@code sent} record
+     * (BackgroundFanOutTest on the 0.15.3 gate).
+     */
+    private final ConcurrentHashMap<String, CountDownLatch> unsent = new ConcurrentHashMap<>();
+
+    /** How many {@code received} records wait for their {@code sent} record now. */
+    private final AtomicInteger held = new AtomicInteger();
+
+    /**
+     * How long a {@code received} record waits for its {@code sent} record.
+     * The sender writes that record right after the delivery: of 164 holds in
+     * 6,000 runs of BackgroundFanOutTest's criterion 6 test on 2026-10-13 the
+     * longest took 0.48 ms. A sender that dies between delivery and record
+     * would hold the receiver's forwarder for good; past this bound the record
+     * is queued anyway and the order defect is logged once per stream.
+     */
+    @Governs(kind = Governs.Kind.FIXED, unit = Governs.Unit.MILLISECONDS)
+    static final long SENT_RECORD_WAIT_MS = 2_000;
+
+    /** {@link #SENT_RECORD_WAIT_MS}, or a shorter bound a test sets. */
+    private final long sentRecordWaitMs;
+
+    /** Set by {@link #releaseHeld}: from then on no record waits. */
+    private volatile boolean released = false;
+
+    /** Whether this stream logged a record that waited out the bound. */
+    private final java.util.concurrent.atomic.AtomicBoolean loggedLate = new java.util.concurrent.atomic.AtomicBoolean();
+
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(MergedEventStream.class);
+
+    /**
      * One instance per merged run, created by SubagentManager.run.
      *
      * @param onCancel invoked by cancel()/close() — the parent signal's cancel,
      *                 so closing the merged stream tears down the whole tree
      */
     MergedEventStream(Runnable onCancel) {
+        this(onCancel, SENT_RECORD_WAIT_MS);
+    }
+
+    /**
+     * @param onCancel         as above
+     * @param sentRecordWaitMs how long a received record waits for its sent record
+     */
+    MergedEventStream(Runnable onCancel, long sentRecordWaitMs) {
         this.onCancel = onCancel;
+        this.sentRecordWaitMs = sentRecordWaitMs;
     }
 
     /**
      * Producer side: the parent pump and the child forwarders put events here.
      * Events arriving after end() are dropped — by the time the parent run
      * ends, every child has already finished (see SubagentManager.run), so
-     * nothing of value can be lost.
+     * nothing of value can be lost. A {@code received} record of a message
+     * announced through {@link #expectSent} waits here until the message's
+     * {@code sent} record is in the queue or the stream ends.
      *
      * @param event the next parent or child event, enqueued in arrival order
      */
@@ -68,12 +117,96 @@ final class MergedEventStream implements EventStream {
         if (ended) {
             return;
         }
+        String received = peerLabel(event, "received");
+        CountDownLatch toWaitFor = received == null ? null : unsent.get(received);
+        if (toWaitFor != null) {
+            awaitSent(toWaitFor, received);
+            unsent.remove(received, toWaitFor);
+            if (ended) {
+                return;
+            }
+        }
         try {
             queue.put(event);
         } catch (InterruptedException interrupted) {
             // The producer virtual thread is being torn down: stop producing.
             Thread.currentThread().interrupt();
+            return;
         }
+        String sent = peerLabel(event, "sent");
+        CountDownLatch opened = sent == null ? null : unsent.get(sent);
+        if (opened != null) {
+            opened.countDown();
+        }
+    }
+
+    /** @return the msg id of a peer record in {@code state}, else null */
+    private static String peerLabel(RunEvent event, String state) {
+        return event instanceof RunEvent.AgentMessage m && "peer".equals(m.role()) && state.equals(m.state())
+                ? m.label() : null;
+    }
+
+    /**
+     * Parks the calling producer until the latch opens or the bound has passed;
+     * a latch, so a virtual thread unmounts.
+     */
+    private void awaitSent(CountDownLatch latch, String msgId) {
+        if (released || latch.getCount() == 0) {
+            return;
+        }
+        held.incrementAndGet();
+        boolean opened = true;
+        try {
+            opened = latch.await(sentRecordWaitMs, java.util.concurrent.TimeUnit.MILLISECONDS);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+        } finally {
+            held.decrementAndGet();
+        }
+        if (!opened && loggedLate.compareAndSet(false, true)) {
+            log.warn("The sent record of in-run message {} did not reach the stream within {} ms; its received"
+                    + " record is written without it. Logged once per run.", msgId, sentRecordWaitMs);
+        }
+    }
+
+    /**
+     * Announces an in-run peer message before it is delivered, by a sender
+     * that records it as {@code sent} once it is delivered: its
+     * {@code received} record then waits in {@link #put} until that record is
+     * in the queue.
+     *
+     * @param msgId the message's id
+     */
+    void expectSent(String msgId) {
+        if (msgId != null && !released) {
+            unsent.putIfAbsent(msgId, new CountDownLatch(1));
+        }
+    }
+
+    /**
+     * Takes an announcement back: the delivery failed, so no record of the message follows.
+     *
+     * @param msgId the message's id
+     */
+    void forgetSent(String msgId) {
+        CountDownLatch latch = msgId == null ? null : unsent.remove(msgId);
+        if (latch != null) {
+            latch.countDown();
+        }
+    }
+
+    /**
+     * Lets every held {@code received} record go into the queue at once, and
+     * every later one without waiting: the run is stopping.
+     */
+    void releaseHeld() {
+        released = true;
+        unsent.values().forEach(CountDownLatch::countDown);
+    }
+
+    /** @return how many received records wait for their sent record now (tests) */
+    int heldForTests() {
+        return held.get();
     }
 
     /**
@@ -85,12 +218,14 @@ final class MergedEventStream implements EventStream {
             return;
         }
         ended = true;
+        releaseHeld(); // a held record is dropped like any after the end
         queue.add(END_OF_STREAM); // add(): unbounded queue, never blocks
     }
 
     /** Runs the injected cancel hook — cancelling the merge cancels the parent signal, which cascades to every child. */
     @Override
     public void cancel() {
+        releaseHeld();
         onCancel.run();
     }
 
