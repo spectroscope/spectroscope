@@ -1,7 +1,8 @@
 // The app header: sidebar toggle, eyebrow and title, back and forward, the
 // mode switch and the ⋮ menu (card 442, card 514). A run stops from the composer's own stop
 // seat. Pure presentation: every piece of state stays in App and arrives as
-// props.
+// props. Card 554: in developer mode the playbook chip stands beside the
+// folder chip, when App hands in the session's pick and the sender of a pick.
 
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
@@ -10,6 +11,9 @@ import { HeaderMenu } from "../panels/headerPanelControls";
 import { ModeSwitch } from "./ModeSwitch";
 import { NavSteps } from "./NavSteps";
 import { WorkspaceChip } from "./WorkspaceChip";
+import { PlaybookChip } from "./PlaybookChip";
+import { useViewMode } from "../state/viewMode";
+import type { PlaybookPick } from "../state/playbookChat";
 import { CodeGraphHeaderStatus } from "../codegraph/CodeGraphHeaderStatus";
 import type { WorkspaceInfo } from "../state/reducer";
 
@@ -47,8 +51,13 @@ export function AppHeader(props: {
   canGoBack: boolean;
   /** Card 514: whether a forward step lands on an entry the app wrote. */
   canGoForward: boolean;
+  /** Card 554: the session's playbook pick (UiState.playbook) and the sender
+   *  of the owner's pick (set_playbook, null for "No playbook"); the chip
+   *  shows in developer mode only. */
+  playbook?: { pick: PlaybookPick | null; onPick: (dir: string | null) => void; onShowComposer?: () => void };
 }) {
   const lang = useLang();
+  const mode = useViewMode();
 
   return (
     <header className="header">
@@ -90,6 +99,16 @@ export function AppHeader(props: {
           workspace={props.workspace}
           onPickFolder={props.onPickFolder}
           canPick={props.canPickFolder === true}
+        />
+      )}
+
+      {/* Card 554: the session's playbook and the play button, developer only. */}
+      {mode === "developer" && props.playbook !== undefined && (
+        <PlaybookChip
+          workspace={props.workspace?.path ?? null}
+          pick={props.playbook.pick}
+          onPick={props.playbook.onPick}
+          onShowComposer={props.playbook.onShowComposer}
         />
       )}
 

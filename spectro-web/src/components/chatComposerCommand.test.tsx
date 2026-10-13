@@ -17,6 +17,8 @@ import { initialState } from "../state/reducer";
 import type { ChatCommandName } from "../state/chatCommands";
 import { drive, type El, type Step } from "../testkit/driveComponent";
 import { __resetSkillList } from "../state/skillList";
+import { __resetCommandList, __setCommandRows } from "../state/commandList";
+import { coreCommandRows } from "../testkit/commandRows";
 
 let sent: string[] = [];
 let ran: ChatCommandName[] = [];
@@ -28,11 +30,14 @@ beforeEach(() => {
   accept = true;
   // The picker asks for the skills on the first slash; nobody answers here.
   vi.stubGlobal("fetch", vi.fn().mockReturnValue(new Promise(() => {})));
+  // Card 554: the composer decides against the command list the server serves.
+  __setCommandRows(coreCommandRows());
 });
 
 afterEach(() => {
   vi.unstubAllGlobals();
   __resetSkillList();
+  __resetCommandList();
 });
 
 const chat = (
@@ -123,7 +128,24 @@ describe("a command typed into the composer", () => {
 
     expect(ran).toEqual([]);
     expect(sent).toEqual([]);
-    expect(field(tree).props.value).toBe("/compact");
+    // Card 554: /help is the first row of the list.
+    expect(field(tree).props.value).toBe("/help");
+  });
+
+  it("never sends a command of the list as text (card 554)", () => {
+    for (const draft of ["/help", "/run-with-playbook add a CSV export", "/playbook list", "/skills"]) {
+      sent = [];
+      drive(chat, [Chat], [type(draft), enter]);
+      expect(sent, draft).toEqual([]);
+    }
+  });
+
+  it("keeps a command the page answers when the host cannot show the answer (card 554)", () => {
+    // This host has no onLocalLine and no Skills view, as the Lab.
+    for (const draft of ["/help", "/playbook list", "/skills"]) {
+      const tree = drive(chat, [Chat], [type(draft), enter]);
+      expect(field(tree).props.value, draft).toBe(draft);
+    }
   });
 
   it("stays in the draft when the frame could not leave", () => {
@@ -133,6 +155,28 @@ describe("a command typed into the composer", () => {
     expect(ran).toEqual(["clear"]);
     expect(sent).toEqual([]);
     expect(field(tree).props.value).toBe("/clear");
+  });
+});
+
+describe("a slash draft before the command list arrived (card 554, criterion 8h)", () => {
+  it("is held in the composer: nothing is sent, nothing runs, the draft stays", () => {
+    __resetCommandList();
+    const playbook = drive(chat, [Chat], [type("/run-with-playbook add a CSV export"), enter]);
+    expect(sent, "never sent to the model as text").toEqual([]);
+    expect(ran).toEqual([]);
+    expect(field(playbook).props.value).toBe("/run-with-playbook add a CSV export");
+
+    const clear = drive(chat, [Chat], [type("/clear"), clickSend]);
+    expect(sent).toEqual([]);
+    expect(ran, "not run either: the list decides what a command is").toEqual([]);
+    expect(field(clear).props.value).toBe("/clear");
+  });
+
+  it("goes once the list is here", () => {
+    __resetCommandList();
+    __setCommandRows(coreCommandRows());
+    drive(chat, [Chat], [type("/clear"), clickSend]);
+    expect(ran).toEqual(["clear"]);
   });
 });
 

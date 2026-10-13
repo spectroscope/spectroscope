@@ -6,6 +6,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.spectroscope.core.CancelInterrupt;
 import dev.spectroscope.core.CancelSignal;
 import dev.spectroscope.core.wire.LlmWireTap;
 import org.springframework.http.MediaType;
@@ -111,9 +112,11 @@ public final class OllamaProvider implements LlmProvider {
         // mechanism. NOTE: Spring's response-level close() drains the remaining
         // body on EVERY transport (StreamUtils.drain), so the iterator closes
         // the raw stream, never the response (see NdjsonIterator).
+        // Card 557: the connect timeout is the only deadline on the chat
+        // client; a connected stream may take as long as the model needs.
         this.http = RestClient.builder()
                 .baseUrl(baseUrl)
-                .requestFactory(new JdkClientHttpRequestFactory())
+                .requestFactory(new JdkClientHttpRequestFactory(ProviderTimeouts.chatClient()))
                 .build();
         this.api = OllamaApi.create(http);
         // BOTH deadlines, and they live in two places. A refused connection comes
@@ -621,9 +624,9 @@ public final class OllamaProvider implements LlmProvider {
         // Reassigned once when a refused think field is sent again (card 447):
         // each request that goes out is its own exchange on the record.
         private LlmWireTap.Exchange wire;
-        /** One end() per exchange, whatever path closes it — the HTTP-error
-         *  path ends inside the callback AND rethrows into the transport
-         *  catch, and a record with two closings would lie twice. */
+        /** One end() per exchange, whatever path closes it: every closing
+         *  goes through endWireOnce, and a record with two closings would
+         *  lie twice. */
         private boolean wireEnded;
         private final Deque<ProviderEvent> pending = new ArrayDeque<>();
         // Some models inline their reasoning as <think>…</think> in message.content
@@ -650,34 +653,59 @@ public final class OllamaProvider implements LlmProvider {
                 throw new IllegalStateException("Ollama cannot read documents (PDF) — "
                         + "switch to the anthropic or openai provider for view_file.");
             }
-            ChatRequest body = toChatRequest(request);
+            // Live check 0.15.3, fix 2: building the body can ask /api/show
+            // whether the model thinks (card 447), once per provider, on the
+            // capability client with its two second deadlines. That was the
+            // first Stop of a fresh session waiting 1.8 s, so a stop reaches it.
+            ChatRequest body = CancelInterrupt.call(signal, () -> toChatRequest(request));
             // Ollama silently DROPS the images field on text-only models —
             // fail fast instead of letting the model hallucinate an answer.
             boolean hasImages = request.messages().stream()
                     .anyMatch(message -> message.content().stream()
                             .anyMatch(ImageContent.class::isInstance));
-            if (hasImages) {
-                assertVisionModel();
+            if (hasImages && !stopped()) {
+                // Card 557: the vision question waits on /api/show, on a
+                // client without a deadline, so a stop has to reach it. A run
+                // already stopped asks nothing.
+                CancelInterrupt.call(signal, () -> {
+                    assertVisionModel();
+                    return null;
+                });
             }
             OpenResponse open;
-            try {
-                open = post(request, body, hasImages);
-            } catch (ThinkingRefused refused) {
-                // Card 447: ollama refused the think field, so this model
-                // cannot think. The refusal came before any byte of an answer,
-                // so nothing has streamed and the same request goes out once
-                // more without the field. The answer is kept: later requests
-                // omit the field from the start. A second refusal carries no
-                // think field and ends in the terminal message.
-                thinking = Thinking.CANNOT;
-                open = post(request, body.withoutThink(), hasImages);
+            if (stopped()) {
+                // Card 557: a stop pressed before this request dials nothing.
+                open = OpenResponse.STOPPED;
+            } else {
+                try {
+                    open = post(request, body, hasImages);
+                } catch (ThinkingRefused refused) {
+                    // Card 447: ollama refused the think field, so this model
+                    // cannot think. The refusal came before any byte of an answer,
+                    // so nothing has streamed and the same request goes out once
+                    // more without the field. The answer is kept: later requests
+                    // omit the field from the start. A second refusal carries no
+                    // think field and ends in the terminal message.
+                    thinking = Thinking.CANNOT;
+                    open = stopped() ? OpenResponse.STOPPED : post(request, body.withoutThink(), hasImages);
+                }
             }
             this.httpStatus = open.status();
             this.lines = open.reader();
             this.closeResponse = open.close();
+            if (open == OpenResponse.STOPPED) {
+                pending.add(new PStop(PStop.StopReason.ABORTED));
+                finished = true;
+                return;
+            }
             if (signal != null) {
                 signal.onCancel(this.closeResponse::run);
             }
+        }
+
+        /** @return true once the run's stop was pressed */
+        private boolean stopped() {
+            return signal != null && signal.isCancelled();
         }
 
         /**
@@ -687,7 +715,7 @@ public final class OllamaProvider implements LlmProvider {
          * @param request   the neutral request, for its tap
          * @param body      the wire body to post
          * @param hasImages whether the request carries image content
-         * @return the open response
+         * @return the open response, or {@link OpenResponse#STOPPED} when a stop ended the wait
          */
         private OpenResponse post(ProviderRequest request, ChatRequest body, boolean hasImages) {
             // The body is serialized HERE and posted as that exact string; the
@@ -702,21 +730,24 @@ public final class OllamaProvider implements LlmProvider {
             this.wireEnded = false;
             // exchange(..., false): WE own the response lifecycle — required for
             // streaming reads; every terminal path below calls closeResponse.
-            try {
-                return http.post()
+            // Card 557: until the headers arrive only an interrupt ends the
+            // wait (Spring's JDK request factory turns it into a cancel of the
+            // exchange, which also aborts a connect in progress), so the post
+            // runs inside a CancelInterrupt scope. The scope closes, and clears
+            // its interrupt, before anything is written to the wire record.
+            OpenResponse open;
+            try (CancelInterrupt stop = CancelInterrupt.open(signal)) {
+                open = http.post()
                     .uri("/api/chat")
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(bodyJson)
                     .exchange((clientRequest, clientResponse) -> {
+                        int status = clientResponse.getStatusCode().value();
                         if (clientResponse.getStatusCode().isError()) {
                             String detail = new String(clientResponse.getBody().readAllBytes(),
                                     StandardCharsets.UTF_8);
                             clientResponse.close();
-                            endWireOnce(new LlmWireTap.WireOutcome(
-                                    clientResponse.getStatusCode().value(), "bytes",
-                                    detail, false, null, System.currentTimeMillis()));
-                            throw classifyHttpFailure(clientResponse.getStatusCode().value(),
-                                    detail, hasImages, carriedThink);
+                            return new OpenResponse(status, null, () -> { }, detail);
                         }
                         // The close handle is the RAW body stream, NEVER the Spring
                         // response: Spring's close() DRAINS the remaining body first,
@@ -725,21 +756,32 @@ public final class OllamaProvider implements LlmProvider {
                         // never sees a disconnect (card 78). The raw JDK stream close
                         // cancels the subscription and tears the connection down.
                         InputStream bodyStream = clientResponse.getBody();
-                        return new OpenResponse(clientResponse.getStatusCode().value(),
+                        return new OpenResponse(status,
                                 new BufferedReader(new InputStreamReader(bodyStream, StandardCharsets.UTF_8)),
-                                () -> closeBody(bodyStream));
+                                () -> closeBody(bodyStream), null);
                     }, false);
             } catch (RuntimeException failure) {
+                if (stopped()) {
+                    // The stop ended the wait before any answer: aborted, not failed.
+                    endWireOnce(new LlmWireTap.WireOutcome(null, "bytes", null, true, null,
+                            System.currentTimeMillis()));
+                    return OpenResponse.STOPPED;
+                }
                 // Transport failure BEFORE any byte was answered (connect refused,
-                // DNS, TLS — Spring throws before the callback runs), and the
-                // HTTP-error rethrow above. end() is idempotent, so the pair
-                // closes exactly once; the null status is the WireOutcome
-                // contract's "the connection never answered" arm — without this
-                // catch, every retry attempt left a dangling llm_request line.
+                // DNS, TLS: Spring throws before the callback runs). end() is
+                // idempotent; the null status is the WireOutcome contract's "the
+                // connection never answered" arm. Without this, every retry
+                // attempt left a dangling llm_request line.
                 endWireOnce(new LlmWireTap.WireOutcome(null, "bytes", null, false,
                         failure.toString(), System.currentTimeMillis()));
                 throw failure;
             }
+            if (open.refusal() != null) {
+                endWireOnce(new LlmWireTap.WireOutcome(open.status(), "bytes",
+                        open.refusal(), false, null, System.currentTimeMillis()));
+                throw classifyHttpFailure(open.status(), open.refusal(), hasImages, carriedThink);
+            }
+            return open;
         }
 
         /** Reads NDJSON lines until at least one neutral event is pending (or the stream ends). */
@@ -883,10 +925,16 @@ public final class OllamaProvider implements LlmProvider {
     /**
      * Reader plus close hook for a response we keep open past the exchange call.
      *
-     * @param reader line reader over the still-open response body
-     * @param close  releases the underlying HTTP response
+     * @param status  the HTTP status the server actually answered
+     * @param reader  line reader over the still-open response body, null for a refusal
+     * @param close   releases the underlying HTTP response
+     * @param refusal the error body of an HTTP error status, null when the server accepted
      */
-    private record OpenResponse(int status, BufferedReader reader, Runnable close) {}
+    private record OpenResponse(int status, BufferedReader reader, Runnable close, String refusal) {
+
+        /** No answer: a stop ended the wait, or came before the request (card 557). */
+        static final OpenResponse STOPPED = new OpenResponse(0, null, () -> { }, null);
+    }
 
     /** Closes the raw body stream, quietly — closing an already-broken stream is
      *  fine; the point is the prompt subscription cancel + connection teardown. */
@@ -962,6 +1010,10 @@ public final class OllamaProvider implements LlmProvider {
             return wanted;
         }
         if (thinking == Thinking.UNASKED) {
+            if (request.signal() != null && request.signal().isCancelled()) {
+                // A stopped request is not sent, so there is nothing to ask for.
+                return wanted;
+            }
             thinking = probeThinking();
         }
         return thinking == Thinking.CANNOT ? null : wanted;

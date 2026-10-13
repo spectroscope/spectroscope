@@ -256,6 +256,24 @@
   white-space: nowrap;
   border: 0;
 }
+/* Card 554, criterion 8f (fix round 3): a prompt a playbook step sent is the
+   playbook's, not the owner's. It keeps the owner's side but drops the owner's
+   fill: a hairline frame with an accent line on its left, and its "Playbook"
+   label is shown to the eye, not only read out. */
+.user-turn.user-turn--playbook {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--accent);
+}
+.user-turn.user-turn--playbook .eyebrow {
+  position: static;
+  width: auto;
+  height: auto;
+  margin: 0 0 var(--sp-1);
+  overflow: visible;
+  clip-path: none;
+  white-space: normal;
+}
 .user-text {
   white-space: pre-wrap;
   overflow-wrap: break-word;
@@ -687,11 +705,13 @@
   background: var(--accent);
 }
 
-/* Info lines (agent_spawn, compaction). */
+/* Info lines (agent_spawn, compaction). Card 554: a line the page writes
+   itself, the answer of /help, breaks where its text does. */
 .info-line {
   margin: 0 0 var(--sp-2);
   font-size: var(--fs-13);
   color: var(--text-dim);
+  white-space: pre-line;
 }
 .info-line::before {
   content: "\25C6\00a0\00a0"; /* diamond deco */

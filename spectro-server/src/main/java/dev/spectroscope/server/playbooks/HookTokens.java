@@ -13,7 +13,7 @@ import java.util.List;
 /**
  * The credential shapes of the wire redaction, asked of every text in a hooks file (card 538): each
  * string value, the command and the matcher among them, and each field name. Export, ZIP import and
- * the install preview refuse a hook that carries one. A hit names the line, the field and the rule,
+ * the contents list refuse a hook that carries one. A hit names the line, the field and the rule,
  * never the value. Only the shapes the redaction knows are found; a password after a flag or in a
  * {@code key=value} pair is not one of them.
  */

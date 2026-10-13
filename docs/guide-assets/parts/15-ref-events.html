@@ -40,7 +40,8 @@ rule. The format is binding and shared byte-for-byte with the TypeScript edition
 <tr><td><code>parentId</code></td><td>string?</td><td>only on child runs — the structural marker of a subagent</td></tr>
 <tr><td><code>prompt</code></td><td>string</td><td>the user/task text</td></tr>
 <tr><td><code>provider</code></td><td>string? <em>additive</em></td><td>kept live-accurate across mid-session switches</td></tr>
-<tr><td><code>attachments</code></td><td>Attachment[]? <em>additive</em></td><td>image references: <code>{kind, mediaType, blobPath, sha256}</code> — bytes never enter the event</td></tr></table></div></div>
+<tr><td><code>attachments</code></td><td>Attachment[]? <em>additive</em></td><td>image references: <code>{kind, mediaType, blobPath, sha256}</code> — bytes never enter the event</td></tr>
+<tr><td><code>origin</code></td><td>string? <em>additive · card 554</em></td><td><code>"playbook"</code> on the turn a playbook step sends into the chat; absent on every prompt a person typed</td></tr></table></div></div>
 
 <div class="ref"><div class="ref-head"><code class="name">turn_start</code><span class="meta">since stage 3</span></div><div class="ref-body">
 <p><code>agentId</code>, <code>turn</code> (1-based; the loop caps at 15). On resume a turn
@@ -86,6 +87,20 @@ compaction replaces the <em>in-memory</em> history — the file is never rewritt
 <p><code>agentId</code>, <code>removedMessages</code>. Written when the operator types
 <code>/clear</code> in the web chat. Nothing before it is removed from the file; a resume rebuilds
 the provider history only from the events after the main agent's last marker.</p></div></div>
+
+<div class="ref"><div class="ref-head"><code class="name">playbook_progress</code><span class="meta">additive · card 554</span></div><div class="ref-body">
+<p><code>agentId</code> (<code>"playbook"</code>), <code>runId</code>, <code>phase</code>. A playbook run
+tells the chat of its session three things. Phase <code>start</code> carries <code>playbook</code> (the name)
+and <code>task</code> (what the run was asked, absent without one); phase <code>step</code> carries
+<code>node</code>, <code>name</code>, <code>provider</code> and <code>model</code>; phase <code>end</code>
+carries <code>stopReason</code>, <code>result</code> and <code>detail</code>. The full record of the run
+stays in its sidecar.</p></div></div>
+
+<div class="ref"><div class="ref-head"><code class="name">playbook_picked</code><span class="meta">additive · card 554</span></div><div class="ref-body">
+<p><code>dir</code>, <code>name</code>, <code>none</code>. The playbook the session picked, in the header dropdown, with
+<code>/playbook use</code> or by starting a run. A wake and a resume read the last one back; a line
+without <code>dir</code> withdraws the pick, and a line with <code>none: true</code> is the explicit
+"No playbook", which no pinned folder stands in for.</p></div></div>
 
 <div class="ref"><div class="ref-head"><code class="name">voice_input</code><span class="meta">additive · bonus 2</span></div><div class="ref-body">
 <p><code>agentId</code>, <code>durationMs</code>, <code>model</code> (e.g. <code>"ggml-small"</code>).

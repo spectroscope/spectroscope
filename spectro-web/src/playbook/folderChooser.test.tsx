@@ -55,8 +55,7 @@ let otherAnswer: (url: string, init?: RequestInit) => Response = () => answer(40
 
 const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 
-const pane = (): string =>
-  renderToStaticMarkup(<PlaybookPane workspace="/ws" sessionId={null} onStartPlaybook={() => false} />);
+const pane = (): string => renderToStaticMarkup(<PlaybookPane workspace="/ws" sessionId={null} />);
 
 const wizard = (): string => renderToStaticMarkup(<SpectrolyzrPage />);
 

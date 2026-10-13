@@ -4,10 +4,11 @@
 // keyboard shortcuts, spectro doctor and Stop left it. The icons it may carry come from one table in AppHeader, so
 // an icon added outside the table turns this red.
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { AppHeader, HEADER_ICONS } from "./AppHeader";
 import { read } from "../testkit/source";
+import { setViewMode } from "../state/viewMode";
 
 function header(over: Partial<Parameters<typeof AppHeader>[0]> = {}): string {
   return renderToStaticMarkup(
@@ -80,5 +81,44 @@ describe("the header carries the icons of one table and no others", () => {
 
   it("keeps the learn and light switch", () => {
     expect(header()).toContain('role="radiogroup"');
+  });
+});
+
+describe("the playbook chip in developer mode (card 554, criterion 4)", () => {
+  afterEach(() => {
+    setViewMode("learn");
+  });
+
+  const playbook = { pick: { dir: "/pb/spectro", name: "spectro", found: true }, onPick: () => {} };
+  const workspace = {
+    sessionId: "s1",
+    path: "/ws/app",
+    configured: true,
+    resolved: true,
+    mode: "set" as const,
+  };
+
+  it("stands beside the folder chip, and the header keeps the icons of its table", () => {
+    setViewMode("developer");
+    const html = header({ playbook, workspace, onPickFolder: () => {} });
+    const folder = html.indexOf('class="wsg-anchor ws-chip-anchor"');
+    const chip = html.indexOf('class="pb-chip"');
+    expect(folder, "the folder chip").toBeGreaterThan(-1);
+    expect(chip, "the playbook chip").toBeGreaterThan(folder);
+    expect(chip).toBeLessThan(html.indexOf('role="radiogroup"'));
+    expect([...html.matchAll(/data-header-icon="([^"]+)"/g)].map((m) => m[1])).toEqual([...HEADER_ICONS]);
+    expect(count(html, 'class="icon-button')).toBe(HEADER_ICONS.length);
+  });
+
+  it("is not drawn in learn or light", () => {
+    for (const mode of ["learn", "light"] as const) {
+      setViewMode(mode);
+      expect(header({ playbook, workspace, onPickFolder: () => {} })).not.toContain("pb-chip");
+    }
+  });
+
+  it("is not drawn when the host hands in no playbook", () => {
+    setViewMode("developer");
+    expect(header({ workspace, onPickFolder: () => {} })).not.toContain("pb-chip");
   });
 });

@@ -67,7 +67,9 @@ import java.util.List;
     @JsonSubTypes.Type(value = RunEvent.SettingsIgnored.class,    name = "settings_ignored"), // additive (card 285)
     @JsonSubTypes.Type(value = RunEvent.LaunchOutcome.class,      name = "launch_outcome"),   // additive (card 337)
     @JsonSubTypes.Type(value = RunEvent.SteeringMessage.class, name = "steering_message"), // additive (card 380)
-    @JsonSubTypes.Type(value = RunEvent.ContextCleared.class,  name = "context_cleared")  // additive (card 471)
+    @JsonSubTypes.Type(value = RunEvent.ContextCleared.class,  name = "context_cleared"),  // additive (card 471)
+    @JsonSubTypes.Type(value = RunEvent.PlaybookProgress.class, name = "playbook_progress"), // additive (card 554)
+    @JsonSubTypes.Type(value = RunEvent.PlaybookPicked.class,   name = "playbook_picked")    // additive (card 554)
 })
 public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart, RunEvent.TurnStart,
         RunEvent.TextDelta, RunEvent.ThinkingDelta, RunEvent.ToolCall, RunEvent.PermissionRequest,
@@ -79,7 +81,8 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
         RunEvent.NoProgress, RunEvent.ProgressIntervention,
         RunEvent.Continuation, RunEvent.GoalCheck,
         RunEvent.SettingsIgnored, RunEvent.LaunchOutcome,
-        RunEvent.SteeringMessage, RunEvent.ContextCleared {
+        RunEvent.SteeringMessage, RunEvent.ContextCleared, RunEvent.PlaybookProgress,
+        RunEvent.PlaybookPicked {
 
     /** Epoch millis of the moment the event was emitted. */
     long ts();
@@ -123,6 +126,10 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
      *                    ({@code CompactionThreshold.Source.wireName()}),
      *                    additive (card 521); null (omitted) on a line from
      *                    before the field and on a producer that states none
+     * @param origin      who sent the prompt when it was not the person at the
+     *                    composer, additive (card 554): {@link #ORIGIN_PLAYBOOK}
+     *                    on the turn a playbook step sends into the chat; null
+     *                    (omitted) on every prompt a person typed
      * @param ts          epoch millis of emission
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -137,7 +144,11 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
                     List<String> children,            // additive (card 473)
                     Integer contextWindow,            // additive (card 521)
                     String windowSource,              // additive (card 521)
+                    String origin,                    // additive (card 554)
                     long ts) implements RunEvent {
+
+        /** The origin of a prompt a playbook step sent into the chat (card 554). */
+        public static final String ORIGIN_PLAYBOOK = "playbook";
 
         /** Defensive copy of the child list; null stays null (no reference).
          *
@@ -155,10 +166,50 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
          * @param children    the child session ids; null on a line without the reference
          * @param contextWindow the window the run derived against; null when none
          * @param windowSource the wire name of the fact behind it; null when not stated
+         * @param origin      who sent the prompt; null when a person typed it
          * @param ts          epoch millis of emission */
         public RunStart {
             children = children == null ? null : List.copyOf(children);
             contextWindow = contextWindow == null || contextWindow <= 0 ? null : contextWindow;
+        }
+
+        /** Pre-card-554 arity: no origin; Jackson keeps using the canonical.
+         *
+         * @param runId       unique id of the run
+         * @param agentId     the agent running it
+         * @param parentId    the spawning agent's id; null on the main agent
+         * @param prompt      the user message that started the run
+         * @param provider    label of the LLM backend serving the run
+         * @param model       the model id serving the run; null when unknown
+         * @param trigger     what woke a triggered node's run; null when none
+         * @param attachments images riding along with the prompt; null when none
+         * @param workspace   the folder this run worked in; null when none
+         * @param llmWire     the llm wire's file name; null when not named
+         * @param browserWire the browser wire's file name; null when not named
+         * @param children    the child session ids; null on a line without the reference
+         * @param contextWindow the window the run derived against; null when none
+         * @param windowSource the wire name of the fact behind it; null when not stated
+         * @param ts          epoch millis of emission */
+        public RunStart(String runId, String agentId, String parentId, String prompt,
+                        String provider, String model, String trigger,
+                        List<Attachment> attachments, String workspace,
+                        String llmWire, String browserWire, List<String> children,
+                        Integer contextWindow, String windowSource, long ts) {
+            this(runId, agentId, parentId, prompt, provider, model, trigger, attachments,
+                    workspace, llmWire, browserWire, children, contextWindow, windowSource, null, ts);
+        }
+
+        /**
+         * This line marked as sent by someone other than the person at the
+         * composer (card 554); every other field, the moment included, is kept.
+         *
+         * @param origin {@link #ORIGIN_PLAYBOOK}, or null for a typed prompt
+         * @return the copy that names the origin
+         */
+        public RunStart withOrigin(String origin) {
+            return new RunStart(runId, agentId, parentId, prompt, provider, model, trigger,
+                    attachments, workspace, llmWire, browserWire, children,
+                    contextWindow, windowSource, origin, ts);
         }
 
         /** Pre-card-521 arity: no window; Jackson keeps using the canonical.
@@ -195,7 +246,7 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
         public RunStart withWindow(int window, String source) {
             return new RunStart(runId, agentId, parentId, prompt, provider, model, trigger,
                     attachments, workspace, llmWire, browserWire, children,
-                    window > 0 ? window : null, source, ts);
+                    window > 0 ? window : null, source, origin, ts);
         }
 
 
@@ -230,7 +281,7 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
         public RunStart withWires(String llmWire, String browserWire, List<String> children) {
             return new RunStart(runId, agentId, parentId, prompt, provider, model, trigger,
                     attachments, workspace, llmWire, browserWire,
-                    children == null ? List.of() : children, contextWindow, windowSource, ts);
+                    children == null ? List.of() : children, contextWindow, windowSource, origin, ts);
         }
 
         /** Pre-card-284 arity — no workspace; Jackson keeps using the canonical.
@@ -1283,6 +1334,140 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
      */
     record SteeringMessage(String agentId, String text, boolean taken, int turn,
                            long ts) implements RunEvent {}
+
+    /**
+     * Card 554, criterion 8f: one line of a playbook run for the chat of the
+     * session it runs in. A run tells the chat three things: that it started
+     * (which playbook, on which task), that a step starts (its name and the
+     * model it runs on), and how it ended. The full record of the run stays in
+     * its sidecar ({@code <session>.playbook.jsonl}); this line is what a
+     * person reads in the conversation, and it is written to the session file
+     * so a replay shows it where it happened.
+     *
+     * <p>{@code phase} decides which fields are set: {@link #START} carries
+     * {@code playbook} and {@code task} (null when the run was started without
+     * one); {@link #STEP} carries {@code node}, {@code name}, {@code provider}
+     * and {@code model}; {@link #END} carries {@code stopReason}, {@code result}
+     * and {@code detail}. Every other field is null and left off the wire.</p>
+     *
+     * @param agentId    the playbook's agent id ({@code "playbook"}), as on its plan
+     * @param runId      the playbook run, the id its sidecar lines carry
+     * @param phase      {@link #START}, {@link #STEP} or {@link #END}
+     * @param playbook   the playbook's name, on start
+     * @param task       what the run was asked, on start; null when none
+     * @param node       the step's id, on a step
+     * @param name       the step's name, on a step
+     * @param provider   the provider the step runs on, on a step
+     * @param model      the model the step runs on, on a step
+     * @param stopReason how the run stopped, on end ({@code RunStop})
+     * @param result     the end's result when the run reached one, on end
+     * @param detail     what a person reads about the stop, on end; null when none
+     * @param ts         epoch millis of emission
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    record PlaybookProgress(String agentId, String runId, String phase, String playbook, String task,
+                            String node, String name, String provider, String model,
+                            String stopReason, String result, String detail, long ts) implements RunEvent {
+
+        /** The phase of the line that opens a run. */
+        public static final String START = "start";
+        /** The phase of the line that opens a step. */
+        public static final String STEP = "step";
+        /** The phase of the line that closes a run. */
+        public static final String END = "end";
+
+        /**
+         * @param agentId  the playbook's agent id
+         * @param runId    the playbook run
+         * @param playbook the playbook's name
+         * @param task     what the run was asked, or null
+         * @param ts       epoch millis of emission
+         * @return the line that opens the run
+         */
+        public static PlaybookProgress started(String agentId, String runId, String playbook, String task, long ts) {
+            return new PlaybookProgress(agentId, runId, START, playbook, task, null, null, null, null,
+                    null, null, null, ts);
+        }
+
+        /**
+         * @param agentId  the playbook's agent id
+         * @param runId    the playbook run
+         * @param node     the step's id
+         * @param name     the step's name
+         * @param provider the provider it runs on
+         * @param model    the model it runs on
+         * @param ts       epoch millis of emission
+         * @return the line that opens a step
+         */
+        public static PlaybookProgress step(String agentId, String runId, String node, String name,
+                                            String provider, String model, long ts) {
+            return new PlaybookProgress(agentId, runId, STEP, null, null, node, name, provider, model,
+                    null, null, null, ts);
+        }
+
+        /**
+         * @param agentId    the playbook's agent id
+         * @param runId      the playbook run
+         * @param stopReason how the run stopped
+         * @param result     the end's result, or null
+         * @param detail     what a person reads about the stop, or null
+         * @param ts         epoch millis of emission
+         * @return the line that closes the run
+         */
+        public static PlaybookProgress ended(String agentId, String runId, String stopReason, String result,
+                                             String detail, long ts) {
+            return new PlaybookProgress(agentId, runId, END, null, null, null, null, null, null,
+                    stopReason, result, detail, ts);
+        }
+    }
+
+    /**
+     * Card 554, criterion 8e: the playbook the owner picked for this session,
+     * in the header dropdown, with {@code /playbook use}, or by starting a
+     * run. The pick is a fact of the session: a wake and a resume read the
+     * last line back, and the session list shows it before a wake. A pick the
+     * owner withdrew is a line without {@code dir}.
+     *
+     * <p>The suggestion the dropdown shows for a workspace with a pinned
+     * playbook is not a pick and is never written.</p>
+     *
+     * <p>Integrator decision b: "No playbook" in the dropdown is a pick of
+     * its own, a line with {@code none: true} and no folder. A session that
+     * picked none runs no playbook and does not fall back to the folder
+     * pinned for its workspace; a withdrawn pick does.</p>
+     *
+     * @param dir  the picked playbook folder as a real path; null when the pick was withdrawn or is none
+     * @param name the playbook's name at the moment of the pick, for a reader of the file; null when unknown
+     * @param none true for the explicit "No playbook" pick; null (left off the line) otherwise
+     * @param ts   epoch millis of the pick
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    record PlaybookPicked(String dir, String name, Boolean none, long ts) implements RunEvent {
+
+        /**
+         * A pick of a folder, or a withdrawn pick when {@code dir} is null.
+         *
+         * @param dir  the picked folder, or null
+         * @param name the playbook's name, or null
+         * @param ts   epoch millis of the pick
+         */
+        public PlaybookPicked(String dir, String name, long ts) {
+            this(dir, name, null, ts);
+        }
+
+        /**
+         * @param ts epoch millis of the pick
+         * @return the explicit "No playbook" pick
+         */
+        public static PlaybookPicked none(long ts) {
+            return new PlaybookPicked(null, null, Boolean.TRUE, ts);
+        }
+
+        /** @return true for the explicit "No playbook" pick */
+        public boolean explicitNone() {
+            return Boolean.TRUE.equals(none) && (dir == null || dir.isBlank());
+        }
+    }
 
     /** Present from day one so the wire format never changes later.
      *  @param kind      the attachment kind — {@code "image"} today

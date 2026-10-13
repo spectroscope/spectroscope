@@ -23,7 +23,10 @@ export interface SelectionPanelProps {
   doc: PlaybookDoc;
   selection: Selection;
   choices: EditorViewWire["choices"];
-  skills: readonly { name: string }[];
+  /** The skill names the playbook folder's contents list holds (card 558). */
+  folderSkills: readonly string[];
+  /** The server's resolution of the draft's steps, which says per named skill whether the folder holds it. */
+  steps: EditorViewWire["loaded"]["steps"];
   /** The reason key of the last refused command, or null. */
   refused: string | null;
   dispatch: (cmd: Command) => void;
@@ -74,7 +77,8 @@ function StepFields({
   doc,
   node,
   choices,
-  skills,
+  folderSkills,
+  steps,
   dispatch,
   lang,
 }: SelectionPanelProps & { node: DocStep; lang: Lang }) {
@@ -118,10 +122,14 @@ function StepFields({
       )}
       <Group field="skills">
         <MultiCheck
-          options={skillOptions(skills, node.skills).map((s) => ({
+          options={skillOptions(
+            folderSkills,
+            node.skills,
+            steps.find((r) => r.id === node.id)?.skills ?? [],
+          ).map((s) => ({
             value: s.name,
             label: s.name,
-            note: s.installed ? undefined : t(lang, "pb.notInstalled"),
+            note: t(lang, s.inPlaybook ? "pb.run.skillPlaybook" : "pb.run.skillMissing"),
           }))}
           selected={node.skills}
           onChange={(next) => edit({ skills: next })}

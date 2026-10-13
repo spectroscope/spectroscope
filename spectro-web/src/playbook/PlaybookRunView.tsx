@@ -15,7 +15,7 @@ import { useLang } from "../state/lang";
 import { fetchRunGraph, fetchRuns, type PlaybookRunRow } from "../state/playbookRuns";
 import { StateGraphView } from "../stategraph/StateGraphView";
 import { DEFAULT_VIEW, type StateGraphViewState } from "../stategraph/viewState";
-import { runStatus } from "./runStatus";
+import { runStatus, runTask } from "./runStatus";
 
 /** How often the view asks while the run is going, in milliseconds. */
 const POLL_MS = 1000;
@@ -61,6 +61,7 @@ export function PlaybookRunView({ sessionId }: { sessionId: string }) {
   if (row === null) return null;
 
   const status = runStatus(lang, row);
+  const task = runTask(lang, row);
 
   return (
     <section className="pb-section pb-run-view" data-run={row.run}>
@@ -72,6 +73,7 @@ export function PlaybookRunView({ sessionId }: { sessionId: string }) {
       >
         {status.text}
       </p>
+      {task !== null && <p className="pb-run-task">{task}</p>}
       {graph !== "" && (
         <div className="pb-run-graph">
           <StateGraphView

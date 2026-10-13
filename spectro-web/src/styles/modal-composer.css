@@ -258,6 +258,25 @@
   white-space: nowrap;
 }
 
+/* Card 554: another spelling of the command, beside its name, quieter. */
+.slash-alias {
+  flex: none;
+  color: var(--text-dim);
+  font-size: var(--fs-12);
+}
+
+/* Card 554: a group's name above its first command, when more than one group is on offer. */
+.slash-group {
+  padding: var(--sp-2) var(--sp-2) 2px;
+  color: var(--text-dim);
+  font-size: var(--fs-11);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.slash-group:first-child {
+  padding-top: 0;
+}
+
 .slash-hint {
   margin: 0;
 }

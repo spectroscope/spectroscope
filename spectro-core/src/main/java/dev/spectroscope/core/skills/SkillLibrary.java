@@ -141,6 +141,22 @@ public final class SkillLibrary {
         return new SkillLibrary(byName);
     }
 
+    /**
+     * Card 558: a library over skills that already carry the names the model
+     * reads, for a session's catalogue ({@link SessionCatalogue}). Of two
+     * skills with one name the first stays; the catalogue never hands in two.
+     *
+     * @param skills the skills, named
+     * @return the library
+     */
+    public static SkillLibrary of(List<Skill> skills) {
+        Map<String, Skill> byName = new LinkedHashMap<>();
+        for (Skill skill : skills) {
+            byName.putIfAbsent(skill.name(), skill);
+        }
+        return new SkillLibrary(byName);
+    }
+
     /** Direct subdirectories, sorted; an unreadable directory yields none. */
     private static List<Path> childDirectories(Path dir) {
         try (Stream<Path> entries = Files.list(dir)) {

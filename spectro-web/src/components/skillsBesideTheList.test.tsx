@@ -117,11 +117,11 @@ describe("Skills sits in the upper group (criterion 4)", () => {
     const html = rail("sessions", false);
     const upper = divBlock(html, "sidebar-nav");
     const tabs = divBlock(html, "sidebar-nav sidebar-nav-seg");
-    expect(upper).toContain('<span class="nav-row-label">Skills</span>');
-    expect(tabs).not.toContain('<span class="nav-row-label">Skills</span>');
-    expect(upper.indexOf(">Starters<")).toBeLessThan(upper.indexOf(">Skills<"));
+    expect(upper).toContain('<span class="nav-row-label">Skills and Commands</span>');
+    expect(tabs).not.toContain('<span class="nav-row-label">Skills and Commands</span>');
+    expect(upper.indexOf(">Starters<")).toBeLessThan(upper.indexOf(">Skills and Commands<"));
     // An upper row is a plain button: no tab role to announce a segment it is not.
-    expect(rowOf(html, "Skills")).not.toContain('role="tab"');
+    expect(rowOf(html, "Skills and Commands")).not.toContain('role="tab"');
   });
 });
 
@@ -143,8 +143,8 @@ describe("the session list survives opening Skills (criteria 1 and 2)", () => {
     // render inside that same branch.
     const open = rail("sessions", true);
     const closed = rail("sessions", false);
-    const openRow = rowOf(open, "Skills");
-    const closedRow = rowOf(closed, "Skills");
+    const openRow = rowOf(open, "Skills and Commands");
+    const closedRow = rowOf(closed, "Skills and Commands");
     expect(openRow).toContain('class="nav-row active"');
     expect(closedRow).toContain('class="nav-row"');
     expect(open.replace(openRow, closedRow)).toBe(closed);
@@ -153,9 +153,10 @@ describe("the session list survives opening Skills (criteria 1 and 2)", () => {
   it("leaves whichever list was showing alone, on every segment", () => {
     for (const nav of SEGMENTS) {
       const open = rail(nav, true);
-      expect(open.replace(rowOf(open, "Skills"), rowOf(rail(nav, false), "Skills")), nav).toBe(
-        rail(nav, false),
-      );
+      expect(
+        open.replace(rowOf(open, "Skills and Commands"), rowOf(rail(nav, false), "Skills and Commands")),
+        nav,
+      ).toBe(rail(nav, false));
     }
   });
 
@@ -207,7 +208,10 @@ describe("App: the view is a flag of its own, and every opened place closes it (
 
   it("draws the skills view from the flag, ahead of every segment arm", () => {
     // Card 481: the playbook is the first segment arm now, the state graph the second.
-    expect(app).toMatch(/\{skillsOpen \? \(\s*<SkillsPane \/>\s*\) : nav === "playbook" \? \(/);
+    // Card 558: the pane takes the session's items as props.
+    expect(app).toMatch(
+      /\{skillsOpen \? \(\s*<SkillsPane sessionItems=\{viewSessionItems\} onAskSessionItems=\{askSessionItems\} \/>\s*\) : nav === "playbook" \? \(/,
+    );
     expect(app).toMatch(/const wholeSurface = skillsOpen \|\| nav === "stategraph" \|\| nav === "playbook";/);
   });
 

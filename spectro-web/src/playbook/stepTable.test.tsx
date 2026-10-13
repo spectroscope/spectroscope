@@ -1,6 +1,7 @@
-// Card 485, task 10 (plan numbering): what the step table offers for a skill
-// the harness lacks. House style: renderToStaticMarkup, a handler reached
-// through the element tree.
+// Card 485, task 10 (plan numbering): what the step table says for a skill
+// the harness lacks. Card 558 (owner decision): the table offers no install
+// from the playbook any more. House style: renderToStaticMarkup and the
+// element tree.
 
 import { isValidElement, type ReactElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -14,7 +15,7 @@ import { StepTable } from "./StepTable";
 vi.mock("../state/lang", () => ({ useLang: () => "en" }));
 
 function loadedWith(
-  skills: { name: string; installed: boolean; disabled: boolean }[],
+  skills: { name: string; installed: boolean; disabled: boolean; inPlaybook?: boolean }[],
   listed: string[],
 ): LoadedPlaybook {
   return {
@@ -49,8 +50,8 @@ function loadedWith(
   };
 }
 
-const row = (loaded: LoadedPlaybook, onInstall: () => void = () => {}): string => {
-  const out = renderToStaticMarkup(<StepTable loaded={loaded} onInstall={onInstall} />);
+const row = (loaded: LoadedPlaybook): string => {
+  const out = renderToStaticMarkup(<StepTable loaded={loaded} />);
   return /<tr data-step="write">([\s\S]*?)<\/tr>/.exec(out)?.[1] ?? "";
 };
 
@@ -70,50 +71,39 @@ function find(
   return out;
 }
 
-describe("the step table's offer for a missing skill", () => {
-  const missing = { name: "spectropowers:brainstorming", installed: false, disabled: false };
+describe("the step table's word for a step's skill (card 558: read from the folder in place)", () => {
+  const missing = {
+    name: "spectropowers:brainstorming",
+    installed: false,
+    disabled: false,
+    inPlaybook: false,
+  };
+  const held = { ...missing, inPlaybook: true };
 
-  it("links to the install when the skill's pack is listed in this playbook's contents", () => {
-    const r = row(loadedWith([missing], ["skills/spectropowers"]));
-    expect(r).toContain(dict["pc.installFromPlaybook"].en);
-    expect(r).not.toContain(dict["pc.notInPlaybook"].en);
+  it("says a skill the playbook folder holds is in the playbook", () => {
+    const r = row(loadedWith([held], ["skills/spectropowers"]));
+    expect(r).toContain(dict["pb.run.skillPlaybook"].en);
+    expect(r).not.toContain(dict["pb.run.skillMissing"].en);
   });
 
-  it("says the skill is not in this playbook when the pack is not listed", () => {
-    const r = row(loadedWith([missing], ["skills/other"]));
-    expect(r).toContain(dict["pc.notInPlaybook"].en);
-    expect(r).not.toContain(dict["pc.installFromPlaybook"].en);
-  });
-
-  it("matches the pack by its whole name, not by a prefix", () => {
-    const r = row(loadedWith([missing], ["skills/spectropowers-extra"]));
-    expect(r).not.toContain(dict["pc.installFromPlaybook"].en);
-    expect(r).toContain(dict["pc.notInPlaybook"].en);
-  });
-
-  it("shows a disabled skill as disabled and offers no link", () => {
-    const r = row(loadedWith([{ ...missing, disabled: true }], ["skills/spectropowers"]));
-    expect(r).toContain(dict["pb.disabled"].en);
-    expect(r).not.toContain(dict["pc.installFromPlaybook"].en);
-    expect(r).not.toContain(dict["pc.notInPlaybook"].en);
-  });
-
-  it("offers nothing for an installed skill", () => {
+  it("says a skill the folder does not hold is missing in the playbook, even when the user has it installed", () => {
     const r = row(loadedWith([{ ...missing, installed: true }], ["skills/spectropowers"]));
-    expect(r).toContain(dict["pb.installed"].en);
-    expect(r).not.toContain(dict["pc.installFromPlaybook"].en);
-    expect(r).not.toContain(dict["pc.notInPlaybook"].en);
+    expect(r).toContain(dict["pb.run.skillMissing"].en);
   });
 
-  it("opens the install from the link", () => {
-    const calls: string[] = [];
-    const tree = StepTable({
-      loaded: loadedWith([missing], ["skills/spectropowers"]),
-      onInstall: () => calls.push("open"),
-    });
-    const links = find(tree, (el) => el.props["data-action"] === "install-from-playbook");
-    expect(links).toHaveLength(1);
-    (links[0].props.onClick as () => void)();
-    expect(calls).toEqual(["open"]);
+  it("uses no install word: not installed, installed, disabled or not in this playbook", () => {
+    for (const k of [missing, held, { ...missing, disabled: true }, { ...held, installed: true }]) {
+      const r = row(loadedWith([k], ["skills/other"]));
+      expect(r).not.toContain(dict["pb.notInstalled"].en);
+      expect(r).not.toContain(`>${dict["pb.installed"].en}<`);
+      expect(r).not.toContain(dict["pb.disabled"].en);
+      expect(r).not.toContain(dict["pc.notInPlaybook"].en);
+    }
+    expect(dict["pc.installFromPlaybook"], "the key is retired").toBeUndefined();
+  });
+
+  it("draws no control in the row", () => {
+    const tree = StepTable({ loaded: loadedWith([missing, held], ["skills/spectropowers"]) });
+    expect(find(tree, (el) => el.type === "button")).toEqual([]);
   });
 });

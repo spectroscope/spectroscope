@@ -58,6 +58,11 @@ export interface SessionSlot {
   /** Card 498: opened by a wake and not continued yet. Out of the rail, out
    *  of view, until the first message adopts it (continueWoken). */
   readonly woken: boolean;
+  /** Live check 0.15.3 D6: the text of the user_message that left and whose
+   *  run has not started, or null. The server can ask the backend for its
+   *  window for seconds before run_start; the chat shows the message and
+   *  Stop meanwhile. */
+  readonly starting: string | null;
 }
 
 /** Where a batch came from, for the side effects App routes. */
@@ -240,6 +245,7 @@ export class SessionSet {
         used: resumeId !== null,
         modelSilent: false,
         woken: wake !== null,
+        starting: null,
       },
       connection: null,
       awaitingRunStart: false,
@@ -298,13 +304,32 @@ export class SessionSet {
    */
   newChat(): string {
     for (const record of this.records.values()) {
-      const slot = record.slot;
-      if (!slot.used && slot.resumeId === null && slot.sessionId === null && slot.queue.length === 0) {
-        this.select(slot.key);
-        return slot.key;
+      if (isBlank(record.slot)) {
+        this.select(record.slot.key);
+        return record.slot.key;
       }
     }
     return this.open({});
+  }
+
+  /**
+   * Live check 0.15.3 D5 (card 556, criterion 3): the user settings changed,
+   * and a blank record's socket still holds the ones it loaded at connect.
+   * newChat reuses a blank record, so each one goes: out of view it is closed,
+   * in view a fresh record takes its place. The next socket loads the
+   * settings as they are now.
+   *
+   * @param except the record whose own socket took the change, or null
+   */
+  retireBlanks(except: string | null): void {
+    const blanks = [...this.records.values()]
+      .map((record) => record.slot)
+      .filter((slot) => slot.key !== except && isBlank(slot))
+      .map((slot) => slot.key);
+    for (const key of blanks) {
+      if (key === this.viewed) this.open({ replace: true });
+      else this.close(key);
+    }
   }
 
   /**
@@ -470,7 +495,10 @@ export class SessionSet {
       const parked = attachments.map(({ name, mediaType, dataBase64 }) => ({ name, mediaType, dataBase64 }));
       this.update(key, (s) => ({ ...s, outboxAttachments: parked }));
     }
-    if (sent) record.awaitingRunStart = true;
+    if (sent) {
+      record.awaitingRunStart = true;
+      this.patch(key, { starting: text });
+    }
     return sent;
   }
 
@@ -529,7 +557,9 @@ export class SessionSet {
     const record = this.records.get(key);
     if (record === undefined) return;
     const sent = this.sendClient(key, { type: "abort" });
-    if (sent && record.slot.state.running) this.patch(key, { stopRequested: true });
+    // Live check 0.15.3 D6: a run that has not started yet is stopped too.
+    if (sent && (record.slot.state.running || record.awaitingRunStart))
+      this.patch(key, { stopRequested: true });
   }
 
   // ---- internals ----
@@ -569,8 +599,9 @@ export class SessionSet {
       steering,
       queue,
       sessionId,
-      stopRequested: state.running ? before.stopRequested : false,
+      stopRequested: state.running || record.awaitingRunStart ? before.stopRequested : false,
       modelSilent: silent && state.running,
+      starting: record.awaitingRunStart ? before.starting : null,
     };
     this.changed();
     this.deps.onBatch?.(key, batch, { inView: this.viewed === key, carrier: this.carrierKey === key });
@@ -591,6 +622,9 @@ export class SessionSet {
       const wake = record.pendingWake;
       record.pendingWake = null;
       this.sendClient(key, { type: "wake_session", sessionId: wake });
+      // Card 558, round 3: the woken session's own items for its picker, with
+      // or without a pick; the server answers once the wake has set its folder.
+      this.sendClient(key, { type: "get_session_items" });
     }
     if (slot.conn.status === "open" && record.pendingCommand !== null) {
       const command = record.pendingCommand;
@@ -665,6 +699,11 @@ export class SessionSet {
     this.rebuildList();
     for (const listener of this.listeners) listener();
   }
+}
+
+/** A record nobody has typed into, with no session yet: what New chat reuses. */
+function isBlank(slot: SessionSlot): boolean {
+  return !slot.used && slot.resumeId === null && slot.sessionId === null && slot.queue.length === 0;
 }
 
 /** The backend a record's session runs on, as far as its frames said. */

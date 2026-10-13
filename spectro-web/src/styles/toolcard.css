@@ -504,7 +504,8 @@
   padding: 0 var(--sp-2);
   white-space: nowrap;
 }
-.tv-ask-q { font-size: var(--fs-13); color: var(--text); overflow-wrap: anywhere; }
+/* Card 554: a question of a playbook run ends with its task on a line of its own. */
+.tv-ask-q { font-size: var(--fs-13); color: var(--text); overflow-wrap: anywhere; white-space: pre-wrap; }
 .tv-ask-meta { font-size: var(--fs-11); }
 
 /* An option row. The pick is marked three ways that do not need colour: the

@@ -3,8 +3,11 @@
 // graph, the step table and, when there are any, the findings. Card 483
 // (Task 11): the graph is drawn from the editor store's document, the header
 // offers Edit when the file is editable, and an open editor locks the folder
-// picker while the draft is dirty. Card 482: it says what a run does and
-// offers Build by this once a playbook is loaded and a session is open.
+// picker while the draft is dirty. Card 554 (criterion 8): the pane starts
+// nothing. A playbook runs from the chat of a session with /run-with-playbook
+// and a workflow with /playbook workflow; the pane configures and edits. Card
+// 558: it installs and removes nothing either. Card 563: the first tab is
+// Steps.
 
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -18,8 +21,6 @@ import {
 } from "../state/playbookEditor";
 import { __resetPlaybookContents, loadContents } from "../state/playbookContents";
 import { __resetPlaybooks, loadPlaybook, refreshFolders, type LoadedPlaybook } from "../state/playbooks";
-import { drive } from "../testkit/driveComponent";
-import { WorkflowList } from "./WorkflowList";
 import type { PlaybookDoc } from "./editor/doc";
 import { PlaybookPane } from "./PlaybookPane";
 
@@ -76,8 +77,8 @@ const LOADED: LoadedPlaybook = {
     {
       id: "write",
       skills: [
-        { name: "spectropowers:brainstorming", installed: true, disabled: false },
-        { name: "spectropowers:missing", installed: false, disabled: false },
+        { name: "spectropowers:brainstorming", installed: true, disabled: false, inPlaybook: true },
+        { name: "spectropowers:missing", installed: false, disabled: false, inPlaybook: false },
       ],
       model: { choice: "fast", provider: "ollama", model: "qwen3:8b", state: "local", reason: null },
     },
@@ -174,8 +175,7 @@ afterEach(() => {
 });
 
 describe("PlaybookPane with no folder", () => {
-  const html = () =>
-    renderToStaticMarkup(<PlaybookPane workspace="/ws" sessionId={null} onStartPlaybook={() => false} />);
+  const html = () => renderToStaticMarkup(<PlaybookPane workspace="/ws" sessionId={null} />);
 
   it("offers the picker, the path field and the copy button", () => {
     const out = html();
@@ -185,12 +185,12 @@ describe("PlaybookPane with no folder", () => {
     expect(out).toContain(dict["pb.copyBundled"].en);
   });
 
-  it("says that a run follows the playbook step by step", () => {
-    expect(html()).toContain(dict["pb.run.hint"].en);
-  });
-
-  it("offers Build by this only once a playbook is loaded", () => {
-    expect(html()).not.toContain("pb-run-build");
+  it("starts nothing: no Build by this and no run hint (card 554, criterion 8)", () => {
+    const out = html();
+    expect(out).not.toContain("pb-run-build");
+    expect(out).not.toContain("pb-run-hint");
+    expect(dict["pb.run.build"], "the key is retired").toBeUndefined();
+    expect(dict["pb.run.hint"], "the key is retired").toBeUndefined();
   });
 
   it("draws no graph, no step table and no findings", () => {
@@ -205,9 +205,7 @@ describe("PlaybookPane with a loaded playbook", () => {
   it("lists the known folders and marks the one pinned to the workspace", async () => {
     respond({ folders: ["/p", "/q"], active: "/p" });
     await refreshFolders("/ws");
-    const out = renderToStaticMarkup(
-      <PlaybookPane workspace="/ws" sessionId={null} onStartPlaybook={() => false} />,
-    );
+    const out = renderToStaticMarkup(<PlaybookPane workspace="/ws" sessionId={null} />);
     expect(out).toContain("/p");
     expect(out).toContain("/q");
     expect(out).toMatch(/class="pb-folder is-active"[^>]*>[\s\S]*?\/p</);
@@ -217,42 +215,34 @@ describe("PlaybookPane with a loaded playbook", () => {
     serve(viewOf());
     await loadPlaybook("/p", "/ws");
     await loadView("/p", "/ws");
-    const out = renderToStaticMarkup(
-      <PlaybookPane workspace="/ws" sessionId={null} onStartPlaybook={() => false} />,
-    );
+    const out = renderToStaticMarkup(<PlaybookPane workspace="/ws" sessionId={null} />);
     expect(out).toContain('class="pb-graph"');
     expect(out).toContain('class="pb-steps"');
     expect(out).toContain('data-node="write"');
     expect(out).not.toContain("pb-findings");
-    expect(out).toContain(dict["pb.run.hint"].en);
   });
 
-  it("enables Build by this when a playbook is loaded and a session is open", async () => {
+  it("offers no start with a loaded playbook and an open session: no Build by this, no sheet (card 554)", async () => {
     respond(LOADED);
     await loadPlaybook("/p", "/ws");
-    const button = (sessionId: string | null): string =>
-      /<button[^>]*class="pb-run-build"[^>]*>/.exec(
-        renderToStaticMarkup(
-          <PlaybookPane workspace="/ws" sessionId={sessionId} onStartPlaybook={() => false} />,
-        ),
-      )?.[0] ?? "";
-    expect(button("s1")).not.toBe("");
-    expect(button("s1")).not.toContain("disabled");
-    expect(button(null)).toContain("disabled");
+    const out = renderToStaticMarkup(<PlaybookPane workspace="/ws" sessionId="s1" />);
+    expect(out, "positive: the playbook is drawn").toContain('class="pb-steps"');
+    expect(out).not.toContain("pb-run-build");
+    expect(out).not.toContain("pb-sheet");
+    expect(out).not.toContain(dict["pb.run.start"].en);
   });
 
-  it("lists each step's skills as installed or not, its model and provider state, privacy, documents and nod", async () => {
+  it("lists each step's skills as in the playbook or missing in it (card 558), its model and provider state, privacy, documents and nod", async () => {
     respond(LOADED);
     await loadPlaybook("/p", "/ws");
-    const out = renderToStaticMarkup(
-      <PlaybookPane workspace="/ws" sessionId={null} onStartPlaybook={() => false} />,
-    );
+    const out = renderToStaticMarkup(<PlaybookPane workspace="/ws" sessionId={null} />);
     const table = out.slice(out.indexOf('class="pb-steps"'));
     const row = /<tr data-step="write">([\s\S]*?)<\/tr>/.exec(table)?.[1] ?? "";
     expect(row).toContain("Write");
     expect(row).toContain(dict["pb.child"].en);
-    expect(row).toMatch(/spectropowers:brainstorming[\s\S]*?installed/);
-    expect(row).toMatch(/spectropowers:missing[\s\S]*?not installed/);
+    expect(row).toMatch(/spectropowers:brainstorming[\s\S]*?in the playbook/);
+    expect(row).toMatch(/spectropowers:missing[\s\S]*?missing in the playbook/);
+    expect(row).not.toContain("installed");
     expect(row).toContain("fast");
     expect(row).toContain("ollama");
     expect(row).toContain("qwen3:8b");
@@ -268,9 +258,7 @@ describe("PlaybookPane with a loaded playbook", () => {
   it("lists the findings, one line each with the path", async () => {
     respond({ ...LOADED, findings: [{ path: "nodes[1].baseUrl", message: "refused" }] });
     await loadPlaybook("/p", "/ws");
-    const out = renderToStaticMarkup(
-      <PlaybookPane workspace="/ws" sessionId={null} onStartPlaybook={() => false} />,
-    );
+    const out = renderToStaticMarkup(<PlaybookPane workspace="/ws" sessionId={null} />);
     expect(out).toContain('class="pb-findings"');
     const items = out.match(/<li class="pb-finding">[\s\S]*?<\/li>/g) ?? [];
     expect(items).toHaveLength(1);
@@ -287,9 +275,7 @@ describe("PlaybookPane with a loaded playbook", () => {
       dir: "/p",
     });
     await loadPlaybook("/p", "/ws");
-    const out = renderToStaticMarkup(
-      <PlaybookPane workspace="/ws" sessionId={null} onStartPlaybook={() => false} />,
-    );
+    const out = renderToStaticMarkup(<PlaybookPane workspace="/ws" sessionId={null} />);
     expect(out).toContain('class="pb-findings"');
     expect(out).toContain("nodes[1].baseUrl");
     expect(out).not.toContain("pb-graph");
@@ -302,9 +288,7 @@ describe("PlaybookPane drawn from the editor store (card 483)", () => {
     serve(viewOf());
     await loadPlaybook("/p", "/ws");
     await loadView("/p", "/ws");
-    const out = renderToStaticMarkup(
-      <PlaybookPane workspace="/ws" sessionId={null} onStartPlaybook={() => false} />,
-    );
+    const out = renderToStaticMarkup(<PlaybookPane workspace="/ws" sessionId={null} />);
     expect(out.match(/<rect class="pb-end"/g)).toHaveLength(2);
     expect(out).toContain('data-node="stop"');
     expect(out).toContain(">exhausted</text>");
@@ -321,9 +305,7 @@ describe("PlaybookPane drawn from the editor store (card 483)", () => {
     serve(viewOf({ loaded: refused, document: null, editable: false }), refused);
     await loadPlaybook("/p", "/ws");
     await loadView("/p", "/ws");
-    const out = renderToStaticMarkup(
-      <PlaybookPane workspace="/ws" sessionId={null} onStartPlaybook={() => false} />,
-    );
+    const out = renderToStaticMarkup(<PlaybookPane workspace="/ws" sessionId={null} />);
     expect(out).toContain("nodes[1].baseUrl");
     expect(out).not.toContain("pb-graph");
     expect(out).not.toMatch(/<button[^>]*class="pbe-edit"/);
@@ -333,9 +315,7 @@ describe("PlaybookPane drawn from the editor store (card 483)", () => {
     serve(viewOf());
     await loadPlaybook("/p", "/ws");
     await loadView("/p", "/ws");
-    const out = renderToStaticMarkup(
-      <PlaybookPane workspace="/ws" sessionId={null} onStartPlaybook={() => false} />,
-    );
+    const out = renderToStaticMarkup(<PlaybookPane workspace="/ws" sessionId={null} />);
     expect(out).toMatch(/<button[^>]*class="pbe-edit"[^>]*>[^<]*Edit</);
     expect(out).not.toContain(dict["pbe.notEditable"].en);
   });
@@ -344,9 +324,7 @@ describe("PlaybookPane drawn from the editor store (card 483)", () => {
     serve(viewOf({ editable: false }));
     await loadPlaybook("/p", "/ws");
     await loadView("/p", "/ws");
-    const out = renderToStaticMarkup(
-      <PlaybookPane workspace="/ws" sessionId={null} onStartPlaybook={() => false} />,
-    );
+    const out = renderToStaticMarkup(<PlaybookPane workspace="/ws" sessionId={null} />);
     expect(out).toContain(dict["pbe.notEditable"].en);
     expect(out).not.toMatch(/<button[^>]*class="pbe-edit"/);
   });
@@ -355,9 +333,7 @@ describe("PlaybookPane drawn from the editor store (card 483)", () => {
     serve(viewOf());
     await loadPlaybook("/p", "/ws");
     await openEditor("/p", "/ws");
-    const out = renderToStaticMarkup(
-      <PlaybookPane workspace="/ws" sessionId={null} onStartPlaybook={() => false} />,
-    );
+    const out = renderToStaticMarkup(<PlaybookPane workspace="/ws" sessionId={null} />);
     expect(out).toContain('class="pbe-toolbar');
     expect(out).toContain(dict["pbe.addStep"].en);
     expect(out).toContain(dict["pbe.stop"].en);
@@ -369,9 +345,7 @@ describe("PlaybookPane drawn from the editor store (card 483)", () => {
     serve(viewOf({ canonical: false }));
     await loadPlaybook("/p", "/ws");
     await openEditor("/p", "/ws");
-    const out = renderToStaticMarkup(
-      <PlaybookPane workspace="/ws" sessionId={null} onStartPlaybook={() => false} />,
-    );
+    const out = renderToStaticMarkup(<PlaybookPane workspace="/ws" sessionId={null} />);
     expect(out).toContain(dict["pbe.notCanonical"].en);
   });
 
@@ -379,9 +353,7 @@ describe("PlaybookPane drawn from the editor store (card 483)", () => {
     serve(viewOf());
     await loadPlaybook("/p", "/ws");
     await openEditor("/p", "/ws");
-    const out = renderToStaticMarkup(
-      <PlaybookPane workspace="/ws" sessionId={null} onStartPlaybook={() => false} />,
-    );
+    const out = renderToStaticMarkup(<PlaybookPane workspace="/ws" sessionId={null} />);
     expect(out).not.toContain(dict["pbe.notCanonical"].en);
   });
 
@@ -390,15 +362,11 @@ describe("PlaybookPane drawn from the editor store (card 483)", () => {
     await refreshFolders("/ws");
     await loadPlaybook("/p", "/ws");
     await openEditor("/p", "/ws");
-    const clean = renderToStaticMarkup(
-      <PlaybookPane workspace="/ws" sessionId={null} onStartPlaybook={() => false} />,
-    );
+    const clean = renderToStaticMarkup(<PlaybookPane workspace="/ws" sessionId={null} />);
     expect(clean).not.toMatch(/<button[^>]*class="pb-folder[^"]*"[^>]*disabled/);
     expect(clean).not.toContain(dict["pbe.folderLocked"].en);
     dispatch({ kind: "editEnd", id: "done", result: "shipped" });
-    const dirty = renderToStaticMarkup(
-      <PlaybookPane workspace="/ws" sessionId={null} onStartPlaybook={() => false} />,
-    );
+    const dirty = renderToStaticMarkup(<PlaybookPane workspace="/ws" sessionId={null} />);
     const folders = dirty.match(/<button[^>]*class="pb-folder[^"]*"[^>]*>/g) ?? [];
     expect(folders).toHaveLength(2);
     for (const b of folders) expect(b).toContain("disabled");
@@ -407,17 +375,13 @@ describe("PlaybookPane drawn from the editor store (card 483)", () => {
 });
 
 describe("PlaybookPane tabs (card 484, named New by card 515)", () => {
-  it("offers Playbook and New, opens on Playbook and does not draw the Spectrolyzr page there", () => {
+  it("offers Steps and New, opens on Steps and does not draw the Spectrolyzr page there (card 563)", () => {
     const out = renderToStaticMarkup(
-      <PlaybookPane
-        workspace="/ws"
-        wizard={<i className="wizard-probe" />}
-        sessionId={null}
-        onStartPlaybook={() => false}
-      />,
+      <PlaybookPane workspace="/ws" wizard={<i className="wizard-probe" />} sessionId={null} />,
     );
     expect(out).toMatch(/role="tablist"/);
-    expect(out).toMatch(/<button[^>]*role="tab"[^>]*aria-selected="true"[^>]*>Playbook</);
+    expect(out).toMatch(/<button[^>]*role="tab"[^>]*aria-selected="true"[^>]*>Steps</);
+    expect(dict["pbb.tab.steps"]).toEqual({ en: "Steps", de: "Schritte" });
     expect(out).toMatch(/<button[^>]*role="tab"[^>]*aria-selected="false"[^>]*>New</);
     expect(dict["lyzr.tab"]).toEqual({ en: "New", de: "Neu" });
     expect(out).not.toContain("wizard-probe");
@@ -449,49 +413,30 @@ describe("PlaybookPane workflows (card 506)", () => {
     findings: [],
   };
 
-  it("lists the loaded playbook's workflows and Run sends the folder, the file, the hash and the text", async () => {
+  it("lists the loaded playbook's workflows by the command the chat runs them with, and offers no Run (card 554)", async () => {
     respond(LOADED);
     await loadPlaybook("/p", "/ws");
     respond(contents);
     await loadContents("/p", "/ws");
-    const sent: string[][] = [];
-    const pane = (
-      <PlaybookPane
-        workspace="/ws"
-        sessionId="s1"
-        onStartPlaybook={() => false}
-        onStartWorkflow={(...args) => {
-          sent.push(args);
-          return true;
-        }}
-      />
-    );
-    const out = renderToStaticMarkup(pane);
+    const out = renderToStaticMarkup(<PlaybookPane workspace="/ws" sessionId="s1" />);
     expect(out).toContain(dict["wf.title"].en);
     expect(out).toContain("fanout-review.json");
-    expect(out).toMatch(/<button[^>]*class="wf-run"[^>]*>/);
-    drive(
-      pane,
-      [PlaybookPane, WorkflowList],
-      [
-        (tree) =>
-          tree
-            .find((el) => el.props.className === "wf-input")
-            ?.props.onChange?.({ target: { value: "the login" } }),
-        (tree) => tree.find((el) => el.props.className === "wf-run")?.props.onClick?.(),
-      ],
-    );
-    expect(sent).toEqual([["/p", "workflows/fanout-review.json", "abc123", "the login"]]);
+    expect(out).toContain("/playbook workflow fanout-review");
+    expect(out).not.toContain("wf-run");
+    expect(out).not.toContain("wf-input");
   });
 
-  it("draws no workflow list without a start handler", async () => {
+  it("counts what the folder brings and offers no Install or Remove (card 558)", async () => {
     respond(LOADED);
     await loadPlaybook("/p", "/ws");
     respond(contents);
     await loadContents("/p", "/ws");
-    const out = renderToStaticMarkup(
-      <PlaybookPane workspace="/ws" sessionId="s1" onStartPlaybook={() => false} />,
-    );
-    expect(out).not.toContain("wf-list");
+    const out = renderToStaticMarkup(<PlaybookPane workspace="/ws" sessionId="s1" />);
+    expect(out, "positive: the contents row counts").toContain('class="pc-counts"');
+    expect(out).not.toContain('data-action="install"');
+    expect(out).not.toContain('data-action="remove"');
+    expect(out).not.toContain("pc-row-actions");
+    expect(dict["pc.install"], "the key is retired").toBeUndefined();
+    expect(dict["pc.remove"], "the key is retired").toBeUndefined();
   });
 });

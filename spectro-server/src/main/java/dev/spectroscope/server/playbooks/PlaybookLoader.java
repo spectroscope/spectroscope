@@ -52,8 +52,11 @@ public final class PlaybookLoader {
      * One skill a step names. {@code disabled} is true when the skill is not
      * installed because a {@code .disabled} marker hides it (on the skill's
      * folder or on its pack), which is why an install over it would be refused.
+     * {@code inPlaybook} (card 558) is true when the playbook folder holds it,
+     * which is where a run reads it; {@code installed} and {@code disabled}
+     * describe the user's own folders and play no part in a run.
      */
-    public record SkillState(String name, boolean installed, boolean disabled) {}
+    public record SkillState(String name, boolean installed, boolean disabled, boolean inPlaybook) {}
 
     public record ModelState(String choice, String provider, String model, String state, String reason,
                               boolean unverified) {}
@@ -131,13 +134,49 @@ public final class PlaybookLoader {
                 List<SkillState> states = s.skills().stream()
                         .map(name -> {
                             boolean installed = skills.find(name).isPresent();
-                            return new SkillState(name, installed, !installed && disabledNames.contains(name));
+                            return new SkillState(name, installed, !installed && disabledNames.contains(name),
+                                    inPlaybook(root, p.contents(), name));
                         })
                         .toList();
                 steps.add(new StepResolution(s.id(), states, model(p, s.model(), config, providers)));
             }
         }
         return new Loaded(p, PlaybookTopology.of(p), List.copyOf(findings), List.copyOf(steps), root.toString());
+    }
+
+    /**
+     * Card 558: whether the playbook folder holds the skill a step names, read
+     * the way a run pins it ({@code PinnedPlaybook}): {@code pack:name} under
+     * the {@code contents.skills} folder called {@code pack}, a bare name under
+     * any of them.
+     *
+     * @param root     the folder's real path
+     * @param contents the playbook's contents
+     * @param name     the skill name the step gives
+     * @return true when {@code <entry>/<name>/SKILL.md} is a file in the folder
+     */
+    static boolean inPlaybook(Path root, Playbook.Contents contents, String name) {
+        if (contents == null || contents.skills() == null) {
+            return false;
+        }
+        int colon = name.indexOf(':');
+        String pack = colon < 0 ? null : name.substring(0, colon);
+        String bare = colon < 0 ? name : name.substring(colon + 1);
+        for (String entry : contents.skills()) {
+            try {
+                Path base = root.resolve(entry).normalize();
+                if (!base.startsWith(root) || (pack != null && !pack.equals(base.getFileName().toString()))) {
+                    continue;
+                }
+                Path skill = base.resolve(bare).resolve("SKILL.md").normalize();
+                if (skill.startsWith(base) && Files.isRegularFile(skill, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+                    return true;
+                }
+            } catch (RuntimeException invalid) {
+                // A name that is no path holds nothing.
+            }
+        }
+        return false;
     }
 
     /**

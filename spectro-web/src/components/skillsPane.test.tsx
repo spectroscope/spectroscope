@@ -84,7 +84,10 @@ describe("the doors point at the place", () => {
   });
 
   it("mounts the pane without a manage door — the view IS the manager", () => {
-    expect(app).toMatch(/<SkillsPane \/>/);
+    // Card 558: the pane takes the session's items as props, and still no door.
+    expect(app).toMatch(
+      /<SkillsPane sessionItems=\{viewSessionItems\} onAskSessionItems=\{askSessionItems\} \/>/,
+    );
     expect(pane).not.toContain("onManage");
   });
 });

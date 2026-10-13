@@ -206,14 +206,37 @@ class PlaybookGuideDriftTest {
                 PART + " still lists mouse editing under what version 1 does not do");
     }
 
+    /** Every spelling of a row of the shared command list, as the chat takes it, with its slash. */
+    private static List<String> spellings(String id) {
+        dev.spectroscope.core.commands.CommandList.Command row = dev.spectroscope.core.commands.CommandList.all()
+                .stream().filter(c -> c.id().equals(id)).findFirst().orElseThrow();
+        List<String> out = new ArrayList<>();
+        out.add("/" + (row.sub() == null ? row.name() : row.name() + " " + row.sub()));
+        row.aliases().forEach(a -> out.add("/" + a));
+        return out;
+    }
+
+    /**
+     * Card 554: a run starts from the chat of a session with
+     * {@code /run-with-playbook} and the playbook the session picked in the
+     * header chip; the Playbook view's first tab, Steps, starts nothing. The
+     * section quotes the chip's words, the sheet's and the tab's, and names
+     * every spelling of the command from the shared command list.
+     */
     @Test
     void theRunSectionUsesTheWordsTheSheetAndThePaneShow() throws IOException {
         Path root = rootOrSkip();
         String run = runSection(chapter(root));
         String i18n = Files.readString(root.resolve(I18N));
         List<String> missing = new ArrayList<>();
-        for (String key : List.of("pb.run.build", "pb.run.start", "pb.run.hash", "pb.run.skills",
-                "pb.run.commands", "pb.run.refusals", "pb.run.unrecorded")) {
+        for (String spelling : spellings("run-with-playbook")) {
+            if (!run.contains("<code>" + spelling + "</code>")) {
+                missing.add(spelling);
+            }
+        }
+        for (String key : List.of("pbchip.noPlaybook", "pbchip.suggested", "pb.run.confirmTitle", "pbb.tab.steps",
+                "pb.run.start", "pb.run.hash", "pb.run.skills", "pb.run.commands", "pb.run.refusals",
+                "pb.run.unrecorded")) {
             String shown = english(i18n, key);
             if (!run.contains("&ldquo;" + shown + "&rdquo;")) {
                 missing.add(key + " = \"" + shown + "\"");
@@ -221,6 +244,7 @@ class PlaybookGuideDriftTest {
         }
         assertEquals(List.of(), missing,
                 "the run section does not quote, in &ldquo; and &rdquo;, the English text the window shows for these keys");
+        assertFalse(chapter(root).contains("Build by this"), PART + " still names the pane's start button");
     }
 
     @Test
@@ -299,8 +323,13 @@ class PlaybookGuideDriftTest {
                 "the limits do not say that only the confirmation starts a run");
     }
 
+    /**
+     * Nothing is installed (owner, 2026-10-13): the limits say which change after the
+     * confirmation stops the start (a file under the hash) and which does not, and they no
+     * longer compare with an install.
+     */
     @Test
-    void theLimitsSayWhichChangeSinceTheInstallStopsARun() throws IOException {
+    void theLimitsSayWhichChangeAfterTheConfirmationStopsARun() throws IOException {
         String part = chapter(rootOrSkip());
         String limits = part.substring(part.indexOf("id=\"ch-playbooks-limits\"")).replaceAll("\\s+", " ");
         assertTrue(limits.contains("after you read the commands, the contents and the hash"),
@@ -308,7 +337,11 @@ class PlaybookGuideDriftTest {
         assertTrue(limits.contains("does not stop a run"),
                 "the limits do not say that a changed item is shown and does not stop a run");
         assertTrue(limits.contains("agent file"),
-                "the limits do not name the agent file as the one change that stops a run");
+                "the limits do not name the agent file as a change that stops a run");
+        assertTrue(limits.contains("after the confirmation stops the start"),
+                "the limits do not say that a change to a file under the hash stops the start");
+        assertFalse(limits.contains("since the install") || limits.contains("file that was installed"),
+                "the limits still compare with an install");
     }
 
     @Test
@@ -414,8 +447,8 @@ class PlaybookGuideDriftTest {
 
     private static final String INSTALL_ANCHOR = "id=\"ch-playbooks-install\"";
 
-    /** The section of the chapter that tells what an install writes, cut at the next h2, whitespace collapsed. */
-    private static String installSection(String chapter) {
+    /** The section of the chapter that tells what a playbook brings, cut at the next h2, whitespace collapsed. */
+    private static String contentsSection(String chapter) {
         int at = chapter.indexOf(INSTALL_ANCHOR);
         assertTrue(at >= 0, PART + " has no section with id ch-playbooks-install");
         int end = chapter.indexOf("<h2 ", at);
@@ -423,11 +456,14 @@ class PlaybookGuideDriftTest {
         return section.replaceAll("\\s+", " ");
     }
 
+    /** Owner answer of 2026-10-13 (card 558): nothing installs a playbook's contents, so the section is named for them. */
     @Test
-    void theChapterHasASectionOnInstallingWhatAPlaybookBrings() throws IOException {
+    void theChapterHasASectionOnThePlaybookContents() throws IOException {
         String part = chapter(rootOrSkip());
-        assertTrue(part.contains("<h2 " + INSTALL_ANCHOR + ">Installing what a playbook brings</h2>"),
-                PART + " has no h2 \"Installing what a playbook brings\"");
+        assertTrue(part.contains("<h2 " + INSTALL_ANCHOR + ">Playbook contents</h2>"),
+                PART + " has no h2 \"Playbook contents\"");
+        assertTrue(part.contains("described under &ldquo;Playbook contents&rdquo;"),
+                "the format section does not point at the contents section by its name");
     }
 
     /** The folder names a playbook can carry: the components of the contents record, read by reflection. */
@@ -453,13 +489,16 @@ class PlaybookGuideDriftTest {
                 "PlaybookLoader.contentsFindings checks other kinds than the contents record declares");
     }
 
-    /** The refusal words of an agent role in the runner's pin, read from its source. */
-    private static final List<String> AGENT_REFUSALS = List.of("agent not installed", "agent changed since install");
+    /**
+     * The refusal words of an agent role in the runner's pin, read from its source. Card 558: the
+     * file is read from the playbook folder in place, so the install refusals are gone.
+     */
+    private static final List<String> AGENT_REFUSALS = List.of("agent not found");
 
     @Test
     void theAgentsRowSaysWhatTheRunnerDoesWithAnAgentRoleAndWhenItRefuses() throws IOException {
         Path root = rootOrSkip();
-        String section = installSection(chapter(root));
+        String section = contentsSection(chapter(root));
         String pin = Files.readString(root.resolve(
                 "spectro-core/src/main/java/dev/spectroscope/core/playbook/run/PinnedPlaybook.java"));
         assertFalse(section.contains("once runs follow the playbook"),
@@ -477,7 +516,9 @@ class PlaybookGuideDriftTest {
             }
         }
         assertEquals(List.of(), missing,
-                "the install section does not quote the refusals a run gives for an agent that is not installed or changed");
+                "the contents section does not quote the refusal a run gives for an agent file it cannot read");
+        assertFalse(section.contains("agent not installed") || section.contains("agent changed since install"),
+                "the Agents row still quotes an install refusal the runner no longer gives (card 558)");
     }
 
     @Test
@@ -488,15 +529,18 @@ class PlaybookGuideDriftTest {
         String title = english(i18n, "pc.runTitle");
         assertTrue(run.contains("&ldquo;" + title + "&rdquo;"),
                 "the run section does not quote the contents section of the sheet: " + title);
-        assertTrue(run.contains("changed since the install"),
-                "the run section does not say that the sheet names what changed since the install");
+        String inPlaybook = english(i18n, "pc.state.inPlaybook");
+        assertTrue(run.contains("&ldquo;" + inPlaybook + "&rdquo;"),
+                "the run section does not quote the mark the contents list gives an item: " + inPlaybook);
+        assertFalse(run.contains("changed since the install") || run.contains("the list the install shows"),
+                "the run section still says that the sheet names what changed since an install");
         assertTrue(run.contains("every agent file a step names"),
                 "the run section does not say that the run hash covers the agent files the steps name");
     }
 
     @Test
-    void theInstallSectionNamesEveryKindAndWhatEachBecomes() throws IOException {
-        String section = installSection(chapter(rootOrSkip()));
+    void theContentsSectionNamesEveryKindAndWhatASessionGets() throws IOException {
+        String section = contentsSection(chapter(rootOrSkip()));
         List<String> missing = new ArrayList<>();
         List<String> kinds = contentKinds();
         assertTrue(kinds.size() >= 5, "the contents record lost kinds: " + kinds);
@@ -505,43 +549,42 @@ class PlaybookGuideDriftTest {
                 missing.add(kind);
             }
         }
-        assertEquals(List.of(), missing, "the install section leaves out a kind of content");
-        assertTrue(section.contains("<code>~/.spectro/skills/</code>"),
-                "the section never says where skills and commands land");
-        assertTrue(section.contains("<code>~/.spectro/playbook-hooks/</code>"),
-                "the section never says where hook scripts are copied");
-        assertTrue(section.contains("<code>{hooks}</code>"),
-                "the section never names the placeholder that resolves to the script folder");
+        assertEquals(List.of(), missing, "the contents section leaves out a kind of content");
         assertTrue(section.contains("<code>/&lt;playbook id&gt;:&lt;name&gt;</code>"),
-                "the section never says how a command is invoked");
+                "the section never says how a command with a doubled name is invoked");
+        assertTrue(section.contains("A playbook's hooks do not run"),
+                "the section never says that nothing runs a playbook's hooks");
+        assertFalse(section.contains("Copied to") || section.contains("playbook-hooks"),
+                "the section still says that skills or hook scripts are copied");
     }
 
     @Test
-    void theInstallSectionStatesTheRulesThatProtectTheReader() throws IOException {
-        String section = installSection(chapter(rootOrSkip()));
-        assertTrue(section.contains("off by default"), "the hooks tick is not described as off by default");
-        assertTrue(section.contains("before the permission check"),
-                "the section never says a hook runs before the permission check");
+    void theContentsSectionStatesThePromptCostAndThatAWorkflowFileMayNotRun() throws IOException {
+        String section = contentsSection(chapter(rootOrSkip()));
         assertTrue(section.contains("characters"), "the section never mentions the prompt cost line");
-        assertTrue(section.contains("<code>~/.spectro/playbook-installs.json</code>"),
-                "the section never names the install ledger");
-        assertTrue(section.contains("edited"), "the section never says how remove treats an edited copy");
-        assertTrue(section.contains("is not run"), "the section never says that workflows are not run");
-        assertTrue(section.contains("remove it first"), "the section never says a second install is refused");
+        assertTrue(section.contains("is not run"), "the section never says that some workflow files are not run");
     }
 
+    /**
+     * Owner answer of 2026-10-13 (card 558): the server's install and remove
+     * routes are gone, and so is every sentence that described them.
+     */
     @Test
-    void theLedgerAndHookFolderNamesMatchWhatTheServerWrites() throws IOException {
+    void theChapterDescribesNoInstallOrRemoveOfThePlaybookContents() throws IOException {
         Path root = rootOrSkip();
-        String section = installSection(chapter(root));
-        String ledger = Files.readString(root.resolve(
-                "spectro-server/src/main/java/dev/spectroscope/server/playbooks/InstallLedger.java"));
-        String installer = Files.readString(root.resolve(
-                "spectro-server/src/main/java/dev/spectroscope/server/playbooks/PlaybookInstaller.java"));
-        assertTrue(ledger.contains("\"playbook-installs.json\"") && section.contains("playbook-installs.json"),
-                "the ledger file name in the chapter and in InstallLedger differ");
-        assertTrue(installer.contains("\"playbook-hooks\"") && section.contains("playbook-hooks"),
-                "the hook folder name in the chapter and in PlaybookInstaller differ");
+        String part = chapter(root).replaceAll("\\s+", " ");
+        String controller = Files.readString(root.resolve(
+                "spectro-server/src/main/java/dev/spectroscope/server/playbooks/PlaybookController.java"));
+        assertFalse(controller.contains("/api/playbooks/contents/install")
+                || controller.contains("/api/playbooks/contents/remove"),
+                "PlaybookController maps an install or remove route again; correct this test and the chapter");
+        assertTrue(contentsSection(part).contains("the server has no route for either"),
+                "the contents section does not say that nothing installs or removes a playbook's contents");
+        for (String gone : List.of("answers an install request", "playbook-installs.json", "remove it first",
+                "Remove takes out", "only through Install", "Import ZIP and Install", "It can install",
+                "the install puts the working folder")) {
+            assertFalse(part.contains(gone), "the chapter still describes the install or remove route: " + gone);
+        }
     }
 
     @Test
@@ -556,6 +599,25 @@ class PlaybookGuideDriftTest {
                 "the chapter still says the product has no workflow runner");
         assertTrue(part.contains("A workflow file that is not a step list is listed and not run"),
                 "the limits do not say what stays out: a workflow file that is not a step list");
+    }
+
+    /**
+     * Card 558: the editor's Selection tab marks a step's skills from the
+     * playbook folder, as the steps table does, in the table's own words.
+     */
+    @Test
+    void theSelectionTabMarksASkillFromThePlaybookFolderInTheStepTablesWords() throws IOException {
+        Path root = rootOrSkip();
+        String part = chapter(root).replaceAll("\\s+", " ");
+        String i18n = Files.readString(root.resolve(I18N));
+        int from = part.indexOf("Selection edits the selected node");
+        assertTrue(from >= 0, "the chapter no longer describes the Selection tab of the editor");
+        String tab = part.substring(from, part.indexOf("</p>", from));
+        for (String key : List.of("pb.run.skillPlaybook", "pb.run.skillMissing")) {
+            String mark = english(i18n, key);
+            assertTrue(tab.contains("&ldquo;" + mark + "&rdquo;"), "the Selection tab does not quote the mark: " + mark);
+        }
+        assertFalse(tab.contains("not installed"), "the Selection tab still marks a skill by whether it is installed");
     }
 
     /** Card 506: the section that describes a workflow file and its run. */
@@ -586,9 +648,15 @@ class PlaybookGuideDriftTest {
         assertTrue(section.contains(String.valueOf(dev.spectroscope.core.playbook.WorkflowReader.MAX_ROUNDS_LIMIT)),
                 "the workflow section does not state the round limit");
         String i18n = Files.readString(root.resolve(I18N));
-        for (String key : List.of("wf.title", "wf.run", "wf.input")) {
+        // Card 554: a workflow starts from the chat; the Steps tab lists it and says when it does not run.
+        for (String key : List.of("wf.title", "wf.notRunnable")) {
             assertTrue(section.contains(quoted(i18n, key)), "the workflow section does not quote " + key);
         }
+        for (String spelling : spellings("playbook-workflow")) {
+            assertTrue(section.contains("<code>" + spelling + "</code>"),
+                    "the workflow section does not name the chat command " + spelling);
+        }
+        assertFalse(section.contains("beside Run"), "the workflow section still has a Run button");
     }
 
     @Test
@@ -608,12 +676,12 @@ class PlaybookGuideDriftTest {
     }
 
     @Test
-    void bothBuiltEditionsCarryTheInstallSection() throws IOException {
+    void bothBuiltEditionsCarryTheContentsSection() throws IOException {
         Path root = rootOrSkip();
         for (String name : EDITIONS) {
             String edition = Files.readString(root.resolve(name));
             assertTrue(edition.contains(INSTALL_ANCHOR),
-                    name + " has no install section: rebuild it (docs/guide-assets/"
+                    name + " has no contents section: rebuild it (docs/guide-assets/"
                             + "build_user_guide.py, both themes, then the PDFs and --stamp)");
         }
     }

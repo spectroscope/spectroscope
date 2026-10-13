@@ -39,6 +39,22 @@ export function thinkingLabel(lang: Lang, cells: readonly SegCell[]): string | n
 }
 
 /**
+ * Whether the model can be changed from this row (card 556): in the live
+ * view, and in a stored session the next message continues. There the switch
+ * leaves on the session's own route (App's sessionFrame), which continues the
+ * session first. An archive that cannot be continued (an import, a scenario,
+ * a session another window holds) names what ran it and offers no switch. The
+ * thinking chip is not part of this: it stays with the live view.
+ *
+ * @param liveView    whether the composer belongs to the live session
+ * @param continuable whether the stored session on screen can be continued
+ * @returns true when the provider and model picker may act
+ */
+export function canSwitchModel(liveView: boolean, continuable: boolean | undefined): boolean {
+  return liveView || continuable === true;
+}
+
+/**
  * What the ring may do with the window of this session (card 390): set and
  * clear it in the live view, nothing in a replay. A replay reads a recorded
  * session, and a set pressed there would go to whatever socket is live.
@@ -196,6 +212,10 @@ export function ComposerMeta(props: {
   onOpenSettings?: () => void;
   /** Whether the composer belongs to the live session (the ring's set/clear). */
   liveView: boolean;
+  /** Card 556: the stored session on screen can be continued, so the model
+   *  can be changed before the first send. Absent under an archive that
+   *  cannot be continued. */
+  continuable?: boolean;
   /** Context gauge: appears with the first usage event of the view. */
   lastInputTokens: number;
   /** The session's cost in GitHub AI credits for the ring, or null (card 496).
@@ -209,9 +229,10 @@ export function ComposerMeta(props: {
 }) {
   const provider = props.provider ?? FALLBACK_PROVIDER_LABEL;
   const model = props.model ?? "";
+  const switchable = canSwitchModel(props.liveView, props.continuable);
   return (
     <div className="composer-meta">
-      {props.liveView ? (
+      {switchable ? (
         <ProviderPicker
           provider={provider}
           model={model}
@@ -220,11 +241,12 @@ export function ComposerMeta(props: {
           providerAddress={props.providerAddress}
           onApply={props.onApplyProvider}
           onOpenSettings={props.onOpenSettings}
+          holdRecorded={!props.liveView}
         />
       ) : (
-        // A recorded session names what ran it and offers no switch: a switch
-        // pressed here would go to whatever socket is live (the header drew
-        // the same static chip before card 463).
+        // An archive that cannot be continued names what ran it and offers no
+        // switch: there is no session of this page a switch could reach (the
+        // header drew the same static chip before card 463).
         <span className="provider-chip">
           <span className="mono">{provider}</span>
           {model !== "" && <span className="provider-chip-model mono">{model}</span>}

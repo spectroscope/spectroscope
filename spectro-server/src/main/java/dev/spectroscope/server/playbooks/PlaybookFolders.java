@@ -32,6 +32,17 @@ public final class PlaybookFolders {
 
     private static final ObjectMapper JSON = new ObjectMapper();
     static final String PLAYBOOK_FILE = "playbook.json";
+    /** The licence file at the root of a playbook folder. */
+    static final String LICENCE_FILE = "LICENSE";
+    /** The provenance file at the root of a playbook folder. */
+    static final String PROVENANCE_FILE = "PROVENANCE.md";
+    /**
+     * The record an install writes into each installed skill folder; an import
+     * leaves it out, because it belongs to the installation and not to the skill.
+     */
+    static final String INSTALL_RECORD = "spectro-install.json";
+    /** The most bytes a playbook folder or a bundle may hold, the skill catalogue's 24 MB ceiling. */
+    static final long MAX_BYTES = 24L * 1024 * 1024;
 
     private final Path file;
 
@@ -41,7 +52,8 @@ public final class PlaybookFolders {
 
     /** The store in the operator's home, {@code ~/.spectro/playbooks.json}. */
     public static PlaybookFolders inHome() {
-        return new PlaybookFolders(Path.of(System.getProperty("user.home"), ".spectro", "playbooks.json"));
+        // Card 554: the location is named once, in core, where the file tools' fence reads it.
+        return new PlaybookFolders(dev.spectroscope.core.playbook.PlaybookFolderFence.registryFile());
     }
 
     public synchronized State read() {

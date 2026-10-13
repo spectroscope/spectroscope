@@ -20,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Card 485: the stage, promote and discard steps the catalogue install used
- * inline, as one class the playbook installer can share.
+ * inline, as one class the playbook imports share.
  */
 class StagedInstallTest {
 

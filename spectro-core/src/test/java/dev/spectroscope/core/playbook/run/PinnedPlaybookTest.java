@@ -55,25 +55,25 @@ class PinnedPlaybookTest {
         return PlaybookReader.read(BUNDLE).playbook();
     }
 
+    /** Card 558: a skill comes from the playbook folder or not at all; nothing installed elsewhere is read. */
     @Test
-    void skillsComeFromTheFolderThenTheInstalledSetAndTheRestIsMissing() throws IOException {
+    void skillsComeFromTheFolderOnlyAndTheRestIsMissing() throws IOException {
         Path dir = bundle(Files.createDirectories(tmp.resolve("pb")));
-        PinnedPlaybook pinned = PinnedPlaybook.pin(dir, read(), name -> "house-rules".equals(name) ? "Stage explicit paths." : null);
+        PinnedPlaybook pinned = PinnedPlaybook.pin(dir, read());
         assertEquals(new SkillBody("spectropowers:brainstorming", "playbook", "Ask one question at a time."),
                 pinned.skills().get("spectropowers:brainstorming"));
-        assertEquals("installed", pinned.skills().get("house-rules").source());
-        assertEquals(List.of("nowhere"), pinned.missingSkills());
+        assertEquals(List.of("house-rules", "nowhere"), pinned.missingSkills());
         assertEquals("# Goal\n\n# Design\n", pinned.templates().get("spec"));
     }
 
     @Test
     void theHashIsStableAndMovesWithEveryPinnedByte() throws IOException {
         Path dir = bundle(Files.createDirectories(tmp.resolve("pb")));
-        String first = PinnedPlaybook.pin(dir, read(), n -> null).hash();
+        String first = PinnedPlaybook.pin(dir, read()).hash();
         assertTrue(first.matches("sha256:[0-9a-f]{64}"), first);
-        assertEquals(first, PinnedPlaybook.pin(dir, read(), n -> null).hash());
+        assertEquals(first, PinnedPlaybook.pin(dir, read()).hash());
         Files.writeString(dir.resolve("skills/spectropowers/brainstorming/SKILL.md"), "Ask two questions.");
-        assertNotEquals(first, PinnedPlaybook.pin(dir, read(), n -> null).hash());
+        assertNotEquals(first, PinnedPlaybook.pin(dir, read()).hash());
         TreeMap<String, byte[]> a = new TreeMap<>(Map.of("a", new byte[] {1}, "b", new byte[] {2}));
         assertEquals(PinnedPlaybook.hash(a), PinnedPlaybook.hash(new TreeMap<>(a)));
     }
@@ -81,14 +81,14 @@ class PinnedPlaybookTest {
     @Test
     void thePinHashIsTheContentHashTreeOfTheSameFiles() throws IOException {
         Path dir = bundle(Files.createDirectories(tmp.resolve("pb")));
-        String pinned = PinnedPlaybook.pin(dir, read(), n -> null).hash();
+        String pinned = PinnedPlaybook.pin(dir, read()).hash();
         assertEquals("sha256:" + ContentHash.tree(SafeWalk.walk(dir, dir)), pinned);
     }
 
     @Test
     void theStepPromptKeepsTheRecordShortAndInlinesForTheModel() throws IOException {
         Path dir = bundle(Files.createDirectories(tmp.resolve("pb")));
-        PinnedPlaybook pinned = PinnedPlaybook.pin(dir, read(), name -> "house-rules".equals(name) ? "Stage explicit paths." : null);
+        PinnedPlaybook pinned = PinnedPlaybook.pin(dir, read());
         Playbook.Step step = (Playbook.Step) read().nodes().get(0);
         StepPrompt.Prompt prompt = StepPrompt.of(pinned, step, Map.of());
         assertEquals("""
@@ -99,7 +99,7 @@ class PinnedPlaybookTest {
                 Done when: Spec complete: Spec has the sections Goal, Design, each with text.""", prompt.record());
         assertTrue(prompt.model().startsWith(prompt.record() + "\n\n## Skill spectropowers:brainstorming\n\nAsk one question at a time."),
                 prompt.model());
-        assertTrue(prompt.model().contains("## Skill house-rules\n\nStage explicit paths."));
+        assertTrue(!prompt.model().contains("## Skill house-rules"), "a skill the folder does not hold is not inlined");
         assertTrue(prompt.model().endsWith("## Template for Spec\n\n# Goal\n\n# Design\n"));
     }
 

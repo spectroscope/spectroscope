@@ -17,22 +17,22 @@
 // Card 512: a Choose button beside the path field opens the native folder
 // dialog through the folder chip's endpoint and only fills the field.
 //
-// Card 485: a contents row under the step table counts what the folder brings
-// and opens the install and remove confirmations.
+// Card 485: a contents row under the step table counts what the folder brings.
+// Card 558 (owner decision): it offers no Install or Remove any more, and the
+// step table no "Install from this playbook".
 //
-// Card 506: under the contents row the workflows of the playbook, each with a
-// Run control that sends the start frame for that file.
-//
-// Card 482: Build by this asks the server for the start preview and opens the
-// confirmation sheet (since card 485 with the contents read again beside it); Start sends the start frame with the hash the sheet
-// showed. Under the graph the run view draws this session's latest run.
+// Card 506: under the contents row the workflows of the playbook. Card 554
+// (criterion 8): the pane starts nothing. A playbook runs from the chat of a
+// session with /run-with-playbook, which opens the start sheet there, and a
+// workflow with /playbook workflow; the list names that command. Under the
+// graph the run view draws this session's latest run.
 //
 // Card 524: Export saves the shown folder as <id>.playbook.zip; Import ZIP
 // reads a chosen .zip and BundleImport shows it and writes it into an empty
 // folder the owner picks.
 //
 // Card 525: the header draws the tabs of PANE_TABS (state/bundleEditor.ts):
-// Playbook (the view above), one tab per kind of contents (Skills, Agents,
+// Steps (the view above, named Playbook until card 563), one tab per kind of contents (Skills, Agents,
 // Hooks, Commands, Workflows), Files, and New. A kind tab and Files draw
 // BundleTab: the contents entries, the shared file browser scoped to the
 // kind's folder and the selected file on the right. Every tab has a toolbar
@@ -70,15 +70,12 @@ import {
 } from "../state/playbooks";
 import { exportBundle, openBundle } from "../state/playbookBundle";
 import { loadContents, usePlaybookContents, type ContentKind } from "../state/playbookContents";
-import type { StartPreview } from "../state/playbookRuns";
 import { BundleImport } from "./BundleImport";
 import { BundleTab, KindTools } from "./BundleTab";
-import { ContentsConfirm } from "./ContentsConfirm";
 import type { PlaybookDoc } from "./editor/doc";
 import { EditorShell } from "./editor/EditorShell";
 import { PlaybookGraph } from "./PlaybookGraph";
 import { PlaybookRunView } from "./PlaybookRunView";
-import { PlaybookStartSheet, readConfirmation } from "./PlaybookStartSheet";
 import { PluginReport, PluginTab } from "./PluginTab";
 import { StepTable } from "./StepTable";
 import { WorkflowList } from "./WorkflowList";
@@ -94,24 +91,21 @@ function messageOf(error: unknown): string {
 }
 
 /**
- * @param props.workspace       the workspace the folder chip in the header shows
- * @param props.wizard          the Spectrolyzr page App built under a ChunkBoundary; the New tab draws it (cards 484, 515)
- * @param props.sessionId       the live or stored session a run starts in and whose runs the run view draws (card 482)
- * @param props.onStartPlaybook sends the start frame; true when it reached the socket (card 482)
- * @param props.onStartWorkflow sends the workflow start frame; true when it reached the socket (card 506)
+ * Card 554, criterion 8: the pane configures and edits; it starts nothing. A
+ * run starts from the chat of a session with /run-with-playbook.
+ *
+ * @param props.workspace the workspace the folder chip in the header shows
+ * @param props.wizard    the Spectrolyzr page App built under a ChunkBoundary; the New tab draws it (cards 484, 515)
+ * @param props.sessionId the live or stored session whose runs the run view draws (card 482)
  */
 export function PlaybookPane({
   workspace,
   wizard,
   sessionId,
-  onStartPlaybook,
-  onStartWorkflow,
 }: {
   workspace: string | null;
   wizard?: ReactNode;
   sessionId: string | null;
-  onStartPlaybook: (dir: string, hash: string) => boolean;
-  onStartWorkflow?: (dir: string, file: string, hash: string, input: string) => boolean;
 }) {
   const lang = useLang();
   const { tab: chosenTab, picked } = usePaneView();
@@ -127,11 +121,7 @@ export function PlaybookPane({
   const setPicked = pickFolder;
   const [notice, setNotice] = useState<string | null>(null);
   const pickNote = usePickNote("pane");
-  const [dialog, setDialog] = useState<"install" | "remove" | null>(null);
   const contents = usePlaybookContents();
-  const [preview, setPreview] = useState<StartPreview | null>(null);
-  /** Counts the starts sent, so the run view mounts again and looks for the new run. */
-  const [starts, setStarts] = useState(0);
   const ws = workspace ?? "";
   const shown = picked ?? active;
   const bundleFile = useRef<HTMLInputElement>(null);
@@ -210,32 +200,10 @@ export function PlaybookPane({
   const dir = ed.dir ?? shown;
   const here = contents !== null && loaded !== null && contents.dir === loaded.dir ? contents : null;
   const count = (kind: ContentKind): number => here?.items.filter((i) => i.kind === kind).length ?? 0;
-  const anyInstalled =
-    here?.items.some(
-      (i) => i.state === "same" || i.state === "source-changed" || i.state === "copy-changed",
-    ) ?? false;
-
-  const canBuild = loaded !== null && p !== null && workspace !== null && sessionId !== null;
-
-  const build = (): void => {
-    if (loaded === null || workspace === null) return;
-    run(async () => {
-      setPreview((await readConfirmation(loaded.dir, workspace)).preview);
-    });
-  };
-
-  const start = (): void => {
-    if (loaded === null || preview === null || preview.hash === null) return;
-    if (onStartPlaybook(loaded.dir, preview.hash)) {
-      setPreview(null);
-      setStarts((n) => n + 1);
-    }
-  };
 
   // The run view needs only the session: a stored session opened from the
   // list has no workspace, so no playbook loads, and its runs still show.
-  const runView =
-    sessionId !== null ? <PlaybookRunView key={`${sessionId}#${starts}`} sessionId={sessionId} /> : null;
+  const runView = sessionId !== null ? <PlaybookRunView key={sessionId} sessionId={sessionId} /> : null;
 
   const tabs = (
     <div className="pb-tabs" role="tablist" aria-label={t(lang, "lyzr.title")}>
@@ -368,12 +336,6 @@ export function PlaybookPane({
       <header className="pb-head">
         <h2 className="pb-title">{title}</h2>
         {description !== "" && <p className="pb-description">{description}</p>}
-        <p className="pb-run-hint">{t(lang, "pb.run.hint")}</p>
-        {p !== null && (
-          <button type="button" className="pb-run-build" disabled={!canBuild} onClick={build}>
-            {t(lang, "pb.run.build")}
-          </button>
-        )}
         <div className="pbe-bar">
           {editing ? (
             <button type="button" className="pbe-stop" disabled={ed.dirty} onClick={closeEditor}>
@@ -512,7 +474,7 @@ export function PlaybookPane({
               {runView}
               <section className="pb-section">
                 <h3 className="pb-h">{t(lang, "pb.steps")}</h3>
-                <StepTable loaded={loaded} onInstall={() => setDialog("install")} />
+                <StepTable loaded={loaded} />
               </section>
               {here !== null && (
                 <section className="pb-section pc-row">
@@ -523,50 +485,12 @@ export function PlaybookPane({
                       return n === 1 ? t(lang, `pc.count.${kind}One`) : t(lang, `pc.count.${kind}`, { n });
                     }).join(", ")}
                   </p>
-                  <div className="pc-row-actions">
-                    <button type="button" data-action="install" onClick={() => setDialog("install")}>
-                      {t(lang, "pc.install")}
-                    </button>
-                    <button
-                      type="button"
-                      data-action="remove"
-                      disabled={!anyInstalled}
-                      onClick={() => setDialog("remove")}
-                    >
-                      {t(lang, "pc.remove")}
-                    </button>
-                  </div>
                 </section>
               )}
-              {here !== null && onStartWorkflow !== undefined && (
-                <WorkflowList
-                  items={here.items}
-                  canRun={canBuild}
-                  onRun={(file, hash, input) => onStartWorkflow(here.dir, file, hash, input)}
-                />
-              )}
+              {here !== null && <WorkflowList items={here.items} />}
             </>
           )}
         </>
-      )}
-
-      {dialog !== null && loaded !== null && (
-        <ContentsConfirm
-          dir={loaded.dir}
-          mode={dialog}
-          workspace={workspace}
-          onClose={() => setDialog(null)}
-        />
-      )}
-
-      {preview !== null && loaded !== null && (
-        <PlaybookStartSheet
-          doc={ed.saved ?? view?.document ?? null}
-          preview={preview}
-          contents={here}
-          onStart={start}
-          onClose={() => setPreview(null)}
-        />
       )}
     </div>
   );

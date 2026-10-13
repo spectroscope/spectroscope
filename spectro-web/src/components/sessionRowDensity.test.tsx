@@ -28,7 +28,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { SessionRow, Sidebar } from "./Sidebar";
 import { storedRunState } from "./runIndicator";
 import { rowParts, setDensity, __resetForTests, __setTestHooks, type Density } from "../state/density";
-import type { SessionMeta } from "../events";
+import { liveSessionsPushLive, __resetForTests as resetLiveSessions } from "../state/liveSessions";
+import type { RunEvent, SessionMeta } from "../events";
 
 // The store never touches a real localStorage in this suite.
 const written = new Map<string, string>();
@@ -53,8 +54,10 @@ const META: SessionMeta = {
   endedAt: Date.UTC(2026, 7, 11, 9, 2, 3),
 };
 
-/** The row as a reader gets it, at one density. */
-function rowAt(at: Density): string {
+/** The row as a reader gets it, at one density. `extra` adds what only a live
+ *  or held session carries: the folder and state line (card 503) and the
+ *  attention badge (card 459). */
+function rowAt(at: Density, extra: { liveLine?: string; attention?: "answer" | "model" } = {}): string {
   return renderToStaticMarkup(
     <SessionRow
       s={META}
@@ -62,10 +65,15 @@ function rowAt(at: Density): string {
       lang="en"
       active={false}
       state={storedRunState({ row: META, live: [], resumeId: null, liveRunning: false })}
+      attention={extra.attention ?? null}
       onSelect={() => {}}
+      liveLine={extra.liveLine}
     />,
   );
 }
+
+/** What card 503 draws under a live session's name. */
+const LIVE_LINE = "ForgeDemo · idle";
 
 /** How often `needle` occurs in `hay`. */
 function count(hay: string, needle: string): number {
@@ -82,8 +90,63 @@ function visible(html: string): string {
     .trim();
 }
 
+const minimal = rowAt("minimal");
 const normal = rowAt("normal");
 const extended = rowAt("extended");
+
+describe("a stored row at minimal density (card 555)", () => {
+  it("shows the name and nothing else a reader can read, even for a live session", () => {
+    // The owner's words: "Ich will da nur den Namen sehen." A live session is
+    // the hard case, because it is the one that carries the folder and state
+    // line; that line has to be gone from the markup, not hidden in it.
+    const html = rowAt("minimal", { liveLine: LIVE_LINE });
+    expect(visible(html)).toBe("summarise the release notes");
+    expect(count(html, "session-live-line")).toBe(0);
+    expect(html).not.toContain("ForgeDemo");
+    // The owner kept the dot ("Name und Punkt"): exactly one.
+    expect(html.match(/class="dot[^"]*"/g) ?? []).toHaveLength(1);
+    // And the rest of what normal and extended cut stays cut.
+    for (const cut of ["session-meta", "session-facts", "session-sigil", "session-model"]) {
+      expect(count(html, cut), cut).toBe(0);
+    }
+  });
+
+  it("keeps the attention badge, because it asks for an action", () => {
+    // Owner decision of 2026-10-12: the badge stays in minimal.
+    expect(visible(rowAt("minimal", { attention: "answer" }))).toBe(
+      "summarise the release notes waiting for you",
+    );
+    expect(visible(rowAt("minimal", { attention: "model" }))).toBe(
+      "summarise the release notes waiting for the model",
+    );
+  });
+
+  it("draws a different row from normal once the session is live", () => {
+    // For a stored session nobody holds, minimal and normal draw the same
+    // bytes: the live line is the whole difference, so that is where it shows.
+    expect(rowAt("minimal", { liveLine: LIVE_LINE })).not.toBe(rowAt("normal", { liveLine: LIVE_LINE }));
+  });
+});
+
+describe("the folder and state line of a live session (card 503)", () => {
+  it("is drawn at normal and at extended", () => {
+    for (const at of ["normal", "extended"] as const) {
+      const html = rowAt(at, { liveLine: LIVE_LINE });
+      expect(count(html, 'class="session-live-line"'), at).toBe(1);
+      expect(visible(html), at).toContain(LIVE_LINE);
+    }
+  });
+
+  it("is absent at every density when the session is not live", () => {
+    for (const [name, html] of [
+      ["minimal", minimal],
+      ["normal", normal],
+      ["extended", extended],
+    ] as const) {
+      expect(count(html, "session-live-line"), name).toBe(0);
+    }
+  });
+});
 
 describe("a stored row at normal density", () => {
   it("renders the session name and the state dot, and nothing else", () => {
@@ -130,10 +193,11 @@ describe("a stored row at extended density", () => {
 });
 
 describe("what density may not cut", () => {
-  it("keeps the state dot at BOTH densities", () => {
+  it("keeps the state dot at EVERY density", () => {
     // Criterion 6 lives here: with no metadata line the dot is the only thing
     // left that can say a session is running, so rowParts() may never cut it.
     for (const [name, html] of [
+      ["minimal", minimal],
       ["normal", normal],
       ["extended", extended],
     ] as const) {
@@ -141,18 +205,24 @@ describe("what density may not cut", () => {
     }
   });
 
-  it("keeps ONE hover string, byte-identical at either density", () => {
+  it("keeps ONE hover string, byte-identical at every density", () => {
     // The non-functional criterion, measured on the output rather than counted
-    // in the source: the hover carries what normal cut, and a density-aware
-    // second string would be a second thing to keep in step with the DTO.
+    // in the source: the hover carries what normal and minimal cut, and a
+    // density-aware second string would be a second thing to keep in step with
+    // the DTO. Card 555 criterion 4: a live row, so the live line is cut too.
     const hover = (html: string): string => {
       const m = html.match(/<button[^>]*class="session-row[^"]*"[^>]*title="([^"]*)"/);
       if (m === null) throw new Error("the row has no hover string at all");
       return m[1];
     };
+    const [atMinimal, atNormal, atExtended] = (["minimal", "normal", "extended"] as const).map((at) =>
+      hover(rowAt(at, { liveLine: LIVE_LINE })),
+    );
+    expect(atMinimal).toBe(atNormal);
+    expect(atNormal).toBe(atExtended);
     expect(hover(normal)).toBe(hover(extended));
-    expect(hover(normal)).toContain("summarise the release notes");
-    expect(hover(normal)).toContain("qwen2.5:7b");
+    expect(atMinimal).toContain("summarise the release notes");
+    expect(atMinimal).toContain("qwen2.5:7b");
   });
 });
 
@@ -200,5 +270,64 @@ describe("the rail asks the store how much to say", () => {
     setDensity("extended");
     expect(rail()).toContain(sub);
     setDensity("normal");
+  });
+
+  it("drops a live session's folder and state line when the store says minimal (card 555)", () => {
+    // The live line rides the live set, which the server render does read, so
+    // this pins the whole chain from the store through <Sidebar> to the row.
+    liveSessionsPushLive([
+      {
+        type: "live_sessions",
+        sessions: [{ id: "s-held", running: false, since: 1, folder: "/w/ForgeDemo", statusLine: "idle" }],
+      } as unknown as RunEvent,
+    ]);
+    try {
+      setDensity("normal");
+      expect(rail()).toContain(LIVE_LINE);
+      setDensity("minimal");
+      expect(rail()).toContain("held one");
+      expect(rail()).not.toContain(LIVE_LINE);
+      expect(rail()).not.toContain("session-live-line");
+      setDensity("extended");
+      expect(rail()).toContain(LIVE_LINE);
+    } finally {
+      setDensity("normal");
+      resetLiveSessions();
+    }
+  });
+
+  it("hands the same rule to the rows of other processes (card 555)", () => {
+    // The peer roster rides the store as well, so this pins the link from
+    // <Sidebar> to <PeerRoster>: at minimal a peer row is its name.
+    liveSessionsPushLive([
+      {
+        type: "peer_roster",
+        sessions: [
+          {
+            id: "s9",
+            running: true,
+            since: 1,
+            folder: "/w/ForgeDemo",
+            name: "ForgeDemo-7f",
+            statusLine: "working",
+            face: "repl",
+            pid: 4711,
+          },
+        ],
+      } as unknown as RunEvent,
+    ]);
+    try {
+      setDensity("minimal");
+      expect(rail()).toContain("ForgeDemo-7f");
+      expect(rail()).not.toContain("ForgeDemo · working");
+      expect(rail()).not.toContain("peer-row-line");
+      for (const at of ["normal", "extended"] as const) {
+        setDensity(at);
+        expect(rail(), at).toContain("ForgeDemo · working");
+      }
+    } finally {
+      setDensity("normal");
+      resetLiveSessions();
+    }
   });
 });

@@ -3,7 +3,7 @@
   "page": {
     "title": "local setup",
     "lead": "This page lists what spectroscope needs on your machine, level by level. Level 1 is all you need to run the app. The levels after it are optional, and one route per level is enough. Mark a step with \"I have this\" and the ring of its level fills.",
-    "version": "0.15.2",
+    "version": "0.15.3",
     "scope": {
       "text": "macOS means Apple silicon. Linux means Debian 12 and 13, Ubuntu 22.04 and 24.04. Windows is not covered.",
       "source": [

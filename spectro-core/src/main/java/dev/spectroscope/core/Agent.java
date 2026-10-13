@@ -29,6 +29,7 @@ import dev.spectroscope.core.provider.LlmProvider.PToolCall;
 import dev.spectroscope.core.provider.LlmProvider.PUsage;
 import dev.spectroscope.core.provider.LlmProvider.ProviderContent;
 import dev.spectroscope.core.provider.LlmProvider.ProviderEvent;
+import dev.spectroscope.core.provider.LlmProvider;
 import dev.spectroscope.core.provider.LlmProvider.ProviderMessage;
 import dev.spectroscope.core.provider.LlmProvider.ProviderRequest;
 import dev.spectroscope.core.provider.LlmProvider.TextContent;
@@ -616,13 +617,19 @@ public final class Agent {
         // Card 390: the question is asked through a probe that answers from its
         // first call for the rest of this run, because the derivation is made
         // again at the top of every turn (the session window is read there).
-        java.util.function.IntSupplier windowProbe =
-                askedOnce(() -> options.provider().contextWindow());
+        // Card 557: the question can wait on a backend that does not answer
+        // (two seconds against an OpenAI-compatible or Ollama host, the
+        // runtime start and the model list for Copilot), and only an
+        // interrupt ends that wait, so a stop pressed meanwhile reaches it.
+        // A stopped run asks nothing more: for Copilot the next question
+        // would start the runtime again.
+        java.util.function.IntSupplier windowProbe = askedOnce(() -> signal.isCancelled() ? 0
+                : CancelInterrupt.call(signal, () -> options.provider().contextWindow()));
         // Card 391: the window the backend publishes for the model id, asked
         // only when the loaded window answered nothing, and at most once per
         // run by the same means.
-        java.util.function.IntSupplier publishedProbe =
-                askedOnce(() -> options.provider().publishedWindow());
+        java.util.function.IntSupplier publishedProbe = askedOnce(() -> signal.isCancelled() ? 0
+                : CancelInterrupt.call(signal, () -> options.provider().publishedWindow()));
         String windowModel = options.provider().modelName();
         CompactionThreshold.Derived compaction = CompactionThreshold.derive(
                 options.compactionThreshold(), windowProbe, publishedProbe, windowModel,
@@ -904,7 +911,16 @@ public final class Agent {
                 // the user's bubble keep the image. The same call guards the
                 // compaction summarizer inside Compaction.maybeCompact above: one
                 // decision, every door.
-                VisionFence.Fenced fenced = VisionFence.fence(options.provider(), outgoing);
+                //
+                // Card 557: that question can wait on the backend (ollama's
+                // /api/show has no deadline, Copilot's model list up to a
+                // minute), so it runs inside a scope a stop can reach. A run
+                // already stopped asks nothing: its request is not sent, so
+                // there is nothing to fence.
+                List<ProviderMessage> beforeFence = outgoing;
+                LlmProvider fenceAsks = signal.isCancelled() ? null : options.provider();
+                VisionFence.Fenced fenced = CancelInterrupt.call(signal,
+                        () -> VisionFence.fence(fenceAsks, beforeFence));
                 if (fenced.withheld() > 0 && !saidTheImagesWereWithheld) {
                     saidTheImagesWereWithheld = true; // once per run, not per turn
                     emit.accept(new RunEvent.ImagesWithheld(agentId, fenced.withheld(),

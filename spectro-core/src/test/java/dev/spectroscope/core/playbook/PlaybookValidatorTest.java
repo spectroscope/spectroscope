@@ -96,6 +96,32 @@ class PlaybookValidatorTest {
         assertTrue(has(PlaybookValidator.validate(p), "checks.spec_ok.run", "test"));
     }
 
+    /**
+     * Card 554, criterion 8c: a document location is relative to the session's
+     * working folder, so a location that climbs out of it, or names an absolute
+     * path, is a finding and the start is refused at load.
+     */
+    @Test
+    void aDocumentLocationThatLeavesTheWorkspaceIsAFinding() {
+        for (String location : List.of("../outside.md", "docs/../../outside.md", "/etc/outside.md",
+                "~/outside.md", "C:/outside.md", "docs\\\\..\\\\..\\\\outside.md")) {
+            Playbook p = read(PlaybookReaderTest.MINIMAL.replace("\"location\": \"docs/{slug}.md\"",
+                    "\"location\": \"" + location + "\""));
+            assertTrue(has(PlaybookValidator.validate(p), "documents.spec.location", "leaves the workspace"),
+                    location + ": " + PlaybookValidator.validate(p));
+        }
+        Playbook viaVar = read(PlaybookReaderTest.MINIMAL.replace("\"location\": \"docs/{slug}.md\"",
+                "\"location\": \"{up}/outside.md\"").replace("\"start\": \"write\"",
+                "\"vars\": { \"up\": \"..\" }, \"start\": \"write\""));
+        assertTrue(has(PlaybookValidator.validate(viaVar), "documents.spec.location", "leaves the workspace"),
+                "a declared var that climbs out counts as well: " + PlaybookValidator.validate(viaVar));
+        for (String inside : List.of("docs/{slug}.md", "docs/../plan.md", "./plan.md", "a/b/../../plan.md")) {
+            Playbook p = read(PlaybookReaderTest.MINIMAL.replace("\"location\": \"docs/{slug}.md\"",
+                    "\"location\": \"" + inside + "\""));
+            assertEquals(List.of(), PlaybookValidator.validate(p), inside + " stays inside the workspace");
+        }
+    }
+
     private static final String BASE_CONTENTS = "\"contents\": { \"skills\": [\"skills/spectropowers\"] }";
 
     private static String childWith(String role, String contentsJson) {
@@ -145,5 +171,16 @@ class PlaybookValidatorTest {
                   "commands": ["commands/ship.md"],
                   "workflows": ["workflows/build.js"] }"""));
         assertEquals(List.of(), PlaybookValidator.validate(p));
+    }
+
+    /** Card 558 review finding 4: the id rule a session checks before an id becomes a namespace. */
+    @Test
+    void theIdRuleIsOneRuleForTheValidatorAndTheSession() {
+        org.junit.jupiter.api.Assertions.assertTrue(PlaybookValidator.validId("team-x"));
+        org.junit.jupiter.api.Assertions.assertTrue(PlaybookValidator.validId("spectro"));
+        for (String bad : new String[] {"user:a", "", "Team", "1st", "a b", "a/b"}) {
+            org.junit.jupiter.api.Assertions.assertFalse(PlaybookValidator.validId(bad), bad);
+        }
+        org.junit.jupiter.api.Assertions.assertFalse(PlaybookValidator.validId(null));
     }
 }

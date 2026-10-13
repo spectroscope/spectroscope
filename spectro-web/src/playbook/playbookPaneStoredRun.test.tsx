@@ -32,17 +32,13 @@ afterEach(() => {
 
 describe("the playbook pane of a stored session (card 482)", () => {
   it("shows the run view of the session it is given, with no workspace and no playbook loaded", () => {
-    const out = renderToStaticMarkup(
-      <PlaybookPane workspace={null} sessionId="20261010-113710-959cacce" onStartPlaybook={() => false} />,
-    );
+    const out = renderToStaticMarkup(<PlaybookPane workspace={null} sessionId="20261010-113710-959cacce" />);
     expect(out).toContain('data-run-view="20261010-113710-959cacce"');
     expect(out).not.toContain("pb-run-build");
   });
 
   it("shows no run view without a session", () => {
-    const out = renderToStaticMarkup(
-      <PlaybookPane workspace={null} sessionId={null} onStartPlaybook={() => false} />,
-    );
+    const out = renderToStaticMarkup(<PlaybookPane workspace={null} sessionId={null} />);
     expect(out).not.toContain("data-run-view");
   });
 

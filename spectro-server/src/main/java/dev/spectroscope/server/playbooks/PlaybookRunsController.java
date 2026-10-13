@@ -42,7 +42,8 @@ public class PlaybookRunsController {
      * @param id      the session
      * @param request the servlet request, for the local fence
      * @return one row per run in order of first appearance: {@code run},
-     *         {@code playbook}, {@code startedAt}, {@code stopReason} (null
+     *         {@code playbook}, {@code startedAt}, {@code task} (what the run was
+     *         asked, card 554; null when none), {@code stopReason} (null
      *         while the run has no end), {@code result} (the label of the end
      *         the path reached; null while open and when the run stopped
      *         before an end), {@code live} and {@code graph}, the file name;
@@ -121,6 +122,8 @@ public class PlaybookRunsController {
                 row.put("run", run);
                 row.put("playbook", node.path("playbook").asText(null));
                 row.put("startedAt", node.path("ts").asLong(0));
+                // Card 554: what the run was asked; null for a run started without a task.
+                row.put("task", node.path("task").isTextual() ? node.path("task").asText() : null);
                 row.put("stopReason", null);
                 row.put("result", null);
                 row.put("live", PlaybookRunsLive.live(id, run));

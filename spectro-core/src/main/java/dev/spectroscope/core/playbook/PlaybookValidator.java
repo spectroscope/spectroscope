@@ -43,12 +43,23 @@ public final class PlaybookValidator {
     static final Set<String> PERMISSIONS = Set.of("inherit", "readonly", "ask", "auto");
     static final Set<String> CHECK_KINDS = Set.of("sections", "open_items", "command", "review", "human");
 
+    /**
+     * Card 558: the id rule, for a session that puts the id in front of a name;
+     * the same rule {@link #validate} names under {@code id}.
+     *
+     * @param id a playbook id, may be null
+     * @return whether it is a valid id
+     */
+    public static boolean validId(String id) {
+        return id != null && ID.matcher(id).matches();
+    }
+
     public static List<Finding> validate(Playbook p) {
         List<Finding> out = new ArrayList<>();
         if (p.schemaVersion() != 1) {
             out.add(new Finding("schema_version", "must be 1"));
         }
-        if (!ID.matcher(p.id()).matches()) {
+        if (!validId(p.id())) {
             out.add(new Finding("id", "must match [a-z][a-z0-9-]*"));
         }
         Map<String, Integer> index = new HashMap<>();
@@ -112,6 +123,14 @@ public final class PlaybookValidator {
         });
         p.documents().forEach((name, d) -> undeclared(d.location(), p.vars().keySet(), LOCATION_VARS).forEach(v ->
                 out.add(new Finding("documents." + name + ".location", "undeclared var " + v))));
+        // Card 554, criterion 8c: a document lives in the session's working folder.
+        p.documents().forEach((name, d) -> {
+            if (leavesTheWorkspace(d.location(), p.vars())) {
+                out.add(new Finding("documents." + name + ".location", "leaves the workspace: a document location"
+                        + " is a path relative to the session's working folder, never absolute and never climbing"
+                        + " above it with .."));
+            }
+        });
         // rule 3: one arrow per outcome
         Map<String, List<Integer>> arrowsFrom = new HashMap<>();
         for (int j = 0; j < p.arrows().size(); j++) {
@@ -264,6 +283,46 @@ public final class PlaybookValidator {
             if (canReach(p, id, to)) out.add(id);
         }
         return out;
+    }
+
+    /**
+     * Whether a document location names a file outside the working folder it
+     * is resolved against: an absolute path (a leading slash or backslash, a
+     * drive letter, a home tilde), or a {@code ..} that climbs above the
+     * folder once the declared vars are filled in. A {@code ..} that stays
+     * below the folder ({@code docs/../plan.md}) is inside.
+     *
+     * @param location the document's location pattern
+     * @param vars     the playbook's declared vars
+     * @return true when the location leaves the working folder
+     */
+    static boolean leavesTheWorkspace(String location, Map<String, String> vars) {
+        if (location == null) {
+            return false;
+        }
+        Matcher m = VAR.matcher(location);
+        StringBuilder filled = new StringBuilder();
+        while (m.find()) {
+            String value = vars.get(m.group(1));
+            m.appendReplacement(filled, Matcher.quoteReplacement(value != null ? value : "x"));
+        }
+        m.appendTail(filled);
+        String path = filled.toString().replace('\\', '/');
+        if (path.startsWith("/") || path.startsWith("~") || path.matches("[A-Za-z]:.*")) {
+            return true;
+        }
+        int depth = 0;
+        for (String segment : path.split("/")) {
+            if (segment.equals("..")) {
+                depth--;
+                if (depth < 0) {
+                    return true;
+                }
+            } else if (!segment.isEmpty() && !segment.equals(".")) {
+                depth++;
+            }
+        }
+        return false;
     }
 
     static List<String> undeclared(String text, Set<String> vars, Set<String> builtIn) {

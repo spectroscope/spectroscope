@@ -124,6 +124,11 @@ frames.</p>
   <tr><td><code>set_provider</code></td><td><code>{type, provider, model?}</code></td><td>mid-session backend switch; validated; refused without a key; applies on the next run</td></tr>
   <tr><td><code>set_image_provider</code></td><td><code>{type, provider}</code></td><td><code>gemini</code> | <code>openai</code>; effective on the next generation</td></tr>
   <tr><td><code>set_thinking</code></td><td><code>{type, enabled}</code></td><td>reasoning visibility; applies on the next run</td></tr>
+  <tr><td><code>set_playbook</code></td><td><code>{type, dir|null, none?}</code></td><td>card 554: the session's pick from the header dropdown or <code>/playbook use</code>; only a registered folder; <code>null</code> withdraws it; <code>null</code> with <code>none: true</code> picks "No playbook", and the folder pinned for the workspace no longer stands in; written as <code>playbook_picked</code> and answered with <code>playbook_info</code></td></tr>
+  <tr><td><code>confirm_playbook</code></td><td><code>{type, dir?, prompt}</code></td><td>card 554: <code>/run-with-playbook &lt;prompt&gt;</code> asks for the confirmation sheet; the folder is the frame's <code>dir</code>, else the session's pick, else the folder pinned for the workspace; answered with <code>playbook_confirm</code>; starts nothing</td></tr>
+  <tr><td><code>start_playbook</code></td><td><code>{type, dir, hash, prompt}</code></td><td>the sheet's Start; <code>hash</code> must match the bytes; since card 554 <code>prompt</code> is required and becomes the run's task in every step</td></tr>
+  <tr><td><code>start_workflow</code></td><td><code>{type, name, input, lang, dir?}</code></td><td>card 554: a workflow of the session's playbook by name (the file below <code>workflows/</code> without its extension), started at once; an unknown name is refused with the names the playbook has</td></tr>
+  <tr><td><code>get_session_items</code></td><td><code>{type}</code></td><td>card 558: asks for the session's skills, commands and agents; answered with <code>session_items</code>; reads only</td></tr>
 </table>
 
 <p class="small">Nuances the names hide: the client frame is
@@ -139,6 +144,22 @@ object. Server-side errors (invalid frame, refused switch, oversized attachment)
 as first-class <code>error</code> RunEvents. One synchronized writer per connection; a
 dead socket swallows sends — “a dead socket is not a run failure; the JSONL already has
 it.”</p>
+<p>A few frames are for the page only and never reach the file. Card 554 adds two:
+<code>playbook_info {dir, name, found, registered, none}</code> names the session's picked playbook
+(<code>found</code> only for a registered folder that still holds a playbook, <code>none</code> for
+the explicit "No playbook"), and
+<code>playbook_confirm {dir, prompt, preview}</code> carries what the confirmation sheet draws,
+the same preview as <code>GET /api/playbooks/start-preview</code>.</p>
+<p>Card 558 adds <code>session_items {playbook, items}</code>, sent after every
+<code>playbook_info</code> and on <code>get_session_items</code>: the skills, commands and agents
+the session's next turn reads. <code>playbook</code> is <code>{dir, id, name}</code> of the picked
+playbook whose items are in the list, or <code>null</code>; each item is
+<code>{kind, name, plain, source, namespace, description}</code>, with <code>kind</code>
+<code>skill</code>, <code>command</code> or <code>agent</code> and <code>source</code>
+<code>workspace</code>, <code>playbook</code> or <code>user</code>. A name that exists once is
+plain; a name that exists in more than one source is <code>&lt;namespace&gt;:&lt;plain&gt;</code>
+in every one of them, the playbook's namespace being its id. The playbook's items are read
+from its folder in place; nothing is copied.</p>
 
 <h2 id="ch-ws-threading">Threading model</h2>
 <ul>
@@ -174,6 +195,7 @@ blank 404. The per-row notes name the extra guards each endpoint adds on top.</p
   <tr><td><code>GET /api/sessions/{id}/events</code></td><td>the session's RunEvents as a JSON array</td><td>replay + resume seeding; torn last line dropped</td></tr>
   <tr><td><code>DELETE /api/sessions/{id}</code></td><td>204 · 400 · 404</td><td><strong>the one destructive endpoint</strong>: id-shape guard (<code>[A-Za-z0-9][A-Za-z0-9-]*</code>) → 400; unknown → 404; the store additionally refuses ids that do not resolve to a direct child of the sessions dir. Removes JSONL + blob folder</td></tr>
   <tr><td><code>GET /api/config</code></td><td><code>{provider, model}</code></td><td>boot truth; live switches are client-side overlay</td></tr>
+  <tr><td><code>GET /api/commands</code></td><td><code>[{id, name, sub?, aliases, takesArgs, group, surfaces, developerOnly, wired, help: {en}}]</code></td><td>card 554: the one list of chat commands; the web builds its <code>/help</code>, its slash picker and the Skills and Commands page from it, the REPL prints the same list</td></tr>
   <tr><td><code>GET /api/context</code></td><td>system prompt, tools, skills, MCP servers, thinking, provider/model, subagent role profiles</td><td>stateless — assembled from the same constants the live agent uses; no agent built, MCP not connected</td></tr>
   <tr><td><code>GET /api/models?provider=</code></td><td><code>[string]</code></td><td>ollama: live from <code>/api/tags</code> with finite 1.5 s/2.5 s timeouts (a stalled Ollama must not pin a worker); cloud: curated; errors → <code>[]</code></td></tr>
   <tr><td><code>GET /api/images/{file}</code></td><td>image bytes</td><td>name must match <code>[0-9a-f]{64}\.(png|jpg|webp)</code> — 400 <em>before</em> any filesystem access; the content address is the traversal guard</td></tr>

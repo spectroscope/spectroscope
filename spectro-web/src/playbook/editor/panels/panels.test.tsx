@@ -61,7 +61,20 @@ const CHILD: PlaybookDoc = {
 };
 
 const CHOICES = [{ choice: "fast", provider: "ollama", model: "qwen3:8b", state: "ready", reason: null }];
-const SKILLS = [{ name: "a:one" }, { name: "a:two" }];
+// Card 558: the skills the playbook folder holds, as the contents list names
+// them, and the server's resolution of the step's named skills (the source of
+// the Steps table). a:gone is named, and the folder does not hold it.
+const FOLDER_SKILLS = ["a:one", "a:two"];
+const STEPS: SelectionPanelProps["steps"] = [
+  {
+    id: "write",
+    skills: [
+      { name: "a:one", installed: false, disabled: false, inPlaybook: true },
+      { name: "a:gone", installed: true, disabled: false, inPlaybook: false },
+    ],
+    model: null,
+  },
+];
 
 function panel(doc: PlaybookDoc, selection: Selection, extra: Partial<SelectionPanelProps> = {}): string {
   const calls: Command[] = [];
@@ -70,7 +83,8 @@ function panel(doc: PlaybookDoc, selection: Selection, extra: Partial<SelectionP
       doc={doc}
       selection={selection}
       choices={CHOICES}
-      skills={SKILLS}
+      folderSkills={FOLDER_SKILLS}
+      steps={STEPS}
       refused={null}
       dispatch={(c) => calls.push(c)}
       {...extra}
@@ -114,16 +128,52 @@ describe("the selection panel for a step", () => {
     expect(child).toContain('value="builder"');
   });
 
-  it("lists installed skills, keeps a named missing one marked, and checks the step's own", () => {
-    expect(html).toContain("a:two");
-    expect(html).toContain(dict["pb.notInstalled"].en);
+  // Card 558: a run reads a step's skills from the playbook folder in place,
+  // so the panel offers the folder's skills and marks each one as the Steps
+  // table does; whether this machine has a copy installed plays no part.
+  it("offers the folder's skills, marks each in the playbook or missing in the playbook, and checks the step's own", () => {
+    const option = (out: string, name: string): string => {
+      const from = out.indexOf(`data-option="${name}"`);
+      expect(from, name).toBeGreaterThan(-1);
+      return out.slice(from, out.indexOf("</li>", from));
+    };
+    const note = (key: string): string => `<span class="pbe-note"> ${dict[key].en}</span>`;
     expect(count(html, 'data-option="a:one"')).toBe(1);
+    expect(option(html, "a:one")).toContain(note("pb.run.skillPlaybook"));
+    expect(option(html, "a:two")).toContain(note("pb.run.skillPlaybook"));
+    expect(option(html, "a:gone")).toContain(note("pb.run.skillMissing"));
+    expect(html).not.toContain(dict["pb.notInstalled"].en);
     expect(/data-option="a:one"[^>]*checked/.test(html) || /checked[^>]*data-option="a:one"/.test(html)).toBe(
       true,
     );
     expect(/data-option="a:two"[^>]*checked/.test(html) || /checked[^>]*data-option="a:two"/.test(html)).toBe(
       false,
     );
+
+    // A bare name the folder holds under a pack: the server's resolution says so.
+    const bare: PlaybookDoc = {
+      ...MINIMAL,
+      nodes: MINIMAL.nodes.map((n) =>
+        n.id === "write" && n.kind === "step" ? { ...n, skills: ["one"] } : n,
+      ),
+    };
+    const resolved = panel(
+      bare,
+      { kind: "node", id: "write" },
+      {
+        steps: [
+          {
+            id: "write",
+            skills: [{ name: "one", installed: false, disabled: false, inPlaybook: true }],
+            model: null,
+          },
+        ],
+      },
+    );
+    expect(option(resolved, "one")).toContain(note("pb.run.skillPlaybook"));
+    // Without a resolution and outside the folder's list, the skill is missing.
+    const unresolved = panel(bare, { kind: "node", id: "write" }, { steps: [] });
+    expect(option(unresolved, "one")).toContain(note("pb.run.skillMissing"));
   });
 
   it("shows the chosen model's provider state", () => {

@@ -19,11 +19,31 @@
 // partial name ("/" or "/cl") Enter writes the highlighted command into the
 // draft, as Tab does, so a slash and a stray Enter cannot start a model call
 // that rewrites the history (card 471, review round).
+//
+// Card 554: the commands come from the list the server serves. Mounting the
+// picker asks for it, and until it has arrived the commands section says so
+// and offers no row (criterion 8h); the composer holds a slash draft as well.
+// The rows come grouped, each with its aliases, and the playbook rows only in
+// developer mode. A row that takes words is written into the draft. Of the
+// rows that take none, /compact and /clear run from here as before; any other
+// is written into the draft, and Enter on it whole is left to the composer,
+// whose submit is the one door a command leaves through.
+//
+// Card 558: the skills are the session's own when it has sent its list
+// (session_items): the workspace's, the picked playbook's and the user's,
+// skills and commands alike, each under its effective name and with its
+// source as a small label. The picker asks for the list the first time it
+// opens without one, and shows the installed skills (GET /api/skills) until
+// it is there. A new list replaces the old one, so a changed pick takes the
+// old playbook's items out.
 
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { matchSkills, slashQueryAt, tokenInsert, type SkillOption } from "../state/slashCommands";
-import { matchCommands, parseCommand, type ChatCommand, type ChatCommandName } from "../state/chatCommands";
+import { matchCommands, spellingsOf, type ChatCommandName } from "../state/chatCommands";
 import { useSkills } from "../state/skillList";
+import { slashItems, sourceLabel, wantsItems, type SessionItems } from "../state/sessionItems";
+import { useCommandList, type CommandRow } from "../state/commandList";
+import { useViewMode } from "../state/viewMode";
 import { SLASH_TIP_W, SlashTip, slashTipBox, slashTipView, type SlashTipBox } from "./SlashTip";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
@@ -43,6 +63,8 @@ export interface SlashPicker {
  * @param enabled false where completing makes no sense (an archive, a replay)
  * @param onPick  hands back the new draft and where the caret lands in it
  * @param onCommand runs a command (card 471); absent, the picker offers skills only
+ * @param items     card 558: the session's items, or null while it has sent none
+ * @param askItems  card 558: asks the session for its items; absent where there is no session
  * @returns the popover and the key handler the composer must call first
  */
 export function useSlashPicker(
@@ -51,18 +73,43 @@ export function useSlashPicker(
   enabled: boolean,
   onPick: (text: string, caret: number) => void,
   onCommand?: (command: ChatCommandName) => void,
+  items: SessionItems | null = null,
+  askItems?: () => void,
 ): SlashPicker {
   const lang = useLang();
   const at = enabled ? slashQueryAt(draft, caret) : null;
   const query = at === null ? null : at.query;
   // Asked for the first time a reader types a slash, and not before: somebody
-  // who never uses this costs no request at all.
-  const skills = useSkills(query !== null);
+  // who never uses this costs no request at all. Card 558: only while the
+  // session has sent no list of its own.
+  const installed = useSkills(query !== null && items === null);
+  const sessionSkills = useMemo(() => (items === null ? null : slashItems(items)), [items]);
+  const skills = sessionSkills ?? installed;
+  // Card 558: the session's list is asked for once, when the picker opens
+  // without one; a list that arrives clears the mark, so a new chat asks again.
+  const askedItems = useRef(false);
+  useEffect(() => {
+    if (items !== null) {
+      askedItems.current = false;
+      return;
+    }
+    if (askItems !== undefined && wantsItems(query !== null, items, askedItems.current)) {
+      askedItems.current = true;
+      askItems();
+    }
+  }, [query, items, askItems]);
   const options = query === null ? [] : matchSkills(query, skills);
+  // Card 554: asked for when the composer mounts, so it is here by the first slash.
+  const { rows, status } = useCommandList();
+  const mode = useViewMode();
+  // Card 554, criterion 8h: a slash that opens the draft, with no list yet.
+  const loading = at !== null && at.start === 0 && onCommand !== undefined && rows === null;
   // Card 471: the commands come first and share the one focus index with the
   // skills, so the arrows walk from the last command into the first skill.
-  const commands: ChatCommand[] =
-    at === null || onCommand === undefined ? [] : matchCommands(at.query, at.start);
+  const commands: CommandRow[] =
+    at === null || onCommand === undefined || rows === null
+      ? []
+      : matchCommands(at.query, at.start, rows, mode);
   const rowCount = commands.length + options.length;
 
   const [index, setIndex] = useState(0);
@@ -130,26 +177,33 @@ export function useSlashPicker(
     setIndex(0);
   };
 
-  /** Runs a command; the composer empties the draft (card 471). */
-  const run = (command: ChatCommand): void => {
+  /** Runs /compact or /clear; the composer empties the draft (card 471).
+   *  Card 554: any other row is written into the draft, for the composer to send. */
+  const run = (command: CommandRow): void => {
     if (onCommand === undefined) return;
-    // Card 504: a command that takes words is written into the draft, not run.
-    if (command.takesArgs) {
+    const name = runsHere(command);
+    if (name === null) {
       complete(command);
       return;
     }
-    onCommand(command.name as ChatCommandName);
+    onCommand(name);
     setDismissed(false);
     setIndex(0);
   };
 
   /** Writes a command into the draft without running it. A command only opens
-   *  the draft, so it replaces everything up to the caret. */
-  const complete = (command: ChatCommand): void => {
-    const text = command.takesArgs ? `/${command.name} ` : `/${command.name}`;
+   *  the draft, so it replaces everything up to the caret. Card 504: a command
+   *  that takes words gets a space after it. */
+  const complete = (command: CommandRow): void => {
+    const spelling = `/${spellingsOf(command)[0]}`;
+    const text = command.takesArgs ? `${spelling} ` : spelling;
     onPick(text + draft.slice(caret), text.length);
     setIndex(0);
   };
+
+  /** Whether the draft is exactly one of the row's spellings. */
+  const spelledOut = (command: CommandRow): boolean =>
+    spellingsOf(command).some((spelling) => draft.trim() === `/${spelling}`);
 
   const handleKey = (event: KeyboardEvent): boolean => {
     if (!open) return false;
@@ -170,9 +224,16 @@ export function useSlashPicker(
       return true;
     }
     if (activeCommand !== undefined && (event.key === "Enter" || event.key === "Tab")) {
+      if (event.key === "Enter" && !activeCommand.takesArgs && spelledOut(activeCommand)) {
+        // Card 554: a whole command other than /compact and /clear leaves
+        // through the composer's submit, so the picker does not take the key.
+        if (runsHere(activeCommand) === null) return false;
+        event.preventDefault();
+        run(activeCommand);
+        return true;
+      }
       event.preventDefault();
-      if (event.key === "Enter" && parseCommand(draft) === activeCommand.name) run(activeCommand);
-      else complete(activeCommand);
+      complete(activeCommand);
       return true;
     }
     if (event.key === "Enter" || event.key === "Tab") {
@@ -190,32 +251,50 @@ export function useSlashPicker(
 
   // Card 471: with commands on offer, a skill section that has nothing to show
   // steps aside instead of saying "no skill matches" under a command that does.
-  const skillSection = commands.length === 0 || options.length > 0;
+  const skillSection = (commands.length === 0 && !loading) || options.length > 0;
+  const grouped = new Set(commands.map((command) => command.group)).size > 1;
 
   const node = (
     <>
       <div className="wsg-pop slash-pop" role="dialog" aria-label={t(lang, "slash.title")} ref={popRef}>
-        {commands.length > 0 && (
+        {(commands.length > 0 || loading) && (
           <>
             <div className="settings-label">{t(lang, "slash.commands")}</div>
-            <ul className="slash-list" role="listbox" aria-label={t(lang, "slash.commands")}>
-              {commands.map((command, at) => (
-                <li key={command.name}>
-                  <button
-                    type="button"
-                    role="option"
-                    aria-selected={at === index}
-                    className={`slash-row${at === index ? " slash-row--on" : ""}`}
-                    onMouseDown={(e) => e.preventDefault()}
-                    onMouseEnter={() => setIndex(at)}
-                    onClick={() => run(command)}
-                  >
-                    <span className="slash-name mono">{`/${command.name}`}</span>
-                    <span className="slash-desc">{t(lang, command.helpKey)}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
+            {loading ? (
+              <p className="settings-note slash-loading" role="status">
+                {t(lang, status === "failed" ? "slash.loadFailed" : "slash.loading")}
+              </p>
+            ) : (
+              <ul className="slash-list" role="listbox" aria-label={t(lang, "slash.commands")}>
+                {commands.map((command, at) => (
+                  <Fragment key={command.id}>
+                    {/* Card 554: a group's name above its first row, when more than one group is on offer. */}
+                    {grouped && (at === 0 || commands[at - 1]?.group !== command.group) && (
+                      <li className="slash-group" role="presentation">
+                        {t(lang, `cmd.group.${command.group}`)}
+                      </li>
+                    )}
+                    <li>
+                      <button
+                        type="button"
+                        role="option"
+                        aria-selected={at === index}
+                        className={`slash-row${at === index ? " slash-row--on" : ""}`}
+                        onMouseDown={(e) => e.preventDefault()}
+                        onMouseEnter={() => setIndex(at)}
+                        onClick={() => run(command)}
+                      >
+                        <span className="slash-name mono">{`/${spellingsOf(command)[0]}`}</span>
+                        {command.aliases.map((alias) => (
+                          <span key={alias} className="slash-alias mono">{`/${alias}`}</span>
+                        ))}
+                        <span className="slash-desc">{t(lang, `cmd.${command.id}.help`)}</span>
+                      </button>
+                    </li>
+                  </Fragment>
+                ))}
+              </ul>
+            )}
           </>
         )}
         {skillSection && <div className="settings-label">{t(lang, "slash.title")}</div>}
@@ -250,6 +329,17 @@ export function useSlashPicker(
                         {skill.pack}
                       </span>
                     )}
+                    {/* Card 558: a session item names its source, on every row. */}
+                    {skill.source === undefined ? null : (
+                      <span className="wsg-scope-tag slash-src" data-source={skill.source}>
+                        {sourceLabel(skill, lang)}
+                      </span>
+                    )}
+                    {skill.kind === "command" && (
+                      <span className="wsg-scope-tag slash-src" data-kind="command">
+                        {t(lang, "slash.kind.command")}
+                      </span>
+                    )}
                     <span className="slash-desc" title={skill.description}>
                       {skill.description}
                     </span>
@@ -268,4 +358,9 @@ export function useSlashPicker(
     </>
   );
   return { node, handleKey };
+}
+
+/** Card 554: the frame-of-its-own command a row is, or null for a row the composer sends. */
+function runsHere(command: CommandRow): ChatCommandName | null {
+  return command.id === "compact" || command.id === "clear" ? command.id : null;
 }

@@ -4,12 +4,15 @@ import dev.spectroscope.core.CancelSignal;
 
 import java.util.Iterator;
 import java.util.NoSuchElementException;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 /**
  * A retry decorator around any {@link LlmProvider}. On the first pull it
  * establishes the delegate stream AND fetches the first {@link ProviderEvent}
  * inside a retry loop; a transient failure BEFORE any event is yielded is retried
- * with capped exponential backoff + jitter (Thread.sleep on the virtual thread).
+ * with capped exponential backoff + jitter (a pause on the virtual thread that
+ * a stop ends at once, card 557).
  * Once the first event is in hand (or a non-transient error, or the cancel signal
  * fires) it delegates straight through — so a mid-stream break is never retried
  * (retrying after emitted deltas would duplicate them and corrupt the transcript).
@@ -18,14 +21,15 @@ import java.util.NoSuchElementException;
  */
 public final class RetryingProvider implements LlmProvider {
 
-    /** Backoff seam — real sleeper in production, a spy/no-op in tests. */
+    /** Backoff seam: {@link #pause} in production, a spy or no-op in tests. */
     interface Sleeper {
         /**
          * Blocks the current (virtual) thread for the backoff delay.
          *
          * @param millis how long to pause
+         * @param signal the run's cancel signal (may be null); a stop ends the pause
          */
-        void sleep(long millis) throws InterruptedException;
+        void sleep(long millis, CancelSignal signal) throws InterruptedException;
     }
 
     private final LlmProvider delegate;
@@ -56,7 +60,31 @@ public final class RetryingProvider implements LlmProvider {
         if (policy.maxRetries() <= 0) {
             return delegate;
         }
-        return new RetryingProvider(delegate, policy, Thread::sleep);
+        return new RetryingProvider(delegate, policy, RetryingProvider::pause);
+    }
+
+    /**
+     * The production pause: waits out the backoff, and returns at once when
+     * the stop is pressed (card 557). It used to be {@code Thread.sleep},
+     * which a cancel could not reach. Nothing is interrupted here: the cancel
+     * listener counts a latch down.
+     *
+     * @param millis how long to pause
+     * @param signal the run's cancel signal, or null for a plain sleep
+     * @throws InterruptedException when the thread is interrupted from elsewhere
+     */
+    static void pause(long millis, CancelSignal signal) throws InterruptedException {
+        if (signal == null) {
+            Thread.sleep(millis);
+            return;
+        }
+        CountDownLatch stopped = new CountDownLatch(1);
+        Runnable unhook = signal.onCancel(stopped::countDown);
+        try {
+            stopped.await(millis, TimeUnit.MILLISECONDS);
+        } finally {
+            unhook.run();
+        }
     }
 
     /** Delegates, so the {@code run_start} label reports the real provider, not the wrapper. */
@@ -136,6 +164,11 @@ public final class RetryingProvider implements LlmProvider {
                             "transient provider failure ({}), retry {}/{}",
                             error.getMessage(), attempt, policy.maxRetries());
                     backoff(attempt, signal);
+                    if (signal != null && signal.isCancelled()) {
+                        // Card 557: a stop during the backoff starts no new
+                        // attempt; the failure that started it is the answer.
+                        throw error;
+                    }
                     continue;
                 }
                 throw error; // cancelled, non-transient, or retries exhausted
@@ -145,7 +178,7 @@ public final class RetryingProvider implements LlmProvider {
 
     /**
      * Sleeps the capped exponential delay plus jitter; skipped when already
-     * cancelled, and an interrupt only restores the flag.
+     * cancelled, ended by a stop, and an interrupt only restores the flag.
      *
      * @param attempt the 1-based retry attempt driving the exponent
      * @param signal  the run's cancel signal (may be null)
@@ -159,7 +192,7 @@ public final class RetryingProvider implements LlmProvider {
         long capped = Math.min(exp, policy.cap().toMillis());
         long jitter = capped <= 0 ? 0 : (long) (capped * policy.jitter() * Math.random());
         try {
-            sleeper.sleep(capped + jitter);
+            sleeper.sleep(capped + jitter, signal);
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
         }

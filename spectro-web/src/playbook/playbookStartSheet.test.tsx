@@ -2,6 +2,10 @@
 // the provider and model it runs on, every command verbatim, the skills with
 // their source and the short hash, and Start stays disabled while the server
 // names any reason the run may not start.
+//
+// Card 554 (criterion 8b): the sheet opens in the chat of the session after
+// /run-with-playbook, drawn from the socket-only playbook_confirm frame, and
+// names the task the run was asked. The pane no longer opens it.
 
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -10,7 +14,9 @@ import { setLang } from "../state/lang";
 import { __resetPlaybookContents, type ContentItem, type ContentsPreview } from "../state/playbookContents";
 import type { StartPreview } from "../state/playbookRuns";
 import type { PlaybookDoc } from "./editor/doc";
-import { PlaybookStartSheet, readConfirmation } from "./PlaybookStartSheet";
+import { PlaybookStartSheet, readSheetExtras } from "./PlaybookStartSheet";
+import { parsePlaybookConfirm } from "../state/playbookChat";
+import { startPlaybookFrame } from "../state/chatCommands";
 
 const DOC: PlaybookDoc = {
   schema_version: 1,
@@ -96,7 +102,7 @@ const PREVIEW: StartPreview = {
   ],
   skills: [
     { name: "spectropowers:brainstorming", source: "playbook" },
-    { name: "tdd", source: "installed" },
+    { name: "tdd", source: "missing" },
   ],
   commands: ["python3 -m unittest -q"],
   refusals: [],
@@ -159,15 +165,15 @@ describe("the confirmation sheet", () => {
     expect(html).toContain("skill not found: nowhere");
   });
 
-  it("names each skill's source, a missing one in words", () => {
-    const html = render({
-      ...PREVIEW,
-      skills: [...PREVIEW.skills, { name: "nowhere", source: "missing" }],
-    });
-    expect(html).toContain(dict["pb.run.skillPlaybook"].en);
-    expect(html).toContain(dict["pb.run.skillInstalled"].en);
-    expect(html).toMatch(/nowhere[\s\S]*?missing/);
-    expect(html).toContain(dict["pb.run.skillMissing"].en);
+  // Card 558: a run reads a step's skills from the folder in place, so a skill
+  // is in the playbook or missing in it; there is no installed source.
+  it("names each skill as in the playbook or missing in the playbook", () => {
+    const html = render(PREVIEW);
+    expect(html).toMatch(/spectropowers:brainstorming[\s\S]*?in the playbook/);
+    expect(html).toMatch(/tdd[\s\S]*?missing in the playbook/);
+    expect(dict["pb.run.skillPlaybook"].en).toBe("in the playbook");
+    expect(dict["pb.run.skillMissing"].en).toBe("missing in the playbook");
+    expect(html).not.toContain(">installed<");
   });
 });
 
@@ -180,7 +186,7 @@ function content(over: Partial<ContentItem> & Pick<ContentItem, "kind" | "name">
   return {
     source: `${over.kind}s/${over.name}`,
     sha256: "0123456789abcdef".repeat(4),
-    state: "same",
+    state: "in-playbook",
     scope: "sessions",
     bytes: 10,
     target: null,
@@ -206,7 +212,6 @@ const CHANGED_SKILL = content({
   kind: "skill",
   name: "spectropowers:brainstorming",
   source: "skills/spectropowers/brainstorming",
-  state: "source-changed",
 });
 const SAME_AGENT = content({ kind: "agent", name: "reviewer", source: "agents/reviewer.md", scope: "runs" });
 
@@ -223,67 +228,112 @@ describe("the contents in the confirmation sheet (card 485)", () => {
     vi.unstubAllGlobals();
   });
 
-  it("lists what the playbook brings read only, names the changed item and shows the full contents hash", () => {
-    const html = render(PREVIEW, contents([CHANGED_SKILL, SAME_AGENT]));
-    const part = section(html);
+  // Card 558: nothing is installed any more, so the list says nothing about an
+  // install: no state from the install record, no changed line, no count of
+  // items not installed. A workflow keeps whether it runs.
+  it("lists what the playbook brings read only, with the full contents hash and no install word", () => {
+    const workflow = content({
+      kind: "workflow",
+      name: "fanout-review.json",
+      state: "runnable",
+      scope: "runs",
+    });
+    const fresh = content({ kind: "skill", name: "a" });
+    const part = section(render(PREVIEW, contents([CHANGED_SKILL, SAME_AGENT, fresh, workflow])));
     expect(part).not.toBe("");
     expect(part).toContain(dict["pc.runTitle"].en);
     expect(part).toContain("pc-list--readonly");
     expect(part).toContain('data-name="spectropowers:brainstorming"');
     expect(part).toContain('data-name="reviewer"');
-    expect(part).toContain(dict["pc.state.sourceChanged"].en);
-    expect(part).toContain(dict["pc.runChanged"].en.replace("{names}", "spectropowers:brainstorming"));
     expect(part).toContain(`>${CONTENTS_HASH}<`);
+    expect(part).toContain(dict["pc.state.runnable"].en);
+    for (const word of [">installed<", ">new<", "since the install", "installed copy", "not installed"]) {
+      expect(part).not.toContain(word);
+    }
     // The list is for reading: no control inside it.
     expect(part).not.toMatch(/<(button|input)\b/);
   });
 
-  it("names every changed item, an edited installed copy as well, and no unchanged one", () => {
-    const edited = content({
-      kind: "command",
-      name: "p:ship",
-      source: "commands/ship.md",
-      state: "copy-changed",
-    });
-    const part = section(render(PREVIEW, contents([CHANGED_SKILL, SAME_AGENT, edited])));
-    expect(part).toContain(
-      dict["pc.runChanged"].en.replace("{names}", "spectropowers:brainstorming, p:ship"),
-    );
+  // Nothing is installed (owner, 2026-10-13): every skill, command, hook and
+  // agent of the list is shown as present in the playbook.
+  it("marks every skill, command, hook and agent as in the playbook", () => {
+    const items = [
+      content({ kind: "skill", name: "s", state: "in-playbook" }),
+      content({ kind: "command", name: "c", state: "in-playbook" }),
+      content({ kind: "hook", name: "h", state: "in-playbook", scope: "tool-calls" }),
+      content({ kind: "agent", name: "a", state: "in-playbook", scope: "runs" }),
+    ];
+    const part = section(render(PREVIEW, contents(items)));
+    for (const name of ["s", "c", "h", "a"]) {
+      const from = part.indexOf(`data-name="${name}"`);
+      expect(from, name).toBeGreaterThan(-1);
+      const row = part.slice(from, part.indexOf("</li>", from));
+      expect(row, name).toContain('data-state="in-playbook"');
+      expect(row, name).toContain(">in the playbook<");
+    }
+    expect(part).not.toContain(">installed<");
+    expect(part).not.toContain("since the install");
+    expect(part).not.toContain("not installed");
   });
 
-  it("with no changed item draws no changed line and still lists the contents", () => {
-    const part = section(render(PREVIEW, contents([SAME_AGENT])));
-    expect(part).toContain(dict["pc.runTitle"].en);
-    expect(part).toContain('data-name="reviewer"');
-    expect(part).not.toContain(dict["pc.runChanged"].en.replace(": {names}", ""));
-  });
+  // Card 558: a playbook is read in place, so the line under each item names
+  // what it reaches now: skills, commands and agents reach a session that
+  // picks the playbook, from the pick; hooks reach no session yet; a workflow
+  // starts in the chat with /playbook workflow and its name.
+  it("says what each item reaches as the session that picks the playbook reads it, in English and German", () => {
+    const items = [
+      content({ kind: "skill", name: "s", scope: "sessions" }),
+      content({ kind: "command", name: "c", scope: "sessions" }),
+      content({ kind: "hook", name: "h", scope: "tool-calls" }),
+      content({ kind: "agent", name: "a", scope: "runs" }),
+      content({ kind: "workflow", name: "review/fanout.json", state: "runnable", scope: "runs" }),
+      content({ kind: "workflow", name: "notes.md", state: "not-run", scope: "none" }),
+    ];
+    const scopeOf = (part: string, name: string): string => {
+      const from = part.indexOf(`data-name="${name}"`);
+      expect(from, name).toBeGreaterThan(-1);
+      const row = part.slice(from, part.indexOf("</li>", from));
+      return /<p class="pc-scope">([^<]*)<\/p>/.exec(row)?.[1] ?? "";
+    };
 
-  it("says how many contents are not installed, with the singular for one", () => {
-    const one = section(
-      render(PREVIEW, contents([content({ kind: "skill", name: "a", state: "new" }), SAME_AGENT])),
+    const en = section(render(PREVIEW, contents(items)));
+    for (const name of ["s", "c"]) {
+      expect(scopeOf(en, name), name).toBe("A session can use this as soon as it picks this playbook.");
+    }
+    expect(scopeOf(en, "a")).toContain("A session can start this agent as soon as it picks this playbook.");
+    expect(scopeOf(en, "h")).toBe("Runs in no session yet, not even in one that picks this playbook.");
+    expect(scopeOf(en, "review/fanout.json")).toBe(
+      "Runs in the chat of a session with this playbook when you type /playbook workflow fanout.",
     );
-    expect(one).toContain(dict["pc.notInstalledOne"].en);
-    const two = section(
-      render(
-        PREVIEW,
-        contents([
-          content({ kind: "skill", name: "a", state: "new" }),
-          content({ kind: "skill", name: "b", state: "new" }),
-        ]),
-      ),
-    );
-    expect(two).toContain(dict["pc.notInstalled"].en.replace("{n}", "2"));
-    const none = section(render(PREVIEW, contents([SAME_AGENT])));
-    expect(none).not.toContain(dict["pc.notInstalledOne"].en);
-    expect(none).not.toContain(dict["pc.notInstalled"].en.replace("{n} ", ""));
-  });
+    expect(scopeOf(en, "notes.md")).toBe(dict["pc.scope.none"].en);
+    for (const stale of ["new session", "every tool call", "workflow list", "Only steps"]) {
+      expect(en, stale).not.toContain(stale);
+    }
 
-  it("says the change in German as well", () => {
     setLang("de");
-    const part = section(render(PREVIEW, contents([CHANGED_SKILL])));
-    expect(part).toContain(dict["pc.runTitle"].de);
-    expect(part).toContain(dict["pc.runChanged"].de.replace("{names}", "spectropowers:brainstorming"));
-    expect(part).toContain(dict["pc.state.sourceChanged"].de);
+    const de = section(render(PREVIEW, contents(items)));
+    for (const name of ["s", "c"]) {
+      expect(scopeOf(de, name), name).toBe("Eine Session kann das nutzen, sobald sie dieses Playbook wählt.");
+    }
+    expect(scopeOf(de, "a")).toContain(
+      "Eine Session kann diesen Agenten starten, sobald sie dieses Playbook wählt.",
+    );
+    expect(scopeOf(de, "h")).toBe(
+      "Läuft noch in keiner Session, auch nicht in einer, die dieses Playbook wählt.",
+    );
+    expect(scopeOf(de, "review/fanout.json")).toBe(
+      "Läuft im Chat einer Session mit diesem Playbook, wenn du /playbook workflow fanout eingibst.",
+    );
+    expect(scopeOf(de, "notes.md")).toBe(dict["pc.scope.none"].de);
+    for (const stale of [
+      "neue Sitzung",
+      "neuen Sitzung",
+      "Werkzeugaufruf",
+      "Workflow-Liste",
+      "Nur Schritte",
+    ]) {
+      expect(de, stale).not.toContain(stale);
+    }
   });
 
   it("draws no contents section while the contents are not read", () => {
@@ -299,7 +349,62 @@ describe("the contents in the confirmation sheet (card 485)", () => {
   });
 });
 
-describe("reading the confirmation (card 485)", () => {
+describe("the sheet drawn from a playbook_confirm frame (card 554, criterion 8b)", () => {
+  const FRAME = { type: "playbook_confirm", dir: "/pb", prompt: "add a CSV export", preview: PREVIEW };
+
+  it("draws the frame's preview and names the task", () => {
+    const confirm = parsePlaybookConfirm(FRAME);
+    expect(confirm, "the frame reads").not.toBeNull();
+    const html = renderToStaticMarkup(
+      <PlaybookStartSheet
+        doc={null}
+        preview={confirm!.preview}
+        prompt={confirm!.prompt}
+        contents={null}
+        onStart={() => {}}
+        onClose={() => {}}
+      />,
+    );
+    expect(html).toMatch(/role="dialog"/);
+    expect(html).toContain('<p class="pb-sheet-task">Asked: add a CSV export</p>');
+    expect(html).toContain("python3 -m unittest -q");
+    expect(html).toContain("sha256:0123456789ab");
+    expect(startButton(html)).not.toContain("disabled");
+    expect(html, "no drawing without a document").not.toContain('class="pb-graph"');
+  });
+
+  it("says the task in German too", () => {
+    setLang("de");
+    const html = renderToStaticMarkup(
+      <PlaybookStartSheet
+        doc={null}
+        preview={PREVIEW}
+        prompt="x"
+        contents={null}
+        onStart={() => {}}
+        onClose={() => {}}
+      />,
+    );
+    expect(html).toContain("Auftrag: x");
+    setLang("en");
+  });
+
+  it("names no task line when none is given", () => {
+    expect(render(PREVIEW)).not.toContain("pb-sheet-task");
+  });
+
+  it("starts with the frame's folder, the hash the sheet showed and the task", () => {
+    const confirm = parsePlaybookConfirm(FRAME)!;
+    expect(startPlaybookFrame(confirm.dir, confirm.preview.hash ?? "", confirm.prompt)).toEqual({
+      type: "start_playbook",
+      dir: "/pb",
+      hash: HASH,
+      prompt: "add a CSV export",
+    });
+  });
+});
+
+describe("reading what the sheet draws beside the frame (card 554)", () => {
   function reply(status: number, body: unknown): Response {
     return {
       ok: status >= 200 && status < 300,
@@ -313,7 +418,7 @@ describe("reading the confirmation (card 485)", () => {
     vi.unstubAllGlobals();
   });
 
-  it("reads the start preview and the contents of the same folder again, so a file changed since the pane opened shows", async () => {
+  it("reads the contents and the drawing of the folder again, and no preview: the frame brought it", async () => {
     const urls: string[] = [];
     vi.stubGlobal(
       "fetch",
@@ -322,30 +427,24 @@ describe("reading the confirmation (card 485)", () => {
         return Promise.resolve(
           url.startsWith("/api/playbooks/contents?")
             ? reply(200, contents([CHANGED_SKILL]))
-            : reply(200, PREVIEW),
+            : reply(200, { document: DOC, editable: true }),
         );
       }),
     );
-    const read = await readConfirmation("/pb", "/ws");
-    expect(read.preview).toEqual(PREVIEW);
-    expect(read.contents?.items.map((i) => i.state)).toEqual(["source-changed"]);
-    expect(urls.some((u) => u.startsWith("/api/playbooks/start-preview?"))).toBe(true);
+    const read = await readSheetExtras("/pb", "/ws");
+    expect(read.contents?.items.map((i) => i.state)).toEqual(["in-playbook"]);
+    expect(read.doc).toEqual(DOC);
     expect(urls).toContain("/api/playbooks/contents?dir=%2Fpb&workspace=%2Fws");
+    expect(urls).toContain("/api/playbooks/draft?dir=%2Fpb&workspace=%2Fws");
+    expect(urls.some((u) => u.startsWith("/api/playbooks/start-preview?"))).toBe(false);
   });
 
-  it("still opens the sheet when the contents cannot be read, without a list", async () => {
+  it("gives null for a read the server refuses, so the sheet still opens", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn((url: string) =>
-        Promise.resolve(
-          url.startsWith("/api/playbooks/contents?")
-            ? reply(400, { message: "not a registered folder" })
-            : reply(200, PREVIEW),
-        ),
-      ),
+      vi.fn(() => Promise.resolve(reply(400, { message: "not a registered folder" }))),
     );
-    const read = await readConfirmation("/pb", "/ws");
-    expect(read.preview).toEqual(PREVIEW);
-    expect(read.contents).toBeNull();
+    const read = await readSheetExtras("/pb", null);
+    expect(read).toEqual({ contents: null, doc: null });
   });
 });

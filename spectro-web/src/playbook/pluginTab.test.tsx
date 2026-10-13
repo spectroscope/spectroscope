@@ -157,7 +157,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const pane = <PlaybookPane workspace="/ws" sessionId={null} onStartPlaybook={() => false} />;
+const pane = <PlaybookPane workspace="/ws" sessionId={null} />;
 
 async function ready(tab: (typeof PANE_TABS)[number]["id"]): Promise<void> {
   await refreshFolders("/ws");

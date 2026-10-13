@@ -77,7 +77,7 @@ class PlaybookLoaderTest {
         assertEquals(1, loaded.steps().size());
         PlaybookLoader.StepResolution write = loaded.steps().get(0);
         assertEquals("write", write.id());
-        assertEquals(List.of(new PlaybookLoader.SkillState("spectropowers:brainstorming", false, false)), write.skills());
+        assertEquals(List.of(new PlaybookLoader.SkillState("spectropowers:brainstorming", false, false, true)), write.skills());
         PlaybookLoader.ModelState model = write.model();
         assertEquals("fast", model.choice());
         assertEquals("ollama", model.provider());
@@ -85,6 +85,19 @@ class PlaybookLoaderTest {
         assertTrue(PRESENCE_WORDS.contains(model.state()), "a known word: " + model.state());
         assertEquals("local", model.state(), "ollama carries no key variable");
         assertFalse(model.reason().isBlank());
+    }
+
+    /** Card 558: a run reads a step's skills from the folder in place; the table says whether the folder holds each. */
+    @Test
+    void aStepSkillSaysWhetherThePlaybookFolderHoldsIt() throws IOException {
+        Path dir = playbook("pb", MINIMAL.replace("\"skills\": [\"spectropowers:brainstorming\"]",
+                "\"skills\": [\"spectropowers:brainstorming\", \"spectropowers:tdd\", \"house-rules\"]"));
+        Path ws = Files.createDirectories(tmp.resolve("ws"));
+
+        PlaybookLoader.Loaded loaded = PlaybookLoader.load(dir, ws, config());
+
+        assertEquals(List.of(true, false, false), loaded.steps().get(0).skills().stream()
+                .map(PlaybookLoader.SkillState::inPlaybook).toList());
     }
 
     @Test
@@ -96,7 +109,7 @@ class PlaybookLoaderTest {
 
         PlaybookLoader.Loaded loaded = PlaybookLoader.load(dir, ws, config());
 
-        assertEquals(List.of(new PlaybookLoader.SkillState("spectropowers:brainstorming", true, false)),
+        assertEquals(List.of(new PlaybookLoader.SkillState("spectropowers:brainstorming", true, false, true)),
                 loaded.steps().get(0).skills());
     }
 
@@ -110,7 +123,7 @@ class PlaybookLoaderTest {
 
         PlaybookLoader.Loaded loaded = PlaybookLoader.load(dir, ws, config());
 
-        assertEquals(List.of(new PlaybookLoader.SkillState("spectropowers:brainstorming", false, true)),
+        assertEquals(List.of(new PlaybookLoader.SkillState("spectropowers:brainstorming", false, true, true)),
                 loaded.steps().get(0).skills());
     }
 
@@ -125,7 +138,7 @@ class PlaybookLoaderTest {
 
         PlaybookLoader.Loaded loaded = PlaybookLoader.load(dir, ws, config());
 
-        assertEquals(List.of(new PlaybookLoader.SkillState("spectropowers:brainstorming", false, true)),
+        assertEquals(List.of(new PlaybookLoader.SkillState("spectropowers:brainstorming", false, true, true)),
                 loaded.steps().get(0).skills());
     }
 

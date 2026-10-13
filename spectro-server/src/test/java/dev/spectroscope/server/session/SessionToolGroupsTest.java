@@ -300,7 +300,8 @@ class SessionToolGroupsTest {
         expected.put("launch", 5L);
         expected.put("images", 2L);
         expected.put("web", 3L);
-        expected.put("agents", 2L);
+        // Card 558: spawn_named_agent joins spawn_agent and spawn_agents.
+        expected.put("agents", 3L);
         expected.put("roles", 5L);
         expected.put("mcp", 0L);
         // Card 503: send_message and list_agents; card 505: wait_agents.
@@ -309,7 +310,7 @@ class SessionToolGroupsTest {
         // Card 504: schedule_wakeup is on the belt and in no group; the agent
         // offers it only while the session runs a loop (AgentLoopToolTest).
         // Card 547 added code_graph, offered only where the folder has a graph.
-        assertThat(belt).as("39 tools without MCP and skills").hasSize(39);
+        assertThat(belt).as("40 tools without MCP and skills").hasSize(40);
         assertThat(belt.stream().filter(name -> ToolGroup.of(name).isEmpty()).toList())
                 .as("the tools that can never be switched off")
                 .containsExactlyInAnyOrder("list_dir", "read_file", "write_file", "run_command",

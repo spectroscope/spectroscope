@@ -55,7 +55,6 @@ class PlaybookPluginImportRouteTest {
     private Path spectroHome;
     private Path userSettings;
     private Path launch;
-    private Path ledger;
 
     @BeforeEach
     void setUp() throws IOException {
@@ -64,9 +63,7 @@ class PlaybookPluginImportRouteTest {
         spectroHome = Files.createDirectories(home.resolve(".spectro"));
         userSettings = spectroHome.resolve("settings.json");
         launch = Files.createDirectories(tmp.resolve("launch"));
-        ledger = tmp.resolve("ledger/playbook-installs.json");
-        controller = new PlaybookController(folders, PlaybookController.BUNDLE_ROOT, new InstallLedger(ledger),
-                spectroHome, launch, userSettings);
+        controller = new PlaybookController(folders, PlaybookController.BUNDLE_ROOT, spectroHome, launch, userSettings);
         dir = Files.createDirectories(tmp.resolve("pb"));
         Files.writeString(dir.resolve("playbook.json"), PlaybookLoaderTest.MINIMAL);
         write(dir, "skills/spectropowers/brainstorming/SKILL.md", "---\nname: brainstorming\ndescription: d\n---\nbody\n");
@@ -1345,7 +1342,7 @@ class PlaybookPluginImportRouteTest {
     // ---- security: the install confirm stays the only way in ------------------------------------
 
     @Test
-    void theImportInstallsNothingAndThePreviewShowsHooksAndAgentsAsNew() throws IOException {
+    void theImportInstallsNothingAndThePreviewShowsHooksAndAgentsInThePlaybook() throws IOException {
         seedCache("test", "fixture", "1.0.0");
         Map<String, String> spectro = snapshot(spectroHome);
 
@@ -1353,13 +1350,12 @@ class PlaybookPluginImportRouteTest {
 
         assertEquals(spectro, snapshot(spectroHome), "nothing under ~/.spectro: no skill, no agent, no settings");
         assertFalse(Files.exists(userSettings));
-        assertFalse(Files.exists(ledger));
         PlaybookContents.Preview shown = (PlaybookContents.Preview) controller.contents(dir.toString(), null, local())
                 .getBody();
         List<String> states = shown.items().stream()
                 .filter(i -> i.kind().equals("hook") || i.kind().equals("agent"))
                 .map(i -> i.kind() + " " + i.state()).toList();
-        assertEquals(List.of("hook new", "hook new", "agent new", "agent new"), states);
+        assertEquals(List.of("hook in-playbook", "hook in-playbook", "agent in-playbook", "agent in-playbook"), states);
     }
 
     // ---- the scenario ----------------------------------------------------------------------------

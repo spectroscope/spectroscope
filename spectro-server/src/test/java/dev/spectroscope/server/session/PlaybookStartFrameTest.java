@@ -10,10 +10,7 @@ import dev.spectroscope.core.playbook.PlaybookReader;
 import dev.spectroscope.core.playbook.run.PinnedPlaybook;
 import dev.spectroscope.core.playbook.run.PlaybookRecorder;
 import dev.spectroscope.core.provider.LlmProvider;
-import dev.spectroscope.server.playbooks.InstallLedger;
-import dev.spectroscope.server.playbooks.PlaybookContents;
 import dev.spectroscope.server.playbooks.PlaybookFolders;
-import dev.spectroscope.server.playbooks.PlaybookInstaller;
 import dev.spectroscope.server.providers.ProviderRow;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -42,6 +39,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 class PlaybookStartFrameTest {
 
     private static final ObjectMapper JSON = new ObjectMapper();
+
+    /** Card 554: every start carries the task the owner typed. */
+    static final String TASK = "add a CSV export";
 
     /** VocabularyTest.LOOP with write_plan as the only step, build removed, both choices on ollama. */
     private static final String ONE_STEP = """
@@ -165,7 +165,7 @@ class PlaybookStartFrameTest {
         Set<String> before = sidecars();
         SessionConnection connection = session("ws-482-changed", new CountDownLatch(0));
 
-        connection.onStartPlaybook(dir.toString(), "sha256:0000");
+        connection.onStartPlaybook(dir.toString(), "sha256:0000", TASK);
 
         assertThat(errors()).containsExactly(SessionConnection.PLAYBOOK_CHANGED);
         assertThat(connection.sessionId()).as("premise: the session has an id").isNotNull();
@@ -178,10 +178,10 @@ class PlaybookStartFrameTest {
     void anUnregisteredFolderStartsNothing(@TempDir Path stranger) throws IOException {
         Files.writeString(stranger.resolve("playbook.json"), ONE_STEP);
         Playbook p = PlaybookReader.read(ONE_STEP).playbook();
-        String hash = PinnedPlaybook.pin(stranger, p, n -> null).hash();
+        String hash = PinnedPlaybook.pin(stranger, p).hash();
         SessionConnection connection = session("ws-482-stranger", new CountDownLatch(0));
 
-        connection.onStartPlaybook(stranger.toString(), hash);
+        connection.onStartPlaybook(stranger.toString(), hash, TASK);
 
         assertThat(errors()).singleElement().asString().contains("not a registered playbook folder");
         assertThat(PlaybookRecorder.fileFor(connection.sessionId())).doesNotExist();
@@ -192,12 +192,12 @@ class PlaybookStartFrameTest {
         Path dir = writePlaybook();
         Files.writeString(workspace.resolve("plan.md"), "## Tasks\n- one\n");
         Playbook p = PlaybookReader.read(ONE_STEP).playbook();
-        String pinnedHash = PinnedPlaybook.pin(dir, p, n -> null).hash();
+        String pinnedHash = PinnedPlaybook.pin(dir, p).hash();
         CountDownLatch gate = new CountDownLatch(1);
         SessionConnection connection = session("ws-482-run", gate);
         connection.onSetPermissionMode("auto");
 
-        connection.onStartPlaybook(dir.toString(), pinnedHash);
+        connection.onStartPlaybook(dir.toString(), pinnedHash, TASK);
         connection.onUserMessage("x", null);
         assertThat(errors()).as("a prompt during the playbook run meets the run slot")
                 .containsExactly(SessionConnection.RUN_ACTIVE);
@@ -264,25 +264,12 @@ class PlaybookStartFrameTest {
         return playbookDir.toRealPath();
     }
 
-    /** Installs the folder's contents through the real installer into the given ledger. */
-    private void install(Path dir, InstallLedger ledger) throws IOException {
-        Playbook p = PlaybookReader.read(AGENT_STEP).playbook();
-        Path home = installs.resolve("spectro-home");
-        Path projectSkills = installs.resolve("project/.spectro/skills");
-        String shown = PlaybookContents.preview(dir, p, home, projectSkills, ledger, null).contentsHash();
-        PlaybookInstaller.Result result = new PlaybookInstaller(home, projectSkills, installs.resolve("settings.json"),
-                ledger).install(dir, p, shown, false);
-        assertThat(result.status()).as(result.message()).isEqualTo(PlaybookInstaller.Status.INSTALLED);
-    }
-
-    /** Starts the agent playbook on the hash the confirmation shows and returns its playbook_end line. */
-    private String startAndAwaitTheEnd(Path dir, InstallLedger ledger, String socketId) throws Exception {
-        String hash = PinnedPlaybook.pin(dir, PlaybookReader.read(AGENT_STEP).playbook(), n -> null).hash();
+    /** Starts the agent playbook on the hash the confirmation showed and returns its playbook_end line. */
+    private String startAndAwaitTheEnd(Path dir, String hash, String socketId) throws Exception {
         SessionConnection connection = session(socketId, new CountDownLatch(0));
-        connection.installLedgerForTest(ledger);
         connection.onSetPermissionMode("auto");
 
-        connection.onStartPlaybook(dir.toString(), hash);
+        connection.onStartPlaybook(dir.toString(), hash, TASK);
 
         assertThat(errors()).as("the frame itself is accepted").isEmpty();
         long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
@@ -299,39 +286,36 @@ class PlaybookStartFrameTest {
         throw new AssertionError("the run did not end in 20 s");
     }
 
-    @Test
-    void anAgentStepRunsWhenTheLedgerHoldsItsFileAsInstalled() throws Exception {
-        Path dir = writeAgentPlaybook();
-        InstallLedger ledger = new InstallLedger(installs.resolve("playbook-installs.json"));
-        install(dir, ledger);
+    private static String confirmedHash(Path dir) throws IOException {
+        return PinnedPlaybook.pin(dir, PlaybookReader.read(AGENT_STEP).playbook()).hash();
+    }
 
-        String lines = startAndAwaitTheEnd(dir, ledger, "ws-485-installed");
+    /** Card 558: the agent file is read from the folder in place; nothing is installed and no ledger is read. */
+    @Test
+    void anAgentStepRunsOnTheFoldersAgentFileWithNothingInstalled() throws Exception {
+        Path dir = writeAgentPlaybook();
+
+        String lines = startAndAwaitTheEnd(dir, confirmedHash(dir), "ws-558-agent");
 
         assertThat(lines).contains("\"stopReason\":\"done\"").contains("\"agent\":\"reviewer\"")
                 .doesNotContain("agent not installed");
+        try (Stream<Path> left = Files.list(installs)) {
+            assertThat(left.toList()).as("nothing was installed to make it run").isEmpty();
+        }
     }
 
+    /** Card 558: an agent file edited after the confirmation moves the hash, and the start is refused. */
     @Test
-    void anAgentStepWithoutALedgerEntryIsRefusedAtStartByName() throws Exception {
+    void anAgentFileEditedAfterTheConfirmationIsRefusedAtStart() throws Exception {
         Path dir = writeAgentPlaybook();
-        InstallLedger ledger = new InstallLedger(installs.resolve("playbook-installs.json"));
-
-        String lines = startAndAwaitTheEnd(dir, ledger, "ws-485-absent");
-
-        assertThat(lines).contains("\"stopReason\":\"refused\"").contains("agent not installed: reviewer")
-                .doesNotContain("\"step_start\"");
-    }
-
-    @Test
-    void anAgentFileEditedAfterTheInstallIsRefusedAtStart() throws Exception {
-        Path dir = writeAgentPlaybook();
-        InstallLedger ledger = new InstallLedger(installs.resolve("playbook-installs.json"));
-        install(dir, ledger);
+        String shown = confirmedHash(dir);
         Files.writeString(dir.resolve("agents/reviewer.md"), REVIEWER.replace("never edit a file", "edit every file"));
+        SessionConnection connection = session("ws-558-edited", new CountDownLatch(0));
 
-        String lines = startAndAwaitTheEnd(dir, ledger, "ws-485-edited");
+        connection.onStartPlaybook(dir.toString(), shown, TASK);
 
-        assertThat(lines).contains("\"stopReason\":\"refused\"").contains("agent changed since install: reviewer")
-                .doesNotContain("\"step_start\"");
+        assertThat(errors()).contains(SessionConnection.PLAYBOOK_CHANGED);
+        assertThat(connection.sessionId() == null
+                || !Files.exists(PlaybookRecorder.fileFor(connection.sessionId()))).as("no run started").isTrue();
     }
 }

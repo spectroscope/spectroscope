@@ -120,10 +120,10 @@ describe("the Skills view reads at that width, from the left", () => {
     );
   });
 
-  it("puts the head and the manager inside the column", () => {
+  it("puts the head, the manager, this session (card 558) and the chat commands (card 554) inside the column", () => {
     const html = renderToStaticMarkup(<SkillsPane />);
     expect(html).toMatch(
-      /^<div class="skills-pane"><div class="skills-column"><header class="skills-head">[\s\S]*<\/header><div class="skset">[\s\S]*<\/div><\/div><\/div>$/,
+      /^<div class="skills-pane"><div class="skills-column"><header class="skills-head">[\s\S]*<\/header><div class="skset">[\s\S]*<\/div><section class="skills-commands skills-session"[\s\S]*<\/section><section class="skills-commands"[\s\S]*<\/section><\/div><\/div>$/,
     );
   });
 });

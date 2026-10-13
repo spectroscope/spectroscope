@@ -33,7 +33,8 @@ export interface PaneTabSpec {
 
 /** The tabs of the playbook pane, in the order the header draws them. The tests read this list. */
 export const PANE_TABS: readonly PaneTabSpec[] = [
-  { id: "playbook", label: "pb.title" },
+  // Card 563 (owner decision): the first tab is Steps; its id stays.
+  { id: "playbook", label: "pbb.tab.steps" },
   { id: "skills", label: "pbb.tab.skills", kind: "skills", folder: "skills" },
   { id: "agents", label: "pbb.tab.agents", kind: "agents", folder: "agents" },
   { id: "hooks", label: "pbb.tab.hooks", kind: "hooks", folder: "hooks" },

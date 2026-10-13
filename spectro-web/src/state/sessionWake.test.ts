@@ -84,9 +84,42 @@ describe("a wake", () => {
 
     h.sockets[1].status("open");
 
-    expect(h.sockets[1].sent).toEqual([{ type: "wake_session", sessionId: ID }]);
+    expect(h.sockets[1].sent).toEqual([
+      { type: "wake_session", sessionId: ID },
+      { type: "get_session_items" },
+    ]);
     expect(h.set.get(key)?.woken).toBe(true);
     expect(h.sockets[0].sent).toEqual([]);
+  });
+
+  // Card 558, round 3 (integrator decision): the wake asks for the session's
+  // items at once, with or without a pick, so the picker of a woken session
+  // shows its own items and not the installed skills.
+  it("asks for the session's items right after the wake, with or without a pick", () => {
+    const key = h.set.open({ wake: ID });
+    h.sockets[1].status("open");
+
+    expect(h.sockets[1].sent).toEqual([
+      { type: "wake_session", sessionId: ID },
+      { type: "get_session_items" },
+    ]);
+    h.sockets[1].emit([
+      {
+        type: "session_items",
+        playbook: null,
+        items: [
+          {
+            kind: "skill",
+            name: "alpha",
+            plain: "alpha",
+            source: "workspace",
+            namespace: "workspace",
+            description: "d",
+          },
+        ],
+      } as unknown as RunEvent,
+    ]);
+    expect(h.set.get(key)?.state.sessionItems?.items.map((i) => i.name)).toEqual(["alpha"]);
   });
 
   it("sends the frame once, not again on a reconnect", () => {
@@ -94,7 +127,10 @@ describe("a wake", () => {
     h.sockets[1].status("open");
     h.sockets[1].status("closed");
     h.sockets[1].status("open");
-    expect(h.sockets[1].sent).toEqual([{ type: "wake_session", sessionId: ID }]);
+    expect(h.sockets[1].sent).toEqual([
+      { type: "wake_session", sessionId: ID },
+      { type: "get_session_items" },
+    ]);
   });
 
   it("is found by its session id, and the rail does not list it as held", () => {
@@ -130,6 +166,7 @@ describe("a wake", () => {
     expect(slot.state.workspace?.sessionId).toBe(ID);
     expect(h.sockets[1].sent).toEqual([
       { type: "wake_session", sessionId: ID },
+      { type: "get_session_items" },
       { type: "user_message", text: "ZETA next" },
     ]);
     expect(h.sockets).toHaveLength(2);
@@ -150,6 +187,7 @@ describe("a wake", () => {
 
     expect(h.sockets[1].sent).toEqual([
       { type: "wake_session", sessionId: ID },
+      { type: "get_session_items" },
       { type: "set_loop", action: "stop" },
     ]);
     expect(h.sockets[0].sent, "never on the socket that was in view").toEqual([]);
@@ -169,6 +207,7 @@ describe("a wake", () => {
 
     expect(h.sockets[1].sent).toEqual([
       { type: "wake_session", sessionId: ID },
+      { type: "get_session_items" },
       { type: "set_goal", outcome: "the tests are green", check: "npm test" },
     ]);
     expect(h.sockets[0].sent, "never on the socket that was in view").toEqual([]);
@@ -189,6 +228,7 @@ describe("a wake", () => {
 
     expect(h.sockets[1].sent).toEqual([
       { type: "wake_session", sessionId: ID },
+      { type: "get_session_items" },
       { type: "set_goal", outcome: "", check: "" },
     ]);
     expect(h.sockets[0].sent).toEqual([]);

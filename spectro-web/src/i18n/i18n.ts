@@ -100,7 +100,8 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Ein State-Graph liegt als Dateipaar neben der Session, nicht auf dem Server — lade ihn rechts in der Ansicht.",
     en: "A state graph sits beside the session as a pair of files, not on the server — load it in the view on the right.",
   },
-  "nav.skills": { de: "Skills", en: "Skills" },
+  // Card 554 (owner answer 6): the rail row and its view also list the chat commands.
+  "nav.skills": { de: "Skills und Befehle", en: "Skills and Commands" },
   "browser.title": { de: "Der sichtbare Browser", en: "The visible browser" },
   "browser.noPage": { de: "noch keine Seite geöffnet", en: "no page open yet" },
   "browser.attachedNote": {
@@ -335,6 +336,8 @@ export const dict: Record<string, { de: string; en: string }> = {
   "sess.token": { de: "{n} Token", en: "{n} token" },
   "sess.tokens": { de: "{n} Tokens", en: "{n} tokens" },
   "sess.ranFor": { de: "Dauer {d}", en: "ran for {d}" },
+  // Card 554, integrator decision e: the playbook a stored session picked.
+  "sess.playbook": { de: "Playbook: {name}", en: "playbook: {name}" },
   "sess.out.clean": { de: "sauber beendet", en: "finished cleanly" },
   // The raw stop reason rides along: the wire has words this edition does not
   // interpret, and inventing a reading for them would be the wrong kind of tidy.
@@ -352,8 +355,10 @@ export const dict: Record<string, { de: string; en: string }> = {
   // disclosure menu and the text width call their quiet setting.
   "sess.opts": { de: "Listen-Optionen", en: "list options" },
   "dens.title": { de: "Dichte", en: "density" },
+  "dens.minimal": { de: "minimal", en: "minimal" },
+  "dens.minimal.hint": { de: "Name und Punkt", en: "the name and its dot" },
   "dens.normal": { de: "normal", en: "normal" },
-  "dens.normal.hint": { de: "nur Name und Status", en: "the name and its state" },
+  "dens.normal.hint": { de: "Name, Ordner und Status", en: "name, folder and state" },
   "dens.extended": { de: "erweitert", en: "extended" },
   "dens.extended.hint": { de: "mit Zeit, Turns und Tokens", en: "with time, turns and tokens" },
 
@@ -3071,8 +3076,29 @@ export const dict: Record<string, { de: string; en: string }> = {
   // few words.
   "slash.about": { de: "Beschreibung", en: "Description" },
   "slash.namespace": { de: "Namensraum", en: "Namespace" },
+  // Card 558: where a session item comes from, as a small label in the picker
+  // and on the Skills and Commands page. A playbook item shows the playbook's name.
+  "slash.src.workspace": { de: "Arbeitsordner", en: "workspace" },
+  "slash.src.user": { de: "eigene", en: "user" },
+  "slash.src.playbook": { de: "Playbook", en: "playbook" },
+  "slash.kind.command": { de: "Befehl", en: "command" },
   // Card 471: the chat's two commands, above the skills in the slash picker.
   "slash.commands": { de: "Befehle", en: "Commands" },
+  // Card 554, criterion 8h: the commands come from the server; until they are here.
+  "slash.loading": { de: "Befehle werden geladen …", en: "Loading the commands …" },
+  // Card 554 fix round 3: Enter on a draft held because the command list is not here.
+  "slash.heldFailed": {
+    de: "Die Chat-Befehle konnten nicht geladen werden. Der Server wird erneut gefragt; der Entwurf wartet, bis sie da sind.",
+    en: "The chat commands could not be loaded. The server is asked again; the draft waits until they are here.",
+  },
+  "slash.heldLoading": {
+    de: "Die Chat-Befehle werden noch geladen. Der Entwurf wartet, bis sie da sind.",
+    en: "The chat commands are still loading. The draft waits until they are here.",
+  },
+  "slash.loadFailed": {
+    de: "Die Befehle konnten nicht gelesen werden. Ein Entwurf mit / am Anfang wartet, bis sie da sind; eine neue Verbindung fragt erneut.",
+    en: "The commands could not be read. A draft that starts with / waits until they are here; a new connection asks again.",
+  },
   "cmd.compact.help": { de: "Verlauf jetzt zusammenfassen und Kontext frei machen", en: "Summarize the history now to free the context" },
   // Card 504: the goal section of the gear, the goal line and the loop chip.
   "goal.title": { de: "Ziel", en: "Goal" },
@@ -3104,10 +3130,150 @@ export const dict: Record<string, { de: string; en: string }> = {
   "loop.chip.stop": { de: "Stopp", en: "Stop" },
   "loop.chip.stopTitle": { de: "Schleife beenden", en: "End the loop" },
   "cmd.loop.help": {
-    de: "/loop [Intervall] <Auftrag> wiederholt einen Auftrag, ohne Intervall bestimmt das Modell den Takt",
-    en: "/loop [interval] <prompt> repeats a prompt; without an interval the model sets the pace",
+    de: "/loop [Intervall] <Auftrag> wiederholt einen Auftrag; ohne Intervall bestimmt das Modell den Takt; /loop stop beendet ihn",
+    en: "/loop [interval] <prompt> repeats a prompt; without an interval the model sets the pace; /loop stop ends it",
   },
   "cmd.clear.help": { de: "Frischer Kontext in dieser Session, der Verlauf bleibt sichtbar", en: "Start a fresh context in this session, the history stays visible" },
+  // Card 554: the German help of the commands in the core list, keyed by the
+  // row's id; the English is the list's own (commandHelp.drift.test.ts).
+  "cmd.help.help": { de: "Jeden Befehl mit einer kurzen Hilfe auflisten", en: "List every command with a short help" },
+  "cmd.skills.help": { de: "Die installierten Skills zeigen", en: "Show the installed skills" },
+  "cmd.run-with-playbook.help": {
+    de: "Deinen Auftrag Schritt für Schritt durch das Playbook dieser Session laufen lassen",
+    en: "Run your prompt through this session's playbook, step by step",
+  },
+  "cmd.playbook-current.help": { de: "Zeigen, welches Playbook diese Session nutzt", en: "Show which playbook this session uses" },
+  "cmd.playbook-list.help": { de: "Die Playbooks auflisten, die du nutzen kannst", en: "List the playbooks you can use" },
+  "cmd.playbook-show.help": {
+    de: "/playbook show [Name] fasst ein Playbook zusammen, ohne Namen das aktuelle: Schritte, Prüfungen, Modelle und Inhalte",
+    en: "/playbook show [name] summarizes a playbook, the current one without a name: steps, gates, models and contents",
+  },
+  "cmd.playbook-use.help": { de: "Dieses Playbook in dieser Session nutzen", en: "Use this playbook in this session" },
+  "cmd.playbook-workflow.help": { de: "Einen Workflow dieses Playbooks ausführen", en: "Run a workflow of this playbook" },
+  // Card 554: the chat commands on the Skills and Commands page.
+  "skv.commands": { de: "Chat-Befehle", en: "Chat commands" },
+  // Card 563 (owner decision): the first tab of the Playbook view.
+  "pbb.tab.steps": { de: "Schritte", en: "Steps" },
+  "skv.commandsClaim": {
+    de: "Tippe einen Befehl am Anfang einer Nachricht. Die Liste kommt vom Server, das Terminal zeigt dieselbe mit /help.",
+    en: "Type a command at the start of a message. The list comes from the server; the terminal shows the same one with /help.",
+  },
+  "skv.developerOnly": { de: "Entwicklermodus", en: "developer mode" },
+  // Card 558: the session's own skills, commands and agents on the same page.
+  "skv.session": { de: "Diese Session", en: "This session" },
+  "skv.sessionClaim": {
+    de: "Was die Session im Blick bei ihrem nächsten Zug liest: aus dem Arbeitsordner, dem gewählten Playbook und deinen eigenen Ordnern. Ein Name, den es mehrfach gibt, steht unter jeder Quelle. Nur zum Lesen.",
+    en: "What the session in view reads at its next turn: from its working folder, the picked playbook and your own folders. A name that exists more than once stands under each source. Read only.",
+  },
+  "skv.sessionNone": {
+    de: "Die Session im Blick hat noch keine Liste geschickt.",
+    en: "The session in view has not sent its list yet.",
+  },
+  "skv.kind.skill": { de: "Skills", en: "Skills" },
+  "skv.kind.command": { de: "Befehle", en: "Commands" },
+  "skv.kind.agent": { de: "Agenten", en: "Agents" },
+  // Card 554: the playbook chip in the header (developer mode).
+  "pbchip.label": { de: "Playbook dieser Session", en: "Playbook of this session" },
+  "pbchip.choose": { de: "Playbook wählen", en: "Pick a playbook" },
+  // Card 554, integrator decision b: the explicit "No playbook" pick.
+  "pbchip.noPlaybook": { de: "Kein Playbook", en: "No playbook" },
+  "pbchip.suggested": { de: "Vorschlag für diesen Ordner", en: "suggested for this folder" },
+  "pbchip.suggestedTitle": {
+    de: "Für diesen Ordner hinterlegt. Gespeichert wird es für diese Session, wenn du es wählst oder einen Lauf startest.",
+    en: "Pinned for this folder. It is stored for this session when you pick it or start a run.",
+  },
+  "pbchip.notFound": { de: "nicht gefunden", en: "not found" },
+  "pbchip.notFoundTitle": {
+    de: "Der gewählte Playbook-Ordner wurde nicht gefunden. Wähle ein anderes Playbook.",
+    en: "The picked playbook folder was not found. Pick another playbook.",
+  },
+  "pbchip.play": {
+    de: "Mit diesem Playbook ausführen: schreibt /run-with-playbook in das Nachrichtenfeld",
+    en: "Run with this playbook: writes /run-with-playbook into the message box",
+  },
+  "pbchip.playNeedsPick": { de: "Wähle zuerst ein Playbook", en: "Pick a playbook first" },
+  // Card 554: the first line of what /help answers in the chat.
+  "cmd.helpTitle": { de: "Befehle, die du hier tippen kannst", en: "Commands you can type here" },
+  "cmd.group.chat": { de: "Chat", en: "Chat" },
+  "cmd.group.playbook": { de: "Playbook", en: "Playbook" },
+  "cmd.group.skills": { de: "Skills", en: "Skills" },
+  // Card 554, integrator decision c: /help outside developer mode marks the
+  // playbook rows, which only developer mode offers in the picker.
+  "cmd.devMark": { de: "{group} (Entwicklermodus)", en: "{group} (developer mode)" },
+  // Card 554, integrator decision a: what /playbook, /playbook list,
+  // /playbook show and /playbook use answer in the chat.
+  "pbcmd.current": { de: "Aktuelles Playbook: {name}", en: "Current playbook: {name}" },
+  "pbcmd.current.none": { de: "Aktuelles Playbook: keines", en: "Current playbook: none" },
+  "pbcmd.current.notFound": { de: "Aktuelles Playbook: nicht gefunden", en: "Current playbook: not found" },
+  "pbcmd.folder": { de: "Ordner: {dir}", en: "Folder: {dir}" },
+  "pbcmd.source.picked": { de: "Quelle: gewählt", en: "Source: picked" },
+  "pbcmd.source.suggested": {
+    de: "Quelle: Vorschlag, für diesen Ordner hinterlegt",
+    en: "Source: suggested from the folder pin",
+  },
+  "pbcmd.source.none": { de: "Quelle: du hast „Kein Playbook“ gewählt", en: 'Source: you picked "No playbook"' },
+  "pbcmd.howToPick": {
+    de: "Wähle eines im Auswahlfeld oben im Entwicklermodus oder mit /playbook use <Name>.",
+    en: "Pick one in the header dropdown in developer mode, or with /playbook use <name>.",
+  },
+  "pbcmd.list.title": { de: "Playbooks, die du nutzen kannst:", en: "Playbooks you can use:" },
+  "pbcmd.list.current": { de: "(aktuell)", en: "(current)" },
+  "pbcmd.list.suggested": { de: "(Vorschlag für diesen Ordner)", en: "(suggested for this folder)" },
+  "pbcmd.list.empty": {
+    de: "Noch ist kein Playbook-Ordner eingetragen. Füge einen in der Playbook-Ansicht hinzu.",
+    en: "No playbook folder is registered yet. Add one in the Playbook view.",
+  },
+  "pbcmd.use.usage": {
+    de: "So geht es: /playbook use <Name>; /playbook list nennt sie.",
+    en: "Usage: /playbook use <name>; /playbook list names them.",
+  },
+  "pbcmd.use.done": {
+    de: "Diese Session nutzt jetzt das Playbook {name} ({dir}).",
+    en: "This session now uses the playbook {name} ({dir}).",
+  },
+  "pbcmd.use.unknown": {
+    de: "Kein Playbook heißt {query}. Du kannst nutzen: {names}",
+    en: "No playbook is named {query}. You can use: {names}",
+  },
+  "pbcmd.use.unknownEmpty": {
+    de: "Kein Playbook heißt {query}, und noch ist kein Playbook-Ordner eingetragen.",
+    en: "No playbook is named {query}, and no playbook folder is registered yet.",
+  },
+  "pbcmd.use.ambiguous": {
+    de: "{query} passt auf mehr als ein Playbook: {names}. Nenne es über seinen Ordner.",
+    en: "{query} names more than one playbook: {names}. Name it by its folder.",
+  },
+  "pbcmd.use.notSent": {
+    de: "Die Wahl ging nicht raus: die Session ist geschlossen oder ihre Verbindung unterbrochen.",
+    en: "The pick was not sent: the session is closed or its connection is down.",
+  },
+  "pbcmd.show.title": { de: "Playbook {name}", en: "Playbook {name}" },
+  "pbcmd.show.steps": { de: "Schritte:", en: "Steps:" },
+  "pbcmd.show.gates": { de: "Prüfungen:", en: "Gates:" },
+  "pbcmd.show.models": { de: "Modelle:", en: "Models:" },
+  "pbcmd.show.contents": {
+    de: "Inhalte: Skills {skills}, Agenten {agents}, Hooks {hooks}, Befehle {commands}, Workflows {workflows}",
+    en: "Contents: skills {skills}, agents {agents}, hooks {hooks}, commands {commands}, workflows {workflows}",
+  },
+  "pbcmd.show.notLoaded": { de: "Das Playbook in {dir} lädt nicht: {findings}", en: "The playbook in {dir} does not load: {findings}" },
+  "pbcmd.show.unread": { de: "Das Playbook in {dir} ließ sich nicht lesen: {reason}", en: "The playbook in {dir} could not be read: {reason}" },
+  "pbcmd.show.nothing": {
+    de: "Kein Playbook zum Zeigen: diese Session hat keines. {how}",
+    en: "No playbook to show: this session has none. {how}",
+  },
+  "pbcmd.show.open": { de: "Im Tab Schritte öffnen", en: "Open in the Steps tab" },
+  "pbcmd.readFailed": { de: "Die Playbook-Ordner ließen sich nicht lesen.", en: "The playbook folders could not be read." },
+  // Card 554: a playbook run in the chat of its session (criterion 8f).
+  "chat.pb.start": { de: "Playbook {playbook} gestartet mit der Aufgabe: {task}", en: "Playbook {playbook} started on the task: {task}" },
+  "chat.pb.startNoTask": { de: "Playbook {playbook} gestartet", en: "Playbook {playbook} started" },
+  "chat.pb.step": { de: "Schritt {name} läuft auf {model}", en: "Step {name} runs on {model}" },
+  "chat.pb.end": { de: "Der Playbook-Lauf endete: {ref}.{more}", en: "The playbook run ended: {ref}.{more}" },
+  "chat.pb.endResult": {
+    de: "Der Playbook-Lauf endete. Ergebnis: {result}. Grund: {ref}.{more}",
+    en: "The playbook run ended. Result: {result}. Stop reason: {ref}.{more}",
+  },
+  // Card 554: the eyebrow over a prompt a playbook step sent (task 13 draws it).
+  "chat.byPlaybook": { de: "Playbook", en: "Playbook" },
   // Card 471: the divider a /clear leaves in the chat, followed by the time.
   "chat.contextCleared": { de: "Kontext geleert", en: "context cleared" },
   "chat.compacting": {
@@ -3143,6 +3309,11 @@ export const dict: Record<string, { de: string; en: string }> = {
   "chat.steerHint": {
     de: "Zuruf: erreicht den laufenden Lauf beim nächsten Schritt",
     en: "Steering message: reaches the running turn at its next step",
+  },
+  // Card 556: a model picked in a stored session that could not be opened.
+  "chat.switchNotSent": {
+    de: "Der Wechsel zu {pair} hat diese Session nicht erreicht: Sie ließ sich nicht öffnen. Es hat sich nichts geändert.",
+    en: "The switch to {pair} did not reach this session: it could not be opened. Nothing changed.",
   },
   "chat.steerNotTaken": {
     de: "Der Lauf endete, bevor er den Zuruf gelesen hat. Er geht als nächste Nachricht raus.",
@@ -5090,7 +5261,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   "pbb.new.type": { de: "Typ", en: "Type" },
   "pbb.new.go": { de: "Anlegen", en: "Create" },
   "pbb.new.nameHint": { de: "Buchstaben, Ziffern, - und _, am Anfang ein Buchstabe oder eine Ziffer.", en: "Letters, digits, - and _, starting with a letter or a digit." },
-  "pbb.workflows.later": { de: "Hier kannst du Workflows aufführen und bearbeiten. Ausführen kannst du sie im Abschnitt Workflows im Tab Playbook.", en: "You can list and edit workflows here. To run one, use the Workflows section of the Playbook tab." },
+  "pbb.workflows.later": { de: "Hier kannst du Workflows aufführen und bearbeiten. Ausführen kannst du einen im Chat einer Session mit /playbook workflow und seinem Namen.", en: "You can list and edit workflows here. To run one, type /playbook workflow and its name in the chat of a session." },
   "pbb.done.imported": { de: "Importiert. Der Baum zeigt jetzt die neuen Dateien.", en: "Imported. The tree now shows the new files." },
   "pbb.done.created": { de: "Angelegt und in contents aufgeführt.", en: "Created and listed in contents." },
   "pbb.done.removed": { de: "Aus contents und aus dem Ordner entfernt.", en: "Removed from contents and from the folder." },
@@ -5134,23 +5305,20 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "No folder dialog here. Paste an absolute path into the field.",
   },
   // Card 482: a run that follows the playbook, its confirmation and its view.
-  "pb.run.build": { de: "Danach bauen", en: "Build by this" },
-  "pb.run.hint": {
-    de: "Ein Lauf folgt dem Playbook Schritt für Schritt, jeder Schritt auf seinem Modell.",
-    en: "A run follows the playbook step by step, each step on its own model.",
-  },
   "pb.run.confirmTitle": { de: "Diesen Lauf starten?", en: "Start this run?" },
   "pb.run.commands": { de: "Befehle, die dieser Lauf ausführen kann", en: "Commands this run may execute" },
   "pb.run.skills": { de: "Skills", en: "Skills" },
-  "pb.run.skillPlaybook": { de: "aus dem Playbook", en: "from the playbook" },
+  "pb.run.skillPlaybook": { de: "im Playbook", en: "in the playbook" },
   "pb.run.skillInstalled": { de: "installiert", en: "installed" },
-  "pb.run.skillMissing": { de: "fehlt", en: "missing" },
+  "pb.run.skillMissing": { de: "fehlt im Playbook", en: "missing in the playbook" },
   "pb.run.hash": { de: "Prüfsumme", en: "Hash" },
   "pb.run.permission": { de: "Berechtigung", en: "Permission" },
   "pb.run.refusals": { de: "Der Lauf startet nicht, weil", en: "The run does not start because" },
   "pb.run.start": { de: "Starten", en: "Start" },
   "pb.run.close": { de: "Schließen", en: "Close" },
   "pb.run.live": { de: "Der Lauf läuft.", en: "The run is in progress." },
+  // Card 554: what the run was asked, under its status line.
+  "pb.run.task": { de: "Auftrag: {task}", en: "Asked: {task}" },
   "pb.run.stopped": { de: "Der Lauf endete: {reason}", en: "The run ended: {reason}" },
   "pb.run.ended": {
     de: "Der Lauf endete. Ergebnis: {result}. Grund: {reason}.",
@@ -5265,92 +5433,45 @@ export const dict: Record<string, { de: string; en: string }> = {
   "pbe.model.state": { de: "{provider}: {state}", en: "{provider}: {state}" },
   "pb.disabled": { de: "ausgeschaltet", en: "disabled" },
   "pc.title": { de: "Inhalt des Playbooks", en: "Playbook contents" },
-  "pc.install": { de: "Installieren", en: "Install" },
-  "pc.remove": { de: "Entfernen", en: "Remove" },
-  "pc.cancel": { de: "Abbrechen", en: "Cancel" },
   "pc.kind.skill": { de: "Skills", en: "Skills" },
   "pc.kind.command": { de: "Befehle", en: "Commands" },
   "pc.kind.hook": { de: "Hooks", en: "Hooks" },
   "pc.kind.agent": { de: "Agenten", en: "Agents" },
   "pc.kind.workflow": { de: "Workflows", en: "Workflows" },
+  // Card 558: a playbook is read in place; the line says what an item reaches now.
   "pc.scope.sessions": {
-    de: "Jede neue Sitzung sieht das, in jedem Modus.",
-    en: "Every new session sees this, in every mode.",
+    de: "Eine Session kann das nutzen, sobald sie dieses Playbook wählt.",
+    en: "A session can use this as soon as it picks this playbook.",
   },
   "pc.scope.toolCalls": {
-    de: "Läuft vor der Freigabeprüfung bei jedem Werkzeugaufruf jeder neuen Sitzung.",
-    en: "Runs before the permission check on every tool call of every new session.",
+    de: "Läuft noch in keiner Session, auch nicht in einer, die dieses Playbook wählt.",
+    en: "Runs in no session yet, not even in one that picks this playbook.",
   },
   "pc.scope.runs": {
-    de: "Nur Schritte dieses Playbooks starten diese Rolle.",
-    en: "Only steps of this playbook start this role.",
+    de: "Eine Session kann diesen Agenten starten, sobald sie dieses Playbook wählt. Ein Schritt dieses Playbooks startet ihn, wenn der Schritt ihn als Rolle nennt.",
+    en: "A session can start this agent as soon as it picks this playbook. A step of this playbook starts it when the step names it as its role.",
   },
   "pc.scope.none": {
     de: "Diese Datei ist keine Workflow-Schrittliste und wird nicht ausgeführt.",
     en: "This file is not a workflow step list, so it is not run.",
   },
   "pc.scope.workflow": {
-    de: "Läuft in dieser Sitzung, wenn du in der Workflow-Liste auf Ausführen drückst.",
-    en: "Runs in this session when you press Run in the workflow list.",
+    de: "Läuft im Chat einer Session mit diesem Playbook, wenn du /playbook workflow {name} eingibst.",
+    en: "Runs in the chat of a session with this playbook when you type /playbook workflow {name}.",
   },
-  "pc.state.new": { de: "neu", en: "new" },
-  "pc.state.same": { de: "installiert", en: "installed" },
-  "pc.state.sourceChanged": {
-    de: "im Playbook geändert seit der Installation",
-    en: "changed in the playbook since the install",
-  },
-  "pc.state.copyChanged": { de: "installierte Kopie geändert", en: "installed copy was edited" },
-  "pc.state.taken": { de: "Ziel belegt: {target}", en: "target taken: {target}" },
+  "pc.state.inPlaybook": { de: "im Playbook", en: "in the playbook" },
   "pc.state.notRun": { de: "nicht ausgeführt", en: "not run" },
   "pc.state.runnable": { de: "ausführbar", en: "runnable" },
   "wf.title": { de: "Workflows", en: "Workflows" },
-  "wf.hint": {
-    de: "Ein Workflow läuft in dieser Sitzung. Die Helfer eines Fan-outs arbeiten gleichzeitig, ihre Statuszeilen und das Ergebnis erscheinen im Chat.",
-    en: "A workflow runs in this session. The helpers of a fan-out work at the same time; their status lines and the result appear in the chat.",
+  // Card 554: a workflow starts from the chat; the list names the command.
+  "wf.fromChat": {
+    de: "Ein Workflow startet im Chat einer Session: /playbook workflow <Name> <Eingabe>. Seine Statuszeilen und das Ergebnis erscheinen dort.",
+    en: "A workflow starts in the chat of a session: /playbook workflow <name> <input>. Its status lines and the result appear there.",
   },
-  "wf.needsSession": {
-    de: "Öffne eine Sitzung mit einem Arbeitsordner, um einen Workflow auszuführen.",
-    en: "Open a session with a working folder to run a workflow.",
-  },
-  "wf.input": { de: "Frage oder Hinweis für den Workflow", en: "Question or note for the workflow" },
-  "wf.run": { de: "Ausführen", en: "Run" },
   "wf.notRunnable": {
-    de: "Wird hier nicht ausgeführt: keine Schrittliste, oder der Workflow startet einen worker-Helfer, der Dateien schreiben kann.",
-    en: "Not run from here: not a step list, or the workflow starts a worker helper, which can write files.",
+    de: "Läuft nicht: keine Schrittliste, oder der Workflow startet einen worker-Helfer, der Dateien schreiben kann.",
+    en: "Does not run: not a step list, or the workflow starts a worker helper, which can write files.",
   },
-  "wf.started": {
-    de: "{name} läuft. Du siehst den Lauf im Chat dieser Sitzung.",
-    en: "{name} is running. The run shows in the chat of this session.",
-  },
-  "pc.hooks.tick": {
-    de: "Diese Hooks in meine Benutzereinstellungen schreiben",
-    en: "Write these hooks into my user settings",
-  },
-  "pc.hooks.silenced": {
-    de: "In diesem Arbeitsbereich legen die Projekteinstellungen eigene Hooks fest. Diese hier laufen dort nicht.",
-    en: "The project settings of this workspace set their own hooks. These do not run there.",
-  },
-  "pc.promptCost": {
-    de: "Skills und Befehle verlängern den Systemprompt jeder neuen Sitzung um {n} Zeichen.",
-    en: "Skills and commands add {n} characters to the system prompt of every new session.",
-  },
-  "pc.reach": {
-    de: "Gilt ab der nächsten Sitzung. Eine offene Sitzung behält, womit sie gestartet ist.",
-    en: "Applies from the next session. A session already open keeps what it started with.",
-  },
-  "pc.changed": {
-    de: "Der Ordner hat sich geändert, seit die Liste angezeigt wurde. Nichts wurde geschrieben. Hier ist die neue Liste.",
-    en: "The folder changed since the list was shown. Nothing was written. This is the new list.",
-  },
-  "pc.already": {
-    de: "Schon installiert aus {dir} am {date}. Erst entfernen, dann neu installieren.",
-    en: "Already installed from {dir} on {date}. Remove it first, then install again.",
-  },
-  "pc.kept": {
-    de: "Behalten, weil die installierte Kopie bearbeitet wurde: {names}",
-    en: "Kept, because the installed copy was edited: {names}",
-  },
-  "pc.installFromPlaybook": { de: "Aus diesem Playbook installieren", en: "Install from this playbook" },
   "pc.notInPlaybook": { de: "nicht in diesem Playbook", en: "not in this playbook" },
   "pc.count.skill": { de: "{n} Skills", en: "{n} skills" },
   "pc.count.skillOne": { de: "1 Skill", en: "1 skill" },
@@ -5364,21 +5485,6 @@ export const dict: Record<string, { de: string; en: string }> = {
   "pc.count.workflowOne": { de: "1 Workflow", en: "1 workflow" },
   "pc.hash": { de: "Prüfsumme des Inhalts", en: "Contents hash" },
   "pc.runTitle": { de: "Was dieses Playbook mitbringt", en: "What this playbook brings" },
-  "pc.runChanged": { de: "Seit der Installation geändert: {names}", en: "Changed since the install: {names}" },
-  "pc.notInstalled": { de: "{n} Inhalte sind nicht installiert.", en: "{n} items are not installed." },
-  "pc.notInstalledOne": { de: "1 Inhalt ist nicht installiert.", en: "1 item is not installed." },
-  "pc.removeGoes": { de: "Wird entfernt", en: "Will be removed" },
-  "pc.removeStays": {
-    de: "Bleibt, weil die installierte Kopie bearbeitet wurde",
-    en: "Stays, because the installed copy was edited",
-  },
-  "pc.removeNothing": {
-    de: "Von diesem Playbook ist nichts installiert.",
-    en: "Nothing of this playbook is installed.",
-  },
-  "pc.loading": { de: "Die Liste wird gelesen.", en: "Reading the list." },
-  "pc.written": { de: "Geschrieben", en: "Written" },
-  "pc.removed": { de: "Entfernt", en: "Removed" },
   "leveling.intro.title": { de: "Willkommen bei spectroscope", en: "Welcome to spectroscope" },
   "leveling.intro.body": {
     de: "spectroscope hat sieben Tabs, drei Linsen, eine Flotten-Canvas und einen Maschinenraum. Alles auf einmal ist eine Wand. Das Tutorial macht daraus einen Weg: du fängst mit dem Chat an, und jede weitere Fläche geht auf, sobald du die davor benutzt hast.",

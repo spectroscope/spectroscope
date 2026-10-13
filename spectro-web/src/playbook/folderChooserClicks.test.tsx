@@ -149,7 +149,7 @@ afterEach(() => {
 });
 
 describe("the pane's Choose button", () => {
-  const pane = <PlaybookPane workspace="/ws" sessionId={null} onStartPlaybook={() => false} />;
+  const pane = <PlaybookPane workspace="/ws" sessionId={null} />;
 
   it("posts to the chooser for the pane's slot and puts the picked path into the path field", async () => {
     pickAnswer = () => Promise.resolve(answer(200, { path: "/picked/pb" }));

@@ -260,4 +260,63 @@ class WorkflowStartFrameTest {
         assertThat(sidecar).contains("\"stopReason\":\"done\"").contains("\"result\":\"summarised\"");
         assertThat(connection.statusLine()).isEqualTo("idle");
     }
+
+    /**
+     * Card 554, criterion 8a: a workflow of the session's playbook starts from
+     * the chat by its name, with its input as text, and runs at once: no sheet,
+     * so no shown hash; the run records the hash of the bytes it read.
+     */
+    @Test
+    void aWorkflowNamedInTheChatRunsAtOnceOnTheSessionsPlaybookWithItsInput() throws Exception {
+        Path dir = writePlaybook();
+        CountDownLatch gate = new CountDownLatch(1);
+        SessionConnection connection = session("ws-554-wf-name", gate, new CountDownLatch(0));
+        connection.onSetPlaybook(dir.toString());
+
+        connection.onStartWorkflowByName(null, "ask", "Ada", "en");
+        gate.countDown();
+
+        String sidecar = awaitEnd(connection);
+        assertThat(errors()).isEmpty();
+        assertThat(sidecar).contains("\"workflow_start\"").contains("\"stopReason\":\"done\"")
+                .contains(hash(dir, "workflows/ask.json"));
+        assertThat(Files.readString(dev.spectroscope.core.session.SessionStore.sessionFile(connection.sessionId())))
+                .contains("Say hi to Ada");
+    }
+
+    @Test
+    void anUnknownWorkflowNameIsRefusedWithTheNamesThePlaybookHas() throws IOException {
+        Path dir = writePlaybook();
+        SessionConnection connection = session("ws-554-wf-unknown", new CountDownLatch(0), new CountDownLatch(0));
+
+        connection.onStartWorkflowByName(dir.toString(), "nope", "x", "en");
+        connection.onStartWorkflowByName(dir.toString(), " ", "", "en");
+
+        assertThat(errors()).containsExactly("No workflow \"nope\" in W; it has: ask, fan",
+                "Usage: /playbook workflow <name> [input]; W has: ask, fan");
+        assertThat(PlaybookRecorder.fileFor(connection.sessionId())).doesNotExist();
+    }
+
+    @Test
+    void withoutAPlaybookAWorkflowNameIsRefusedWithHowToPickOne() throws IOException {
+        writePlaybook();
+        SessionConnection connection = session("ws-554-wf-none", new CountDownLatch(0), new CountDownLatch(0));
+
+        connection.onStartWorkflowByName(null, "ask", "x", "en");
+
+        assertThat(errors()).containsExactly(SessionConnection.NO_PLAYBOOK);
+    }
+
+    @Test
+    void aWorkflowByNameThatStartsAWorkerIsRefusedAsFromTheModule() throws IOException {
+        Path dir = writePlaybook();
+        Files.writeString(dir.resolve("workflows/fan.json"), FAN.replace("{ \"task\": \"read the readme\" }",
+                "{ \"role\": \"worker\", \"task\": \"read the readme\" }"));
+        SessionConnection connection = session("ws-554-wf-worker", new CountDownLatch(0), new CountDownLatch(0));
+
+        connection.onStartWorkflowByName(dir.toString(), "fan", "", "en");
+
+        assertThat(errors()).singleElement().asString().contains("worker").contains("fanout-1.agents[1]");
+        assertThat(PlaybookRecorder.fileFor(connection.sessionId())).doesNotExist();
+    }
 }

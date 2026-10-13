@@ -7,6 +7,7 @@ import type { CSSProperties } from "react";
 import type { ClientMessage, RunEvent } from "./events";
 import type { ConnectionStatus } from "./transport/ws";
 import {
+  foldLocalLine,
   initialState,
   normalizeReplay,
   recordResumeMarker,
@@ -114,11 +115,31 @@ import { AnalyzeRun } from "./components/AnalyzeRun";
 import { RightPanel } from "./components/RightPanel";
 import { fetchSettings, putSettings } from "./state/serverSettings";
 import { reasoningFrame, useReasoningChoice, wireChoice } from "./state/reasoning";
+import {
+  askedSwitch,
+  confirmedSwitch,
+  nextSwitchAsk,
+  switchFrame,
+  switchLost,
+  switchNotSent,
+} from "./state/providerSwitch";
+import type { AskedSwitch } from "./state/providerSwitch";
 import { useReasoningCapability } from "./components/ReasoningControl";
 import { SessionSet, type BatchInfo } from "./state/sessionSet";
 import { ResumeJoin } from "./state/resumeJoin";
 import { sentWrites } from "./state/sentWrites";
-import type { ChatCommandName } from "./state/chatCommands";
+import {
+  noPlaybookFrame,
+  setPlaybookFrame,
+  startPlaybookFrame,
+  type ChatCommandName,
+} from "./state/chatCommands";
+import { useCommandsOnConnect } from "./state/commandList";
+import type { LocalLine } from "./state/pageCommands";
+import type { PlaybookConfirm } from "./state/playbookChat";
+import { composerMoves, headerPlaybook } from "./state/playbookHost";
+import { sessionItemsOf } from "./state/sessionItems";
+import { showFolder } from "./state/playbooks";
 import { openDecision, readOnlyKey, replayComposer } from "./state/sessionRows";
 import {
   applyDockReturn,
@@ -153,6 +174,7 @@ import {
   FleetSpawnForm,
   GraphView,
   LabView,
+  PlaybookChatSheet,
   PlaybookPane,
   prefetchSurfaces,
   SpectrolyzrPage,
@@ -311,6 +333,10 @@ export function App() {
   const allSlots = useSyncExternalStore(sessions.subscribe, sessions.slots, sessions.slots);
   const live: UiState = slot.state;
   const [replay, setReplay] = useState<Replay | null>(null);
+  // Card 554 fix round 3: the stored session on screen now, for a sender bound
+  // earlier (bindSessionFrame) to ask whether its session is still there.
+  const replayShown = useRef<string | null>(null);
+  replayShown.current = replay?.id ?? null;
   // The third event source (parallel to replay): a contextId when a fleet is
   // entered, feeding the tabs that fleet's events instead of the own session.
   const [enteredFleet, setEnteredFleet] = useState<string | null>(null);
@@ -791,6 +817,60 @@ export function App() {
     }
     return sendClient(frame);
   };
+  // Card 554, task 13: the playbook of the session, picked in the header chip:
+  // a folder, or null for "No playbook" (integrator decision b). A frame of
+  // the session, so a stored session is continued first, as the gear's are.
+  const pickPlaybook = (dir: string | null): boolean =>
+    sessionFrame(dir === null ? noPlaybookFrame() : setPlaybookFrame(dir));
+  // Card 554, criterion 8b: the start sheet /run-with-playbook opened. Close
+  // clears it in the record in view, which holds it; Start sends the run on
+  // the session's own route with the hash the sheet showed and the task, and
+  // closes the sheet once the frame left.
+  const closePlaybookSheet = (): void => {
+    sessions.update(slot.key, (held) => ({ ...held, playbookConfirm: null }));
+  };
+  const startConfirmedPlaybook = (confirm: PlaybookConfirm): void => {
+    if (sessionFrame(startPlaybookFrame(confirm.dir, confirm.preview.hash ?? "", confirm.prompt))) {
+      closePlaybookSheet();
+    }
+  };
+  // Card 554, task 13: the answer of a command the page answers itself, as a
+  // line of the chat it was typed in. The target is the one on screen when
+  // the command was given: the record in view, or the stored session on
+  // screen. Page-only either way: nothing is written.
+  const lineReplay = replay === null ? null : replay.id;
+  const lineKey = slot.key;
+  const addLocalLine = (line: LocalLine): void => {
+    const more = { tone: line.tone, openPlaybook: line.openPlaybook };
+    if (lineReplay !== null) {
+      setReplay((r) =>
+        r !== null && r.id === lineReplay ? { ...r, state: foldLocalLine(r.state, line.text, more) } : r,
+      );
+      return;
+    }
+    sessions.update(lineKey, (held) => foldLocalLine(held, line.text, more));
+  };
+  // Card 554 fix round 3 (criterion 6): the sender a page command is bound to
+  // when it is submitted. /playbook use sends after reads; by then the owner
+  // may be in another session, and sessionFrame's live branch reads the view
+  // when the frame leaves. Bound here, the frame goes to the record that was
+  // in view, and a record that is gone takes nothing. A stored session is
+  // continued only while it is still the one on screen.
+  const bindSessionFrame = (): ((frame: ClientMessage) => boolean) => {
+    if (replay !== null) {
+      const id = replay.id;
+      const send = sessionFrame;
+      return (frame) => replayShown.current === id && send(frame);
+    }
+    const key = sessions.view().key;
+    return (frame) => sessions.get(key) !== undefined && sessions.sendClient(key, frame);
+  };
+  // Card 554: the link under a /playbook show answer opens that playbook on
+  // the Steps tab of the Playbook view.
+  const openPlaybookSteps = (dir: string): void => {
+    showFolder(dir, "playbook");
+    pickSegment("playbook");
+  };
   const abort = (): void => {
     sessions.abort(sessions.view().key);
   };
@@ -860,23 +940,42 @@ export function App() {
   // truth regardless of whether that write lands.
   // Card 459: the switch belongs to the session that asked. A view switch
   // before the answer must not save the other session's pair as the default.
-  const providerSavePending = useRef<string | null>(null);
+  // Card 556: the switch leaves on the session's own route. A stored session
+  // the next message continues is continued first, on the socket its wake
+  // holds, and the frame goes before anything else (sessionFrame above); the
+  // socket in view holds another session. Its confirmed pair becomes the
+  // default for new chats too (owner, 2026-10-12). Fix round 1: the pick
+  // carries an ask id the server's answer echoes, and a pick that did not
+  // leave is not waited for.
+  const providerSwitchAsked = useRef<AskedSwitch | null>(null);
   const changeProvider = (provider: string, model: string): void => {
-    providerSavePending.current = sessions.view().key;
-    sendClient({ type: "set_provider", provider, ...(model ? { model } : {}) });
+    const asked = askedSwitch(
+      replay === null ? null : replay.id,
+      sessions.view().key,
+      provider,
+      model,
+      nextSwitchAsk(),
+    );
+    providerSwitchAsked.current = asked;
+    if (!sessionFrame(switchFrame(asked))) providerSwitchAsked.current = null;
   };
-  // The confirmation is the provider_info frame on the socket of the session
-  // that asked, read where the batches arrive (batchSink above).
+  // The confirmation is the server's answer to the pick, read where the
+  // batches arrive (batchSink above). The rule for which frame that is lives
+  // in state/providerSwitch.ts.
   const saveConfirmedProvider = (key: string, batch: RunEvent[]): void => {
-    if (providerSavePending.current !== key) return;
-    const info = [...batch].reverse().find((e) => (e as { type?: string }).type === "provider_info") as
-      { provider?: unknown; model?: unknown } | undefined;
-    if (info === undefined || typeof info.provider !== "string") return;
-    providerSavePending.current = null;
-    putSettings("user", {
-      provider: info.provider,
-      model: typeof info.model === "string" ? info.model : "",
-    }).catch(() => {});
+    const from = {
+      key,
+      sessionId: sessions.slots().find((held) => held.key === key)?.sessionId ?? null,
+    };
+    const pair = confirmedSwitch(providerSwitchAsked.current, from, batch);
+    if (pair === null) return;
+    providerSwitchAsked.current = null;
+    // Live check 0.15.3 D5: a blank chat's socket loaded the old default at
+    // connect, and New chat reuses it. Once the write landed, blank records go.
+    putSettings("user", pair).then(
+      () => sessions.retireBlanks(key),
+      () => {},
+    );
   };
 
   useEffect(() => {
@@ -979,6 +1078,9 @@ export function App() {
       .then((view) => setDockBounds(readDockWidths(view.effective)))
       .catch(() => {});
   }, [conn.status]);
+  // Card 554, criterion 8h: the command list is asked for again on every
+  // connect, so a server that came back serves the composer its list.
+  useCommandsOnConnect(conn.status);
 
   // Smart image-backend default (owner 2026-07-20): when the configured backend
   // has NO key while another one has, show the one that can actually generate.
@@ -1270,6 +1372,13 @@ export function App() {
     // one that this branch got wrong. Writing the rule twice is how they came
     // apart: the planner's copy learned about imports and this one did not.
     commitUrl(routeOfPlace({ ...placeRef.current, tab: next }), "gesture");
+  };
+  // Card 554, criterion 4: the header's play button wrote into the composer;
+  // the composer of the session comes on screen to take it and the focus.
+  const showComposer = (): void => {
+    const moves = composerMoves({ skillsOpen, nav, tab });
+    if (moves.segment) pickSegment("sessions");
+    if (moves.tab) changeTab("chat");
   };
 
   // Settings open/close, with history manners (card 131). Open pushes one
@@ -1683,6 +1792,22 @@ export function App() {
   // browser is idle after the first render; light fetches none.
   useEffect(() => prefetchSurfaces(viewMode, window), [viewMode]);
 
+  // Card 504 and card 556: the frames a resume held when it ends without
+  // continuing the session. They go, and so do the writes held for them
+  // (state/sentWrites.ts). A model pick among them is no longer waited for;
+  // when the resume failed, the stored session on screen says the pick did
+  // not arrive, the way a refused frame shows in the chat.
+  const abandonResumeFrames = (id: string, frames: ClientMessage[], failed: boolean): void => {
+    for (const frame of frames) sentWrites.drop(id, frame);
+    const asked = providerSwitchAsked.current;
+    if (asked === null || !switchLost(asked, id, frames)) return;
+    providerSwitchAsked.current = null;
+    if (failed) {
+      setReplay((shown) =>
+        shown !== null && shown.id === id ? { ...shown, state: switchNotSent(shown.state, asked) } : shown,
+      );
+    }
+  };
   // Continue a stored session (card 458): the first message typed into it
   // seeds a record from its JSONL (chat, graph, trace and Lab show the full
   // history) on a socket with ?resume=<id>, so the SERVER reloads the same
@@ -1723,7 +1848,7 @@ export function App() {
       if (!navNonce.isCurrent(ticket)) {
         // A later navigation already won: this resume's frames and the writes
         // held for them go (state/sentWrites.ts).
-        for (const frame of resumeJoin.take(ticket)) sentWrites.drop(id, frame);
+        abandonResumeFrames(id, resumeJoin.take(ticket), false);
         return;
       }
       const folded = await foldResume(events, mode, {
@@ -1732,7 +1857,7 @@ export function App() {
       });
       if (folded === null) {
         // A later navigation won during the fold; same as above.
-        for (const frame of resumeJoin.take(ticket)) sentWrites.drop(id, frame);
+        abandonResumeFrames(id, resumeJoin.take(ticket), false);
         return;
       }
       let seeded = isOpen("trace", mode)
@@ -1789,7 +1914,7 @@ export function App() {
       // lost, and the sign over it goes. The frames this resume held go with
       // it, or the next gear change would join a resume that is over, and so
       // do the writes held for them (state/sentWrites.ts).
-      for (const frame of resumeJoin.take(ticket)) sentWrites.drop(id, frame);
+      abandonResumeFrames(id, resumeJoin.take(ticket), true);
       if (!navNonce.isCurrent(ticket)) return;
       setOpening(null);
     }
@@ -2135,6 +2260,39 @@ export function App() {
     const folded = reduceAllUntraced(initialState, shownEvents);
     return replay === null ? folded : normalizeReplay(folded);
   }, [showingTranslation, enteredFleet, recordedView, replay, shownEvents]);
+  // Card 554: the workspace and the playbook the header's chips draw. The
+  // composer's playbook commands read the same workspace for its pin.
+  const chipWorkspace = headerWorkspace({
+    viewingLive,
+    liveWorkspace: view.workspace,
+    continuable,
+    replayId: replay?.id ?? null,
+    storedCwd: shownStoredCwd,
+    woken: wokenSlot?.state.workspace ?? null,
+  });
+  const chipPlaybook = headerPlaybook({
+    viewingLive,
+    livePick: live.playbook,
+    continuable,
+    replayPick: replay?.state.playbook ?? null,
+    wokenPick: wokenSlot?.state.playbook ?? null,
+  });
+  // Card 554, criterion 8b: the start sheet of the live record in view.
+  const playbookSheet = viewingLive ? live.playbookConfirm : null;
+  // Card 558: the skills, commands and agents the session in view reads, for
+  // the slash picker and the Skills and Commands page. Only the live socket is
+  // asked; a woken stored session hears them with its pick on the wake.
+  const viewSessionItems = sessionItemsOf({
+    viewingLive,
+    liveItems: live.sessionItems,
+    continuable,
+    wokenItems: wokenSlot?.state.sessionItems ?? null,
+  });
+  const askSessionItems = viewingLive
+    ? (): void => {
+        sendClient({ type: "get_session_items" });
+      }
+    : undefined;
   // Card 472: the code graph status follows the live session, or a stored one
   // opened read-only (AC5), never a scenario or an import.
   const codeGraphSession = codeGraphSessionOf(
@@ -2615,6 +2773,18 @@ export function App() {
       )}
       {scenariosOpen && <ScenarioDialog onPick={openScenario} onClose={() => setScenariosOpen(false)} />}
       {startersOpen && <StarterDialog onClose={() => setStartersOpen(false)} />}
+      {/* Card 554, criterion 8b: the start sheet /run-with-playbook opened in
+          the session on screen, loaded from the playbook chunk. */}
+      {playbookSheet !== null && (
+        <ChunkBoundary>
+          <PlaybookChatSheet
+            confirm={playbookSheet}
+            workspace={live.workspace?.path ?? null}
+            onStart={() => startConfirmedPlaybook(playbookSheet)}
+            onClose={closePlaybookSheet}
+          />
+        </ChunkBoundary>
+      )}
 
       <div className="main-col">
         {sidebarOpen && (
@@ -2643,16 +2813,20 @@ export function App() {
           doctorOpen={doctorOpen}
           onToggleDoctor={() => setDoctorOpen((o) => !o)}
           onOpenKeymap={() => setKeymapOpen(true)}
-          workspace={headerWorkspace({
-            viewingLive,
-            liveWorkspace: view.workspace,
-            continuable,
-            replayId: replay?.id ?? null,
-            storedCwd: shownStoredCwd,
-            woken: wokenSlot?.state.workspace ?? null,
-          })}
+          workspace={chipWorkspace}
           onPickFolder={pickWorkspace}
           canPickFolder={viewingLive && canPickWorkspace}
+          /* Card 554: the session's playbook; a pick leaves on the session's
+             own route, and the play button brings the composer forward. */
+          playbook={
+            chipPlaybook === null
+              ? undefined
+              : {
+                  pick: chipPlaybook.pick,
+                  onPick: (dir) => void pickPlaybook(dir),
+                  onShowComposer: showComposer,
+                }
+          }
           canGoBack={canGoBack(depth)}
           canGoForward={canGoForward(depth)}
         />
@@ -2819,23 +2993,20 @@ export function App() {
             the reader moves to another view. */}
         <ChunkBoundary resetKey={`${skillsOpen}|${nav}|${enteredFleet ?? ""}|${fleetTab}|${tab}`}>
           {skillsOpen ? (
-            <SkillsPane />
+            <SkillsPane sessionItems={viewSessionItems} onAskSessionItems={askSessionItems} />
           ) : nav === "playbook" ? (
             /* Card 481: the workspace the folder chip in the header shows.
                Card 484: the pane draws the wizard in its second tab; the
                element is made here so the lazy view sits under a boundary
                and App stays the one place that draws a lazy view.
-               Card 482: the live session a run starts in, and the start frame. */
+               Card 482: the session whose runs the run view draws. Card 554:
+               the pane starts nothing; a run starts from the chat. */
             <PlaybookPane
               workspace={(viewingLive ? view.workspace : null)?.path ?? null}
               sessionId={playbookSessionId(
                 (viewingLive ? view.workspace : null)?.sessionId ?? null,
                 replay?.id ?? null,
               )}
-              onStartPlaybook={(dir, hash) => sendClient({ type: "start_playbook", dir, hash })}
-              onStartWorkflow={(dir, file, hash, input) =>
-                sendClient({ type: "start_workflow", dir, file, hash, input, lang })
-              }
               wizard={
                 <ChunkBoundary>
                   <SpectrolyzrPage />
@@ -2967,6 +3138,18 @@ export function App() {
                     onSend: send,
                     onCommand: command,
                     onSessionFrame: sessionFrame,
+                    onBindSessionFrame: bindSessionFrame,
+                    // Card 554, task 13: the commands the page answers, the
+                    // Skills and Commands view, the Steps tab a /playbook
+                    // show links to (developer only, as the Playbook view)
+                    // and the workspace whose pin the playbook commands read.
+                    onLocalLine: addLocalLine,
+                    onOpenSkills: openSkills,
+                    onOpenPlaybook: viewMode === "developer" ? openPlaybookSteps : undefined,
+                    commandWorkspace: chipWorkspace?.path ?? null,
+                    // Card 558: the session's items for the slash picker.
+                    sessionItems: viewSessionItems,
+                    onAskSessionItems: askSessionItems,
                     onReturnToLive: returnToLive,
                     continuable,
                     onComposerFocus: wakeStored,
@@ -3008,10 +3191,12 @@ export function App() {
                     onPickFolder: pickWorkspace,
                     queued: queue,
                     onUnqueue: unqueue,
-                    steers: steeringView.understood && queue.length === 0,
+                    steers: steeringView.understood && queue.length === 0 && slot.starting === null,
                     steerPending: steeringView.pending,
                     onAbort: abort,
                     stopRequested,
+                    // Live check 0.15.3 D6: the message that left, until its run_start.
+                    starting: slot.starting,
                     // Card 224: the plus menu's Manage/Browse rows — the same
                     // open-at-a-section move the onboarding sheet makes, history
                     // manners included. Card 228: the skills rows point at the

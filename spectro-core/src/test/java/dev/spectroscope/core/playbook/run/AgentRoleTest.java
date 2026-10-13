@@ -3,10 +3,8 @@ package dev.spectroscope.core.playbook.run;
 import com.fasterxml.jackson.databind.JsonNode;
 import dev.spectroscope.core.events.RunEvent;
 import dev.spectroscope.core.playbook.AgentFile;
-import dev.spectroscope.core.playbook.ContentHash;
 import dev.spectroscope.core.playbook.Playbook;
 import dev.spectroscope.core.playbook.PlaybookReader;
-import dev.spectroscope.core.playbook.SafeWalk;
 import dev.spectroscope.core.subagents.SubagentManager;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -17,14 +15,17 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.function.Function;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** Card 485 follow-up: a child step with role agent:name runs on the installed agent file's type and preamble. */
+/**
+ * Card 485 follow-up: a child step with role agent:name runs on the agent file's type and preamble.
+ * Card 558: the file is read from the playbook folder in place; nothing is installed, and the start hash
+ * covers its bytes.
+ */
 class AgentRoleTest {
 
     static final String AGENT_STEP = """
@@ -64,28 +65,14 @@ class AgentRoleTest {
         return dir;
     }
 
-    /** Nothing installed: the ledger records no hash for any agent file. */
-    static final Function<String, String> NONE = source -> null;
-
-    /**
-     * The ledger as the installer leaves it for the agent file as it is now: the hash the contents preview
-     * records, a walk of the single file (PlaybookContents.agents).
-     */
-    static Function<String, String> installedAsItIsNow(Path dir) throws IOException {
-        Path root = dir.toRealPath();
-        String sha = ContentHash.tree(SafeWalk.walk(root, root.resolve("agents/reviewer.md")));
-        return source -> "agents/reviewer.md".equals(source) ? sha : null;
-    }
-
     private static Playbook read(String json) {
         PlaybookReader.Read read = PlaybookReader.read(json);
         assertEquals(List.of(), read.findings());
         return read.playbook();
     }
 
-    private PlaybookRunner.Outcome run(Path dir, String json, Function<String, String> installedHash, FakeHost host)
-            throws IOException {
-        PinnedPlaybook pinned = PinnedPlaybook.pin(dir, read(json), name -> null, installedHash);
+    private PlaybookRunner.Outcome run(Path dir, String json, FakeHost host) throws IOException {
+        PinnedPlaybook pinned = PinnedPlaybook.pin(dir, read(json));
         PlaybookRecorder recorder = new PlaybookRecorder(tmp.resolve("s1.playbook.jsonl"), PlaybookRecorder.DEFAULT_CEILING_BYTES);
         PlaybookRunner.Setup setup = new PlaybookRunner.Setup(pinned, "abcdefabcdef",
                 tmp.resolve("s1.abcdefabcdef.graph.jsonl"), recorder, host.signal, "auto");
@@ -99,10 +86,10 @@ class AgentRoleTest {
     }
 
     @Test
-    void anInstalledAgentGivesTheChildItsTypeAndPreambleAndTheStepKeepsItsModel() throws IOException {
+    void anAgentFileInTheFolderGivesTheChildItsTypeAndPreambleAndTheStepKeepsItsModel() throws IOException {
         Path dir = folder(AGENT_STEP, REVIEWER);
         FakeHost host = new FakeHost(Files.createDirectories(tmp.resolve("ws")));
-        PlaybookRunner.Outcome out = run(dir, AGENT_STEP, installedAsItIsNow(dir), host);
+        PlaybookRunner.Outcome out = run(dir, AGENT_STEP, host);
 
         assertEquals(RunStop.DONE, out.stopReason(), out.detail());
         RunEvent.RunStart start = host.events.stream().filter(RunEvent.RunStart.class::isInstance)
@@ -131,7 +118,7 @@ class AgentRoleTest {
         String json = AGENT_STEP.replace("\"role\": \"agent:reviewer\"", "\"role\": \"worker\"");
         Path dir = folder(json, REVIEWER);
         FakeHost host = new FakeHost(Files.createDirectories(tmp.resolve("ws")));
-        PlaybookRunner.Outcome out = run(dir, json, installedAsItIsNow(dir), host);
+        PlaybookRunner.Outcome out = run(dir, json, host);
 
         assertEquals(RunStop.DONE, out.stopReason(), out.detail());
         RunEvent.AgentSpawn spawn = host.events.stream().filter(RunEvent.AgentSpawn.class::isInstance)
@@ -141,32 +128,21 @@ class AgentRoleTest {
         assertFalse(sidecar("step_start").get(0).has("agent"), "a static role leaves the sidecar line as it was");
     }
 
+    /** Card 558: nothing installed and nothing in a ledger; the folder's file is what runs. */
     @Test
-    void aListedAgentThatIsNotInstalledRefusesTheRunAtTheStartByName() throws IOException {
+    void anAgentFileRunsWithNothingInstalledAnywhere() throws IOException {
         Path dir = folder(AGENT_STEP, REVIEWER);
-        FakeHost host = new FakeHost(Files.createDirectories(tmp.resolve("ws")));
-        PlaybookRunner.Outcome out = run(dir, AGENT_STEP, NONE, host);
+        PinnedPlaybook pinned = PinnedPlaybook.pin(dir, read(AGENT_STEP));
 
-        assertEquals(RunStop.REFUSED, out.stopReason());
-        assertTrue(out.detail().contains("agent not installed: reviewer"), out.detail());
-        assertTrue(host.events.stream().noneMatch(RunEvent.AgentSpawn.class::isInstance), "no child ran");
-        assertEquals(List.of(), sidecar("step_start"));
+        assertEquals(Map.of(), pinned.missingAgents());
+        assertEquals(PREAMBLE, pinned.agents().get("reviewer").preamble());
+        assertTrue(PlaybookRunner.refusals(pinned, true, provider -> "local").isEmpty());
     }
 
     @Test
-    void theThreeArgumentPinKnowsNoInstalledAgent() throws IOException {
-        Path dir = folder(AGENT_STEP, REVIEWER);
-        PinnedPlaybook pinned = PinnedPlaybook.pin(dir, read(AGENT_STEP), name -> null);
-
-        assertEquals(List.of("reviewer"), List.copyOf(pinned.missingAgents().keySet()));
-        assertTrue(PlaybookRunner.refusals(pinned, true, provider -> "local").stream()
-                .anyMatch(r -> r.startsWith("agent not installed: reviewer")));
-    }
-
-    @Test
-    void anInstalledAgentFileWithAFindingRefusesTheRunNamingTheAgentAndTheField() throws IOException {
+    void anAgentFileWithAFindingRefusesTheRunNamingTheAgentAndTheField() throws IOException {
         Path dir = folder(AGENT_STEP, REVIEWER.replace("type: explore", "type: explore\nmodel: claude-opus"));
-        PinnedPlaybook pinned = PinnedPlaybook.pin(dir, read(AGENT_STEP), name -> null, installedAsItIsNow(dir));
+        PinnedPlaybook pinned = PinnedPlaybook.pin(dir, read(AGENT_STEP));
 
         List<String> refusals = PlaybookRunner.refusals(pinned, true, provider -> "local");
         assertTrue(refusals.stream().anyMatch(r -> r.startsWith("agent reviewer: agents/reviewer.md#model")),
@@ -176,47 +152,17 @@ class AgentRoleTest {
     @Test
     void theStartHashCoversTheAgentFileAStepNames() throws IOException {
         Path dir = folder(AGENT_STEP, REVIEWER);
-        Function<String, String> installed = installedAsItIsNow(dir);
-        String first = PinnedPlaybook.pin(dir, read(AGENT_STEP), name -> null, installed).hash();
-        assertEquals(first, PinnedPlaybook.pin(dir, read(AGENT_STEP), name -> null, installed).hash());
+        String first = PinnedPlaybook.pin(dir, read(AGENT_STEP)).hash();
+        assertEquals(first, PinnedPlaybook.pin(dir, read(AGENT_STEP)).hash());
         Files.writeString(dir.resolve("agents/reviewer.md"), REVIEWER.replace("never edit", "edit freely"));
-        assertNotEquals(first, PinnedPlaybook.pin(dir, read(AGENT_STEP), name -> null, installed).hash(),
+        assertNotEquals(first, PinnedPlaybook.pin(dir, read(AGENT_STEP)).hash(),
                 "a preamble changed after the confirmation moves the hash the start frame checks");
-    }
-
-    @Test
-    void anAgentFileEditedSinceTheInstallRefusesTheRunAndNeverRunsTheEditedPreamble() throws IOException {
-        Path dir = folder(AGENT_STEP, REVIEWER);
-        Function<String, String> installed = installedAsItIsNow(dir);
-        Files.writeString(dir.resolve("agents/reviewer.md"), REVIEWER.replace("never edit a file", "edit every file"));
-        FakeHost host = new FakeHost(Files.createDirectories(tmp.resolve("ws")));
-
-        PlaybookRunner.Outcome out = run(dir, AGENT_STEP, installed, host);
-
-        assertEquals(RunStop.REFUSED, out.stopReason());
-        assertTrue(out.detail().contains("agent changed since install: reviewer"), out.detail());
-        assertTrue(host.events.stream().noneMatch(RunEvent.AgentSpawn.class::isInstance), "no child ran");
-    }
-
-    @Test
-    void aSecondFolderWithTheSameIdAndTheSameAgentBytesRunsBecauseTheBytesAreWhatWasConfirmed() throws IOException {
-        Path first = folder(AGENT_STEP, REVIEWER);
-        Function<String, String> installed = installedAsItIsNow(first);
-        Path second = Files.createDirectories(tmp.resolve("copy"));
-        Files.writeString(second.resolve("playbook.json"), AGENT_STEP);
-        Files.createDirectories(second.resolve("agents"));
-        Files.writeString(second.resolve("agents/reviewer.md"), REVIEWER);
-
-        PinnedPlaybook pinned = PinnedPlaybook.pin(second, read(AGENT_STEP), name -> null, installed);
-
-        assertEquals(Map.of(), pinned.missingAgents());
-        assertEquals(PREAMBLE, pinned.agents().get("reviewer").preamble());
     }
 
     @Test
     void aListedAgentWhoseFileIsAbsentRefusesTheRunAsNotFound() throws IOException {
         Path dir = folder(AGENT_STEP, null);
-        PinnedPlaybook pinned = PinnedPlaybook.pin(dir, read(AGENT_STEP), name -> null, source -> "any");
+        PinnedPlaybook pinned = PinnedPlaybook.pin(dir, read(AGENT_STEP));
 
         List<String> refusals = PlaybookRunner.refusals(pinned, true, provider -> "local");
         assertTrue(refusals.contains("agent not found: reviewer (agents/reviewer.md is not a file in the playbook folder)"),
@@ -230,9 +176,8 @@ class AgentRoleTest {
         Files.createDirectories(dir.resolve("agents"));
         Files.writeString(dir.resolve("agents/other.md"), REVIEWER);
         Files.createSymbolicLink(dir.resolve("agents/reviewer.md"), dir.resolve("agents/other.md"));
-        String shaOfTarget = ContentHash.entries(Map.of("reviewer.md", Files.readAllBytes(dir.resolve("agents/other.md"))));
 
-        PinnedPlaybook pinned = PinnedPlaybook.pin(dir, read(AGENT_STEP), name -> null, source -> shaOfTarget);
+        PinnedPlaybook pinned = PinnedPlaybook.pin(dir, read(AGENT_STEP));
 
         assertTrue(pinned.missingAgents().getOrDefault("reviewer", "").startsWith("agent not found: reviewer"),
                 pinned.missingAgents().toString());
@@ -246,7 +191,7 @@ class AgentRoleTest {
             Path dir = folder(json, REVIEWER);
             // A file sits where each name would lead, so only the name rule can refuse it.
             Files.writeString(dir.resolve("agents/" + name + ".md"), REVIEWER);
-            PinnedPlaybook pinned = PinnedPlaybook.pin(dir, read(json), n -> null, source -> "any");
+            PinnedPlaybook pinned = PinnedPlaybook.pin(dir, read(json));
 
             assertEquals(List.of(name), List.copyOf(pinned.missingAgents().keySet()), "role agent:" + name);
             assertTrue(pinned.missingAgents().get(name).startsWith("agent not found: "), pinned.missingAgents().toString());
@@ -258,7 +203,7 @@ class AgentRoleTest {
     void theAgentChildIsComposedExactlyAsTheStaticRoleToolsComposeTheirs() throws IOException {
         Path dir = folder(AGENT_STEP, REVIEWER);
         FakeHost host = new FakeHost(Files.createDirectories(tmp.resolve("ws")));
-        run(dir, AGENT_STEP, installedAsItIsNow(dir), host);
+        run(dir, AGENT_STEP, host);
         RunEvent.AgentSpawn spawn = host.events.stream().filter(RunEvent.AgentSpawn.class::isInstance)
                 .map(RunEvent.AgentSpawn.class::cast).findFirst().orElseThrow();
         String stepText = spawn.task().substring(spawn.task().indexOf("TASK:\n") + "TASK:\n".length());

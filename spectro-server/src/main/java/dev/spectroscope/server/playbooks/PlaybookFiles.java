@@ -52,11 +52,11 @@ public final class PlaybookFiles {
     static final long MAX_TEXT_BYTES = 1024L * 1024;
     /** How much of a file is searched for a NUL byte. */
     static final int SNIFF_BYTES = 8192;
-    /** The most bytes a playbook folder may hold, the installer's ceiling. */
-    static final long MAX_FOLDER_BYTES = PlaybookInstaller.MAX_BYTES;
+    /** The most bytes a playbook folder may hold, the skill catalogue's ceiling. */
+    static final long MAX_FOLDER_BYTES = PlaybookFolders.MAX_BYTES;
     /** The files at the root that a delete never removes. */
-    static final Set<String> PROTECTED = Set.of(PlaybookFolders.PLAYBOOK_FILE, PlaybookInstaller.LICENCE_FILE,
-            PlaybookInstaller.PROVENANCE_FILE);
+    static final Set<String> PROTECTED = Set.of(PlaybookFolders.PLAYBOOK_FILE, PlaybookFolders.LICENCE_FILE,
+            PlaybookFolders.PROVENANCE_FILE);
 
     /** A file name: a segment of the loader's rule, then dot separated extensions of the same characters. */
     private static final Pattern FILE_NAME = Pattern.compile(

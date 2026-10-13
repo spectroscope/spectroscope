@@ -97,6 +97,23 @@ describe("fetching the chunks on idle", () => {
     expect(calls).toContain(wizard);
   });
 
+  it("fetches the chat's start sheet in developer and never in learn or light (card 554)", () => {
+    const sheet = "playbook/PlaybookStartSheet.tsx";
+    expect(SURFACES.playbook.chunks).toContain(sheet);
+    for (const mode of ["learn", "light"] as const) {
+      const { host, idle } = idleHost();
+      const { loaders, calls } = countingLoaders();
+      prefetchSurfaces(mode, host, loaders);
+      idle();
+      expect(calls, mode).not.toContain(sheet);
+    }
+    const { host, idle } = idleHost();
+    const { loaders, calls } = countingLoaders();
+    prefetchSurfaces("developer", host, loaders);
+    idle();
+    expect(calls).toContain(sheet);
+  });
+
   it("has one real loader for every chunked module of the table, in the table's order", () => {
     for (const id of Object.keys(SURFACES) as SurfaceId[]) {
       const modules = SURFACES[id].chunks ?? [];

@@ -179,6 +179,20 @@ describe("the session list has an options control at its head", () => {
     expect(css).toMatch(/\.sess-opt-values\s*\{[^}]*margin-left:\s*auto/);
     expect(css).toMatch(/\.sess-opt-values\s*\{[^}]*max-width:\s*100%/);
   });
+
+  it("wraps the three values inside their group instead of cutting each word (card 555)", () => {
+    // Measured with Playwright on the installed Chrome, 2026-10-12: the three
+    // values need 176.5px in EN and 174.2px in DE, and the group has 117px at
+    // the 180px rail. Held on one line every value read "m…", "n…", "ext…".
+    // Wrapped, they take two lines and stay whole. A separator drawn as a left
+    // border on the next sibling would start the second line with a doubled
+    // edge and leave no line between the rows, so the separator is a shadow to
+    // the left and above each value, clipped by the group at its outer edges.
+    expect(css).toMatch(/\.sess-opt-values\s*\{[^}]*flex-wrap:\s*wrap/);
+    expect(css).toMatch(/\.sess-opt-value\s*\{[^}]*flex:\s*1 1 auto/);
+    expect(css).toMatch(/\.sess-opt-value\s*\{[^}]*box-shadow:\s*-1px -1px 0 var\(--border\)/);
+    expect(css).not.toMatch(/\.sess-opt-value\s*\+\s*\.sess-opt-value\s*\{[^}]*border-left/);
+  });
 });
 
 describe("normal density REMOVES the metadata line rather than hiding it", () => {
@@ -200,7 +214,18 @@ describe("normal density REMOVES the metadata line rather than hiding it", () =>
   // forbidden move; `.session-model` is NOT here, because its `display: none`
   // is a real, older design — the model appears once the rail is dragged wide
   // enough to spell one out.
-  const ROW_PARTS = [".session-sigil", ".session-meta", ".session-meta-line", ".session-facts"];
+  // Card 555 added the live line of card 503, and the face and line of a peer
+  // row: minimal removes them from the markup, so a rule that hides one would
+  // be the same forbidden move.
+  const ROW_PARTS = [
+    ".session-sigil",
+    ".session-meta",
+    ".session-meta-line",
+    ".session-facts",
+    ".session-live-line",
+    ".peer-row-face",
+    ".peer-row-line",
+  ];
 
   it("leaves no rule in ANY stylesheet that hides a row part", () => {
     // The pile taught this: `display: none` is not "gone", and an orphan rule
@@ -237,7 +262,7 @@ describe("normal density REMOVES the metadata line rather than hiding it", () =>
     }
   });
 
-  it("keeps ONE hover string for the row, at either density", () => {
+  it("keeps ONE hover string for the row, at every density", () => {
     // Non-functional criterion: the hover carries the cut facts in normal
     // density, and a density-aware second string would be a second thing to
     // keep in step with the DTO. What the two hover strings SAY is compared on

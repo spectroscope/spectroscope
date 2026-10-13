@@ -43,3 +43,15 @@ export function runStatus(lang: Lang, row: PlaybookRunRow): RunStatus {
   }
   return { text: t(lang, "pb.run.stopped", { reason }), live: false, stop: row.stopReason, result: null };
 }
+
+/**
+ * Card 554, criterion 2: what a run was asked, as the line under its status.
+ *
+ * @param lang the window language
+ * @param row the run as the run list gives it
+ * @returns the line, or null for a run started without a task
+ */
+export function runTask(lang: Lang, row: PlaybookRunRow): string | null {
+  const task = row.task ?? "";
+  return task.trim() === "" ? null : t(lang, "pb.run.task", { task });
+}

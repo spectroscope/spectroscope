@@ -91,11 +91,16 @@ final class SessionPlaybookHost implements PlaybookHost {
         StringBuilder last = new StringBuilder();
         try (EventStream events = subagents.run(agent, recordPrompt,
                 new RunOptions(signal, List.of(), modelPrompt.equals(recordPrompt) ? null : modelPrompt))) {
-            for (RunEvent event : events) {
-                emit.accept(event);
-                if (event instanceof RunEvent.RunStart s && MAIN.equals(s.agentId()) && mainRun == null) {
+            for (RunEvent raw : events) {
+                RunEvent event = raw;
+                if (raw instanceof RunEvent.RunStart s && MAIN.equals(s.agentId()) && mainRun == null) {
+                    // Card 554, criterion 8f: the prompt is the playbook's, and the
+                    // chat must not draw it as the owner's turn.
+                    event = s.withOrigin(RunEvent.RunStart.ORIGIN_PLAYBOOK);
                     mainRun = s.runId();
-                } else if (event instanceof RunEvent.TurnStart t && MAIN.equals(t.agentId())) {
+                }
+                emit.accept(event);
+                if (event instanceof RunEvent.TurnStart t && MAIN.equals(t.agentId())) {
                     last.setLength(0);
                 } else if (event instanceof RunEvent.TextDelta d && MAIN.equals(d.agentId())) {
                     last.append(d.text());

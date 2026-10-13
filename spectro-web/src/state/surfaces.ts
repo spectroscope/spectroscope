@@ -82,7 +82,12 @@ export const SURFACES: Record<SurfaceId, SurfaceSpec> = {
   // chunk of its own. Card 484: Spectrolyzr is a second chunk, one page since card 515.
   playbook: {
     modes: { learn: "gone", light: "gone", developer: "open" },
-    chunks: ["playbook/PlaybookPane.tsx", "playbook/spectrolyzr/SpectrolyzrPage.tsx"],
+    // Card 554: the start sheet opens in the chat after /run-with-playbook.
+    chunks: [
+      "playbook/PlaybookPane.tsx",
+      "playbook/spectrolyzr/SpectrolyzrPage.tsx",
+      "playbook/PlaybookStartSheet.tsx",
+    ],
   },
   // Files, terminal and browser beside the chat.
   dock: { modes: EVERYWHERE },

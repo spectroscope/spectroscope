@@ -220,6 +220,79 @@
   font-size: var(--fs-12);
   color: var(--text-faint);
 }
+/* Card 554: the session's playbook beside the folder chip, developer mode
+   only. It gives up width before the folder chip does: the select shrinks to
+   a few characters and the note under 768 px leaves for the select's title. */
+.pb-chip {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  font-size: var(--fs-13);
+}
+.pb-chip-select {
+  min-width: 6ch;
+  max-width: 22ch;
+  padding: 3px var(--sp-2);
+  background: var(--surface-2);
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  color: var(--text-dim);
+  font: inherit;
+  font-size: var(--fs-13);
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+.pb-chip-select:hover,
+.pb-chip-select:focus-visible {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+.pb-chip[data-state="suggested"] .pb-chip-select {
+  border-style: dashed;
+  border-color: var(--border-strong);
+}
+.pb-chip[data-state="gone"] .pb-chip-select {
+  border-color: var(--warn);
+}
+.pb-chip-note {
+  flex: none;
+  font-size: var(--fs-11);
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+.pb-chip-note--gone {
+  color: var(--warn);
+}
+.pb-chip-play {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.pb-chip-play:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: var(--border-strong);
+}
+.pb-chip-play:disabled {
+  color: var(--text-faint);
+  cursor: default;
+}
+@media (max-width: 767px) {
+  .pb-chip-note {
+    display: none;
+  }
+}
+
 .hdr-menu-row:disabled {
   color: var(--text-faint);
   cursor: default;

@@ -221,14 +221,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const pane = (
-  <PlaybookPane
-    workspace="/ws"
-    wizard={<i className="wizard-probe" />}
-    sessionId={null}
-    onStartPlaybook={() => false}
-  />
-);
+const pane = <PlaybookPane workspace="/ws" wizard={<i className="wizard-probe" />} sessionId={null} />;
 
 /** A folder shown, its playbook loaded and its tree read, on the tab asked for. */
 async function ready(tab: (typeof PANE_TABS)[number]["id"]): Promise<void> {
@@ -256,7 +249,7 @@ function one(tree: El[], type: string, cls: string): El {
 const settle = () => new Promise((r) => setTimeout(r, 0));
 
 describe("the tabs (criterion 1)", () => {
-  it("are drawn from one list: Playbook, Skills, Agents, Hooks, Commands, Workflows, Plugin, Files and New", () => {
+  it("are drawn from one list: Steps (card 563), Skills, Agents, Hooks, Commands, Workflows, Plugin, Files and New", () => {
     expect(PANE_TABS.map((t) => t.id)).toEqual([
       "playbook",
       "skills",
@@ -270,7 +263,7 @@ describe("the tabs (criterion 1)", () => {
     ]);
     const en = renderToStaticMarkup(pane);
     expect(tabLabels(en)).toEqual([
-      "Playbook",
+      "Steps",
       "Skills",
       "Agents",
       "Hooks",
@@ -283,7 +276,7 @@ describe("the tabs (criterion 1)", () => {
     expect(tabLabels(en)).toHaveLength(PANE_TABS.length);
     setLang("de");
     expect(tabLabels(renderToStaticMarkup(pane))).toEqual([
-      "Playbook",
+      "Schritte",
       "Skills",
       "Agenten",
       "Hooks",
@@ -304,14 +297,14 @@ describe("the tabs (criterion 1)", () => {
         ),
       );
     }
-    expect(out).not.toMatch(/<button[^>]*role="tab"[^>]*disabled=""[^>]*>Playbook</);
+    expect(out).not.toMatch(/<button[^>]*role="tab"[^>]*disabled=""[^>]*>Steps</);
     expect(out).not.toMatch(/<button[^>]*role="tab"[^>]*disabled=""[^>]*>New</);
   });
 
-  it("Playbook stays today's view", async () => {
+  it("Steps, named Playbook until card 563, stays today's view", async () => {
     await ready("playbook");
     const out = renderToStaticMarkup(pane);
-    expect(out).toMatch(/<button[^>]*role="tab"[^>]*aria-selected="true"[^>]*>Playbook</);
+    expect(out).toMatch(/<button[^>]*role="tab"[^>]*aria-selected="true"[^>]*>Steps</);
     expect(out).toContain('class="pb-folders"');
     expect(out).not.toContain('class="pbb-tab"');
   });
@@ -711,7 +704,7 @@ describe("the editor on the right (criterion 3)", () => {
     await openPath(DIR, "/ws", "templates/plan.md");
     editText("b\n");
     const out = renderToStaticMarkup(pane);
-    for (const label of ["Playbook", "Agents", "Files", "New"]) {
+    for (const label of ["Steps", "Agents", "Files", "New"]) {
       expect(out).toMatch(new RegExp(`<button[^>]*role="tab"[^>]*disabled=""[^>]*>${label}<`));
     }
     expect(out).toContain(dict["pbb.locked"].en);
@@ -1191,10 +1184,14 @@ describe("where the pane lands (criterion 6)", () => {
 });
 
 describe("light does not load the pane (criterion 7)", () => {
-  it("the surface table keeps the playbook developer only, with its two chunks", () => {
+  it("the surface table keeps the playbook developer only, with its three chunks (card 554 adds the sheet)", () => {
     expect(SURFACES.playbook).toEqual({
       modes: { learn: "gone", light: "gone", developer: "open" },
-      chunks: ["playbook/PlaybookPane.tsx", "playbook/spectrolyzr/SpectrolyzrPage.tsx"],
+      chunks: [
+        "playbook/PlaybookPane.tsx",
+        "playbook/spectrolyzr/SpectrolyzrPage.tsx",
+        "playbook/PlaybookStartSheet.tsx",
+      ],
     });
   });
 
@@ -1259,13 +1256,17 @@ describe("the pane's words after the humanizer and criticism passes (fix round 3
   });
 
   it("the workflows sentence says what is true today", () => {
-    // Integration 0.15.2: card 506 runs workflows from the Playbook tab.
+    // Card 554 fix round 3: the pane starts nothing, a workflow starts from
+    // the chat; the first tab is Steps.
     expect(dict["pbb.workflows.later"].en).toBe(
-      "You can list and edit workflows here. To run one, use the Workflows section of the Playbook tab.",
+      "You can list and edit workflows here. To run one, type /playbook workflow and its name in the chat of a session.",
     );
     expect(dict["pbb.workflows.later"].de).toBe(
-      "Hier kannst du Workflows aufführen und bearbeiten. Ausführen kannst du sie im Abschnitt Workflows im Tab Playbook.",
+      "Hier kannst du Workflows aufführen und bearbeiten. Ausführen kannst du einen im Chat einer Session mit /playbook workflow und seinem Namen.",
     );
+    for (const text of [dict["pbb.workflows.later"].en, dict["pbb.workflows.later"].de]) {
+      expect(text).not.toMatch(/Playbook tab|Tab Playbook/);
+    }
   });
 
   it("the refusals name who acts and use the verb of the button pressed", () => {

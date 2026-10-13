@@ -53,7 +53,6 @@ import dev.spectroscope.core.wire.WireReference;
 import dev.spectroscope.orchestrator.BusEnvelope;
 import dev.spectroscope.server.fleet.FleetAggregator;
 import dev.spectroscope.server.leveling.ServerLeveling;
-import dev.spectroscope.server.playbooks.InstallLedger;
 import dev.spectroscope.server.playbooks.PlaybookFolders;
 import dev.spectroscope.server.playbooks.PlaybookLoader;
 import dev.spectroscope.server.playbooks.PlaybookRunsLive;
@@ -360,14 +359,28 @@ public final class SessionConnection {
      */
     private final AtomicReference<SpectroConfig> activeConfig;
     private SwitchableProvider switchable;   // the agent's provider indirection
-    /** Card 247: the catalog runPrompt expands /skill tokens against — set with the agent. */
-    private SkillLibrary skillLibrary;
+    /**
+     * Card 558: the session's skills, commands and agents, from the workspace,
+     * the picked playbook (read in place) and the user's folders. The skill
+     * tools, the spawn_named_agent tool and the /name expansion all read
+     * it; {@link #refreshSessionItems} swaps it when a run starts, so a pick
+     * reaches the model at the next turn.
+     */
+    private final dev.spectroscope.core.skills.SessionSkills sessionSkills =
+            new dev.spectroscope.core.skills.SessionSkills();
+    /** Card 558: the user's skills, read once per connection as the library was. */
+    private dev.spectroscope.core.skills.SessionCatalogue.Layer userLayer;
+    /** Card 558: the session folder's items and the folder they were read from; read again for a new folder. */
+    private dev.spectroscope.core.skills.SessionCatalogue.Layer workspaceLayer;
+    private Path workspaceLayerFolder;
+    /** Card 558: true once this socket was sent session_items; a new folder then sends them again. */
+    private boolean sessionItemsAnnounced;
+    /** Card 558: the picked folder whose invalid id this socket was told about, so it is said once. */
+    private String refusedPlaybookDir;
     /** Card 482: builds a provider from a config; a test hands in its own. */
     private Function<SpectroConfig, LlmProvider> providerBuilder = ServerProviders::build;
     /** Card 482: the registry's bounded check of one provider; a test hands in its own. */
     private Function<String, ProviderRow> providerCheck = this::registryCheck;
-    /** The install ledger agent roles resolve through at Start; null reads the one in the home (card 485). */
-    private volatile InstallLedger installLedger;
 
     /** The process-wide live-session registry, or null — then this connection
      *  claims nothing and announces nothing, frame for frame the pre-212 one. */
@@ -688,11 +701,15 @@ public final class SessionConnection {
             // Card 390, moved here by card 521: the window comes back before
             // the connect frame, which names it to the ring.
             restoreSessionWindow(resumeId);
+            restoreSessionPlaybook(resumeId); // card 554
         }
         // Every fresh socket learns the ACTIVE backend up front — the header
         // chip and the trace host column start from wire truth, not a guess.
         sendProviderInfo();
         sendPermissionModeInfo();
+        if (playbookDir != null || playbookNone) {
+            sendPlaybookInfo(); // card 554: a resumed session's pick
+        }
         // Fleet frames exist ONLY when the operator opted the hub in — with
         // the hub off, this connection is frame-for-frame the pre-fleet one.
         if (fleet != null && fleet.enabled()) {
@@ -832,9 +849,20 @@ public final class SessionConnection {
             return;
         }
         restoreSessionBackend(sessionId);
+        // Card 554 fix round 1: a pick sent before the wake wins over the
+        // session's record and is written into its file now; the recorded
+        // pick comes back only when none is pending.
+        if (pendingPick != null) {
+            writePendingPick();
+        } else {
+            restoreSessionPlaybook(sessionId);
+        }
         // Card 521: always, not only when the backend changed: the frame names
         // the window the session's record restored, which the ring divides by.
         sendProviderInfo();
+        if (playbookDir != null || playbookNone) {
+            sendPlaybookInfo(); // card 554: the woken session's pick
+        }
         announceWokenWorkspace();
         seedToolGroupsFrom(savedToolGroupsFolder()); // card 466, as a resume does
         sendToolGroupsInfo();
@@ -877,6 +905,7 @@ public final class SessionConnection {
             workspace = target;
             SessionWorkspaces.resolved(store.id(), target.toString());
             sendWorkspaceInfo();
+            resendSessionItems(); // card 558: the woken folder's items, for a page that has them
         }
     }
 
@@ -1108,8 +1137,15 @@ public final class SessionConnection {
             }
             running = true;
         }
+        // Live check 0.15.3 D6: the page offers Stop from the moment the message
+        // left, and the socket thread handles the abort frame right after this
+        // one. The signal is made here, before the run's thread starts, so that
+        // abort cancels this run and is not dropped for a missing signal.
+        CancelSignal runSignal = new CancelSignal();
+        this.signal = runSignal;
         List<Attachment> runAttachments = attachments;
-        Thread.ofVirtual().name("spectroscope-run").start(() -> runPrompt(text, runAttachments));
+        Thread.ofVirtual().name("spectroscope-run")
+                .start(() -> runPrompt(text, runAttachments, false, null, runSignal));
     }
 
     /**
@@ -2087,7 +2123,23 @@ public final class SessionConnection {
      *        default (gemini, openrouter) needs an explicit model.
      */
     public void onSetProvider(String providerName, String model) {
-        String refused = switchProvider(providerName, model);
+        onSetProvider(providerName, model, null);
+    }
+
+    /**
+     * Card 556: {@link #onSetProvider(String, String)} for a pick that names
+     * itself. The {@code provider_info} that answers the switch carries the id
+     * as {@code answers}, so the page writes the default for new chats from
+     * this answer and from no other frame: the pair a socket announces at
+     * connect or at a wake answers nothing, and a refusal sends no
+     * {@code provider_info} at all.
+     *
+     * @param providerName the provider to switch to
+     * @param model        the model; blank picks the provider's default
+     * @param ask          the page's id for this pick; null or blank for none
+     */
+    public void onSetProvider(String providerName, String model, String ask) {
+        String refused = switchProvider(providerName, model, ask);
         if (refused != null) {
             sendError(refused);
         }
@@ -2102,6 +2154,18 @@ public final class SessionConnection {
      * @return null when switched, else the refusal text
      */
     String switchProvider(String providerName, String model) {
+        return switchProvider(providerName, model, null);
+    }
+
+    /**
+     * {@link #switchProvider(String, String)} answering a pick by its id (card 556).
+     *
+     * @param providerName the provider to switch to
+     * @param model        the model; blank picks the provider's default
+     * @param ask          the page's id for the pick, echoed as {@code answers}; null for none
+     * @return null when switched, else the refusal text
+     */
+    private String switchProvider(String providerName, String model, String ask) {
         if (!SpectroConfig.isKnownProvider(providerName)) {
             return "Unknown provider: \"" + providerName + "\" (allowed: "
                     + SpectroConfig.KNOWN_PROVIDERS_DISPLAY + ").";
@@ -2144,7 +2208,7 @@ public final class SessionConnection {
         // The switch is not silent: the client sees the new backend as a frame
         // (trace row, header chip, map locality) instead of trusting its own
         // optimistic state.
-        sendProviderInfo(next); // card 521: the new model's window rides along
+        sendProviderInfo(next, ask); // card 521: the new model's window rides along
         return null;
     }
 
@@ -2203,6 +2267,7 @@ public final class SessionConnection {
             seedLocalModeFrom(savedToolGroupsFolder()); // card 493: the picked folder's record
             sendToolGroupsInfo();
             sendLocalModeInfo();
+            resendSessionItems(); // card 558: the new folder's items, for a page that has them
         } catch (RuntimeException rejected) {
             sendError("Workspace rejected: " + rejected.getMessage());
         }
@@ -2490,6 +2555,7 @@ public final class SessionConnection {
             if (liveSessions != null) {
                 liveSessions.claim(socket.getId(), store.id());
             }
+            writePendingPick(); // card 554: a pick made before the file existed
         }
     }
 
@@ -2604,7 +2670,21 @@ public final class SessionConnection {
      * @param modelText   what the model reads instead of the expanded text, or null
      */
     private void runPrompt(String text, List<Attachment> attachments, boolean peerStarted, String modelText) {
-        CancelSignal runSignal = new CancelSignal();
+        runPrompt(text, attachments, peerStarted, modelText, new CancelSignal());
+    }
+
+    /**
+     * One full run, as {@link #runPrompt(String, List, boolean, String)}, on a
+     * signal made before the run's thread started (live check 0.15.3 D6).
+     *
+     * @param text        the prompt as the record shows it
+     * @param attachments already-stored blobs riding along with the prompt
+     * @param peerStarted true when another agent's message started the run
+     * @param modelText   what the model reads instead of the expanded text, or null
+     * @param runSignal   the run's cancel signal
+     */
+    private void runPrompt(String text, List<Attachment> attachments, boolean peerStarted, String modelText,
+                           CancelSignal runSignal) {
         this.signal = runSignal;
         // Card 265, release path 1: the stop button cancels this signal while the
         // agent's own thread may be parked on a question, and the run's finally
@@ -2625,6 +2705,7 @@ public final class SessionConnection {
         try {
             // Everything below is exactly what the CLI builds — nothing new in the core.
             buildAgentOnce();
+            refreshSessionItems(); // card 558: the pick as it is now reaches this turn
             suggestTitleOnce(text); // card 445: in the background, the run does not wait
             refreshContinuationBudget(); // card 266: the operator's number, per prompt
             refreshSessionsPerChat(); // card 490: the chat's session count, per prompt
@@ -2645,9 +2726,9 @@ public final class SessionConnection {
             // block is another agent's words, and a slash in them is not the
             // operator naming a skill.
             String expanded = modelText != null ? modelText
-                    : skillLibrary == null || peerStarted
+                    : peerStarted
                     ? text
-                    : SkillInvocations.expand(text, skillLibrary::find);
+                    : SkillInvocations.expand(text, sessionSkills::find);
             try (EventStream events = subagents.run(agent, text,
                     new RunOptions(runSignal, attachments, expanded.equals(text) ? null : expanded))) {
                 for (RunEvent rawEvent : events) {
@@ -2701,48 +2782,189 @@ public final class SessionConnection {
     }
 
     /**
-     * Card 482: the Start of the confirmation sheet. Starts only when the
-     * folder is registered and its bytes still hash to what the sheet showed.
-     * Agent roles resolve through the install ledger, as in the preview.
+     * Card 554: the folder a {@code /run-with-playbook} runs, decided in the
+     * owner's order: the folder the frame names, else the session's pick,
+     * else the folder pinned for the session's workspace.
      *
-     * @param dir  the playbook folder
-     * @param hash the hash the confirmation showed
+     * @param folder  the folder as a real path, or null when refused
+     * @param refusal the sentence the chat shows, or null when resolved
      */
-    public void onStartPlaybook(String dir, String hash) {
+    private record Resolved(Path folder, String refusal) {
+    }
+
+    /**
+     * @param frameDir the folder the frame names, or null or blank
+     * @return the registered folder to run, or the refusal
+     */
+    private Resolved resolvePlaybook(String frameDir) {
+        String candidate;
+        if (frameDir != null && !frameDir.isBlank()) {
+            candidate = frameDir;
+        } else if (playbookDir != null) {
+            candidate = playbookDir;
+        } else if (playbookNone) {
+            // Integrator decision b: "No playbook" was picked; the pin does not stand in.
+            return new Resolved(null, NO_PLAYBOOK_PICKED_NONE);
+        } else {
+            Path ws = workspace != null ? workspace : launchProjectDir();
+            Path pinned = ws == null ? null : PlaybookFolders.inHome().activeFor(ws);
+            if (pinned == null) {
+                return new Resolved(null, NO_PLAYBOOK);
+            }
+            candidate = pinned.toString();
+        }
+        Path folder;
+        try {
+            Path named = Path.of(candidate);
+            if (!Files.isDirectory(named)) {
+                return new Resolved(null, PICKED_PLAYBOOK_GONE);
+            }
+            folder = named.toRealPath();
+        } catch (IOException | RuntimeException gone) {
+            return new Resolved(null, PICKED_PLAYBOOK_GONE);
+        }
+        if (!PlaybookFolders.inHome().read().folders().contains(folder.toString())) {
+            return new Resolved(null, NOT_A_PLAYBOOK_FOLDER);
+        }
+        return new Resolved(folder, null);
+    }
+
+    /**
+     * The folder as the loader reads it, and its pinned bytes when it loads
+     * without a finding. Skills and agent files are read from the folder in
+     * place and nowhere else (card 558), the same reading for the confirmation
+     * and the start, so the sheet and the run see one state.
+     *
+     * @param loaded the loader's reading
+     * @param pinned the pinned bytes, or null when the playbook did not load clean
+     */
+    private record PinnedFolder(PlaybookLoader.Loaded loaded, PinnedPlaybook pinned) {
+    }
+
+    private PinnedFolder loadAndPin(Path folder) throws IOException {
+        PlaybookLoader.Loaded loaded = PlaybookLoader.load(folder, workspace != null ? workspace : projectDir,
+                activeConfig.get());
+        if (loaded.playbook() == null || !loaded.findings().isEmpty()) {
+            return new PinnedFolder(loaded, null);
+        }
+        return new PinnedFolder(loaded, PinnedPlaybook.pin(folder, loaded.playbook()));
+    }
+
+    /**
+     * Card 554, criterion 8b: {@code /run-with-playbook <prompt>} asks for
+     * the confirmation sheet in this session. The folder is resolved in the
+     * owner's order ({@link #resolvePlaybook}); the answer is the socket-only
+     * frame {@code playbook_confirm {dir, prompt, preview}}, the preview the
+     * sheet draws (steps, models, every command a check may run, the hash
+     * {@code start_playbook} must repeat, and every reason the start is
+     * refused). Starts nothing.
+     *
+     * @param dir    the folder the frame names, or null for the session's own
+     * @param prompt the task the owner typed; required
+     */
+    public void onConfirmPlaybook(String dir, String prompt) {
         if (running) {
             sendError(RUN_ACTIVE);
             return;
         }
-        PinnedPlaybook pinned;
+        if (prompt == null || prompt.isBlank()) {
+            sendError(RUN_WITH_PLAYBOOK_USAGE);
+            return;
+        }
+        Resolved resolved = resolvePlaybook(dir);
+        if (resolved.refusal() != null) {
+            sendError(resolved.refusal());
+            return;
+        }
+        PinnedFolder read;
         try {
-            Path folder = dir == null || dir.isBlank() ? null : Path.of(dir).toRealPath();
-            if (folder == null || !PlaybookFolders.inHome().read().folders().contains(folder.toString())) {
-                sendError("This folder is not a registered playbook folder.");
-                return;
-            }
-            PlaybookLoader.Loaded loaded = PlaybookLoader.load(folder, workspace != null ? workspace : projectDir,
-                    activeConfig.get());
-            if (loaded.playbook() == null || !loaded.findings().isEmpty()) {
-                // The sheet disables Start on a finding; the frame is a second
-                // gate, so a client that skips the sheet cannot start a
-                // playbook the validator refused.
-                sendError("The playbook does not load: " + loaded.findings());
-                return;
-            }
-            InstallLedger ledger = installLedger != null ? installLedger : InstallLedger.inHome();
-            String id = loaded.playbook().id();
-            pinned = PinnedPlaybook.pin(folder, loaded.playbook(), this::installedSkillBody,
-                    source -> ledger.itemHash(id, "agent", source));
+            read = loadAndPin(resolved.folder());
         } catch (IOException | RuntimeException unreadable) {
             sendError("The playbook could not be read: " + unreadable.getMessage());
             return;
         }
+        if (read.pinned() == null) {
+            // Criterion 7: a finding is a line in the chat as well; the sheet lists it beside the steps.
+            sendError("The playbook does not load: " + read.loaded().findings());
+        }
+        Map<String, ProviderRow> rows = new java.util.LinkedHashMap<>();
+        ProviderRegistry.shared().rows(activeConfig.get()).forEach(r -> rows.put(r.id(), r));
+        sendPlaybookConfirm(resolved.folder().toString(), prompt.strip(),
+                dev.spectroscope.server.playbooks.PlaybookStartPreview.of(read.loaded(), read.pinned(), rows::get,
+                        true));
+    }
+
+    /**
+     * The confirmation for the sheet, a socket-only frame like
+     * {@code provider_info}, never appended to the JSONL.
+     *
+     * @param dir     the resolved folder
+     * @param prompt  the task, trimmed
+     * @param preview what the sheet draws
+     */
+    private synchronized void sendPlaybookConfirm(String dir, String prompt, Object preview) {
+        Map<String, Object> frame = new java.util.LinkedHashMap<>();
+        frame.put("type", "playbook_confirm");
+        frame.put("dir", dir);
+        frame.put("prompt", prompt);
+        frame.put("preview", preview);
+        sendFrame(frame);
+    }
+
+    /**
+     * Card 482: the Start of the confirmation sheet. Starts only when the
+     * folder is registered and its bytes still hash to what the sheet showed.
+     * Agent roles resolve through the install ledger, as in the preview.
+     *
+     * <p>Card 554: the prompt is the run's task, required, and reaches every
+     * step. The folder is resolved like the confirmation's; a start is a
+     * pick, so the folder becomes the session's playbook.</p>
+     *
+     * @param dir    the playbook folder, or blank for the session's own
+     * @param hash   the hash the confirmation showed
+     * @param prompt the task the owner typed
+     */
+    public void onStartPlaybook(String dir, String hash, String prompt) {
+        if (running) {
+            sendError(RUN_ACTIVE);
+            return;
+        }
+        if (prompt == null || prompt.isBlank()) {
+            sendError(RUN_WITH_PLAYBOOK_USAGE);
+            return;
+        }
+        Resolved resolved = resolvePlaybook(dir);
+        if (resolved.refusal() != null) {
+            sendError(resolved.refusal());
+            return;
+        }
+        Path folder = resolved.folder();
+        PinnedFolder read;
+        try {
+            read = loadAndPin(folder);
+        } catch (IOException | RuntimeException unreadable) {
+            sendError("The playbook could not be read: " + unreadable.getMessage());
+            return;
+        }
+        if (read.pinned() == null) {
+            // The sheet disables Start on a finding; the frame is a second
+            // gate, so a client that skips the sheet cannot start a
+            // playbook the validator refused.
+            sendError("The playbook does not load: " + read.loaded().findings());
+            return;
+        }
+        PinnedPlaybook pinned = read.pinned();
         if (!pinned.hash().equals(hash)) {
             sendError(PLAYBOOK_CHANGED);
             return;
         }
+        if (!folder.toString().equals(playbookDir)) {
+            recordPick(folder.toString(), pinned.playbook().name());
+            sendPlaybookInfo();
+        }
         running = true;
-        Thread.ofVirtual().name("spectroscope-run").start(() -> runPlaybook(pinned));
+        String task = prompt.strip();
+        Thread.ofVirtual().name("spectroscope-run").start(() -> runPlaybook(pinned, task));
     }
 
     /**
@@ -2793,27 +3015,127 @@ public final class SessionConnection {
             }
             dev.spectroscope.core.playbook.WorkflowReader.Read read =
                     dev.spectroscope.core.playbook.WorkflowReader.read(pinned.bytes());
-            if (read.workflow() == null) {
-                sendError("The workflow does not load: " + read.findings());
+            workflow = runnable(read, file);
+            if (workflow == null) {
                 return;
             }
-            // Fix round 2: a worker child can write, and a workflow starts without a sheet.
-            List<String> workers = read.workflow().workerRoles();
-            if (!workers.isEmpty()) {
-                sendError(file + " starts a worker child, which can write (" + String.join(", ", workers)
-                        + "); a workflow from the playbook module runs explore children only.");
-                return;
-            }
-            workflow = read.workflow();
         } catch (IOException | RuntimeException unreadable) {
             sendError("The workflow could not be read: " + unreadable.getMessage());
             return;
         }
+        startWorkflowRun(workflow, file, hash, input, lang);
+    }
+
+    /**
+     * The workflow a read gives, or null after the refusal went out: a file
+     * that does not read as a step list, or one that starts a worker child.
+     * Fix round 2 of card 506: a worker child can write, and a workflow starts
+     * without a sheet; card 554 starts it from the chat the same way.
+     *
+     * @param read the reader's answer
+     * @param file the workflow's path below the folder, for the refusal
+     * @return the workflow, or null when refused
+     */
+    private dev.spectroscope.core.playbook.Workflow runnable(dev.spectroscope.core.playbook.WorkflowReader.Read read,
+                                                              String file) {
+        if (read.workflow() == null) {
+            sendError("The workflow does not load: " + read.findings());
+            return null;
+        }
+        List<String> workers = read.workflow().workerRoles();
+        if (!workers.isEmpty()) {
+            sendError(file + " starts a worker child, which can write (" + String.join(", ", workers)
+                    + "); a workflow from the playbook module runs explore children only.");
+            return null;
+        }
+        return read.workflow();
+    }
+
+    /** Takes the run slot and runs the workflow on its own virtual thread. */
+    private void startWorkflowRun(dev.spectroscope.core.playbook.Workflow workflow, String file, String hash,
+                                  String input, String lang) {
         running = true;
         String language = "de".equals(lang) ? "de" : "en";
-        dev.spectroscope.core.playbook.Workflow chosen = workflow;
-        Thread.ofVirtual().name("spectroscope-run").start(() -> runWorkflow(chosen, file, hash,
+        Thread.ofVirtual().name("spectroscope-run").start(() -> runWorkflow(workflow, file, hash,
                 input == null ? "" : input, language));
+    }
+
+    /** Card 554: the answer to /playbook workflow without a name; the names follow. */
+    static final String WORKFLOW_USAGE = "Usage: /playbook workflow <name> [input]";
+
+    /**
+     * Card 554, criterion 8a: {@code /playbook workflow <name> [input]} (alias
+     * {@code /run-workflow}) starts a workflow of the session's playbook in
+     * this session, at once and without a sheet (owner answer 2). The
+     * playbook resolves as for {@code /run-with-playbook}; the name is the
+     * file below {@code workflows/} without its extension, among the files
+     * {@code contents.workflows} lists. An unknown name is refused with the
+     * names the playbook has. The same walk, parse and worker refusal as a
+     * start from the module apply; the run records the hash of the bytes it
+     * read, since no sheet showed one.
+     *
+     * @param dir   the folder the frame names, or null for the session's own
+     * @param name  the workflow's name
+     * @param input the text after the name; may be empty
+     * @param lang  the page language, {@code de} or {@code en}
+     */
+    public void onStartWorkflowByName(String dir, String name, String input, String lang) {
+        if (running) {
+            sendError(RUN_ACTIVE);
+            return;
+        }
+        Resolved resolved = resolvePlaybook(dir);
+        if (resolved.refusal() != null) {
+            sendError(resolved.refusal());
+            return;
+        }
+        Path folder = resolved.folder();
+        String file;
+        dev.spectroscope.core.playbook.Workflow workflow;
+        String hash;
+        try {
+            PlaybookLoader.Loaded loaded = PlaybookLoader.load(folder, workspace != null ? workspace : projectDir,
+                    activeConfig.get());
+            if (loaded.playbook() == null) {
+                sendError("The playbook does not load: " + loaded.findings());
+                return;
+            }
+            Map<String, String> byName = new java.util.LinkedHashMap<>();
+            List<String> listed = loaded.playbook().contents() == null ? List.of()
+                    : loaded.playbook().contents().workflows();
+            for (String entry : listed) {
+                String base = Path.of(entry).getFileName().toString();
+                int dot = base.lastIndexOf('.');
+                byName.putIfAbsent(dot > 0 ? base.substring(0, dot) : base, entry);
+            }
+            String names = byName.isEmpty() ? "none" : String.join(", ", byName.keySet());
+            String wanted = name == null ? "" : name.strip();
+            if (wanted.isEmpty()) {
+                sendError(WORKFLOW_USAGE + "; " + loaded.playbook().name() + " has: " + names);
+                return;
+            }
+            file = byName.get(wanted);
+            if (file == null) {
+                sendError("No workflow \"" + wanted + "\" in " + loaded.playbook().name() + "; it has: " + names);
+                return;
+            }
+            Path target = folder.resolve(file).normalize();
+            dev.spectroscope.core.playbook.WorkflowPin.Current current = target.startsWith(folder)
+                    ? dev.spectroscope.core.playbook.WorkflowPin.current(folder, target) : null;
+            if (current == null) {
+                sendError(file + " is not a workflow this playbook lists.");
+                return;
+            }
+            workflow = runnable(dev.spectroscope.core.playbook.WorkflowReader.read(current.bytes()), file);
+            if (workflow == null) {
+                return;
+            }
+            hash = current.hash();
+        } catch (IOException | RuntimeException unreadable) {
+            sendError("The workflow could not be read: " + unreadable.getMessage());
+            return;
+        }
+        startWorkflowRun(workflow, file, hash, input, lang);
     }
 
     /**
@@ -2837,6 +3159,7 @@ public final class SessionConnection {
         try (PlaybookRecorder recorder = new PlaybookRecorder(PlaybookRecorder.fileFor(sessionId),
                 PlaybookRecorder.DEFAULT_CEILING_BYTES)) {
             buildAgentOnce();
+            refreshSessionItems(); // card 558: the pick as it is now reaches this run
             SessionPlaybookHost host = new SessionPlaybookHost(workspace, event -> drainOne(event, runDrain),
                     subagents, agent, activeConfig::get, this::switchProvider, providerBuilder, providerCheck,
                     this::providerKind, this::permissionFloor, broker, asker);
@@ -2861,14 +3184,375 @@ public final class SessionConnection {
     /** Card 506: true while a workflow runs; the status line then follows its children. */
     private volatile boolean workflowRunning;
 
+    /** Card 554: the answer when the session has no playbook to run. */
+    static final String NO_PLAYBOOK = "No playbook is picked for this session: pick one in the header dropdown"
+            + " or pin one in the Playbook view.";
     /**
-     * @param name a skill name
-     * @return its installed body, or null
+     * Card 554, integrator decision b: the answer when the session picked "No
+     * playbook". Its own line, apart from {@link #NO_PLAYBOOK}: a pinned
+     * folder does not help here.
      */
-    private String installedSkillBody(String name) {
-        SkillLibrary skills = skillLibrary != null
-                ? skillLibrary : SkillLibrary.load(SkillLibrary.defaultRoots(projectDir));
-        return skills.find(name).map(dev.spectroscope.core.skills.Skill::body).orElse(null);
+    static final String NO_PLAYBOOK_PICKED_NONE =
+            "This session is set to no playbook: pick one in the header dropdown.";
+    /** Card 554: the answer when the playbook folder the session picked is gone. */
+    static final String PICKED_PLAYBOOK_GONE = "The picked playbook folder was not found.";
+    /** Card 554: the answer to /run-with-playbook without a prompt. */
+    static final String RUN_WITH_PLAYBOOK_USAGE = "Usage: /run-with-playbook <prompt>, for example"
+            + " /run-with-playbook add a CSV export";
+
+    /** Card 554: the answer to a playbook folder the registry does not know. */
+    static final String NOT_A_PLAYBOOK_FOLDER = "This folder is not a registered playbook folder.";
+
+    /**
+     * Card 554, criterion 8e: the playbook this session picked, as a real
+     * path; null when it picked none. Server state of the session: card 558
+     * reads it, and {@code /run-with-playbook} runs it when the start frame
+     * names no folder. A recorded folder that is gone stays here, so a start
+     * is refused instead of falling back to another playbook.
+     */
+    private volatile String playbookDir;
+
+    /**
+     * Card 554, integrator decision b: true when the owner picked "No
+     * playbook" for this session. {@code playbookDir} is then null, and
+     * {@code /run-with-playbook} is refused instead of falling back to the
+     * folder pinned for the workspace. Card 558 reads it as no playbook
+     * contents.
+     */
+    private volatile boolean playbookNone;
+
+    /**
+     * Card 554: a pick made before the session had a file. It is written as
+     * the first thing the file holds once the session gets one, and nothing
+     * mints a session for it (card 571: no empty session before the first
+     * message).
+     */
+    private RunEvent.PlaybookPicked pendingPick;
+
+    /**
+     * Card 554, criterion 8e: the owner picked a playbook for this session,
+     * in the header dropdown or with {@code /playbook use}. The page sends
+     * this only on a real pick, never for the suggestion it shows for the
+     * workspace's pinned playbook. Only a registered folder can be picked;
+     * an empty {@code dir} withdraws the pick. The pick is written to the
+     * session file and answered with {@code playbook_info}.
+     *
+     * @param dir the playbook folder, or null or blank to withdraw the pick
+     */
+    void onSetPlaybook(String dir) {
+        onSetPlaybook(dir, false);
+    }
+
+    /**
+     * Card 554, integrator decision b: as {@link #onSetPlaybook(String)}, and
+     * {@code none} without a folder picks "No playbook" for the session: it is
+     * held, written as {@code playbook_picked {none: true}} and announced, and
+     * no folder pinned for the workspace stands in for it.
+     *
+     * @param dir  the playbook folder, or null or blank
+     * @param none true for the explicit "No playbook"; ignored when {@code dir} names a folder
+     */
+    void onSetPlaybook(String dir, boolean none) {
+        if ((dir == null || dir.isBlank()) && none) {
+            recordNone();
+            sendPlaybookInfo();
+            return;
+        }
+        String chosen = null;
+        String name = null;
+        if (dir != null && !dir.isBlank()) {
+            Path folder;
+            try {
+                folder = Path.of(dir).toRealPath();
+            } catch (IOException | RuntimeException missing) {
+                sendError(NOT_A_PLAYBOOK_FOLDER);
+                return;
+            }
+            if (!PlaybookFolders.inHome().read().folders().contains(folder.toString())) {
+                sendError(NOT_A_PLAYBOOK_FOLDER);
+                return;
+            }
+            chosen = folder.toString();
+            name = playbookName(folder);
+        }
+        recordPick(chosen, name);
+        sendPlaybookInfo();
+    }
+
+    /**
+     * Card 558: the page asks for the session's items, for the slash picker
+     * and the skill list. Answers {@code session_items}; reads only.
+     */
+    public void onGetSessionItems() {
+        sendSessionItems();
+    }
+
+    /**
+     * Card 558: the user's skills ({@code ~/.spectro/skills}), read once per
+     * connection like the library before this card.
+     *
+     * @return the user layer
+     */
+    private synchronized dev.spectroscope.core.skills.SessionCatalogue.Layer userLayer() {
+        if (userLayer == null) {
+            userLayer = dev.spectroscope.core.skills.SessionCatalogue.Layer.ofSkills(
+                    dev.spectroscope.core.skills.SessionCatalogue.USER,
+                    SkillLibrary.load(List.of(SkillLibrary.defaultRoots(projectDir).get(0))).skills());
+        }
+        return userLayer;
+    }
+
+    /**
+     * Card 558, integrator decision 3: the items of the session's own working
+     * folder ({@code .claude} and {@code .spectro}), not of the server's launch
+     * folder. Read once per folder: a new folder from the chip is read again
+     * (decision 4).
+     *
+     * @return the workspace layer, empty while the session has no folder
+     */
+    private synchronized dev.spectroscope.core.skills.SessionCatalogue.Layer workspaceLayer() {
+        Path folder = launchProjectDir();
+        if (workspaceLayer == null || !java.util.Objects.equals(folder, workspaceLayerFolder)) {
+            // Review finding 1: a folder that is the home does not read the
+            // user's own skill root a second time as the workspace.
+            workspaceLayer = dev.spectroscope.core.skills.WorkspaceItems.read(folder,
+                    SkillLibrary.defaultRoots(projectDir).get(0));
+            workspaceLayerFolder = folder;
+        }
+        return workspaceLayer;
+    }
+
+    /**
+     * Card 558: the picked playbook's items, read in place; null when the
+     * session picked none, or the folder is not registered or holds no
+     * playbook. Nothing is read from an unregistered folder.
+     */
+    private dev.spectroscope.server.playbooks.PlaybookSessionLayer.Read pickedLayer() {
+        String dir = playbookDir;
+        if (dir == null || !PlaybookFolders.inHome().read().folders().contains(dir)) {
+            return null;
+        }
+        return dev.spectroscope.server.playbooks.PlaybookSessionLayer.read(Path.of(dir),
+                Path.of(System.getProperty("user.home"), ".spectro"));
+    }
+
+    /**
+     * Card 558: the catalogue of this session as the next turn sees it.
+     *
+     * @param picked the picked playbook's layer, or null
+     * @return workspace, playbook and user merged under the owner's rule
+     */
+    private dev.spectroscope.core.skills.SessionCatalogue catalogue(
+            dev.spectroscope.server.playbooks.PlaybookSessionLayer.Read picked) {
+        List<dev.spectroscope.core.skills.SessionCatalogue.Layer> layers = new ArrayList<>();
+        layers.add(workspaceLayer());
+        if (picked != null && picked.layer() != null) {
+            layers.add(picked.layer());
+        }
+        layers.add(userLayer());
+        // Decisions 5 and round 3: no session item shadows a web chat command;
+        // a terminal-only word reserves nothing (owner, 2026-10-13).
+        return dev.spectroscope.core.skills.SessionCatalogue.of(layers,
+                dev.spectroscope.core.commands.CommandList.webFirstWords());
+    }
+
+    /** Card 558: reads the pick as it is now into the session's catalogue; called when a run starts. */
+    private void refreshSessionItems() {
+        sessionSkills.set(catalogue(pickedLayer()));
+    }
+
+    /**
+     * Card 558: the session's items for the page, a socket-only frame never
+     * appended to the JSONL: {@code playbook} is {@code {dir, id, name}} of
+     * the picked playbook whose items are in the list, or null; {@code items}
+     * holds one row per skill, command and agent, sorted by kind and name,
+     * each {@code {kind, name, plain, source, namespace, description}}. The
+     * list is what the next turn reads.
+     */
+    private synchronized void sendSessionItems() {
+        dev.spectroscope.server.playbooks.PlaybookSessionLayer.Read picked = pickedLayer();
+        dev.spectroscope.core.skills.SessionCatalogue c = catalogue(picked);
+        Map<String, Object> frame = new java.util.LinkedHashMap<>();
+        frame.put("type", "session_items");
+        if (picked != null && picked.refusal() != null) {
+            // Review finding 4: the session hears once per folder why the
+            // picked playbook gives no items.
+            if (!java.util.Objects.equals(refusedPlaybookDir, playbookDir)) {
+                refusedPlaybookDir = playbookDir;
+                sendError(picked.refusal());
+            }
+            picked = null;
+        }
+        if (picked == null) {
+            frame.put("playbook", null);
+        } else {
+            Map<String, Object> playbook = new java.util.LinkedHashMap<>();
+            playbook.put("dir", playbookDir);
+            playbook.put("id", picked.id());
+            playbook.put("name", picked.name());
+            frame.put("playbook", playbook);
+        }
+        List<Map<String, Object>> items = new ArrayList<>();
+        for (dev.spectroscope.core.skills.SessionCatalogue.Item i : c.items()) {
+            Map<String, Object> row = new java.util.LinkedHashMap<>();
+            row.put("kind", i.kind());
+            row.put("name", i.name());
+            row.put("plain", i.plain());
+            row.put("source", i.source());
+            row.put("namespace", i.namespace());
+            row.put("description", i.description());
+            items.add(row);
+        }
+        frame.put("items", items);
+        sendFrame(frame);
+        sessionItemsAnnounced = true;
+    }
+
+    /** Card 558: sends session_items again when this socket already has them, after a folder change. */
+    private synchronized void resendSessionItems() {
+        if (sessionItemsAnnounced) {
+            sendSessionItems();
+        }
+    }
+
+    /**
+     * Card 558: the agents of the session's catalogue, for spawn_named_agent.
+     *
+     * @return the agents now
+     */
+    private List<dev.spectroscope.core.subagents.SubagentManager.NamedAgent> namedAgents() {
+        return sessionSkills.current().agents().stream()
+                .map(a -> new dev.spectroscope.core.subagents.SubagentManager.NamedAgent(a.name(), a.description(),
+                        a.agentType(), a.body()))
+                .toList();
+    }
+
+    /**
+     * Holds the pick and writes it: to the session file when there is one,
+     * else as the pending line {@link #ensureStore} writes first.
+     *
+     * @param dir  the picked folder as a real path, or null for no pick
+     * @param name the playbook's name, or null
+     */
+    private synchronized void recordPick(String dir, String name) {
+        playbookDir = dir;
+        playbookNone = false;
+        record(new RunEvent.PlaybookPicked(dir, name, System.currentTimeMillis()));
+    }
+
+    /** Holds and writes the explicit "No playbook" pick, as {@link #recordPick} does a folder. */
+    private synchronized void recordNone() {
+        playbookDir = null;
+        playbookNone = true;
+        record(RunEvent.PlaybookPicked.none(System.currentTimeMillis()));
+    }
+
+    /** Writes a pick line, or holds it until the session has a file. */
+    private synchronized void record(RunEvent.PlaybookPicked picked) {
+        if (store == null) {
+            pendingPick = picked;
+            return;
+        }
+        try {
+            store.append(picked);
+        } catch (RuntimeException unwritable) {
+            // The pick still holds for this socket; only its record is lost.
+        }
+    }
+
+    /** Writes a pick made before the session had a file, once it has one. */
+    private synchronized void writePendingPick() {
+        RunEvent.PlaybookPicked picked = pendingPick;
+        pendingPick = null;
+        if (picked != null && store != null) {
+            try {
+                store.append(picked);
+            } catch (RuntimeException unwritable) {
+                // As in recordPick.
+            }
+        }
+    }
+
+    /**
+     * Card 554: a stored session's pick comes back on a wake and a resume.
+     * The folder is taken as recorded, gone or not; {@link #sendPlaybookInfo}
+     * says which.
+     *
+     * @param sessionId the session being woken or resumed
+     */
+    private void restoreSessionPlaybook(String sessionId) {
+        SessionStore.RecordedPick recorded = SessionStore.recordedPick(sessionId);
+        if (recorded.dir() != null) {
+            playbookDir = recorded.dir();
+            playbookNone = false;
+        } else if (recorded.none()) {
+            playbookDir = null;
+            playbookNone = true;
+        }
+    }
+
+    /**
+     * Card 554: the session's pick for the header dropdown, a socket-only
+     * frame like {@code provider_info}, never appended to the JSONL:
+     * {@code dir} is the picked folder or null for none; {@code registered}
+     * whether the registry knows the folder; {@code found} true only for a
+     * registered folder that still holds a playbook; {@code name} the
+     * playbook's name, read only from a found folder. A session imported from
+     * another machine can name a folder here that the registry does not know,
+     * and nothing is read from it (card 554 fix round 1).
+     */
+    private synchronized void sendPlaybookInfo() {
+        String dir = playbookDir;
+        Path folder = dir == null ? null : Path.of(dir);
+        boolean registered = dir != null && PlaybookFolders.inHome().read().folders().contains(dir);
+        boolean found = registered
+                && Files.isRegularFile(folder.resolve("playbook.json"), java.nio.file.LinkOption.NOFOLLOW_LINKS);
+        Map<String, Object> frame = new java.util.LinkedHashMap<>();
+        frame.put("type", "playbook_info");
+        frame.put("dir", dir);
+        frame.put("name", found ? playbookName(folder) : null);
+        frame.put("found", found);
+        frame.put("registered", registered);
+        frame.put("none", dir == null && playbookNone); // integrator decision b
+        sendFrame(frame);
+        sendSessionItems(); // card 558: the items the pick gives this session
+    }
+
+    /**
+     * @param folder a playbook folder
+     * @return the name its {@code playbook.json} gives, or null when it does not read
+     */
+    private static String playbookName(Path folder) {
+        try {
+            Path file = folder.resolve("playbook.json");
+            if (Files.size(file) > 1024L * 1024) {
+                return null;
+            }
+            dev.spectroscope.core.playbook.Playbook p =
+                    dev.spectroscope.core.playbook.PlaybookReader.read(Files.readString(file)).playbook();
+            return p == null ? null : p.name();
+        } catch (IOException | RuntimeException unreadable) {
+            return null;
+        }
+    }
+
+    /**
+     * Card 554: the playbook this session picked, for card 558 and the tests.
+     *
+     * @return the folder as recorded, or null when the session picked none
+     */
+    String playbookDir() {
+        return playbookDir;
+    }
+
+    /**
+     * Card 554, integrator decision b: whether the session picked "No
+     * playbook", for card 558 and the tests.
+     *
+     * @return true when the last pick was the explicit "No playbook"
+     */
+    boolean playbookNone() {
+        return playbookNone;
     }
 
     /**
@@ -2877,8 +3561,9 @@ public final class SessionConnection {
      * always releases them, the step floor included.
      *
      * @param pinned the bytes the confirmation showed
+     * @param task   what the owner asked the run to do
      */
-    private void runPlaybook(PinnedPlaybook pinned) {
+    private void runPlaybook(PinnedPlaybook pinned, String task) {
         CancelSignal runSignal = new CancelSignal();
         this.signal = runSignal;
         runSignal.onCancel(asker::releaseAllPending);
@@ -2893,11 +3578,12 @@ public final class SessionConnection {
         try (PlaybookRecorder recorder = new PlaybookRecorder(PlaybookRecorder.fileFor(sessionId),
                 PlaybookRecorder.DEFAULT_CEILING_BYTES)) {
             buildAgentOnce();
+            refreshSessionItems(); // card 558: the pick as it is now reaches this run
             SessionPlaybookHost host = new SessionPlaybookHost(workspace, event -> drainOne(event, runDrain),
                     subagents, agent, activeConfig::get, this::switchProvider, providerBuilder, providerCheck,
                     this::providerKind, this::permissionFloor, broker, asker);
             new PlaybookRunner(new PlaybookRunner.Setup(pinned, runId,
-                    PlaybookRecorder.graphFileFor(sessionId, runId), recorder, runSignal, permissionMode),
+                    PlaybookRecorder.graphFileFor(sessionId, runId), recorder, runSignal, permissionMode, task),
                     host, subagents, HostGuard.live()::refusal).run();
         } catch (RuntimeException failure) {
             sendError("Playbook run ended with an error: " + failure.getMessage());
@@ -2952,11 +3638,6 @@ public final class SessionConnection {
     /** @param builder what builds a provider from a config in this connection, for tests */
     void providerBuilderForTest(Function<SpectroConfig, LlmProvider> builder) {
         this.providerBuilder = builder;
-    }
-
-    /** @param ledger the install ledger the start frame resolves agent roles through, for tests */
-    void installLedgerForTest(InstallLedger ledger) {
-        this.installLedger = ledger;
     }
 
     /** @param check what answers the registry check of one provider in this connection, for tests */
@@ -3123,11 +3804,12 @@ public final class SessionConnection {
         SpectroConfig active = activeConfig.get();
         switchable = new SwitchableProvider(providerBuilder.apply(active), active.provider());
         LlmProvider provider = switchable;
-        // the skill catalog rides in the system prompt, bodies come via use_skill.
-        SkillLibrary skills = SkillLibrary.load(SkillLibrary.defaultRoots(projectDir));
-        this.skillLibrary = skills; // card 247: runPrompt expands /skill tokens against it
+        // Card 558: the skill catalogue is the session's (workspace, picked
+        // playbook, user) and rides as the per-run line of use_skill, so a pick
+        // changes it at the next turn; bodies still come via use_skill.
+        refreshSessionItems();
         String systemPrompt = RoleCatalog.BASE_SYSTEM_PROMPT + workspace + SpectroConfig.loadProjectMd(projectDir)
-                + SpectroConfig.loadAgentsMd(workspace) + skills.systemPromptSection();
+                + SpectroConfig.loadAgentsMd(workspace);
         // Card 267: the goal is NOT part of that line, on purpose. This assembly
         // is evaluated ONCE per session and the goal has to be re-readable per
         // turn; the loop appends it to each request's system prompt instead. Off
@@ -3166,11 +3848,11 @@ public final class SessionConnection {
         registry.register(new dev.spectroscope.core.tools.AskUserQuestionTool(
                 asker, active.questionsPerRun(), active.maxQuestionOptions(),
                 active.maxQuestionChars()));
-        if (!skills.skills().isEmpty()) {
-            registry.register(skills.useSkillTool());
-            // Card 358: the sibling reader travels with use_skill, always.
-            registry.register(skills.readSkillFileTool());
-        }
+        // Card 558: always registered; offered only while the session's
+        // catalogue holds a skill or a command.
+        registry.register(sessionSkills.useSkillTool());
+        // Card 358: the sibling reader travels with use_skill, always.
+        registry.register(sessionSkills.readSkillFileTool());
         // MCP tools register alongside the standard ones, exactly like the
         // CLI — the model calls mcp__<server>__<tool> and the events flow unchanged.
         // The mcpServers block comes from the SESSION-scoped config (the workspace's
@@ -3205,10 +3887,9 @@ public final class SessionConnection {
         childBase.add(codeGraph); // card 547, the parent's instance
         childBase.addAll(settingsBelt.tools());
         childBase.addAll(mcp.tools());
-        if (!skills.skills().isEmpty()) {
-            childBase.add(skills.useSkillTool());
-            childBase.add(skills.readSkillFileTool()); // card 358, same instance rule
-        }
+        // Card 558: the same two tools over the same catalogue, without the
+        // listing a child never had.
+        childBase.addAll(sessionSkills.childTools());
         // Config-only pre/post_tool_use shell hooks — from the SESSION-scoped config
         // (the workspace's own settings, resolved above), like mcpServers just above.
         // Loaded before the SubagentManager so children run the same guard as the parent.
@@ -3278,6 +3959,8 @@ public final class SessionConnection {
         // could never emit agent_spawn events, which the graph tab needs live.
         subagents.tools().forEach(registry::register);
         subagents.devTools().forEach(registry::register);
+        // Card 558: the picked playbook's agents, offered only while there is one.
+        registry.register(subagents.namedAgentTool(this::namedAgents));
         // Card 503: send_message and list_agents, last, on this session's seat:
         // the registry of card 502 for the sessions on this machine, and the
         // run's children. The key and the gear's messaging group take both
@@ -4410,6 +5093,18 @@ public final class SessionConnection {
      *              asks nobody
      */
     private synchronized void sendProviderInfo(LlmProvider probe) {
+        sendProviderInfo(probe, null);
+    }
+
+    /**
+     * {@link #sendProviderInfo(LlmProvider)} as the answer to a pick (card 556).
+     *
+     * @param probe   the backend a switch just built, to ask for its window; null
+     *                asks nobody
+     * @param answers the id of the pick this frame answers; null or blank for a
+     *                frame that answers none
+     */
+    private synchronized void sendProviderInfo(LlmProvider probe, String answers) {
         if (!socket.isOpen()) {
             return;
         }
@@ -4424,6 +5119,9 @@ public final class SessionConnection {
             frame.put("contextWindow", window.getKey());
         }
         frame.put("windowSource", window.getValue());
+        if (answers != null && !answers.isBlank()) {
+            frame.put("answers", answers);
+        }
         // A dead socket just misses the hint — the next frame retries nothing.
         sendFrame(frame);
     }

@@ -80,7 +80,9 @@ export interface LoadedPlaybook {
   findings: { path: string; message: string }[];
   steps: {
     id: string;
-    skills: { name: string; installed: boolean; disabled: boolean }[];
+    /** Card 558: inPlaybook says whether the playbook folder holds the skill, where a run reads it;
+     *  installed and disabled describe the user's own folders. */
+    skills: { name: string; installed: boolean; disabled: boolean; inPlaybook?: boolean }[];
     model: { choice: string; provider: string; model: string; state: string; reason: string | null } | null;
   }[];
   dir: string;
@@ -224,12 +226,19 @@ function foldersOf(body: unknown): PlaybookFoldersState {
 /**
  * Read the known folders and the pin for a workspace.
  *
- * @param workspace the workspace path the pin is looked up for
+ * Card 554 fix round 3: without a workspace only the folders are read, and
+ * the pin the store holds stays; a read without a workspace says nothing
+ * about one.
+ *
+ * @param workspace the workspace path the pin is looked up for, or null
  */
-export async function refreshFolders(workspace: string): Promise<void> {
-  const res = await fetch(`/api/playbooks?workspace=${encodeURIComponent(workspace)}`);
+export async function refreshFolders(workspace: string | null): Promise<void> {
+  const res = await fetch(
+    workspace === null ? "/api/playbooks" : `/api/playbooks?workspace=${encodeURIComponent(workspace)}`,
+  );
   if (!res.ok) throw await refusal(res);
-  setFolders(foldersOf(await res.json()));
+  const read = foldersOf(await res.json());
+  setFolders(workspace === null ? { folders: read.folders, active: foldersState.active } : read);
 }
 
 /**

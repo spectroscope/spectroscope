@@ -777,6 +777,13 @@ public final class StandardTools {
                     if (launch != null) {
                         return launch;
                     }
+                    // Card 554: a session never writes a playbook, in any mode,
+                    // unless the playbook folder is its working folder (card 558).
+                    String playbook = dev.spectroscope.core.playbook.PlaybookFolderFence.refusal("write_file", file,
+                            context.cwd());
+                    if (playbook != null) {
+                        return playbook;
+                    }
                     byte[] next = content.getBytes(StandardCharsets.UTF_8);
                     // Card 269: look at what is there ONCE, before writing over
                     // it, against the bytes already in hand.
@@ -860,6 +867,7 @@ public final class StandardTools {
 
             /** Delegates to ShellCommand and maps its Result onto the tool convention — timeout, spawn failure and non-zero exit become "ERROR: " strings. */
             public String execute(JsonNode input, ToolContext context) {
+                // Card 554: no playbook folder fence here; a shell line can reach a path in ways no check can read.
                 String command = input.path("command").asText();
                 // Card 396: a line the host guard reads as aimed at this app
                 // does not reach a shell, whoever allowed the call. The model's
@@ -949,6 +957,13 @@ public final class StandardTools {
                     String launch = refuseLaunchFile(context, file, "edit_file");
                     if (launch != null) {
                         return launch;
+                    }
+                    // Card 554: a session never writes a playbook, in any mode,
+                    // unless the playbook folder is its working folder (card 558).
+                    String playbook = dev.spectroscope.core.playbook.PlaybookFolderFence.refusal("edit_file", file,
+                            context.cwd());
+                    if (playbook != null) {
+                        return playbook;
                     }
                     long size = Files.size(file);
                     if (size > FUSE_BYTES) {

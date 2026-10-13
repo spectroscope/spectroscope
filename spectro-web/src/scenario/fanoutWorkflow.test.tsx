@@ -321,6 +321,9 @@ const PRINTED_BY: { [T in RunEvent["type"]]?: FieldsOf<T> } = {
     // printed as it stands, it picks the headline's words.
     contextWindow: "components/ContextRing.tsx",
     windowSource: null,
+    // Card 554: read by the reducer to mark a playbook step's prompt, printed
+    // by none of the four renderers.
+    origin: null,
     ts: null,
   },
   turn_start: { type: "LabTrace.tsx:88", turn: "LabTrace.tsx:28-29", agentId: null, ts: null },
