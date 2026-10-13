@@ -585,14 +585,18 @@ public final class PeerNode implements AutoCloseable {
         // Card 503: the run this message starts counts its body as absorbed,
         // so the relay rule reads it from the first turn.
         session.inbox().startingMessage(envelope.text());
-        if (!session.running() && session.startRun(AgentMessageBlock.render(envelope, false))) {
+        boolean idle = !session.running();
+        if (idle && session.startRun(AgentMessageBlock.render(envelope, false))) {
             reply(envelope, session.id(), PeerStatus.DELIVERED, null, afterHold ? AFTER_HOLD : null);
             return;
         }
         session.inbox().forgetStarting(envelope.text());
-        if (!session.running()) {
+        if (idle && !session.running()) {
             // A face that cannot start a run while it is idle (the REPL waits
-            // on its prompt) holds the message for the operator instead.
+            // on its prompt) holds the message for the operator instead. A
+            // session that was running at the first look and is idle now has
+            // just ended its run: the inbox answers NO_RUN and the message is
+            // decided again once the session is idle.
             hold(session, envelope);
             return;
         }
