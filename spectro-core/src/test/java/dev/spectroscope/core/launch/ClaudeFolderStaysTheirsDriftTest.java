@@ -150,6 +150,9 @@ class ClaudeFolderStaysTheirsDriftTest {
     private static final List<String> MAY_NAME_IT = List.of(
             // the read half of card 350 — the location constant itself
             "spectro-core/src/main/java/dev/spectroscope/core/launch/LaunchFile.java",
+            // <workspace>/.claude/skills, commands and agents: what a session reads from its
+            // own working folder (card 558, integrator decision 3 of 2026-10-12); read only
+            "spectro-core/src/main/java/dev/spectroscope/core/skills/WorkspaceItems.java",
             // ~/.claude/plugins: the Claude Code plugins the Plugin tab reads (card 526,
             // the owner's "Plugin-Tab bauen" of 2026-10-11); read only, the import writes
             // into the playbook folder from another source

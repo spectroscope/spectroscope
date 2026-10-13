@@ -1,14 +1,16 @@
 // Card 506, criterion 5: the playbook module lists the workflows of the loaded
-// playbook with a Run control. A workflow that reads as a step list can run;
-// Run sends the file, the hash the list shows and the text typed beside it.
+// playbook. Card 554 (criterion 8a): a workflow starts from the chat of a
+// session with /playbook workflow <name> <input>, so the list keeps the
+// listing and loses its input and its Run. Each runnable workflow shows the
+// command that runs it; the name is the file below workflows/ without its
+// extension, as the server reads it.
 
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it } from "vitest";
 import { dict } from "../i18n/i18n";
 import { setLang } from "../state/lang";
 import type { ContentItem } from "../state/playbookContents";
-import { drive, type El } from "../testkit/driveComponent";
-import { WorkflowList } from "./WorkflowList";
+import { WorkflowList, workflowCommand } from "./WorkflowList";
 
 function item(name: string, state: ContentItem["state"], sha = "sha-" + name): ContentItem {
   return {
@@ -25,7 +27,7 @@ function item(name: string, state: ContentItem["state"], sha = "sha-" + name): C
   };
 }
 
-const SKILL: ContentItem = { ...item("brainstorming", "new"), kind: "skill", source: "skills/x" };
+const SKILL: ContentItem = { ...item("brainstorming", "in-playbook"), kind: "skill", source: "skills/x" };
 const ITEMS = [
   SKILL,
   item("fanout-research.json", "runnable"),
@@ -33,68 +35,48 @@ const ITEMS = [
   item("build.js", "not-run"),
 ];
 
-function byClass(tree: El[], cls: string): El[] {
-  return tree.filter((el) =>
-    String(el.props.className ?? "")
-      .split(" ")
-      .includes(cls),
-  );
-}
-
 afterEach(() => setLang("en"));
 
 describe("WorkflowList", () => {
-  it("lists every workflow of the playbook with its hash and a Run only for the ones that run", () => {
-    const out = renderToStaticMarkup(<WorkflowList items={ITEMS} canRun onRun={() => true} />);
+  it("lists every workflow of the playbook with its hash, and the chat command of each that runs", () => {
+    const out = renderToStaticMarkup(<WorkflowList items={ITEMS} />);
     expect(out).toContain("fanout-research.json");
     expect(out).toContain("fanout-review.json");
     expect(out).toContain("build.js");
     expect(out).not.toContain("brainstorming");
     expect(out).toContain("sha-fanout-r");
-    expect(out.match(/class="wf-run"/g)?.length).toBe(2);
+    expect(out).toContain('<code class="wf-command">/playbook workflow fanout-research</code>');
+    expect(out).toContain('<code class="wf-command">/playbook workflow fanout-review</code>');
+    expect(out.match(/class="wf-command"/g)?.length).toBe(2);
     expect(out).toContain(dict["wf.notRunnable"].en);
   });
 
-  it("Run sends the file, the hash and the typed text, and says the run shows in the chat", () => {
-    const sent: unknown[][] = [];
-    const tree = drive(
-      <WorkflowList
-        items={ITEMS}
-        canRun
-        onRun={(...args) => {
-          sent.push(args);
-          return true;
-        }}
-      />,
-      [WorkflowList],
-      [
-        (t) =>
-          byClass(t, "wf-input")[0].props.onChange?.({
-            target: { value: "why does the parser drop lines?" },
-          }),
-        (t) => byClass(t, "wf-run")[0].props.onClick?.(),
-      ],
+  it("offers no input and no Run: a workflow starts from the chat (card 554)", () => {
+    const out = renderToStaticMarkup(<WorkflowList items={ITEMS} />);
+    expect(out).not.toContain("wf-input");
+    expect(out).not.toContain("wf-run");
+    expect(out).not.toContain("<button");
+    expect(out).toContain(
+      "A workflow starts in the chat of a session: /playbook workflow &lt;name&gt; &lt;input&gt;.",
     );
-    expect(sent).toEqual([
-      ["workflows/fanout-research.json", "sha-fanout-research.json", "why does the parser drop lines?"],
-    ]);
-    expect(byClass(tree, "wf-notice").length).toBe(1);
+    for (const key of ["wf.run", "wf.input", "wf.hint", "wf.needsSession", "wf.started"]) {
+      expect(dict[key], `${key} is retired`).toBeUndefined();
+    }
   });
 
-  it("without a live session and workspace the Run controls are off and say why", () => {
-    const out = renderToStaticMarkup(<WorkflowList items={ITEMS} canRun={false} onRun={() => true} />);
-    expect(out.match(/class="wf-run" disabled=""/g)?.length).toBe(2);
-    expect(out).toContain(dict["wf.needsSession"].en);
+  it("names a workflow by its file below workflows/ without the extension", () => {
+    expect(workflowCommand("workflows/fanout-review.json")).toBe("/playbook workflow fanout-review");
+    expect(workflowCommand("workflows/team/check.json")).toBe("/playbook workflow team/check");
   });
 
   it("draws nothing when the playbook declares no workflow", () => {
-    expect(renderToStaticMarkup(<WorkflowList items={[SKILL]} canRun onRun={() => true} />)).toBe("");
+    expect(renderToStaticMarkup(<WorkflowList items={[SKILL]} />)).toBe("");
   });
 
   it("speaks German", () => {
     setLang("de");
-    const out = renderToStaticMarkup(<WorkflowList items={ITEMS} canRun onRun={() => true} />);
+    const out = renderToStaticMarkup(<WorkflowList items={ITEMS} />);
     expect(out).toContain(dict["wf.title"].de);
-    expect(out).toContain(dict["wf.run"].de);
+    expect(out).toContain("Ein Workflow startet im Chat einer Session");
   });
 });

@@ -1,36 +1,34 @@
 // The web chat's commands (card 471): /compact and /clear. Card 504 adds
 // /loop [interval] <prompt>, the one command that takes words after it.
+// Card 554 reads every command from the core list the server serves
+// (state/commandList.ts): /help, /skills and the playbook commands join, a
+// command may have a second word (/playbook list) and aliases (/commands for
+// /help, /playbook run for /run-with-playbook).
 //
 // A command is not a skill and not a prompt. A skill token rides inside a
 // message and the server expands it for the model (card 247); a command is the
 // whole draft, it is decided here on the client, and it leaves as its own
-// socket frame. Nothing about it ever reaches the model as text.
+// socket frame or is answered on the page. Nothing about it ever reaches the
+// model as text.
 //
-// The rule is deliberately narrow: the draft, trimmed, must be exactly one of
-// the commands. "please /clear the cache" and "/clear the cache" are prompts,
-// so a sentence that happens to mention a command is sent as written.
+// The rule is deliberately narrow: the draft, trimmed, opens with a spelling
+// of a command, and a command that takes no words is the whole draft. "please
+// /clear the cache" and "/clear the cache" are prompts, so a sentence that
+// happens to mention a command is sent as written.
+//
+// Before the list has arrived a draft that starts with a slash is held
+// (criterion 8h): the composer keeps it and sends nothing, because it cannot
+// yet tell a command from a prompt.
 //
 // Pure, so the suite pins it in node; the picker and the composer read it.
 
 import type { ClientMessage } from "../events";
+import { t, type Lang } from "../i18n/i18n";
+import { webCommands, type CommandRow } from "./commandList";
+import type { ViewMode } from "./viewMode";
 
+/** The two commands that leave as a frame of their own (card 471). */
 export type ChatCommandName = "compact" | "clear";
-
-/** One command as the picker lists it. */
-export interface ChatCommand {
-  name: ChatCommandName | "loop";
-  /** The dict key of its one-line help. */
-  helpKey: string;
-  /** Card 504: true for a command that takes words; the picker writes it into the draft instead of running it. */
-  takesArgs?: boolean;
-}
-
-/** The commands, in the order the picker lists them. */
-export const CHAT_COMMANDS: readonly ChatCommand[] = [
-  { name: "compact", helpKey: "cmd.compact.help" },
-  { name: "clear", helpKey: "cmd.clear.help" },
-  { name: "loop", helpKey: "cmd.loop.help", takesArgs: true },
-];
 
 /** Card 504: a /loop draft: a leading interval, or null for a self paced loop, and the prompt. */
 export interface LoopDraft {
@@ -87,22 +85,48 @@ export function loopStopFrame(): ClientMessage {
   return { type: "set_loop", action: "stop" };
 }
 
-/**
- * The command a whole draft is, or null when it is a prompt.
- *
- * @param draft the composer's text, untrimmed
- * @returns the command's name, or null
- */
-export function parseCommand(draft: string): ChatCommandName | null {
-  const text = draft.trim();
-  for (const command of CHAT_COMMANDS) {
-    if (command.takesArgs) continue;
-    if (text === `/${command.name}`) return command.name as ChatCommandName;
-  }
-  return null;
+/** Card 554: how a row is typed, without the slash: its name and second word, then its aliases. */
+export function spellingsOf(row: CommandRow): string[] {
+  return [row.sub === null ? row.name : `${row.name} ${row.sub}`, ...row.aliases];
 }
 
-/** What a submit of the draft sends: a command, a prompt, or nothing. */
+/** Card 554: a draft read as a row of the list, and the words after the spelling. */
+export interface SlashMatch {
+  row: CommandRow;
+  rest: string;
+}
+
+/**
+ * Card 554: the web row a draft opens with. The longest spelling or alias the
+ * draft starts with wins when the end of the draft, a space or a line break
+ * follows it, the rule of CommandList.match in the core: "/playbook run x"
+ * names run-with-playbook, "/playbook" alone the current playbook row. Only
+ * the web's wired rows count, in every mode: typing works where the picker
+ * does not list a row.
+ *
+ * @param draft the composer's text, untrimmed
+ * @param rows  the command list
+ * @returns the row and the trimmed rest, or null
+ */
+export function parseSlash(draft: string, rows: readonly CommandRow[]): SlashMatch | null {
+  const text = draft.trim();
+  if (!text.startsWith("/")) return null;
+  const body = text.slice(1);
+  let best: SlashMatch | null = null;
+  let bestLength = -1;
+  for (const row of webCommands(rows)) {
+    for (const spelling of spellingsOf(row)) {
+      const hit = body === spelling || body.startsWith(`${spelling} `) || body.startsWith(`${spelling}\n`);
+      if (hit && spelling.length > bestLength) {
+        best = { row, rest: body.slice(spelling.length).trim() };
+        bestLength = spelling.length;
+      }
+    }
+  }
+  return best;
+}
+
+/** The decisions card 471 and card 504 made: a command, a prompt, a loop or its stop. */
 export type ComposerSubmit =
   | { kind: "command"; name: ChatCommandName }
   | { kind: "prompt"; text: string }
@@ -110,45 +134,209 @@ export type ComposerSubmit =
   | { kind: "loopStop" };
 
 /**
- * The composer's decision for one submit.
+ * Card 554: the composer's decision for one submit, against the command list.
+ * `held` is criterion 8h: the list has not arrived and the draft starts with a
+ * slash. The playbook kinds leave as frames of the session; help, skills and
+ * the current, list and show rows are answered on the page.
+ */
+export type DraftDecision =
+  | ComposerSubmit
+  | { kind: "held" }
+  | { kind: "help" }
+  | { kind: "skills" }
+  | { kind: "runPlaybook"; prompt: string }
+  | { kind: "playbookCurrent" }
+  | { kind: "playbookList" }
+  | { kind: "playbookShow"; name: string }
+  | { kind: "playbookUse"; name: string }
+  | { kind: "runWorkflow"; name: string; input: string };
+
+/**
+ * Card 554: the ids of the rows the web knows how to run. Every wired web row
+ * of the core list is one of them (chatCommands.test.ts reads the list).
+ */
+export const WEB_COMMAND_IDS = [
+  "help",
+  "compact",
+  "clear",
+  "loop",
+  "run-with-playbook",
+  "playbook-current",
+  "playbook-list",
+  "playbook-show",
+  "playbook-use",
+  "playbook-workflow",
+  "skills",
+] as const;
+
+/** The decision for a row that takes no words: the row when the draft is the whole command, else a prompt. */
+const WHOLE: Partial<Record<string, DraftDecision>> = {
+  help: { kind: "help" },
+  compact: { kind: "command", name: "compact" },
+  clear: { kind: "command", name: "clear" },
+  skills: { kind: "skills" },
+  "playbook-current": { kind: "playbookCurrent" },
+  "playbook-list": { kind: "playbookList" },
+};
+
+/**
+ * Card 554: the composer's decision for one submit.
  *
  * @param draft the composer's text, untrimmed
- * @returns the command, the trimmed prompt, or null for a blank draft
+ * @param rows  the command list, or null while it has not arrived
+ * @returns the decision, or null for a blank draft
  */
-export function composerSubmit(draft: string): ComposerSubmit | null {
-  const command = parseCommand(draft);
-  if (command !== null) return { kind: "command", name: command };
-  // Fix round 1: /loop stop ends the loop, as the REPL reads it.
-  if (LOOP_STOP.test(draft.trim())) return { kind: "loopStop" };
-  const loop = parseLoop(draft);
-  if (loop !== null) return { kind: "loop", ...loop };
+export function decideDraft(draft: string, rows: readonly CommandRow[] | null): DraftDecision | null {
   const text = draft.trim();
-  return text === "" ? null : { kind: "prompt", text };
+  if (text === "") return null;
+  if (rows === null) return text.startsWith("/") ? { kind: "held" } : { kind: "prompt", text };
+  const match = parseSlash(draft, rows);
+  if (match === null) return { kind: "prompt", text };
+  const { row, rest } = match;
+  switch (row.id) {
+    case "loop": {
+      // Fix round 1: /loop stop ends the loop, as the REPL reads it.
+      if (LOOP_STOP.test(text)) return { kind: "loopStop" };
+      const loop = parseLoop(text.replace(/^\/\S+/, "/loop"));
+      return loop === null ? { kind: "prompt", text } : { kind: "loop", ...loop };
+    }
+    case "run-with-playbook":
+      return { kind: "runPlaybook", prompt: rest };
+    case "playbook-use":
+      return { kind: "playbookUse", name: rest };
+    // Integrator decision a: /playbook show [name], any registered playbook.
+    case "playbook-show":
+      return { kind: "playbookShow", name: rest };
+    case "playbook-workflow": {
+      const space = rest.search(/\s/);
+      return space < 0
+        ? { kind: "runWorkflow", name: rest, input: "" }
+        : { kind: "runWorkflow", name: rest.slice(0, space), input: rest.slice(space).trim() };
+    }
+    default: {
+      const whole = WHOLE[row.id];
+      return whole !== undefined && rest === "" ? whole : { kind: "prompt", text };
+    }
+  }
 }
 
 /**
- * The commands a slash query offers.
+ * Card 554: the rows a slash query offers in the picker.
  *
  * Only a slash that opens the draft offers any: a command is the whole
  * message, so offering one in the middle of a sentence would offer something
- * that, once picked, is a prompt.
+ * that, once picked, is a prompt. A row is offered when one of its spellings
+ * starts with the query; the rows come grouped in the list's order of groups,
+ * and inside a group a row the query spells out exactly comes first.
  *
- * @param query     the text after the slash, any case
- * @param slashAt   where the slash stands in the draft
- * @returns the commands whose name starts with the query, in list order
+ * @param query   the text after the slash, any case
+ * @param slashAt where the slash stands in the draft
+ * @param rows    the command list
+ * @param mode    the window's mode; the developer rows only in developer
+ * @returns the rows to offer
  */
-export function matchCommands(query: string, slashAt: number): ChatCommand[] {
+export function matchCommands(
+  query: string,
+  slashAt: number,
+  rows: readonly CommandRow[],
+  mode: ViewMode,
+): CommandRow[] {
   if (slashAt !== 0) return [];
   const needle = query.toLowerCase();
-  return CHAT_COMMANDS.filter((command) => command.name.startsWith(needle));
+  const shown = webCommands(rows, mode).filter((row) => spellingsOf(row).some((s) => s.startsWith(needle)));
+  const groups = [...new Set(shown.map((row) => row.group))];
+  const exact = (row: CommandRow): number => (spellingsOf(row).includes(needle) ? 0 : 1);
+  return groups.flatMap((group) =>
+    shown
+      .map((row, at) => ({ row, at }))
+      .filter(({ row }) => row.group === group)
+      .sort((a, b) => exact(a.row) - exact(b.row) || a.at - b.at)
+      .map(({ row }) => row),
+  );
 }
 
 /**
- * The socket frame a command leaves as.
+ * The socket frame /compact or /clear leaves as.
  *
  * @param name the command
  * @returns its client frame; never a user_message
  */
 export function commandFrame(name: ChatCommandName): ClientMessage {
   return name === "compact" ? { type: "compact_context" } : { type: "clear_context" };
+}
+
+/**
+ * Card 554: /run-with-playbook asks the server for the start sheet. Without a
+ * folder the server takes the session's pick, else the folder pinned for the
+ * workspace, else refuses with the way to pick one.
+ *
+ * @param prompt the words after the command; the server refuses an empty one with the usage
+ * @param dir    a playbook folder, only when one was chosen for this start
+ */
+export function confirmPlaybookFrame(prompt: string, dir?: string): ClientMessage {
+  return dir === undefined ? { type: "confirm_playbook", prompt } : { type: "confirm_playbook", prompt, dir };
+}
+
+/**
+ * Card 554: Start on the sheet. The hash is the one the sheet showed; the
+ * server reads the folder again and refuses a mismatch.
+ */
+export function startPlaybookFrame(dir: string, hash: string, prompt: string): ClientMessage {
+  return { type: "start_playbook", dir, hash, prompt };
+}
+
+/**
+ * Card 554: a workflow of the session's playbook, by the file name below
+ * workflows/ without its extension; it runs at once (owner answer 2).
+ */
+export function startWorkflowFrame(name: string, input: string, lang: Lang, dir?: string): ClientMessage {
+  return dir === undefined
+    ? { type: "start_workflow", name, input, lang }
+    : { type: "start_workflow", name, input, lang, dir };
+}
+
+/** Card 554: the playbook picked for the session, or null to withdraw the pick. */
+export function setPlaybookFrame(dir: string | null): ClientMessage {
+  return { type: "set_playbook", dir };
+}
+
+/**
+ * Card 554, integrator decision b: "No playbook" for the session. Unlike a
+ * withdrawn pick, the folder pinned for the workspace does not stand in, and
+ * /run-with-playbook is refused.
+ */
+export function noPlaybookFrame(): ClientMessage {
+  return { type: "set_playbook", dir: null, none: true };
+}
+
+/**
+ * Card 554: what /help answers, on the page: every row of the web chat,
+ * grouped under its group's name, each line the spellings and the help in
+ * the page's language. Integrator decision c: outside developer mode the
+ * developer rows are listed too, under their group marked "developer mode";
+ * only the picker keeps them to developer mode.
+ *
+ * @param rows the command list
+ * @param lang the page's language
+ * @param mode the window's mode
+ * @returns the text of one info line, its lines joined by line breaks
+ */
+export function helpText(rows: readonly CommandRow[], lang: Lang, mode: ViewMode): string {
+  const shown = webCommands(rows);
+  const lines = [t(lang, "cmd.helpTitle")];
+  for (const group of [...new Set(shown.map((row) => row.group))]) {
+    const inGroup = shown.filter((r) => r.group === group);
+    // A group with a developer row is marked as a whole; today the playbook
+    // group is the only one, and all its rows are developer rows.
+    const marked = mode !== "developer" && inGroup.some((r) => r.developerOnly);
+    const name = t(lang, `cmd.group.${group}`);
+    lines.push("", marked ? t(lang, "cmd.devMark", { group: name }) : name);
+    for (const row of inGroup) {
+      const names = spellingsOf(row)
+        .map((s) => `/${s}`)
+        .join(", ");
+      lines.push(`${names}: ${t(lang, `cmd.${row.id}.help`)}`);
+    }
+  }
+  return lines.join("\n");
 }

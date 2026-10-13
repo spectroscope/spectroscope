@@ -6,6 +6,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.spectroscope.core.CancelInterrupt;
 import dev.spectroscope.core.CancelSignal;
 import dev.spectroscope.core.config.governing.Governs;
 import dev.spectroscope.core.wire.LlmWireTap;
@@ -149,9 +150,11 @@ public final class OpenAiCompatProvider implements LlmProvider {
         // tears the connection down promptly — the stop button's whole mechanism.
         // (Spring's response-level close drains regardless of transport; the
         // iterator therefore closes the raw stream, see SseIterator.)
+        // Card 557: the connect timeout is the only deadline on the chat
+        // client; a connected stream may take as long as the model needs.
         RestClient.Builder builder = RestClient.builder()
                 .baseUrl(options.baseUrl().replaceAll("/$", ""))
-                .requestFactory(new JdkClientHttpRequestFactory());
+                .requestFactory(new JdkClientHttpRequestFactory(ProviderTimeouts.chatClient()));
         if (options.apiKey() != null && !options.apiKey().isBlank()) {
             builder.defaultHeader("Authorization", "Bearer " + options.apiKey());
         }
@@ -831,9 +834,9 @@ public final class OpenAiCompatProvider implements LlmProvider {
         private final int httpStatus;
         // The open llm-wire exchange, or null when the request carries no tap.
         private final LlmWireTap.Exchange wire;
-        /** One end() per exchange, whatever path closes it — the HTTP-error
-         *  path ends inside the callback AND rethrows into the transport
-         *  catch, and a record with two closings would lie twice. */
+        /** One end() per exchange, whatever path closes it: every closing
+         *  goes through endWireOnce, and a record with two closings would
+         *  lie twice. */
         private boolean wireEnded;
         private final Deque<ProviderEvent> pending = new ArrayDeque<>();
         // Raw inline <think> tags in content (server-side reasoning parsing off)
@@ -866,27 +869,56 @@ public final class OpenAiCompatProvider implements LlmProvider {
             boolean hasImages = request.messages().stream()
                     .anyMatch(message -> message.content().stream()
                             .anyMatch(ImageContent.class::isInstance));
-            LlmWireTap.Exchange wire = request.tap() == null ? null
+            // Card 557: a stop pressed before this request dials nothing and
+            // puts nothing on the wire record, because nothing was sent.
+            boolean stoppedBefore = signal != null && signal.isCancelled();
+            this.wire = stoppedBefore || request.tap() == null ? null
                     : request.tap().begin(new LlmWireTap.WireRequest(providerLabel(),
                             model, "http", "POST", url, requestHeaders(), "bytes",
                             bodyJson, System.currentTimeMillis()));
-            this.wire = wire;
-            final OpenResponse open;
-            try {
+            OpenResponse open = stoppedBefore ? OpenResponse.STOPPED : open(url, bodyJson, hasImages);
+            this.httpStatus = open.status();
+            this.lines = open.reader();
+            this.closeResponse = open.close();
+            if (open == OpenResponse.STOPPED) {
+                pending.add(new PStop(PStop.StopReason.ABORTED));
+                finished = true;
+                return;
+            }
+            if (signal != null) {
+                signal.onCancel(this.closeResponse::run);
+            }
+        }
+
+        /**
+         * Posts the request and keeps the response open for SSE line reads.
+         *
+         * <p>Card 557: until the response headers arrive, the only thing that
+         * ends the wait is an interrupt (Spring's JDK request factory turns it
+         * into a cancel of the exchange, which also aborts a connect in
+         * progress), so the post runs inside a {@link CancelInterrupt} scope.
+         * The scope closes, and clears its interrupt, before anything is
+         * written to the wire record.</p>
+         *
+         * @param url       the absolute chat completions URL
+         * @param bodyJson  the serialized request body
+         * @param hasImages whether the request carries image content
+         * @return the open response, or {@link OpenResponse#STOPPED} when a stop ended the wait
+         */
+        private OpenResponse open(String url, String bodyJson, boolean hasImages) {
+            OpenResponse open;
+            try (CancelInterrupt stop = CancelInterrupt.open(signal)) {
                 open = http.post()
                         .uri(url)
                         .contentType(MediaType.APPLICATION_JSON)
                         .body(bodyJson)
                         .exchange((clientRequest, clientResponse) -> {
+                            int status = clientResponse.getStatusCode().value();
                             if (clientResponse.getStatusCode().isError()) {
                                 String detail = new String(clientResponse.getBody().readAllBytes(),
                                         StandardCharsets.UTF_8);
                                 clientResponse.close();
-                                endWireOnce(new LlmWireTap.WireOutcome(
-                                        clientResponse.getStatusCode().value(), "bytes",
-                                        detail, false, null, System.currentTimeMillis()));
-                                throw classifyHttpFailure(
-                                        clientResponse.getStatusCode().value(), detail, hasImages);
+                                return new OpenResponse(status, null, () -> { }, detail);
                             }
                             // The close handle is the RAW body stream, NEVER the Spring
                             // response: Spring's close() DRAINS the remaining body first
@@ -897,28 +929,33 @@ public final class OpenAiCompatProvider implements LlmProvider {
                             // close cancels the body subscription and tears the connection
                             // down — the server notices and stops generating.
                             InputStream bodyStream = clientResponse.getBody();
-                            return new OpenResponse(clientResponse.getStatusCode().value(),
+                            return new OpenResponse(status,
                                     new BufferedReader(new InputStreamReader(
                                             bodyStream, StandardCharsets.UTF_8)),
-                                    () -> closeBody(bodyStream));
+                                    () -> closeBody(bodyStream), null);
                         }, false);
             } catch (RuntimeException failure) {
+                if (signal != null && signal.isCancelled()) {
+                    // The stop ended the wait before any answer: aborted, not failed.
+                    endWireOnce(new LlmWireTap.WireOutcome(null, "bytes", null, true, null,
+                            System.currentTimeMillis()));
+                    return OpenResponse.STOPPED;
+                }
                 // Transport failure BEFORE any byte was answered (connect refused,
-                // DNS, TLS — Spring throws before the callback runs), and the
-                // HTTP-error rethrow above. end() is idempotent, so the pair
-                // closes exactly once; the null status is the WireOutcome
-                // contract's "the connection never answered" arm — without this
-                // catch, every retry attempt left a dangling llm_request line.
+                // DNS, TLS: Spring throws before the callback runs). end() is
+                // idempotent; the null status is the WireOutcome contract's "the
+                // connection never answered" arm. Without this, every retry
+                // attempt left a dangling llm_request line.
                 endWireOnce(new LlmWireTap.WireOutcome(null, "bytes", null, false,
                         failure.toString(), System.currentTimeMillis()));
                 throw failure;
             }
-            this.httpStatus = open.status();
-            this.lines = open.reader();
-            this.closeResponse = open.close();
-            if (signal != null) {
-                signal.onCancel(this.closeResponse::run);
+            if (open.refusal() != null) {
+                endWireOnce(new LlmWireTap.WireOutcome(open.status(), "bytes",
+                        open.refusal(), false, null, System.currentTimeMillis()));
+                throw classifyHttpFailure(open.status(), open.refusal(), hasImages);
             }
+            return open;
         }
 
         /** Reads SSE lines until at least one neutral event is pending (or the turn finishes). */
@@ -1102,11 +1139,16 @@ public final class OpenAiCompatProvider implements LlmProvider {
     /**
      * Status, reader and close hook for a response kept open past the exchange call.
      *
-     * @param status the HTTP status the server actually answered
-     * @param reader line reader over the still-open response body
-     * @param close  releases the underlying HTTP response
+     * @param status  the HTTP status the server actually answered
+     * @param reader  line reader over the still-open response body, null for a refusal
+     * @param close   releases the underlying HTTP response
+     * @param refusal the error body of an HTTP error status, null when the server accepted
      */
-    private record OpenResponse(int status, BufferedReader reader, Runnable close) {}
+    private record OpenResponse(int status, BufferedReader reader, Runnable close, String refusal) {
+
+        /** No answer: a stop ended the wait, or came before the request (card 557). */
+        static final OpenResponse STOPPED = new OpenResponse(0, null, () -> { }, null);
+    }
 
     /** Closes the raw body stream, quietly — closing an already-broken stream is
      *  fine; the point is the prompt subscription cancel + connection teardown. */

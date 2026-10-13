@@ -81,6 +81,22 @@ describe("i18n dict", () => {
     for (const k of ["sess.opts", "dens.title"]) {
       expect(dict[k], k).toBeDefined();
     }
+    // Card 555: the third value's word and hint, in both languages. The hint
+    // names the dot because the owner kept it ("Name und Punkt").
+    expect([t("en", "dens.minimal"), t("de", "dens.minimal")]).toEqual(["minimal", "minimal"]);
+    expect([t("en", "dens.minimal.hint"), t("de", "dens.minimal.hint")]).toEqual([
+      "the name and its dot",
+      "Name und Punkt",
+    ]);
+    // Normal shows the folder and state line of a live session as well, and
+    // its hint says so. The two hints may never read alike in either language.
+    expect([t("en", "dens.normal.hint"), t("de", "dens.normal.hint")]).toEqual([
+      "name, folder and state",
+      "Name, Ordner und Status",
+    ]);
+    for (const lang of ["en", "de"] as const) {
+      expect(t(lang, "dens.minimal.hint"), lang).not.toBe(t(lang, "dens.normal.hint"));
+    }
     // The trace's faces are interpolated twice: as the master switch's buttons
     // and titles, and as the open frame's own row of modes. A face added to the
     // store without its strings would render as the bare key.

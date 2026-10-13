@@ -114,6 +114,11 @@ describe("what a written jsonl may contain", () => {
       // Card 504: the session's loop on the page, and the page's /loop and Stop.
       "loop_info",
       "set_loop",
+      // Card 554: the session's pick as the server sees it now, and the start
+      // sheet of one /run-with-playbook. The pick's record is playbook_picked
+      // and a run's record its playbook_progress lines, both in the union.
+      "playbook_info",
+      "playbook_confirm",
     ]) {
       expect(NON_WIRE_TYPES.has(type), type).toBe(true);
     }
@@ -122,7 +127,9 @@ describe("what a written jsonl may contain", () => {
     // `tool_groups_info`, card 471's `compaction_state`, card 493's
     // `local_mode_info`, card 498's `wake_session`, since card 502 the
     // three agent messaging frames, card 503's `send_peer_message`, and
-    // card 504's `loop_info` and `set_loop`, thirty-three in all. The number is
+    // card 504's `loop_info` and `set_loop`, thirty-three, and card 554's
+    // `playbook_info` and `playbook_confirm`, thirty-five, and card 558's
+    // `session_items` and `get_session_items`, thirty-seven in all. The number is
     // asserted so the set cannot grow or shrink by accident — only on purpose,
     // with the reason written above.
     //
@@ -133,7 +140,7 @@ describe("what a written jsonl may contain", () => {
     // identical. The compiler had nothing to say either. This guard was the
     // only thing that noticed, which is the whole argument for keeping a bare
     // number in a test.
-    expect(NON_WIRE_TYPES.size).toBe(33);
+    expect(NON_WIRE_TYPES.size).toBe(37);
   });
 
   it("keeps a user turn read out of a transcript out of the download", () => {

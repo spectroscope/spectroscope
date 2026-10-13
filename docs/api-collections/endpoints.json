@@ -5,7 +5,7 @@
     "collectionName": "spectroscope REST API",
     "measuredOn": "2026-08-04",
     "measuredAgainst": "the spectro-server built from this tree, on 127.0.0.1:8236, fresh throwaway home (card 74: one filter fences every /api path, /api/health excepted)",
-    "endpointCount": 86,
+    "endpointCount": 87,
     "wsEndpoints": [
       "/ws",
       "/ws/shell"
@@ -980,6 +980,19 @@
         ]
       },
       "bodyNote": "{skills: [\"<pack>/<name>\", ...]}: ids from the catalogue rows of GET /api/skills that the user root carries."
+    },
+    {
+      "id": "commands",
+      "method": "GET",
+      "path": "/api/commands",
+      "area": "skills",
+      "name": "chat commands",
+      "description": "The one list of chat commands for the terminal REPL and the web chat (card 554), in its order: id, name, sub, aliases, takesArgs, group (chat, playbook, codegraph, skills), surfaces (web, repl, both), developerOnly, wired (false for a row another card owns) and help.en. The web builds its /help, its slash picker and the Skills and Commands page from it.",
+      "fence": "host",
+      "writes": false,
+      "pathVars": [],
+      "query": [],
+      "body": null
     },
     {
       "id": "files-tree",

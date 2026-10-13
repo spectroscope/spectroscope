@@ -613,10 +613,121 @@ public final class SessionStore {
      * @param denyCount   how many of those stops ended in a refusal
      * @param endedAt     the last event's timestamp — with startedAt this is the
      *                    span the session covers, not the time it spent computing
+     * @param playbook    the playbook folder the session picked last (card 554), so a
+     *                    stored row shows it before a wake; null (left off the JSON)
+     *                    when the session never picked one or withdrew its pick
      */
     public record SessionInfo(String id, long startedAt, String firstPrompt, int tokens,
             String provider, int agentCount, int turnCount,
-            String model, String stopReason, int gateCount, int denyCount, long endedAt) {}
+            String model, String stopReason, int gateCount, int denyCount, long endedAt,
+            String playbook) {
+
+        /** @return the picked folder, left off the JSON when there is none */
+        @Override
+        @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+        public String playbook() {
+            return playbook;
+        }
+
+        /**
+         * The pre-card-554 shape: no pick.
+         *
+         * @param id          the session id
+         * @param startedAt   the first run_start's timestamp
+         * @param firstPrompt the prompt that opened the session
+         * @param tokens      input plus output tokens
+         * @param provider    the recorded provider label
+         * @param agentCount  distinct agents that ran
+         * @param turnCount   main-agent turns
+         * @param model       the model id the session opened with
+         * @param stopReason  how the last main run stopped
+         * @param gateCount   gate stops
+         * @param denyCount   refusals among them
+         * @param endedAt     the last event's timestamp
+         */
+        public SessionInfo(String id, long startedAt, String firstPrompt, int tokens,
+                           String provider, int agentCount, int turnCount,
+                           String model, String stopReason, int gateCount, int denyCount, long endedAt) {
+            this(id, startedAt, firstPrompt, tokens, provider, agentCount, turnCount, model, stopReason,
+                    gateCount, denyCount, endedAt, null);
+        }
+    }
+
+    /**
+     * The playbook folder a stored session picked last (card 554, criterion
+     * 8e), read line by line like {@link #recordedWorkspace}: a wake and a
+     * resume ask it, and a session file runs to megabytes. The LAST pick wins,
+     * because a session may change its playbook; a last line without a folder
+     * is a withdrawn pick.
+     *
+     * @param id the session id to read
+     * @return the folder, or null when the session never picked one, withdrew its
+     *         pick, or the file cannot be read
+     */
+    public static String recordedPlaybook(String id) {
+        return recordedPick(id).dir();
+    }
+
+    /**
+     * The last pick of a stored session (card 554): a folder, the explicit
+     * "No playbook" (integrator decision b), or neither.
+     *
+     * @param dir  the picked folder, or null
+     * @param none true when the last pick was the explicit "No playbook"
+     */
+    public record RecordedPick(String dir, boolean none) {
+        /** No pick at all: never picked, withdrawn, or no readable file. */
+        static final RecordedPick NOTHING = new RecordedPick(null, false);
+    }
+
+    /**
+     * The last pick of a stored session, read like {@link #recordedPlaybook}.
+     *
+     * @param id the session id to read
+     * @return the pick; {@link RecordedPick#NOTHING} when there is none or the file cannot be read
+     */
+    public static RecordedPick recordedPick(String id) {
+        RecordedPick picked = RecordedPick.NOTHING;
+        try {
+            Path path = sessionFile(id);
+            if (!Files.isRegularFile(path)) {
+                return RecordedPick.NOTHING;
+            }
+            for (SessionLine line : readLines(path)) {
+                if (line.text().isBlank() || !line.text().contains("\"playbook_picked\"")) {
+                    continue;
+                }
+                if (!line.utf8()) {
+                    reportUnreadable(id, line);
+                    continue;
+                }
+                try {
+                    if (JSON.readValue(line.text(), RunEvent.class) instanceof RunEvent.PlaybookPicked pick) {
+                        picked = pick.dir() == null || pick.dir().isBlank()
+                                ? new RecordedPick(null, pick.explicitNone())
+                                : new RecordedPick(pick.dir(), false);
+                    }
+                } catch (IOException torn) {
+                    // A torn line is not an answer; the pick before it stands.
+                    reportUnreadable(id, line);
+                }
+            }
+        } catch (IOException unreadable) {
+            return RecordedPick.NOTHING;
+        }
+        return picked;
+    }
+
+    /** @return the folder of the last pick in the events, null when none or withdrawn (card 554) */
+    private static String lastPick(List<RunEvent> events) {
+        String picked = null;
+        for (RunEvent event : events) {
+            if (event instanceof RunEvent.PlaybookPicked pick) {
+                picked = pick.dir() == null || pick.dir().isBlank() ? null : pick.dir();
+            }
+        }
+        return picked;
+    }
 
     /**
      * Overview over all sessions — a fold over the event files, memoized per file.
@@ -886,7 +997,8 @@ public final class SessionStore {
                         lastMainStopReason(events),
                         countGateStops(events),
                         countDenials(events),
-                        events.isEmpty() ? start.ts() : events.getLast().ts()));
+                        events.isEmpty() ? start.ts() : events.getLast().ts(),
+                        lastPick(events)));
     }
 
     /**
@@ -1102,6 +1214,11 @@ public final class SessionStore {
             // belongs to that agent; a child's clear must not cut the main
             // agent's conversation on resume.
             case RunEvent.ContextCleared e -> e.agentId();
+            // Card 554: a playbook run's line belongs to the playbook's own
+            // agent id, the one its plan already carries.
+            case RunEvent.PlaybookProgress e -> e.agentId();
+            // Card 554: a pick belongs to the session, not to one agent.
+            case RunEvent.PlaybookPicked e -> null;
             // Card 337: a human's hand on the play button. There is no agent to
             // attribute it to, and inventing one would put an operator's action
             // on some model's rail.

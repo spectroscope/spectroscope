@@ -118,3 +118,71 @@
 .skills-shelf-state--in {
   color: var(--text-dim);
 }
+
+/* Card 554: the chat commands below the skills, read-only. */
+.skills-commands {
+  margin-top: var(--sp-4);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--border);
+}
+
+.skills-commands-title {
+  margin: 0;
+  font-size: var(--fs-14);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.skills-commands-group {
+  margin-top: var(--sp-3);
+}
+
+.skills-commands-group-title {
+  margin: 0;
+  font-size: var(--fs-11);
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.skills-commands-list {
+  list-style: none;
+  margin: var(--sp-1) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.skills-command {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px var(--sp-3);
+  padding: 5px var(--sp-2);
+  border-radius: 6px;
+}
+
+.skills-command:hover {
+  background: var(--surface-2);
+}
+
+.skills-command-names {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-2);
+}
+
+.skills-command-name {
+  font-size: var(--fs-13);
+  color: var(--text);
+}
+
+.skills-command-help {
+  flex: 1 1 24ch;
+  min-width: 0;
+  font-size: var(--fs-13);
+  color: var(--text-dim);
+}

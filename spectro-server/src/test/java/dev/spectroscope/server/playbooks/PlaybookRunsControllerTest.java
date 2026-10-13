@@ -215,4 +215,22 @@ class PlaybookRunsControllerTest {
         out.values().removeIf(java.util.Objects::isNull);
         return out;
     }
+
+    /** Card 554: a run row carries what the run was asked, so the list and a replay show it. */
+    @Test
+    void aRunRowCarriesItsTaskAndARunWithoutOneSaysNone() throws IOException {
+        String id = freshId();
+        Files.createDirectories(PlaybookRecorder.folder());
+        Files.writeString(PlaybookRecorder.fileFor(id), String.join("\n",
+                "{\"type\":\"playbook_start\",\"run\":\"" + DONE + "\",\"playbook\":\"spectro\","
+                        + "\"task\":\"add a CSV export\",\"ts\":1000}",
+                "{\"type\":\"playbook_start\",\"run\":\"" + OPEN + "\",\"playbook\":\"other\",\"ts\":2000}",
+                ""), StandardCharsets.UTF_8);
+
+        List<Map<String, Object>> runs = rows(controller.runs(id, local()));
+
+        assertEquals("add a CSV export", runs.get(0).get("task"));
+        assertTrue(runs.get(1).containsKey("task"), "a run without a task names the field, null");
+        assertEquals(null, runs.get(1).get("task"));
+    }
 }

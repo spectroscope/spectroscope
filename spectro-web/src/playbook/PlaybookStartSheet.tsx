@@ -8,25 +8,34 @@
 // disk, the one a run pins, as the read view draws it.
 //
 // Card 485: the sheet also lists what the playbook brings (skills, commands,
-// hooks, agents, workflows) through the read only contents list, names every
-// item changed since the install, counts what is not installed and shows the
+// hooks, agents, workflows) through the read only contents list and shows the
 // full contents hash. The contents are shown, not pinned: the run hash stays
-// the one the server computes.
+// the one the server computes. Card 558: nothing is installed any more, so the
+// sheet names no install state, no changed item and no count of items not
+// installed, and a step's skill is in the playbook or missing in it.
+//
+// Card 554 (criterion 8b): the sheet opens in the chat of the session after
+// /run-with-playbook, drawn from the socket-only playbook_confirm frame
+// (UiState.playbookConfirm), and names the task the run was asked. The pane
+// no longer opens it. App draws PlaybookChatSheet lazily (state/surfaceChunks.ts),
+// which reads the drawing and the contents beside the frame (readSheetExtras)
+// inside this chunk, so the entry never loads this module.
 //
 // Styles: styles/playbook-run.css, imported by app.css.
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
-import { changedItems, loadContents, type ContentsPreview } from "../state/playbookContents";
-import { fetchStartPreview, type StartPreview } from "../state/playbookRuns";
+import { loadContents, type ContentsPreview } from "../state/playbookContents";
+import type { StartPreview } from "../state/playbookRuns";
+import type { PlaybookConfirm } from "../state/playbookChat";
 import { ContentsList } from "./ContentsList";
 import type { PlaybookDoc } from "./editor/doc";
 import { PlaybookGraph } from "./PlaybookGraph";
 
+/** Card 558: a run reads a step's skills from the playbook folder in place. */
 const SOURCE_KEY = {
   playbook: "pb.run.skillPlaybook",
-  installed: "pb.run.skillInstalled",
   missing: "pb.run.skillMissing",
 } as const;
 
@@ -37,46 +46,77 @@ function shortHash(hash: string): string {
 }
 
 /**
- * What the sheet needs, read when Build by this is pressed: the start preview,
- * and the contents of the same folder read again, so a file changed since the
- * pane opened shows as changed. A contents read the server refuses leaves the
- * sheet without a list; it does not keep the sheet closed.
+ * Card 554: what the sheet draws beside the frame's preview, read when the
+ * frame arrives: the contents of the folder, read again so a file changed
+ * since the pane opened shows as changed, and the document the drawing is
+ * made of. Either read the server refuses is null; the sheet opens without
+ * that part rather than not at all.
  *
- * @param dir the registered playbook folder
- * @param workspace the session's workspace
+ * @param dir the playbook folder the frame names
+ * @param workspace the session's workspace, or null
  */
-export async function readConfirmation(
+export async function readSheetExtras(
   dir: string,
-  workspace: string,
-): Promise<{ preview: StartPreview; contents: ContentsPreview | null }> {
-  const [preview, contents] = await Promise.all([
-    fetchStartPreview(dir, workspace),
+  workspace: string | null,
+): Promise<{ contents: ContentsPreview | null; doc: PlaybookDoc | null }> {
+  const [contents, doc] = await Promise.all([
     loadContents(dir, workspace).catch(() => null),
+    readDocument(dir, workspace).catch(() => null),
   ]);
-  return { preview, contents };
+  return { contents, doc };
 }
 
-/** The contents section: the read only list, the changed line, the count not installed, the contents hash. */
+/** What readSheetExtras answered, and for which confirmation. */
+interface Extras {
+  of: PlaybookConfirm;
+  contents: ContentsPreview | null;
+  doc: PlaybookDoc | null;
+}
+
+const NO_EXTRAS = { contents: null, doc: null } as const;
+
+/**
+ * Card 554, task 13: the drawing and the contents for one confirmation, read
+ * once when it arrives. Until the answer is in, and for an answer that
+ * belongs to an earlier confirmation, both are null and the sheet draws
+ * without them.
+ *
+ * @param confirm the playbook_confirm the sheet is drawn from
+ * @param workspace the session's workspace, or null
+ */
+export function useSheetExtras(
+  confirm: PlaybookConfirm,
+  workspace: string | null,
+): { contents: ContentsPreview | null; doc: PlaybookDoc | null } {
+  const [extras, setExtras] = useState<Extras | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void readSheetExtras(confirm.dir, workspace).then((read) => {
+      if (alive) setExtras({ of: confirm, ...read });
+    });
+    return () => {
+      alive = false;
+    };
+  }, [confirm, workspace]);
+  return extras !== null && extras.of === confirm ? extras : NO_EXTRAS;
+}
+
+/** The saved document of a folder, as the read view draws it; null when it has none. */
+async function readDocument(dir: string, workspace: string | null): Promise<PlaybookDoc | null> {
+  const ws = workspace === null ? "" : `&workspace=${encodeURIComponent(workspace)}`;
+  const res = await fetch(`/api/playbooks/draft?dir=${encodeURIComponent(dir)}${ws}`);
+  if (!res.ok) return null;
+  const view = (await res.json()) as { document?: PlaybookDoc | null };
+  return view.document ?? null;
+}
+
+/** The contents section: the read only list and the contents hash. */
 function ContentsSection({ contents }: { contents: ContentsPreview }) {
   const lang = useLang();
-  const changed = changedItems(contents);
-  const notInstalled = contents.items.filter((i) => i.state === "new").length;
   return (
     <section className="pb-sheet-section pb-run-contents">
       <h3 className="pb-h">{t(lang, "pc.runTitle")}</h3>
-      {changed.length > 0 && (
-        <p className="pb-run-changed" role="status">
-          {t(lang, "pc.runChanged", { names: changed.map((i) => i.name).join(", ") })}
-        </p>
-      )}
-      {notInstalled > 0 && (
-        <p className="pb-run-not-installed">
-          {notInstalled === 1
-            ? t(lang, "pc.notInstalledOne")
-            : t(lang, "pc.notInstalled", { n: notInstalled })}
-        </p>
-      )}
-      <ContentsList preview={contents} readOnly onlyChanged={false} />
+      <ContentsList preview={contents} readOnly />
       <p className="pb-run-contents-hash">
         <span className="pb-run-hash-label">{t(lang, "pc.hash")}</span>{" "}
         <span className="pb-mono">{contents.contentsHash}</span>
@@ -89,6 +129,8 @@ export function PlaybookStartSheet(props: {
   /** The saved document of the folder; null draws no graph. */
   doc: PlaybookDoc | null;
   preview: StartPreview;
+  /** Card 554: the task the run is asked, the prompt after /run-with-playbook. */
+  prompt?: string;
   /** What the folder brings, read with the preview; null draws no contents section. */
   contents: ContentsPreview | null;
   onStart: () => void;
@@ -116,6 +158,9 @@ export function PlaybookStartSheet(props: {
             {preview.dir}
           </span>
         </header>
+        {props.prompt !== undefined && props.prompt !== "" && (
+          <p className="pb-sheet-task">{t(lang, "pb.run.task", { task: props.prompt })}</p>
+        )}
 
         <div className="pb-sheet-body">
           {doc !== null && (
@@ -241,5 +286,34 @@ export function PlaybookStartSheet(props: {
         </footer>
       </div>
     </div>
+  );
+}
+
+/**
+ * Card 554, criterion 8b: the sheet as the chat opens it after
+ * /run-with-playbook, from the session's playbook_confirm, with the drawing
+ * and the contents read beside it. App draws it lazily, under a ChunkBoundary.
+ *
+ * @param props.confirm   the confirmation (UiState.playbookConfirm)
+ * @param props.workspace the session's workspace, or null
+ * @param props.onStart   sends start_playbook on the session's own route
+ * @param props.onClose   closes the sheet in the session's state
+ */
+export function PlaybookChatSheet(props: {
+  confirm: PlaybookConfirm;
+  workspace: string | null;
+  onStart: () => void;
+  onClose: () => void;
+}) {
+  const { contents, doc } = useSheetExtras(props.confirm, props.workspace);
+  return (
+    <PlaybookStartSheet
+      doc={doc}
+      contents={contents}
+      preview={props.confirm.preview}
+      prompt={props.confirm.prompt}
+      onStart={props.onStart}
+      onClose={props.onClose}
+    />
   );
 }

@@ -13,13 +13,17 @@ and a small set of client frames in the other. Open <code>http://localhost:8080<
   <li><strong>Sidebar</strong> (left, resizable, collapsible): “New chat”, the
       <strong>Scenarios</strong> row (chapter 7), and the session list. A head row above the
       list shows “Sessions”, the Import button (chapter 8) and the list options. The list has
-      one row per session. A new chat gets its own row
+      one row per session. The list options set its density: minimal shows each session's name,
+      its state dot and the badge that says it waits for you; normal adds the folder and the
+      state; extended adds the time, the turns and the tokens. The rows of the other
+      sessions on this machine follow the same density. A new chat gets its own row
       once it has started, and a session that is running keeps pulsing while you look at
       another one. Settings sits at the foot of the sidebar, behind the gear.</li>
   <li><strong>Header</strong>: the sidebar toggle, the session title (the first prompt),
       the <strong>working folder</strong> chip, the back and forward buttons, left of the mode switch,
       the mode switch (learn, light, developer), the side panel
-      toggle and the <strong>⋮ menu</strong>. The back and forward buttons are in the header in every mode and on every screen, the Playbook segment included, and ⌘← and ⌘→ do the same. The folder chip names the folder the session
+      toggle and the <strong>⋮ menu</strong>. In developer mode a playbook dropdown and a play
+      button stand beside the folder chip (chapter 15d). The back and forward buttons are in the header in every mode and on every screen, the Playbook segment included, and ⌘← and ⌘→ do the same. The folder chip names the folder the session
       works in. Its menu shows the folder in Finder, copies its path, changes it (only before
       the first message) or opens Terminal there. Finder and Terminal work on macOS, once
       the session has started. The ⋮ menu lists every panel of the dock (Work in the v2 chat
@@ -38,9 +42,14 @@ and a small set of client frames in the other. Open <code>http://localhost:8080<
       the image button, the microphone with its device menu and the gear for the permission
       mode. On the right the <strong>model chip</strong> (provider and model), the
       <strong>thinking</strong> chip with its levels and the <strong>context ring</strong>,
-      which appears once tokens flow. Every menu in this row opens upward. A saved session
-      that opens read-only shows its model and its ring in the bar at the bottom, without a
-      menu.</li>
+      which appears once tokens flow. Every menu in this row opens upward. A stored session that
+      you can continue shows the model chip with its menu before you send, set to the provider
+      and model its last run used. A pick there makes the session live again without sending a
+      message, its next run uses the picked pair, and the pick becomes the default for new
+      chats, as a pick in a live session does. Opening that menu asks the recorded backend for
+      its models, bounded by the connect limit that the stop button entry below names. A saved session that opens
+      read-only (an import, a scenario, a session another window holds) shows its model and its
+      ring in the bar at the bottom, without a menu.</li>
   <li><strong>Tab bar</strong>: chat · spectrum · trace · graph · text · lab — six lowercase lenses over the same state (the labels are wire vocabulary; trace carries a live frame count). Entering a fleet swaps the whole row for the fleet's own bar — chapter 15b.</li>
   <li><strong>Footer</strong>: run and session token totals in tabular numerals, a run status
       dot, and the connection dot.</li>
@@ -188,16 +197,23 @@ switch <code>agentMessaging</code> in the settings menu of the composer turns al
 
 <h2 id="ch-chat-commands">Commands</h2>
 
-<p>Three commands live in the composer. Type <code>/</code> at the start of an empty message
-and the picker lists them above the skills, each with one line of help. A click runs a command.
-Enter and Tab write the highlighted command into the message box, and Enter on a message that is
-exactly the command runs it, so a slash and a stray Enter start nothing. <code>/loop</code> takes
-words after it, so the picker only writes it into the message box. A message counts as a command
-only when it is exactly <code>/compact</code> or <code>/clear</code>, or starts with
-<code>/loop</code>. A sentence such as <code>please /clear the cache</code> is sent to the agent as
-written. <code>/compact</code> and <code>/clear</code> never reach the model as text, and while a run
-is active all three answer "A run is already active, stop it first." They work in learn and in
-light.</p>
+<p>The composer's commands come from one list that the server sends, the same list the
+terminal's <code>/help</code> prints (chapter 3). The chat offers <code>/help</code> (also
+<code>/commands</code>), <code>/compact</code>, <code>/clear</code>, <code>/loop</code> and
+<code>/skills</code>, and in developer mode the playbook commands of chapter 15d. Type
+<code>/</code> at the start of an empty message and the picker lists the commands above the
+session's skills and commands, each with one line of help. A click runs a command. Enter and Tab
+write the highlighted command into the message box, and Enter on a message that is exactly the
+command runs it, so a slash and a stray Enter start nothing. A command that takes words, such as
+<code>/loop</code>, is only written into the message box. A message counts as a command only
+when it is exactly a command that takes no words, or starts with one that takes words. A
+sentence such as <code>please /clear the cache</code> is sent to the agent as written.
+<code>/help</code> answers with a list in the chat, and <code>/skills</code> opens the Skills
+and Commands page. No command reaches the model as text, and while a run is active
+<code>/compact</code>, <code>/clear</code> and <code>/loop</code> answer "A run is already active,
+stop it first." Until the list has arrived the picker says &ldquo;Loading the commands
+&hellip;&rdquo;, and a message that starts with a slash waits instead of being sent. The commands
+work in learn and in light; the playbook commands need developer mode.</p>
 
 <!--SHOT:chat-commands-picker|The picker on a slash: the two commands above the skills-->
 
@@ -226,8 +242,8 @@ light.</p>
   sent with an empty history. The context ring stays on screen: until the next answer reports its
   usage, it shows an estimate of the system prompt and the tools (their characters divided by
   four). The session file records a <code>context_cleared</code> line, and a reload or a later
-  resume starts the history after it. The terminal's <code>/clear</code> is different: it opens a
-  new session.</p>
+  resume starts the history after it. The terminal's <code>/clear</code> does the same
+  (chapter 3).</p>
 </div>
 
 <div class="callout">
@@ -337,5 +353,10 @@ which reads it and adapts.</p>
       action. Sessions survive: the JSONL file is the state, the socket is just transport.</li>
   <li>The <strong>stop button</strong> in the message box sends <code>abort</code>, which fires the run's
       CancelSignal — the run ends with <code>stopReason: "aborted"</code>, tools and children
-      included.</li>
+      included. It also ends a run that waits for a backend that does not answer: while the
+      connection is set up, while a connected server sends nothing, and in the pause between two
+      attempts, for the OpenAI-compatible providers, Ollama, Anthropic and Copilot. No new
+      attempt starts after Stop, and the session takes the next prompt at once. Without Stop,
+      the OpenAI-compatible, Ollama and Anthropic providers give up connecting after 10 seconds
+      per attempt, and a run makes up to three attempts.</li>
 </ul>

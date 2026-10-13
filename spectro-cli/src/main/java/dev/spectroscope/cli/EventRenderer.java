@@ -452,9 +452,13 @@ final class EventRenderer {
             // spectro run; it is here because the switch is exhaustive and an
             // imported or replayed session may carry the line.
             case RunEvent.SteeringMessage e -> e.agentId();
-            // Card 471: the web chat's /clear. The CLI's own /clear opens a new
-            // session instead, so this arm is reached only by a replayed file.
+            // Card 471: the web chat's /clear, and since card 554 the REPL's
+            // own /clear as well: both keep the session and drop the history.
             case RunEvent.ContextCleared e -> e.agentId();
+            // Card 554: a playbook run starts from the web chat only, so this
+            // arm is reached only by a replayed file.
+            case RunEvent.PlaybookProgress e -> e.agentId();
+            case RunEvent.PlaybookPicked e -> null;
             case RunEvent.LaunchOutcome e -> null;
             case RunEvent.NoProgress e -> e.agentId();
             // Card 281: the decision answers one agent's stall, so it belongs to

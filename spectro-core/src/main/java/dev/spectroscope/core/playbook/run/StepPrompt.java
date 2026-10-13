@@ -25,9 +25,22 @@ public final class StepPrompt {
      * @param pinned the pinned playbook
      * @param step   the step
      * @param found  document id to the workspace relative path found so far
-     * @return both texts
+     * @return both texts, for a run without a task
      */
     public static Prompt of(PinnedPlaybook pinned, Playbook.Step step, Map<String, String> found) {
+        return of(pinned, step, found, null);
+    }
+
+    /**
+     * @param pinned the pinned playbook
+     * @param step   the step
+     * @param found  document id to the workspace relative path found so far
+     * @param task   what the owner asked the run to do (card 554); it is the second line of
+     *               the record, {@code Task: <task>}, so the session file and the model both
+     *               read it in every step; null or blank leaves the line out
+     * @return both texts
+     */
+    public static Prompt of(PinnedPlaybook pinned, Playbook.Step step, Map<String, String> found, String task) {
         Playbook p = pinned.playbook();
         List<String> reads = new ArrayList<>();
         for (String id : step.consumes()) {
@@ -42,6 +55,7 @@ public final class StepPrompt {
         }
         List<String> done = CheckText.doneWhen(p, step);
         String record = "Playbook " + p.name() + ", step " + step.name() + " (" + step.id() + ").\n"
+                + (task == null || task.isBlank() ? "" : "Task: " + task.strip() + "\n")
                 + "Goal: " + (step.goal() == null || step.goal().isBlank() ? "none stated" : step.goal()) + "\n"
                 + "Read: " + (reads.isEmpty() ? "nothing" : String.join("; ", reads)) + ".\n"
                 + "Write: " + (writes.isEmpty() ? "nothing" : String.join("; ", writes)) + ".\n"

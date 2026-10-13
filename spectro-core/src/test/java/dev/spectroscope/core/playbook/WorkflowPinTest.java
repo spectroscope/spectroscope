@@ -126,4 +126,23 @@ class WorkflowPinTest {
         assertTrue(pinned.changed());
         assertNull(pinned.bytes());
     }
+
+    /** Card 554: a workflow started by name runs on the bytes of one read, recorded with their hash. */
+    @Test
+    void aWorkflowStartedByNameIsReadOnceWithTheHashTheModuleLists(@TempDir Path tmp) throws IOException {
+        Path folder = folder(tmp);
+        WorkflowPin.Current current = WorkflowPin.current(folder, folder.resolve("workflows/a.json"));
+        assertArrayEquals(LISTED, current.bytes());
+        assertEquals(listedHash(), current.hash());
+    }
+
+    @Test
+    void aLinkIsNotReadByName(@TempDir Path tmp) throws IOException {
+        Path folder = folder(tmp);
+        Path outside = Files.write(tmp.resolve("outside.json"), LISTED);
+        Files.delete(folder.resolve("workflows/a.json"));
+        Files.createSymbolicLink(folder.resolve("workflows/a.json"), outside);
+        assertNull(WorkflowPin.current(folder, folder.resolve("workflows/a.json")));
+        assertNull(WorkflowPin.current(folder, folder.resolve("workflows")), "a folder is not a workflow");
+    }
 }

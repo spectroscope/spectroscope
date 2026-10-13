@@ -60,12 +60,12 @@ final class PlaybookImports {
     /** Where a skill is built before it moves into place, inside the playbook folder. */
     static final String STAGING = ".import-staging";
     /** Files a source skill carries that belong to its installation, not to the skill. */
-    static final Set<String> SKIPPED = Set.of(".disabled", ".DS_Store", PlaybookInstaller.INSTALL_RECORD);
+    static final Set<String> SKIPPED = Set.of(".disabled", ".DS_Store", PlaybookFolders.INSTALL_RECORD);
     /** The root labels, in the order a lookup without a label tries them: project over user. */
     static final List<String> ROOT_LABELS = List.of("project", "user");
 
     private static final String SKILL_FILE = "SKILL.md";
-    private static final String LICENCE = PlaybookInstaller.LICENCE_FILE;
+    private static final String LICENCE = PlaybookFolders.LICENCE_FILE;
     private static final String HOOKS_FILE = "hooks/hooks.json";
     private static final String HOOKS_PLACEHOLDER = PlaybookContents.HOOKS_PLACEHOLDER;
     private static final String SEG = PlaybookValidator.PATH_SEGMENT.pattern();
@@ -855,7 +855,7 @@ final class PlaybookImports {
                 undo.add(replace(root, t.rel(), t.text(), t.base(), t.old()));
             }
             if (!provenance.isEmpty()) {
-                undo.add(append(root, PlaybookInstaller.PROVENANCE_FILE, provenance));
+                undo.add(append(root, PlaybookFolders.PROVENANCE_FILE, provenance));
             }
             midway.run();
             String hash = writeContents(root, cur, change);
@@ -1364,7 +1364,7 @@ final class PlaybookImports {
 
                 int newFiles = copy.stream().mapToInt(p -> p.files().size()).sum()
                         + (int) texts.stream().filter(t -> t.old() == null).count()
-                        + (exists(root.resolve(PlaybookInstaller.PROVENANCE_FILE)) ? 0 : 1);
+                        + (exists(root.resolve(PlaybookFolders.PROVENANCE_FILE)) ? 0 : 1);
                 long newBytes = copy.stream().mapToLong(Plan::bytes).sum()
                         + texts.stream().mapToLong(t -> t.text().getBytes(StandardCharsets.UTF_8).length).sum();
                 caps(root, newFiles, newBytes);

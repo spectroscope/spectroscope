@@ -56,8 +56,12 @@ export type RunEvent =
        *  ring reads both for a stored session before any frame arrives. */
       contextWindow?: number;
       windowSource?: ThresholdSource;
+      /** Card 554: who sent the prompt when it was not the person at the
+       *  composer: "playbook" on the turn a playbook step sends into the chat.
+       *  Absent on every prompt a person typed. */
+      origin?: string;
       ts: number;
-    } // provider?, model?, attachments?, workspace?, llmWire?, browserWire?, children?, contextWindow?, windowSource? all additive
+    } // provider?, model?, attachments?, workspace?, llmWire?, browserWire?, children?, contextWindow?, windowSource?, origin? all additive
   | { type: "turn_start"; agentId: string; turn: number; ts: number }
   | { type: "text_delta"; agentId: string; text: string; ts: number }
   | { type: "thinking_delta"; agentId: string; text: string; ts: number } // reasoning stream, additive
@@ -96,6 +100,29 @@ export type RunEvent =
   // agent dropped this many history messages, and a resume starts after the
   // last such line.
   | { type: "context_cleared"; agentId: string; removedMessages: number; ts: number } // additive
+  // Card 554: a playbook run in the chat of its session. The start carries the
+  // playbook's name and the task, a step its name and model, the end how the
+  // run stopped. The full record stays in the run's sidecar.
+  | {
+      type: "playbook_progress";
+      agentId: string;
+      runId: string;
+      phase: "start" | "step" | "end";
+      playbook?: string;
+      task?: string;
+      node?: string;
+      name?: string;
+      provider?: string;
+      model?: string;
+      stopReason?: string;
+      result?: string;
+      detail?: string;
+      ts: number;
+    } // additive
+  // Card 554, criterion 8e: the playbook the owner picked for this session; a
+  // line without dir is a withdrawn pick, and with none true the explicit
+  // "No playbook" (integrator decision b).
+  | { type: "playbook_picked"; dir?: string; name?: string; none?: boolean; ts: number } // additive
   // Card 184 leg 3: one finished backend-to-model exchange, as the SESSION's own
   // record of it. It was a socket-only frame until the sealed union grew a type
   // for it, which is why a reopened session used to lose the fact that a model
@@ -532,7 +559,8 @@ export type ClientMessage =
   | { type: "set_image_provider"; provider: string } // image generation backend
   | { type: "set_thinking"; enabled: boolean } // reasoning visibility toggle
   | { type: "set_reasoning"; mode: "on" | "off" | "default"; effort?: string } // picker reasoning control (card 88)
-  | { type: "set_provider"; provider: string; model?: string } // switch the LLM backend mid-session
+  // switch the LLM backend mid-session; card 556: the answer echoes `ask`
+  | { type: "set_provider"; provider: string; model?: string; ask?: string }
   | { type: "set_workspace"; mode?: ChooserOption; path?: string } // pin THIS session's workspace by mode (before the first run)
   | { type: "set_permission_mode"; mode: string } // switch ask/auto/readonly mid-session (composer gear)
   // Card 466: the tool groups the next run leaves out of the provider request.
@@ -564,10 +592,24 @@ export type ClientMessage =
   | { type: "clear_context" }
   // Card 482: start a playbook run. The hash is the one the confirmation sheet
   // showed; the server loads the folder again and refuses a mismatch.
-  | { type: "start_playbook"; dir: string; hash: string }
+  // Card 554: the prompt typed after /run-with-playbook becomes the run's task;
+  // the server refuses a start without one. Only the chat's start sheet sends it.
+  | { type: "start_playbook"; dir: string; hash: string; prompt: string }
+  // Card 554: /run-with-playbook asks for the start sheet. The server resolves
+  // the folder (this dir, else the session's pick, else the workspace's pin)
+  // and answers with the socket-only playbook_confirm frame. Starts nothing.
+  | { type: "confirm_playbook"; prompt: string; dir?: string }
+  // Card 554, criterion 8e: the playbook the owner picked for this session,
+  // in the header dropdown or with /playbook use; null withdraws the pick, and
+  // null with none true picks "No playbook" (integrator decision b).
+  // Never sent for the suggestion the dropdown shows before a pick.
+  | { type: "set_playbook"; dir: string | null; none?: true }
   // Card 506: Run on a workflow of the playbook module. The hash is the one
   // the contents list showed for the file; input is the text typed beside Run.
   | { type: "start_workflow"; dir: string; file: string; hash: string; input: string; lang: "en" | "de" }
+  // Card 554: a workflow of the session's playbook by name, from the chat,
+  // started at once. The folder resolves as for /run-with-playbook.
+  | { type: "start_workflow"; name: string; input: string; lang: "en" | "de"; dir?: string }
   // Card 498: a click into the message box of a stored session. The server
   // binds the session to this socket and answers with its workspace_info;
   // no run starts and no model is called.
@@ -582,7 +624,10 @@ export type ClientMessage =
   | { type: "set_goal"; outcome: string; check: string }
   // Card 504: /loop from the chat starts a loop; the loop chip's Stop ends it.
   | { type: "set_loop"; action: "start"; prompt: string; intervalSeconds?: number }
-  | { type: "set_loop"; action: "stop" };
+  | { type: "set_loop"; action: "stop" }
+  // Card 558: the page asks for the session's skills, commands and agents;
+  // the server answers with the socket-only session_items frame. Reads only.
+  | { type: "get_session_items" };
 
 // GET /api/sessions — the sidebar list (REST contract, design/BUILD-PLAN.md).
 export interface SessionMeta {
@@ -618,4 +663,6 @@ export interface SessionMeta {
   titleSource?: "suggested" | "manual";
   /** Card 445: true for a pinned session, absent otherwise. */
   pinned?: boolean;
+  /** Card 554: the playbook folder the session picked, absent when none. */
+  playbook?: string;
 }

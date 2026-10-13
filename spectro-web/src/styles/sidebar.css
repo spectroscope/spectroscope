@@ -598,7 +598,7 @@
 
    It WRAPS, and that is not decoration. The rail is user-draggable down to
    180px (clampW in state/layout.ts), which caps this panel at ~144px and
-   leaves ~120px inside its padding — less than the label and the two values
+   leaves ~120px inside its padding, less than the label and the values
    need side by side. Held on one line, the values group ran 32px past the
    panel's right edge in EN and 24px in DE, reachable only by scrolling
    sideways inside the popover (review of card 214). Wrapped, the values drop
@@ -624,6 +624,9 @@
 }
 .sess-opt-values {
   display: inline-flex;
+  /* Card 555: three values need 176.5px (EN) and the group has 117px at the
+     180px rail, so they wrap onto two lines instead of each reading "m...". */
+  flex-wrap: wrap;
   /* Never wider than the panel, whatever a translation does to it. */
   flex: 0 1 auto;
   min-width: 0;
@@ -634,8 +637,14 @@
   overflow: hidden;
 }
 .sess-opt-value {
+  /* Grows to fill a wrapped line, so the second line is as wide as the first. */
+  flex: 1 1 auto;
   background: none;
   border: 0;
+  /* The separator, as a 1px shadow to the left and above. On a wrapped group it
+     draws a line between the rows as well, and the group's overflow clips it at
+     the outer edges. A left border on the next sibling did neither. */
+  box-shadow: -1px -1px 0 var(--border);
   color: var(--text-dim);
   cursor: pointer;
   font: inherit;
@@ -647,7 +656,6 @@
   white-space: nowrap;
   transition: background var(--t-fast), color var(--t-fast);
 }
-.sess-opt-value + .sess-opt-value { border-left: 1px solid var(--border); }
 .sess-opt-value:hover { background: var(--surface-2); color: var(--text); }
 /* The chosen value, with the house's own segmented-option pair: accent-soft
    behind, plain text on top. It wore `color: var(--accent)`, and at --fs-11

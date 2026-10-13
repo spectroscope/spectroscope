@@ -1,7 +1,6 @@
 package dev.spectroscope.server.playbooks;
 
 import dev.spectroscope.core.config.SpectroConfig;
-import dev.spectroscope.core.playbook.PlaybookReader;
 import dev.spectroscope.core.playbook.run.PinnedPlaybook;
 import dev.spectroscope.server.providers.ProviderRow;
 import org.junit.jupiter.api.Test;
@@ -16,6 +15,7 @@ import java.util.List;
 import java.util.function.Function;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -81,13 +81,9 @@ class PlaybookStartPreviewTest {
         default -> null;
     };
 
-    private static String installed(String name) {
-        return "house-rules".equals(name) ? "Stage explicit paths." : null;
-    }
-
     private PlaybookStartPreview preview(Path dir, Function<String, ProviderRow> rows) throws IOException {
         PlaybookLoader.Loaded loaded = PlaybookLoader.load(dir, tmp, config());
-        PinnedPlaybook pinned = PinnedPlaybook.pin(dir, loaded.playbook(), PlaybookStartPreviewTest::installed);
+        PinnedPlaybook pinned = PinnedPlaybook.pin(dir, loaded.playbook());
         return PlaybookStartPreview.of(loaded, pinned, rows, true);
     }
 
@@ -95,8 +91,7 @@ class PlaybookStartPreviewTest {
     void theHashIsTheHashTheStartFrameChecksAndTheCommandsAreFilled() throws IOException {
         Path dir = folder(BUNDLE);
         PlaybookStartPreview shown = preview(dir, ROWS);
-        PinnedPlaybook pinned = PinnedPlaybook.pin(dir, PlaybookLoader.load(dir, tmp, config()).playbook(),
-                PlaybookStartPreviewTest::installed);
+        PinnedPlaybook pinned = PinnedPlaybook.pin(dir, PlaybookLoader.load(dir, tmp, config()).playbook());
 
         assertEquals(pinned.hash(), shown.hash());
         assertEquals(dir.toRealPath().toString(), shown.dir());
@@ -109,10 +104,12 @@ class PlaybookStartPreviewTest {
     void theSkillsNameTheirSourceAndAMissingOneRefuses() throws IOException {
         PlaybookStartPreview shown = preview(folder(BUNDLE), ROWS);
 
+        // Card 558: a skill comes from the folder or is missing; nothing installed elsewhere is read.
         assertEquals(List.of(
                 new PlaybookStartPreview.SkillPlan("spectropowers:brainstorming", "playbook"),
-                new PlaybookStartPreview.SkillPlan("house-rules", "installed"),
+                new PlaybookStartPreview.SkillPlan("house-rules", "missing"),
                 new PlaybookStartPreview.SkillPlan("nowhere", "missing")), shown.skills());
+        assertTrue(shown.refusals().contains("skill not found: house-rules"), shown.refusals().toString());
         assertTrue(shown.refusals().contains("skill not found: nowhere"), shown.refusals().toString());
     }
 
@@ -186,8 +183,9 @@ class PlaybookStartPreviewTest {
         assertEquals("cloud", res.getBody().steps().get(1).providerKind());
     }
 
+    /** Card 558: the route reads an agent role from the folder; nothing is installed for it. */
     @Test
-    void theRouteResolvesAnAgentRoleThroughTheInstallLedger() throws IOException {
+    void theRouteReadsAnAgentRoleFromTheFolderWithNothingInstalled() throws IOException {
         String json = BUNDLE.replace("\"role\": \"worker\"", "\"role\": \"agent:reviewer\"")
                 .replace("\"contents\": { \"skills\": [\"skills/spectropowers\"] }",
                         "\"contents\": { \"skills\": [\"skills/spectropowers\"], \"agents\": [\"agents/reviewer.md\"] }");
@@ -197,32 +195,16 @@ class PlaybookStartPreviewTest {
                 "---\nname: reviewer\ndescription: Reads the diff.\ntype: explore\n---\nYou are the reviewer.\n");
         PlaybookFolders folders = new PlaybookFolders(tmp.resolve("playbooks.json"));
         folders.register(dir);
-        InstallLedger ledger = new InstallLedger(tmp.resolve("ledger.json"));
-        PlaybookController controller = new PlaybookController(folders, "none", ledger, tmp.resolve("home"), tmp,
+        PlaybookController controller = new PlaybookController(folders, "none", tmp.resolve("home"), tmp,
                 tmp.resolve("home/settings.json"), config -> List.of(row("ollama", "local", "reachable"),
                         row("anthropic", "cloud", "configured")));
 
-        PlaybookStartPreview before = controller.startPreview(dir.toString(), tmp.toString(),
+        PlaybookStartPreview shown = controller.startPreview(dir.toString(), tmp.toString(),
                 new MockHttpServletRequest()).getBody();
-        assertTrue(before.refusals().stream().anyMatch(r -> r.startsWith("agent not installed: reviewer")),
-                before.refusals().toString());
 
-        ledger.put(new InstallLedger.Install("b", dir.toRealPath().toString(), "h", "2026-10-10",
-                List.of(new InstallLedger.Item("agent", "reviewer", "agents/reviewer.md", "x", null, List.of(), null))));
-        PlaybookStartPreview stale = controller.startPreview(dir.toString(), tmp.toString(),
-                new MockHttpServletRequest()).getBody();
-        assertTrue(stale.refusals().stream().anyMatch(r -> r.startsWith("agent changed since install: reviewer")),
-                "a ledger hash that is not the file's: " + stale.refusals());
-
-        String recorded = PlaybookContents.preview(dir, PlaybookReader.read(json).playbook(), tmp.resolve("home"), tmp,
-                new InstallLedger(tmp.resolve("empty-ledger.json")), null).items().stream()
-                .filter(i -> i.kind().equals("agent")).findFirst().orElseThrow().sha256();
-        ledger.put(new InstallLedger.Install("b", dir.toRealPath().toString(), "h", "2026-10-10",
-                List.of(new InstallLedger.Item("agent", "reviewer", "agents/reviewer.md", recorded, null, List.of(), null))));
-        PlaybookStartPreview after = controller.startPreview(dir.toString(), tmp.toString(),
-                new MockHttpServletRequest()).getBody();
-        assertTrue(after.refusals().stream().noneMatch(r -> r.contains("reviewer")), after.refusals().toString());
-        assertTrue(after.refusals().contains("skill not found: nowhere"), "the other refusals stay: " + after.refusals());
+        assertTrue(shown.refusals().stream().noneMatch(r -> r.contains("reviewer")), shown.refusals().toString());
+        assertTrue(shown.refusals().contains("skill not found: nowhere"), "the other refusals stay: " + shown.refusals());
+        assertFalse(Files.exists(tmp.resolve("home")), "nothing was installed to make it run");
     }
 
     @Test

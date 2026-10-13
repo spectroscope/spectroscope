@@ -38,7 +38,9 @@ class CliWireReferenceDriftTest {
     void everyOpenedLlmWireOpensItsReference() throws IOException {
         String src = source();
         int wires = count(src, "llmWire = LlmWireRecorder\\.forSession\\(store\\.id\\(\\)\\)");
-        assertTrue(wires >= 2, "positive control: the fresh and the /clear session both open a wire");
+        // Card 554: /clear keeps the session (as the web chat does), so only the
+        // fresh session opens a wire. Until then /clear opened a second one.
+        assertEquals(1, wires, "positive control: the fresh session opens the one wire");
         assertEquals(wires, count(src, "wireReference = new dev\\.spectroscope\\.core\\.wire\\.WireReference\\(store\\.id\\(\\), true\\)"),
                 "one reference per session the CLI opens");
     }

@@ -25,7 +25,7 @@ class PlaybookRunnerTest {
         Path dir = Files.createDirectories(tmp.resolve("pb"));
         Files.writeString(dir.resolve("playbook.json"), json);
         Playbook p = PlaybookReader.read(json).playbook();
-        PinnedPlaybook pinned = PinnedPlaybook.pin(dir, p, name -> null);
+        PinnedPlaybook pinned = PinnedPlaybook.pin(dir, p);
         PlaybookRecorder recorder = new PlaybookRecorder(tmp.resolve("s1.playbook.jsonl"), PlaybookRecorder.DEFAULT_CEILING_BYTES);
         PlaybookRunner.Setup setup = new PlaybookRunner.Setup(pinned, "abcdefabcdef",
                 tmp.resolve("s1.abcdefabcdef.graph.jsonl"), recorder, host.signal, "auto");

@@ -17,7 +17,7 @@ import java.util.stream.Stream;
 
 /**
  * The staging steps of an install, taken out of the catalogue install (card 182)
- * so the playbook installer (card 485) uses the same ones: write every file into
+ * so the playbook imports use the same ones: write every file into
  * a folder beside the target root, move that folder into place with one atomic
  * move, and clear what is left.
  *

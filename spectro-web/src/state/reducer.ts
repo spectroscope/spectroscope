@@ -10,6 +10,14 @@ import type { ToolResultDetail } from "../import/toolResultDetail";
 import type { ThresholdSource } from "../wire/thresholdSources";
 import { rtkRewriteOf } from "../wire/rtkRewrite";
 import { t } from "../i18n/i18n";
+import {
+  parsePlaybookConfirm,
+  parsePlaybookInfo,
+  pickOfLine,
+  progressLine,
+  type PlaybookConfirm,
+  type PlaybookPick,
+} from "./playbookChat";
 import { SEARXNG_HTML_NOTE_KEY, searxngHtmlAddress } from "./searxngHtmlNote";
 import { parseToolGroupsInfo, type ToolGroupsInfo } from "./toolGroups";
 import { parseLocalModeInfo, type LocalModeInfo } from "./localMode";
@@ -22,6 +30,7 @@ import {
   type LoopInfo,
 } from "./goalLoop";
 import { foldPeerFrame, foldPeerRecord } from "./peerMessages";
+import { parseSessionItems, type SessionItems } from "./sessionItems";
 
 export interface ToolCard {
   callId: string;
@@ -85,6 +94,10 @@ export type Turn =
       /** Set only on a steering message (card 380): whether the run read it or
        *  ended first. Absent on every ordinary prompt. */
       steer?: "delivered" | "undelivered";
+      /** Card 554, criterion 8f: "playbook" on a prompt a playbook step sent
+       *  into the chat, which is not the owner's turn. Absent on every prompt
+       *  a person typed. */
+      by?: "playbook";
     }
   | {
       kind: "assistant";
@@ -134,6 +147,10 @@ export type Turn =
       divider?: true;
       /** When the divider's event happened, for the time it shows. */
       ts?: number;
+      /** Card 554, task 13: the playbook folder whose Steps tab the line's
+       *  link opens (the answer to /playbook show). Page-only, never folded
+       *  from the wire. */
+      openPlaybook?: string;
     }
   /** agentId marks a failure that belongs to a subagent's thread — `error` has
    *  carried the field on the wire all along, and a session import sets it for
@@ -469,6 +486,17 @@ export interface UiState {
   goalVerdict: GoalVerdictView | null;
   /** Card 504: the session's loop, from the socket-only loop_info frame. Null until the first frame. */
   loop: LoopInfo | null;
+  /** Card 554: the playbook this session picked, from the socket-only
+   *  playbook_info frame or a recorded playbook_picked line. Null until either. */
+  playbook: PlaybookPick | null;
+  /** Card 554: the start sheet one /run-with-playbook asked for, from the
+   *  socket-only playbook_confirm frame. Null when none is open; the run's
+   *  start closes it. */
+  playbookConfirm: PlaybookConfirm | null;
+  /** Card 558: the session's skills, commands and agents as the server reads
+   *  them for its next turn, from the socket-only session_items frame. Null
+   *  until the first frame; a later frame replaces it. */
+  sessionItems: SessionItems | null;
   /** Card 504: the root run's current turn while it is live, for the loop chip; null between runs. */
   runTurn: number | null;
   /** ts of the current assistant turn's first event, per agent — so the `usage`
@@ -522,6 +550,9 @@ export const initialState: UiState = {
   goal: null,
   goalVerdict: null,
   loop: null,
+  playbook: null,
+  playbookConfirm: null,
+  sessionItems: null,
   runTurn: null,
   assistantTurnStart: {},
   answerAwaitingUsage: [],
@@ -1179,10 +1210,47 @@ function applyFrame(traced: UiState, event: RunEvent): UiState {
   if (raw.type === "peer_message") {
     return foldPeerFrame(traced, event);
   }
+  // Card 554: the session's pick and the start sheet, both socket-only. A
+  // frame that cannot be read keeps the last truth.
+  if (raw.type === "playbook_info") {
+    return { ...traced, playbook: parsePlaybookInfo(event) ?? traced.playbook };
+  }
+  if (raw.type === "playbook_confirm") {
+    return { ...traced, playbookConfirm: parsePlaybookConfirm(event) ?? traced.playbookConfirm };
+  }
+  // Card 558: the session's items, socket-only; a frame that cannot be read
+  // keeps the last truth, a readable one replaces it (criterion 3).
+  if (raw.type === "session_items") {
+    return { ...traced, sessionItems: parseSessionItems(event) ?? traced.sessionItems };
+  }
   // The session-wide agent roster folds separately from the UI state and uses
   // the PRE-apply rootRunId (applyEvent's run_end clears it).
   const applied = applyEvent(traced, event);
   return { ...applied, agents: foldAgents(applied.agents, event, traced.rootRunId) };
+}
+
+/**
+ * Card 554: the answer to a command the page answers itself (/help, the
+ * playbook rows that only read): one info line in the chat, neutral unless
+ * it refuses. Nothing went over the wire, so the trace is left alone.
+ *
+ * @param state the session's state
+ * @param text  the line, line breaks kept; a blank text adds nothing
+ * @param more  a warn tone for a refusal; the folder a /playbook show link opens
+ * @returns the state with the line added
+ */
+export function foldLocalLine(
+  state: UiState,
+  text: string,
+  more: { tone?: "neutral" | "warn"; openPlaybook?: string } = {},
+): UiState {
+  if (text.trim() === "") return state;
+  return addTurn(state, {
+    kind: "info",
+    text,
+    tone: more.tone ?? "neutral",
+    ...(more.openPlaybook === undefined ? {} : { openPlaybook: more.openPlaybook }),
+  });
 }
 
 /** Outgoing frames (ClientMessage) enter the trace through this helper — the
@@ -1270,9 +1338,24 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
           kind: "user",
           text: event.prompt + placeholder,
           ...(attachments?.length ? { attachments } : {}),
+          // Card 554, criterion 8f: a playbook step's prompt is not the owner's turn.
+          ...(event.origin === "playbook" ? { by: "playbook" as const } : {}),
         },
       );
     }
+
+    // Card 554, criterion 8f: one chat line per start, step and end of a
+    // playbook run; the start closes the sheet that confirmed it.
+    case "playbook_progress": {
+      const line = progressLine(event);
+      if (line === null) return state;
+      const next = event.phase === "start" ? { ...state, playbookConfirm: null } : state;
+      return addTurn(next, line);
+    }
+
+    // Card 554, criterion 8e: the pick the session file recorded.
+    case "playbook_picked":
+      return { ...state, playbook: pickOfLine(event, state.playbook) };
 
     case "turn_start": {
       // No UI element of its own — the next text_delta begins the block.

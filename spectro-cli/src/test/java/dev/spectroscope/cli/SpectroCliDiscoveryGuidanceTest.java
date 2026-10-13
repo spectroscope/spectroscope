@@ -20,8 +20,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * Card 470 on the terminal face: the discovery paragraph is in the system
  * prompt the REPL's agent runs with, read off {@link SpectroCli#openInteractiveSession},
- * the real assembly {@code run()} performs, and again after {@code /clear}
- * recomposes the prompt for a new session.
+ * the real assembly {@code run()} performs, and again after {@code /clear}.
+ * Since card 554 {@code /clear} keeps the session and its system prompt and
+ * drops only the history, so the paragraph has to survive it.
  */
 @Timeout(value = 90, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
 class SpectroCliDiscoveryGuidanceTest {
@@ -66,7 +67,7 @@ class SpectroCliDiscoveryGuidanceTest {
 
             cli.handleSlashCommand("/clear");
             assertTrue(cli.agent().systemPrompt().contains(RoleCatalog.DISCOVERY_GUIDANCE),
-                    "the prompt /clear recomposes: " + cli.agent().systemPrompt());
+                    "the prompt after /clear: " + cli.agent().systemPrompt());
         } finally {
             if (cli != null && cli.sessionId() != null) {
                 Files.deleteIfExists(GoalStore.fileFor(cli.sessionId()));
@@ -88,7 +89,7 @@ class SpectroCliDiscoveryGuidanceTest {
 
             cli.handleSlashCommand("/clear");
             assertTrue(cli.agent().systemPrompt().startsWith(RoleCatalog.BASE_SYSTEM_PROMPT),
-                    "the prompt /clear recomposes opens the same way: " + cli.agent().systemPrompt());
+                    "the prompt after /clear opens the same way: " + cli.agent().systemPrompt());
         } finally {
             if (cli != null && cli.sessionId() != null) {
                 Files.deleteIfExists(GoalStore.fileFor(cli.sessionId()));

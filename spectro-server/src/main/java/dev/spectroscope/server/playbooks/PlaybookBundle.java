@@ -51,8 +51,8 @@ import java.util.zip.ZipOutputStream;
  */
 final class PlaybookBundle {
 
-    /** The most bytes a bundle carries, the installer's ceiling. */
-    static final long MAX_BYTES = PlaybookInstaller.MAX_BYTES;
+    /** The most bytes a bundle carries, the skill catalogue's ceiling. */
+    static final long MAX_BYTES = PlaybookFolders.MAX_BYTES;
     /** The most files a bundle carries, the loader's ceiling. */
     static final int MAX_FILES = PlaybookLoader.MAX_FILES;
     /** The largest binary file, allowed only under {@code docs/}. */

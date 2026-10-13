@@ -15,6 +15,7 @@ import { t } from "../i18n/i18n";
 const settingsTsx = read("./SettingsPanel.tsx", import.meta.url);
 const pickerTsx = read("./ProviderPicker.tsx", import.meta.url);
 const fieldTsx = read("./providerModelField.tsx", import.meta.url);
+const formTs = read("./providerPickerForm.ts", import.meta.url);
 
 describe("opening Settings writes nothing", () => {
   it("never hands useProviderModels an unconditional auto-pick", () => {
@@ -53,12 +54,22 @@ describe("a configured-but-absent model is shown, not swallowed", () => {
   });
 });
 
-describe("the header picker's own auto-pick is unchanged", () => {
-  it("still snaps unconditionally — it is a chooser, opened to choose", () => {
-    expect(pickerTsx).toContain("autoPick: true");
+// Card 556, fix round 1: the picker's form moved to providerPickerForm.ts. In
+// the live view it still snaps unconditionally, a chooser opened to choose; a
+// stored session's picker holds the recorded pair until the owner picks
+// (providerPickerForm.test.ts follows both across the fetch).
+describe("the header picker's own auto-pick", () => {
+  it("snaps unless the form still holds a stored session's recorded pair", () => {
+    expect(pickerTsx).not.toContain("useProviderModels(");
+    expect(pickerTsx).toContain("usePickerForm({");
+    expect(formTs).toContain(
+      'const holding = holdRecorded && sel === provider && model === (activeModel ?? "");',
+    );
+    expect(formTs).toContain("autoPick: !holding,");
   });
 
   it("does not mark absence — its authoritative snap already resolves it", () => {
     expect(pickerTsx).not.toContain("markAbsent");
+    expect(formTs).not.toContain("markAbsent");
   });
 });

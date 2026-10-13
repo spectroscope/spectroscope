@@ -79,7 +79,7 @@ const press =
   (tree: El[]): void =>
     one(tree, "button", cls).props.onClick?.();
 
-const pane = <PlaybookPane workspace="/ws" sessionId={null} onStartPlaybook={() => false} />;
+const pane = <PlaybookPane workspace="/ws" sessionId={null} />;
 
 beforeEach(() => {
   presses.length = 0;

@@ -34,6 +34,8 @@ import com.github.copilot.rpc.ToolDefinition;
 import com.github.copilot.rpc.ToolInvocation;
 import com.github.copilot.rpc.ToolResultObject;
 import com.github.copilot.rpc.ToolSet;
+import dev.spectroscope.core.CancelInterrupt;
+import dev.spectroscope.core.CancelSignal;
 import dev.spectroscope.core.config.governing.Governs;
 import dev.spectroscope.core.provider.LlmProvider.PStop.StopReason;
 import dev.spectroscope.core.wire.LlmWireTap;
@@ -56,7 +58,9 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executor;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -544,8 +548,13 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
                 List<ModelInfo> listed = await(client().listModels(), CALL_TIMEOUT_S, "list the models");
                 known = listed.stream().map(CopilotProvider::toModel).toList();
             } catch (RuntimeException failure) {
-                modelsFailedAtNanos = System.nanoTime();
-                modelsFailed = true;
+                // Card 557: a wait the stop button cut short says nothing about
+                // the runtime, so the next run asks again instead of answering
+                // "unknown" for a minute.
+                if (!(failure instanceof WaitInterrupted)) {
+                    modelsFailedAtNanos = System.nanoTime();
+                    modelsFailed = true;
+                }
                 throw failure;
             }
             models = known;
@@ -663,11 +672,20 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
             }
             clientOptions = clientOptions(options, System.getenv());
         }
+        ClientThreads threads = new ClientThreads();
+        clientOptions.setExecutor(threads);
         CopilotClient started = new CopilotClient(clientOptions);
         try {
             await(started.start(), START_TIMEOUT_S, "start the runtime");
         } catch (RuntimeException failure) {
             started.close();
+            if (failure instanceof WaitInterrupted) {
+                // Card 557: the stop cut the start short, but the SDK's own start
+                // task still waits for the runtime's answer to connect (30 s in
+                // copilot-sdk-java 1.0.20-preview.0) and holds the connection
+                // open meanwhile. Interrupted, it closes the connection now.
+                threads.interruptAll();
+            }
             throw failure;
         }
         client = started;
@@ -1074,21 +1092,54 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
 
         TurnIterator(ProviderRequest request) {
             this.request = request;
-            String effort = effortFor(reasoningCapability(), request.reasoning(), request.effort());
-            Plan plan = plan(request, effort);
+            // Card 557: starting the runtime, reading the model list and opening
+            // a runtime session each wait on the runtime, up to a minute apiece,
+            // and only an interrupt ends such a wait. A stop pressed meanwhile
+            // ends this turn as aborted, before anything is sent.
+            String effort = null;
+            Plan plan = null;
+            try (CancelInterrupt stop = CancelInterrupt.open(request.signal())) {
+                effort = effortFor(reasoningCapability(), request.reasoning(), request.effort());
+                if (!stopped()) {
+                    plan = plan(request, effort);
+                }
+            } catch (RuntimeException failure) {
+                if (!stopped()) {
+                    throw failure;
+                }
+            }
+            if (plan != null && stopped()) {
+                synchronized (CopilotProvider.this) {
+                    plan.conversation().busy = false; // nothing was sent: the session stays usable
+                }
+                plan = null;
+            }
+            if (plan == null) {
+                this.unhookCancel = () -> { };
+                this.exchange = null;
+                pending.add(new PStop(StopReason.ABORTED));
+                finished = true;
+                return;
+            }
             this.conversation = plan.conversation();
             conversation.turn = queue;
             this.unhookCancel = request.signal() == null ? () -> { }
                     : request.signal().onCancel(() -> queue.add(Signal.CANCEL));
             LlmWireTap.Exchange opened = null;
+            // Card 557: each of these waits on the runtime for up to a minute,
+            // so each runs inside a scope a stop can reach. The scopes close
+            // before the wire record is written.
+            CancelSignal signal = request.signal();
             try {
                 if (!sameTools(conversation.toolSpecs, request.tools())) {
                     conversation.tools(request.tools());
-                    await(conversation.session.setTools(conversation.definitions), CALL_TIMEOUT_S, "set the tools");
+                    CancelInterrupt.call(signal, () -> await(conversation.session.setTools(conversation.definitions),
+                            CALL_TIMEOUT_S, "set the tools"));
                 }
                 if (effort != null && !effort.equals(conversation.effort)) {
-                    await(conversation.session.setModel(options.model(), effort), CALL_TIMEOUT_S,
-                            "set the reasoning effort");
+                    String switchTo = effort;
+                    CancelInterrupt.call(signal, () -> await(conversation.session.setModel(options.model(), switchTo),
+                            CALL_TIMEOUT_S, "set the reasoning effort"));
                     conversation.effort = effort;
                 }
                 if (plan.deliverResults()) {
@@ -1097,14 +1148,31 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
                 } else {
                     MessageOptions message = message(request.messages(), plan.newMessage() == null);
                     opened = tap("session.send", sendBody(message));
-                    await(conversation.session.send(message), CALL_TIMEOUT_S, "send the message");
+                    CancelInterrupt.call(signal, () -> await(conversation.session.send(message), CALL_TIMEOUT_S,
+                            "send the message"));
                 }
             } catch (RuntimeException failure) {
+                if (stopped()) {
+                    // What the runtime made of a request the stop cut short is
+                    // unknown, so the conversation goes. Closing it waits on the
+                    // runtime as well, so that happens off this thread.
+                    end(opened, true, null);
+                    abandonOffThread();
+                    this.exchange = null;
+                    pending.add(new PStop(StopReason.ABORTED));
+                    finished = true;
+                    return;
+                }
                 end(opened, false, failure.getMessage());
                 abandon();
                 throw failure;
             }
             this.exchange = opened;
+        }
+
+        /** @return true once the run's stop was pressed */
+        private boolean stopped() {
+            return request.signal() != null && request.signal().isCancelled();
         }
 
         private LlmWireTap.Exchange tap(String method, String body) {
@@ -1406,6 +1474,22 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
             forget(conversation);
         }
 
+        /**
+         * {@link #abandon} for a stopped turn (card 557): the conversation
+         * leaves the list at once, and its runtime session closes on another
+         * thread, because closing waits for the runtime (the SDK's detach
+         * waits up to 5 s) and the stop must not.
+         */
+        private void abandonOffThread() {
+            conversation.turn = null;
+            unhookCancel.run();
+            Conversation gone = conversation;
+            synchronized (CopilotProvider.this) {
+                conversations.remove(gone);
+            }
+            Thread.ofVirtual().name("copilot-abandon").start(gone::close);
+        }
+
         private void end(LlmWireTap.Exchange open, boolean aborted, String error) {
             if (open != null) {
                 open.end(new LlmWireTap.WireOutcome(null, "sdk-events", null, aborted, error,
@@ -1451,12 +1535,50 @@ public final class CopilotProvider implements LlmProvider, AutoCloseable {
         return "[tool result for " + r.callId() + (r.isError() ? ", failed" : "") + "]\n" + r.output();
     }
 
+    /**
+     * The threads a runtime client runs its work on: one virtual thread per
+     * task, each known until it ends (card 557). The SDK's default is the
+     * common fork-join pool, where its runtime start blocks a worker that
+     * nothing outside the SDK can reach.
+     */
+    private static final class ClientThreads implements Executor {
+        private final Set<Thread> running = ConcurrentHashMap.newKeySet();
+
+        @Override
+        public void execute(Runnable task) {
+            Thread thread = Thread.ofVirtual().name("copilot-client").unstarted(() -> {
+                try {
+                    task.run();
+                } finally {
+                    running.remove(Thread.currentThread());
+                }
+            });
+            running.add(thread);
+            thread.start();
+        }
+
+        /** Interrupts every task still running. */
+        void interruptAll() {
+            running.forEach(Thread::interrupt);
+        }
+    }
+
+    /**
+     * A wait on the runtime that an interrupt ended: the stop button (card
+     * 557), not an answer from the runtime.
+     */
+    private static final class WaitInterrupted extends IllegalStateException {
+        WaitInterrupted(String what) {
+            super("copilot runtime: interrupted while waiting to " + what);
+        }
+    }
+
     private static <T> T await(CompletableFuture<T> future, long seconds, String what) {
         try {
             return future.get(seconds, TimeUnit.SECONDS);
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
-            throw new IllegalStateException("copilot runtime: interrupted while waiting to " + what);
+            throw new WaitInterrupted(what);
         } catch (TimeoutException slow) {
             throw new IllegalStateException("copilot runtime: no answer within " + seconds + " s to " + what);
         } catch (ExecutionException failed) {

@@ -9,8 +9,9 @@
 // one smoke test that still fires — is an upstream mess, not a list problem.
 //
 // How much a row says is the reader's choice now (card 214): the options control
-// at the head of the list carries `density`, and at normal — the default — a row
-// is its name and its state dot. What density cuts is not rendered rather than
+// at the head of the list carries `density`. At normal, the default, a row is its
+// name, its state dot and, for a live session, its folder and state line; at
+// minimal (card 555) the name and the dot. What density cuts is not rendered rather than
 // hidden, because a rule that hides markup outlives the markup, and this file
 // has already paid for that once.
 
@@ -556,7 +557,7 @@ export function Sidebar(props: {
                 }}
               />
             </nav>
-            <PeerRoster lang={lang} rows={peerRoster} />
+            <PeerRoster lang={lang} rows={peerRoster} parts={parts} />
 
             {sessions !== null && sessions.length === 0 && !failed && (
               <p className="sidebar-note">{t(lang, "nav.none")}</p>
@@ -788,7 +789,7 @@ export function SessionRow(props: {
         <button
           type="button"
           className={`session-row${props.active ? " active" : ""}`}
-          /* ONE hover string, at either density. In normal the hover is the only
+          /* ONE hover string, at every density. In normal the hover is the only
              place the cut facts live, and a density-aware second one would be a
              second thing to keep in step with the DTO. */
           title={hover}
@@ -817,7 +818,11 @@ export function SessionRow(props: {
               <span className="session-wait">{t(lang, "nav.waitingForModel")}</span>
             )}
           </span>
-          {props.liveLine !== undefined && <span className="session-live-line">{props.liveLine}</span>}
+          {/* Card 555: the live line goes through `parts` like the rest, and
+              minimal leaves it out of the markup. */}
+          {parts.liveLine && props.liveLine !== undefined && (
+            <span className="session-live-line">{props.liveLine}</span>
+          )}
           {parts.meta && (
             <span className="session-meta session-meta-line tabular">
               <span className="session-facts">

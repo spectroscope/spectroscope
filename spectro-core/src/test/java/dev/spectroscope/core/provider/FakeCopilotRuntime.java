@@ -20,6 +20,7 @@ import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
@@ -62,6 +63,8 @@ final class FakeCopilotRuntime implements AutoCloseable {
     private volatile boolean dead;
     private volatile boolean closed;
     private volatile boolean failModels;
+    private final Set<String> held = ConcurrentHashMap.newKeySet();
+    private final AtomicLong clientsGone = new AtomicLong();
 
     FakeCopilotRuntime() throws IOException {
         server = new ServerSocket(0, 1, InetAddress.getLoopbackAddress());
@@ -87,6 +90,17 @@ final class FakeCopilotRuntime implements AutoCloseable {
 
     FakeCopilotRuntime failModels() {
         failModels = true;
+        return this;
+    }
+
+    /**
+     * Leaves every request of {@code method} unanswered, kept on record (card 557):
+     * {@code connect} is a runtime start that never completes, {@code models.list}
+     * a model list that never arrives, {@code session.send} a prompt the runtime
+     * never takes.
+     */
+    FakeCopilotRuntime hold(String method) {
+        held.add(method);
         return this;
     }
 
@@ -188,7 +202,13 @@ final class FakeCopilotRuntime implements AutoCloseable {
             } catch (IOException gone) {
                 // a script made the runtime die, or the client went away
             }
+            clientsGone.incrementAndGet();
         }
+    }
+
+    /** @return how many client connections have ended so far (card 557 counts what a stop leaves open) */
+    long clientsGone() {
+        return clientsGone.get();
     }
 
     private void answer(JsonNode message) throws IOException {
@@ -197,6 +217,9 @@ final class FakeCopilotRuntime implements AutoCloseable {
         }
         String method = message.get("method").asText();
         JsonNode params = message.path("params");
+        if (held.contains(method)) {
+            return; // kept on record, never answered
+        }
         if ("models.list".equals(method) && failModels) {
             ObjectNode error = NODES.objectNode();
             error.put("code", -32603);

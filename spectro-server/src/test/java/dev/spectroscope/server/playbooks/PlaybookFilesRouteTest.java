@@ -59,8 +59,7 @@ class PlaybookFilesRouteTest {
         folders = new PlaybookFolders(tmp.resolve("playbooks.json"));
         spectroHome = tmp.resolve("home/.spectro");
         userSettings = spectroHome.resolve("settings.json");
-        controller = new PlaybookController(folders, PlaybookController.BUNDLE_ROOT,
-                new InstallLedger(tmp.resolve("home/playbook-installs.json")), spectroHome,
+        controller = new PlaybookController(folders, PlaybookController.BUNDLE_ROOT, spectroHome,
                 Files.createDirectories(tmp.resolve("launch")), userSettings);
         assertTrue(WITH_AGENT.contains("agents/reviewer.md"), "premise: the fixture names the agent file");
         dir = Files.createDirectories(tmp.resolve("pb"));

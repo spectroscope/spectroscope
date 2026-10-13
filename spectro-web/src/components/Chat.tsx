@@ -38,7 +38,10 @@ import {
 } from "../state/scrollPin";
 import { agentAccent, answerLineSegments, clockTime } from "../format";
 import { MessageBlock, replyFrame, replyTargetOf, decisionFrame, type ReplyTarget } from "./MessageBlock";
-import { composerSubmit, loopFrame, loopStopFrame, type ChatCommandName } from "../state/chatCommands";
+import { decideDraft, loopFrame, loopStopFrame, type ChatCommandName } from "../state/chatCommands";
+import { loadCommands, useCommandList } from "../state/commandList";
+import { runPageCommand, type LocalLine } from "../state/pageCommands";
+import { prefilledDraft, useTakePrefill } from "../state/composerPrefill";
 import { ComposerStrip } from "./ComposerStrip";
 import { Markdown } from "./Markdown";
 import { ToolCard } from "./ToolCard";
@@ -92,6 +95,7 @@ import { reportCount, useSearch } from "../state/search";
 import { chatHits, markSegments } from "./chatSearch";
 import { skillTokenSegments } from "../state/skillTokens";
 import { useSkills } from "../state/skillList";
+import { slashItems, type SessionItems } from "../state/sessionItems";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { useRecordedMode } from "../state/recordedMode";
@@ -168,6 +172,30 @@ export function Chat(props: {
    *  False means the frame did not leave. Absent, they go through
    *  sendClient. */
   onSessionFrame?: (frame: ClientMessage) => boolean;
+  /** Card 554 fix round 3: a sender bound, when a page command is submitted,
+   *  to the session on screen then. /playbook use sends after reads, and the
+   *  view may have moved on by then (criterion 6). Absent, onSessionFrame. */
+  onBindSessionFrame?: () => (frame: ClientMessage) => boolean;
+  /** Card 554, task 13: adds the answer of a command the page answers itself
+   *  (/help, /playbook, /playbook list, /playbook show, a refusal of
+   *  /playbook use) as a line of this chat. Absent in hosts that cannot show
+   *  one (the Lab); there those commands leave the draft as it is. */
+  onLocalLine?: (line: LocalLine) => void;
+  /** Card 554: /skills opens the Skills and Commands view. */
+  onOpenSkills?: () => void;
+  /** Card 554: the link under a /playbook show answer opens that playbook's
+   *  Steps tab. */
+  onOpenPlaybook?: (dir: string) => void;
+  /** Card 554: the session's workspace as the header chip shows it, for the
+   *  folder pin the playbook commands read; absent reads the state's own. */
+  commandWorkspace?: string | null;
+  /** Card 558: the session's skills, commands and agents (session_items) for
+   *  the slash picker, or null while it has sent none; absent reads the
+   *  state's own. */
+  sessionItems?: SessionItems | null;
+  /** Card 558: asks the session for its items, when the picker opens without
+   *  them. Absent where there is no session to ask. */
+  onAskSessionItems?: () => void;
   onReturnToLive: () => void;
   /** Card 458: a stored session that the first message continues. The live
    *  composer stands under its history instead of the archive bar, and the
@@ -222,6 +250,10 @@ export function Chat(props: {
   onAbort?: () => void;
   /** True from the stop click until run_end: the button reads "stopping …". */
   stopRequested?: boolean;
+  /** Live check 0.15.3 D6: the message that left and whose run has not
+   *  started, or null. Drawn at the live edge with Stop in the seat, because
+   *  the server can ask the backend for its window for seconds first. */
+  starting?: string | null;
   /** The stored session id when this archive can be exported (card 95). */
   exportId?: string;
   /** The stored session id when its llm-wire sidecar answered non-empty: the
@@ -251,6 +283,8 @@ export function Chat(props: {
   // session the first message continues.
   const composerOpen = liveView || props.continuable === true;
   const lang = useLang();
+  // Card 554: the command list the composer decides against.
+  const commands = useCommandList();
   const chatWidth = useChatWidth(); // the reading width, from the disclosure menu
   // How many passages are translated for this view. Read here so the tools row
   // and the translate panel answer "is there anything to show?" from one place.
@@ -694,8 +728,14 @@ export function Chat(props: {
   // A different session is a different history. App swaps props on the same
   // mount, so without this the walk would survive into a transcript it never
   // belonged to.
+  // Card 554 fix round 3: where the turns stood when a command left since the
+  // last prompt. An error from there on answers a command, not a prompt, and
+  // offers no "Send again".
+  const [commandsFrom, setCommandsFrom] = useState<number | null>(null);
+  const commandLeft = (): void => setCommandsFrom((from) => from ?? state.turns.length);
   useEffect(() => {
     setWalk(atDraft());
+    setCommandsFrom(null);
   }, [props.viewKey]);
   /** Brings a prompt back into the box and puts the caret where a second press
    *  keeps walking the list rather than walking inside the text. */
@@ -721,10 +761,13 @@ export function Chat(props: {
     if (props.onCommand === undefined) return;
     setPin(true);
     if (props.onCommand(name)) {
+      commandLeft();
       setDraft("");
       setWalk(atDraft());
     }
   };
+  // Card 558: the session's items, from the host when it hands them in.
+  const sessionItems = props.sessionItems !== undefined ? props.sessionItems : state.sessionItems;
   const slash = useSlashPicker(
     draft,
     caret,
@@ -741,6 +784,8 @@ export function Chat(props: {
       }
     },
     props.onCommand === undefined ? undefined : runCommand,
+    sessionItems,
+    props.onAskSessionItems,
   );
 
   // Card 247: the names the transcript and the composer may color. The color
@@ -750,8 +795,17 @@ export function Chat(props: {
     () => state.turns.some((t) => t.kind === "user" && t.text.includes("/")),
     [state.turns],
   );
-  const skillOptions = useSkills(turnsCarrySlash || draft.includes("/"));
-  const knownSkills = useMemo(() => new Set(skillOptions.map((s) => s.name)), [skillOptions]);
+  const installedSkills = useSkills((turnsCarrySlash || draft.includes("/")) && sessionItems === null);
+  // Card 558: the session's own names when it has sent them, the installed ones until then.
+  const knownSkills = useMemo(
+    () =>
+      new Set(
+        sessionItems === null
+          ? installedSkills.map((s) => s.name)
+          : slashItems(sessionItems).map((s) => s.name),
+      ),
+    [installedSkills, sessionItems],
+  );
   const draftMarks = useMemo(() => skillTokenSegments(draft, knownSkills), [draft, knownSkills]);
   const marksRef = useRef<HTMLDivElement>(null);
 
@@ -767,6 +821,22 @@ export function Chat(props: {
   useEffect(() => {
     draftRef.current = draft;
   }, [draft]);
+  // Card 554, criterion 4: the header's play button asks for
+  // "/run-with-playbook " (state/composerPrefill.ts). An open composer takes
+  // it into the draft, keeps what was typed after it, puts the caret at the
+  // end and takes the focus. Nothing is sent.
+  useTakePrefill(composerOpen, (text) => {
+    const next = prefilledDraft(text, draftRef.current);
+    setReplyTo(null);
+    setDraft(next);
+    setCaret(next.length);
+    setWalk(atDraft());
+    const el = textareaRef.current;
+    if (el !== null) {
+      el.focus();
+      requestAnimationFrame(() => el.setSelectionRange(next.length, next.length));
+    }
+  });
   const submit = (): void => {
     if (!composerOpen) return;
     if (replyTo !== null) {
@@ -796,8 +866,21 @@ export function Chat(props: {
     sendText(draft);
   };
   const sendText = (written: string): void => {
-    const decided = composerSubmit(written);
+    const decided = decideDraft(written, commands.rows);
     if (decided === null) return;
+    // Card 554, criterion 8h: the command list has not arrived, so a draft
+    // that starts with a slash cannot be told from a prompt. It stays. Fix
+    // round 3: a list that could not be read is asked for again, and a line
+    // says why nothing left.
+    if (decided.kind === "held") {
+      if (commands.status === "failed") {
+        loadCommands();
+        props.onLocalLine?.({ text: t(lang, "slash.heldFailed"), tone: "warn" });
+      } else {
+        props.onLocalLine?.({ text: t(lang, "slash.heldLoading") });
+      }
+      return;
+    }
     // Card 471: a draft that is exactly a command is not a prompt. It leaves
     // as its own frame, or not at all, and never through onSend.
     if (decided.kind === "command") {
@@ -809,6 +892,7 @@ export function Chat(props: {
     // Fix round 1: /loop stop ends the loop, as the chip's Stop does.
     if (decided.kind === "loopStop") {
       if (sendSession(loopStopFrame())) {
+        commandLeft();
         setDraft("");
         setWalk(atDraft());
       }
@@ -817,6 +901,31 @@ export function Chat(props: {
     if (decided.kind === "loop") {
       setPin(true);
       if (sendSession(loopFrame(decided))) {
+        commandLeft();
+        setDraft("");
+        setWalk(atDraft());
+      }
+      return;
+    }
+    // Card 554: every other command of the list. Its frames leave through
+    // sendSession, the session's own socket, never through onSend; its
+    // answers are lines of this chat (state/pageCommands.ts).
+    if (decided.kind !== "prompt") {
+      setPin(true);
+      // Fix round 3: bound now, to the session this was typed in.
+      const sendBound = props.onBindSessionFrame?.() ?? sendSession;
+      const run = runPageCommand(decided, {
+        rows: commands.rows ?? [],
+        lang,
+        pick: state.playbook,
+        workspace:
+          props.commandWorkspace !== undefined ? props.commandWorkspace : (state.workspace?.path ?? null),
+        sendSession: sendBound,
+        line: props.onLocalLine,
+        openSkills: props.onOpenSkills,
+      });
+      if (run.accepted) {
+        commandLeft();
         setDraft("");
         setWalk(atDraft());
       }
@@ -827,15 +936,18 @@ export function Chat(props: {
     // watching for it — the same deliberate act the jump-to-end button is.
     setPin(true);
     props.onSend(text, attachments.pending.length > 0 ? attachments.pending : undefined);
+    setCommandsFrom(null);
     setDraft("");
     setWalk(atDraft());
     attachments.clear();
   };
 
+  // The owner's last prompt; a playbook step's prompt is not the owner's
+  // (card 554 fix round 3).
   const lastUserText = (): string | null => {
     for (let i = state.turns.length - 1; i >= 0; i--) {
       const turn = state.turns[i];
-      if (turn !== undefined && turn.kind === "user") return turn.text;
+      if (turn !== undefined && turn.kind === "user" && turn.by !== "playbook") return turn.text;
     }
     return null;
   };
@@ -859,12 +971,13 @@ export function Chat(props: {
   // exactly as it always did.
   const mic =
     voice.micError === null ? micBase : { ...micBase, title: t(lang, voiceErrorKey(voice.micError)) };
+  const startPending = liveView && props.starting != null ? props.starting : null;
   const buttons = composerButtons(
     {
       // Card 527: words heard while recording count as something to send.
       heard:
         (voice.micPhase === "recording" || voice.micPhase === "transcribing") && voice.provisional !== "",
-      running: liveView && state.running,
+      running: liveView && (state.running || startPending !== null),
       stopping: props.stopRequested === true,
       draftEmpty: draft.trim() === "",
       // Attachments never steer (owner call 2), so a draft carrying one says
@@ -891,8 +1004,12 @@ export function Chat(props: {
     switch (turn.kind) {
       case "user":
         return (
-          <div key={`${vk}:${i}`} className={`user-turn${hitClass(i)}`}>
-            <div className="eyebrow">{t(lang, "chat.you")}</div>
+          <div
+            key={`${vk}:${i}`}
+            className={`user-turn${turn.by === "playbook" ? " user-turn--playbook" : ""}${hitClass(i)}`}
+          >
+            {/* Card 554, criterion 8f: a playbook step's prompt is the playbook's, not the owner's. */}
+            <div className="eyebrow">{t(lang, turn.by === "playbook" ? "chat.byPlaybook" : "chat.you")}</div>
             {turn.attachments !== undefined && turn.attachments.length > 0 && (
               <div className="user-attachments">
                 {turn.attachments.map((a, j) => (
@@ -1028,6 +1145,19 @@ export function Chat(props: {
                   ...(turn.infoRefKey === undefined ? {} : { ref: t(lang, turn.infoRefKey, turn.infoVars) }),
                 })
               : turn.text}
+            {/* Card 554: the answer to /playbook show opens that playbook's Steps tab. */}
+            {turn.openPlaybook !== undefined && props.onOpenPlaybook !== undefined && (
+              <>
+                {"\n"}
+                <button
+                  type="button"
+                  className="link info-line-link"
+                  onClick={() => props.onOpenPlaybook?.(turn.openPlaybook ?? "")}
+                >
+                  {t(lang, "pbcmd.show.open")}
+                </button>
+              </>
+            )}
           </div>
         );
       case "message":
@@ -1050,18 +1180,21 @@ export function Chat(props: {
           <div key={`${vk}:${i}`} className="error-card">
             <div className="eyebrow">{t(lang, "chat.error")}</div>
             <div className="error-text">{turn.text}</div>
-            {liveView && !state.running && lastUserText() !== null && (
-              <button
-                type="button"
-                className="link"
-                onClick={() => {
-                  const text = lastUserText();
-                  if (text !== null) props.onSend(text);
-                }}
-              >
-                {t(lang, "chat.sendAgain")}
-              </button>
-            )}
+            {liveView &&
+              !state.running &&
+              (commandsFrom === null || i < commandsFrom) &&
+              lastUserText() !== null && (
+                <button
+                  type="button"
+                  className="link"
+                  onClick={() => {
+                    const text = lastUserText();
+                    if (text !== null) props.onSend(text);
+                  }}
+                >
+                  {t(lang, "chat.sendAgain")}
+                </button>
+              )}
           </div>
         );
     }
@@ -1191,7 +1324,7 @@ export function Chat(props: {
         aria-live="off"
         aria-label={t(lang, "chat.historyAria")}
       >
-        {state.turns.length === 0 ? (
+        {state.turns.length === 0 && startPending === null ? (
           <div className="empty">
             {/* The M1 line bundle in front of the title, wordmark type — the same
                 treatment as the sidebar brand (owner 2026-07-20). */}
@@ -1298,6 +1431,14 @@ export function Chat(props: {
                   <div className="steer-state steer-state--pending">{t(lang, "chat.steerPending")}</div>
                 </div>
               ))}
+            {/* Live check 0.15.3 D6: the message is on the screen from the
+                moment it left. The run's own user turn takes its place. */}
+            {startPending !== null && (
+              <div key={`${vk}:start-pending`} className="user-turn user-turn--start-pending" role="status">
+                <div className="eyebrow">{t(lang, "chat.you")}</div>
+                <div className="user-text">{startPending}</div>
+              </div>
+            )}
             {/* Card 244: the sign of life at the live edge, for the stretches
                 no caret and no thinking dot covers (before the first delta,
                 and while a tool runs). The bottom-pin scroll carries it. */}
@@ -1697,11 +1838,14 @@ export function Chat(props: {
                   sendSession={sendSession}
                 />
                 {/* Card 463: the model, the thinking level and the context
-                    ring, at the right end of the row, the ring last. */}
+                    ring, at the right end of the row, the ring last. Card 556:
+                    a stored session the next message continues offers the
+                    model too. */}
                 {props.composerMeta !== undefined && (
                   <ComposerMeta
                     {...props.composerMeta}
                     liveView={props.liveView}
+                    continuable={props.continuable === true}
                     lastInputTokens={state.lastInputTokens}
                     aiCredits={state.aiCredits}
                     context={state.context}

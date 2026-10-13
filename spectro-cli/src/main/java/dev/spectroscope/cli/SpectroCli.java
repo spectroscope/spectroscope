@@ -120,12 +120,12 @@ public final class SpectroCli implements Runnable {
     private final Ansi ansi = Ansi.detect();
     private final Spinner spinner = new Spinner(ansi);
     // The presentation layer (parent view + indented child view) lives in its
-    // own class; the allowlist supplier stays live across /clear rebuilds
+    // own class; the allowlist supplier stays live across /think rebuilds
     // (qualified this.allowlist: the field is declared below — JLS 8.3.3).
     private final EventRenderer renderer =
             new EventRenderer(ansi, spinner, MAIN_AGENT_ID, () -> this.allowlist);
 
-    // Session state — fields so the /clear slash command can rebuild them.
+    // Session state, held in fields so /think can rebuild the agent from them.
     private SpectroConfig config;
     private LlmProvider provider;
     /** The PROJECT anchor (process cwd): config layers, skills, MCP, SPECTRO.md. */
@@ -168,7 +168,7 @@ public final class SpectroCli implements Runnable {
     /** Card 502: a released message the loop runs as its next input. */
     private final AtomicReference<String> peerPrompt = new AtomicReference<>();
     /** Card 504: the REPL's loop and the timer thread that holds its wakeups. */
-    private final ReplLoop replLoop = ReplLoop.onTimerThread(() -> replRunning, line -> System.out.println("\n" + line));
+    private ReplLoop replLoop = ReplLoop.onTimerThread(() -> replRunning, line -> System.out.println("\n" + line));
     /** Card 504: what /loop hands the input loop to run next: the record and the model's text. */
     private final AtomicReference<ReplLoop.Fire> loopPrompt = new AtomicReference<>();
 
@@ -641,7 +641,7 @@ public final class SpectroCli implements Runnable {
 
     /** Provider (plus the --verbose trace wrap), skills, system prompt,
      *  allowlist, hooks and thinking — the per-session state read from the
-     *  config layers. Everything here lives in fields so /clear can rebuild. */
+     *  config layers. Everything here lives in fields so /think can rebuild. */
     private void initializeSession() {
         // The session moment: the workspace's own .spectro pair joins the chain
         // now that workspace is resolved — flags (cliOverrides) stay the top
@@ -696,8 +696,8 @@ public final class SpectroCli implements Runnable {
 
     /** The system prompt names the WORKSPACE as the working directory while
      *  SPECTRO.md still comes from the project — the agent works in its own
-     *  folder but keeps the project's context. Recomposed by /clear (a new
-     *  session means a new workspace). */
+     *  folder but keeps the project's context. Since card 554 /clear keeps
+     *  the session and its folder, so the prompt is composed once. */
     private void composeSystemPrompt() {
         systemPrompt = RoleCatalog.BASE_SYSTEM_PROMPT + workspace + SpectroConfig.loadProjectMd(projectDir)
                 + SpectroConfig.loadAgentsMd(workspace) + skills.systemPromptSection();
@@ -891,21 +891,21 @@ public final class SpectroCli implements Runnable {
                         break;
                     }
                     input = rawLine.trim();
-                    if (input.isEmpty() || input.equals("/exit")) {
+                    if (route(input) == ReplRoute.EXIT) {
                         break;
                     }
                 }
 
                 // toggle voice output at runtime — /speak off also stops any
                 // sentence currently playing (the shared stop() clears the queue).
-                if (input.equals("/speak on") || input.equals("/speak off")) {
+                if (route(input) == ReplRoute.SPEAK) {
                     boolean on = input.endsWith(" on");
                     speech.setEnabled(on);
                     System.out.println("Voice output " + (on ? "on" : "off") + ".");
                     continue;
                 }
 
-                if (input.equals("/voice")) {
+                if (route(input) == ReplRoute.VOICE) {
                     Optional<String> spoken = voiceInputTurn(console);
                     if (spoken.isEmpty()) {
                         continue;                   // discarded, empty, or failed — no turn
@@ -913,7 +913,7 @@ public final class SpectroCli implements Runnable {
                     input = spoken.get();           // fall through to the normal user turn
                 }
 
-                if (modelText == null && input.startsWith("/")) {
+                if (modelText == null && route(input) == ReplRoute.SLASH) {
                     handleSlashCommand(input);
                     // Card 504: /loop hands its first run to this loop.
                     ReplLoop.Fire looped = loopPrompt.getAndSet(null);
@@ -998,8 +998,8 @@ public final class SpectroCli implements Runnable {
     }
 
     /**
-     * Assembles the main agent from the current session fields — /clear and
-     * /think rebuild through here, so a flag change or a fresh start always
+     * Assembles the main agent from the current session fields; /think
+     * rebuilds through here, so a flag change always
      * yields a consistently configured agent.
      *
      * @param initialMessages reconstructed history to seed the conversation with
@@ -1191,11 +1191,94 @@ public final class SpectroCli implements Runnable {
     // ---------------------------------------------------------- slash commands
 
     /**
+     * Card 554: what the input loop does with a typed line. Three commands
+     * need the loop itself (it ends, it owns the voice output, it records from
+     * the console); every other line that starts with a slash goes to
+     * {@link #handleSlashCommand}, and the rest is a prompt.
+     */
+    enum ReplRoute { EXIT, SPEAK, VOICE, SLASH, PROMPT }
+
+    /**
+     * @param input the trimmed line
+     * @return where the input loop sends it
+     */
+    static ReplRoute route(String input) {
+        if (input.isEmpty() || input.equals("/exit")) {
+            return ReplRoute.EXIT;
+        }
+        if (input.equals("/speak on") || input.equals("/speak off")) {
+            return ReplRoute.SPEAK;
+        }
+        if (input.equals("/voice")) {
+            return ReplRoute.VOICE;
+        }
+        return input.startsWith("/") ? ReplRoute.SLASH : ReplRoute.PROMPT;
+    }
+
+    /** The heading of the rows only the web chat runs (card 554). */
+    static final String WEB_ONLY_HEADING = "In the web chat (web only)";
+
+    /** The title each group of the command list is printed under. */
+    private static final java.util.Map<String, String> GROUP_TITLES = java.util.Map.of(
+            "chat", "Chat", "playbook", "Playbook", "codegraph", "Code graph", "skills", "Skills");
+
+    /**
+     * Card 554: {@code /help} from the one command list. The rows this REPL
+     * runs come first, by group; the rows only the web chat runs follow under
+     * {@link #WEB_ONLY_HEADING}, so a terminal user learns they exist. A row
+     * another card owns ({@code wired} false) is not listed.
+     *
+     * @return the lines {@code /help} prints; a heading starts at the margin
+     */
+    static List<String> helpText() {
+        List<dev.spectroscope.core.commands.CommandList.Command> wired =
+                dev.spectroscope.core.commands.CommandList.all().stream().filter(c -> c.wired()).toList();
+        int width = wired.stream().mapToInt(c -> spellings(c).length()).max().orElse(0) + 2;
+        List<String> out = new ArrayList<>();
+        out.add("Slash commands");
+        helpGroups(wired.stream().filter(c -> c.onRepl()).toList(), width, out);
+        out.add(WEB_ONLY_HEADING);
+        helpGroups(wired.stream().filter(c -> !c.onRepl()).toList(), width, out);
+        return List.copyOf(out);
+    }
+
+    private static void helpGroups(List<dev.spectroscope.core.commands.CommandList.Command> rows, int width,
+                                   List<String> out) {
+        for (String group : dev.spectroscope.core.commands.CommandList.GROUPS) {
+            List<dev.spectroscope.core.commands.CommandList.Command> inGroup =
+                    rows.stream().filter(c -> c.group().equals(group)).toList();
+            if (inGroup.isEmpty()) {
+                continue;
+            }
+            out.add("  " + GROUP_TITLES.get(group));
+            for (dev.spectroscope.core.commands.CommandList.Command c : inGroup) {
+                String names = spellings(c);
+                out.add("    " + names + " ".repeat(width - names.length()) + c.help().en());
+            }
+        }
+    }
+
+    /** @return the row's slash spelling, then its aliases, comma separated */
+    private static String spellings(dev.spectroscope.core.commands.CommandList.Command c) {
+        List<String> all = new ArrayList<>();
+        all.add("/" + c.spelling());
+        c.aliases().forEach(a -> all.add("/" + a));
+        return String.join(", ", all);
+    }
+
+    /**
      * The in-REPL commands — none of them ever reaches the model.
      *
      * @param command the full input line starting with {@code /}, including any argument
      */
     void handleSlashCommand(String command) {
+        // Card 554: a command only the web chat runs is named, not refused as unknown.
+        Optional<dev.spectroscope.core.commands.CommandList.Match> listed =
+                dev.spectroscope.core.commands.CommandList.match(command);
+        if (listed.isPresent() && listed.get().command().wired() && !listed.get().command().onRepl()) {
+            System.out.println("web only: " + listed.get().command().help().en());
+            return;
+        }
         // Card 502: the terminal's Deliver and Decline for a held message.
         if (command.equals("/peer") || command.startsWith("/peer ")) {
             handlePeerCommand(command.substring("/peer".length()).trim());
@@ -1241,23 +1324,11 @@ public final class SpectroCli implements Runnable {
             return;
         }
         switch (command) {
-            case "/help" -> {
-                System.out.println(ansi.bold("Slash commands"));
-                System.out.println("  /help      this overview");
-                System.out.println("  /cost      token usage of this session");
-                System.out.println("  /model     active provider, model and base URL");
-                System.out.println("  /sessions  list stored sessions");
-                System.out.println("  /skills    list installed skills");
-                System.out.println("  /mcp       connected MCP servers and their tools");
-                System.out.println("  /think     reasoning visibility on|off");
-                System.out.println("  /voice     push-to-talk: record, transcribe, edit, send");
-                System.out.println("  /speak     read answers aloud on|off");
-                System.out.println("  /goal      state this run's outcome and its check");
-                System.out.println("  /loop      /loop [interval] <prompt> repeats a prompt; /loop stop ends it");
-                System.out.println("  /compact   summarize older history now");
-                System.out.println("  /clear     start a fresh session (new agent, new file)");
-                System.out.println("  /exit      quit (empty line works too)");
-            }
+            case "/help", "/commands" -> helpText().forEach(line ->
+                    System.out.println(line.startsWith(" ") ? line : ansi.bold(line)));
+            // The input loop switches the voice output on "/speak on" and
+            // "/speak off" itself; anything else after /speak lands here.
+            case "/speak" -> System.out.println("Usage: /speak on|off");
             case "/cost" -> System.out.println("Session usage: " + renderer.sessionUsage());
             case "/model" -> System.out.println(modelLine(config, provider));
             case "/sessions" -> printSessions();
@@ -1276,36 +1347,18 @@ public final class SpectroCli implements Runnable {
                 renderer.render(event);
                 loopCompacted(); // card 504
             }, () -> System.out.println("Nothing to compact — the history is still small."));
+            // Card 554: aligned to the web chat's /clear (card 471). The session
+            // keeps its id, its file, its goal, its tools and its folder; only
+            // the agent's history goes, and the context_cleared marker in the
+            // file makes a later resume start after it. A loop keeps running
+            // and expands its instructions in full at the next fire, as after
+            // a compaction.
             case "/clear" -> {
-                // A new session means a new workspace: re-key the folder, refresh
-                // the prompt, and rebuild the tool world so subagents inherit it.
-                // MCP is reloaded by registerTools — release the old processes first.
-                // Card 504: the old session's loop ends; it must not fire into the new one.
-                dev.spectroscope.core.loop.LoopDriver oldLoop = replLoop.driverIfAny();
-                if (oldLoop != null) {
-                    oldLoop.userAbort();
-                }
-                store = new SessionStore(null);
-                renderer.forgetPlan(); // the new agent has no ledger; neither has the line
-                if (llmWire != null) {
-                    llmWire.close(); // the old session's writer; lines are flushed
-                }
-                llmWire = LlmWireRecorder.forSession(store.id());
-                wireReference = new dev.spectroscope.core.wire.WireReference(store.id(), true); // card 473
-                // Card 267: a new session is a new goal file, and inheriting the
-                // old session's outcome would be the harness deciding what the
-                // fresh conversation is for.
-                goal.state(dev.spectroscope.core.goal.GoalStore.read(
-                        dev.spectroscope.core.goal.GoalStore.fileFor(store.id())));
-                gateAudit = dev.spectroscope.core.permission.GateAudit.forSession(store.id());
-                tracing = new TracingPorts().require(new JsonlSink(store));
-                workspace = WorkspaceResolver.resolve(config.workspace(), store.id());
-                composeSystemPrompt();
-                mcp.close();
-                registerTools();
-                agent = buildAgent(List.of());
-                System.out.println("New session: " + store.id());
-                System.out.println("Workspace:   " + workspace);
+                RunEvent.ContextCleared cleared = agent.clearContext();
+                tracing.onEvent(cleared);
+                renderer.forgetPlan(); // the agent dropped its ledger; the footer follows
+                renderer.render(cleared);
+                loopCompacted();
             }
             default -> System.out.println("Unknown command: " + command + " (/help lists all)");
         }
@@ -1346,6 +1399,11 @@ public final class SpectroCli implements Runnable {
     /** @return card 504: the REPL's loop, for the tests */
     ReplLoop loopForTests() {
         return replLoop;
+    }
+
+    /** @param loop card 554: a loop on a timer the test moves by hand, set before the first /loop */
+    void loopForTests(ReplLoop loop) {
+        this.replLoop = loop;
     }
 
     /** Card 504: the history was compacted; the loop's sentinel expands in full at its next fire. */

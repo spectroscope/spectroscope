@@ -15,6 +15,7 @@
 import type { SessionMeta } from "../events";
 import { CLEAN_FINISHES } from "../state/stopReason";
 import { t, type Lang } from "../i18n/i18n";
+import { folderName } from "../state/playbookCommands";
 import { formatDuration } from "../format";
 
 /** One hairline of a session's comb — the brand mark applied to a run. */
@@ -201,6 +202,11 @@ export function sessionTitleLines(meta: SessionMeta, lang: Lang, now: number = D
     facts.push(t(lang, "sess.ranFor", { d: formatDuration(meta.endedAt - meta.startedAt) }));
   }
   lines.push(facts.join(" · "));
+  // Card 554, integrator decision e: the playbook a stored session picked, by
+  // its folder's name, so the row says it before a wake.
+  if (meta.playbook !== undefined && meta.playbook !== "") {
+    lines.push(t(lang, "sess.playbook", { name: folderName(meta.playbook) }));
+  }
   return lines.join("\n");
 }
 

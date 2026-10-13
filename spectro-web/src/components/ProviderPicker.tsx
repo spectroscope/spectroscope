@@ -15,7 +15,8 @@ import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { checkProviders, refreshProviders, rowFor, useProviderRows } from "../state/providerRegistry";
 import { PROVIDERS, pickerOption, providerDisplayName } from "./providerPickerMode";
-import { ModelField, useProviderModels } from "./providerModelField";
+import { ModelField } from "./providerModelField";
+import { usePickerForm } from "./providerPickerForm";
 import { LocalModelDialog } from "./LocalModelDialog";
 import { CopilotAccountNote } from "./CopilotSignIn";
 
@@ -27,6 +28,7 @@ export function ProviderPicker({
   providerAddress,
   onApply,
   onOpenSettings,
+  holdRecorded = false,
 }: {
   provider: string;
   /** The current model, so the chip shows it and the form prefills the real one. */
@@ -42,13 +44,23 @@ export function ProviderPicker({
   /** Open the Settings panel — the needs-key affordance points there, since the
    *  key write lives only in Settings. */
   onOpenSettings?: () => void;
+  /** Card 556: a stored session's picker. Its preselection stays the pair the
+   *  record names until the owner picks (providerPickerForm.ts). */
+  holdRecorded?: boolean;
 }) {
   const lang = useLang();
   const [open, setOpen] = useState(false);
-  const [sel, setSel] = useState(provider);
-  const [model, setModel] = useState("");
   const [showDownload, setShowDownload] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+
+  // The provider, the model and the shared model list (providerPickerForm.ts).
+  const { sel, model, setModel, chooseProvider, models, mode } = usePickerForm({
+    open,
+    provider,
+    activeModel,
+    providerStatus,
+    holdRecorded,
+  });
 
   const isLocal = sel === "spectro-local";
 
@@ -56,26 +68,11 @@ export function ProviderPicker({
   useProviderRows();
   const selectedOption = pickerOption(rowFor(sel), provider);
 
-  // Opening seeds the form from the active provider and the real current model.
-  useEffect(() => {
-    if (open) {
-      setSel(provider);
-      setModel(activeModel || "");
-    }
-  }, [open, provider, activeModel]);
-
   // Opening reads the stored rows, then checks the local kind only: localhost
   // calls, bounded by the server. A cloud provider is never called on open (D10).
   useEffect(() => {
     if (open) void refreshProviders().then(() => checkProviders("local"));
   }, [open]);
-
-  // Shared model list + field mode; autoPick snaps a stale local model.
-  const { models, mode } = useProviderModels(open ? sel : "", providerStatus, {
-    model,
-    onModelChange: setModel,
-    autoPick: true,
-  });
 
   // Close on outside click / Escape.
   useEffect(() => {
@@ -137,14 +134,7 @@ export function ProviderPicker({
         <div className="provider-pop" role="dialog" aria-label="LLM provider">
           <label className="provider-field">
             <span className="provider-field-label">{t(lang, "pp.provider")}</span>
-            <select
-              className="provider-select"
-              value={sel}
-              onChange={(e) => {
-                setSel(e.target.value);
-                setModel("");
-              }}
-            >
+            <select className="provider-select" value={sel} onChange={(e) => chooseProvider(e.target.value)}>
               {PROVIDERS.map((p) => {
                 const option = pickerOption(rowFor(p), provider);
                 return (

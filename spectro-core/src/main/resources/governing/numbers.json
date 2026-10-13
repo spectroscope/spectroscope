@@ -1600,6 +1600,16 @@
     "explanation" : "The largest completion cap this provider ever sends. The harness default (32k) suits Anthropic and local servers, but api.openai.com enforces PER-MODEL caps and rejects a too-large value with HTTP 400 — the smallest cap among current chat models is gpt-4o-mini's 16384, so 16000 is the safe ceiling for everything the picker offers."
   },
   {
+    "owner" : "dev.spectroscope.core.provider.ProviderTimeouts",
+    "field" : "CONNECT_TIMEOUT_MS",
+    "value" : "10000",
+    "expression" : "10_000",
+    "kind" : "FIXED",
+    "unit" : "MILLISECONDS",
+    "key" : "",
+    "explanation" : "How long a model provider waits for the connection to its backend to be set up. It covers the TCP connect, and for the OpenAI-compatible and Ollama providers the TLS handshake too, because the JDK client counts that as part of the connect. It never limits how long a connected stream may take to answer. The owner set it on 2026-10-12. Without it, a host that drops packets, such as a backend behind a VPN that is down, holds every attempt until the operating system gives up, which took 75 s on macOS (one connect to a black-holed address, measured 2026-10-12). The stop button ends such a wait at once; this is the bound for a run that nobody stops."
+  },
+  {
     "owner" : "dev.spectroscope.core.session.CareParagraph",
     "field" : "DEFAULT_HELPERS",
     "value" : "2",

@@ -64,7 +64,6 @@ class PlaybookBundleRouteTest {
     private Path spectroHome;
     private Path userSettings;
     private Path launch;
-    private Path ledgerFile;
 
     @BeforeEach
     void setUp() throws IOException {
@@ -73,9 +72,7 @@ class PlaybookBundleRouteTest {
         spectroHome = Files.createDirectories(home.resolve(".spectro"));
         userSettings = spectroHome.resolve("settings.json");
         launch = Files.createDirectories(tmp.resolve("launch"));
-        ledgerFile = tmp.resolve("ledger/playbook-installs.json");
-        controller = new PlaybookController(folders, PlaybookController.BUNDLE_ROOT,
-                new InstallLedger(ledgerFile), spectroHome, launch, userSettings);
+        controller = new PlaybookController(folders, PlaybookController.BUNDLE_ROOT, spectroHome, launch, userSettings);
         dir = Files.createDirectories(tmp.resolve("pb"));
         Files.writeString(dir.resolve("playbook.json"), PlaybookLoaderTest.MINIMAL);
         write(dir, "skills/spectropowers/brainstorming/SKILL.md", "---\nname: brainstorming\ndescription: d\n---\nbody\n");
@@ -693,13 +690,12 @@ class PlaybookBundleRouteTest {
 
         assertEquals(settingsBefore, Files.readString(userSettings), "the settings are not touched");
         assertEquals(homeBefore, listing(spectroHome), "no skill and no hook script is installed");
-        assertFalse(Files.exists(ledgerFile), "the install ledger records nothing");
         ResponseEntity<?> preview = controller.contents(target.toString(), null, local());
         PlaybookContents.Preview shown = (PlaybookContents.Preview) preview.getBody();
         assertNotNull(shown);
         assertTrue(shown.items().stream().anyMatch(i -> i.kind().equals("hook")), shown.items().toString());
-        assertTrue(shown.items().stream().filter(i -> i.kind().equals("hook")).allMatch(i -> i.state().equals("new")),
-                "the install preview lists the hooks as not installed: " + shown.items());
+        assertTrue(shown.items().stream().filter(i -> i.kind().equals("hook")).allMatch(i -> i.state().equals("in-playbook")),
+                "the preview lists the hooks as in the playbook: " + shown.items());
     }
 
     @Test

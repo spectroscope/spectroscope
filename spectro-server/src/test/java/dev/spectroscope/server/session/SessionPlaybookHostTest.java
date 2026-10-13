@@ -75,6 +75,33 @@ class SessionPlaybookHostTest {
         assertThat(floors).containsExactly("readonly");
     }
 
+    /**
+     * Card 554, criterion 8f: the prompt a step sends into the chat is the
+     * playbook's, not the owner's, so its run start says so and the chat can
+     * draw it apart from a typed turn.
+     */
+    @Test
+    void theStepTurnIsMarkedAsSentByThePlaybook() {
+        LlmProvider chat = says("chat-model", "done");
+        Agent agent = new Agent(AgentOptions.builder().provider(chat).systemPrompt("s").registry(new ToolRegistry())
+                .onPermission(r -> true).cwd(ws).agentId("main").build());
+        SubagentManager subagents = new SubagentManager(SubagentConfig.builder().provider(chat).cwd(ws)
+                .parentAgentId("main").onPermission(r -> true).baseTools(List.of()).build());
+        List<RunEvent> drained = new CopyOnWriteArrayList<>();
+        SessionPlaybookHost host = new SessionPlaybookHost(ws, drained::add, subagents, agent,
+                () -> SpectroConfig.load(new SpectroConfig.Overrides("ollama", "qwen3:8b", null, null, null,
+                        ws.toString())),
+                (p, m) -> null, c -> says(c.model(), "built"), p -> null, p -> "local", m -> { }, r -> true, q -> null);
+
+        host.chatTurn("Playbook T, step Plan (plan).\nTask: add a CSV export", "with skills", new CancelSignal());
+
+        List<RunEvent.RunStart> starts = drained.stream().filter(RunEvent.RunStart.class::isInstance)
+                .map(RunEvent.RunStart.class::cast).toList();
+        assertThat(starts).as("premise: the chat turn opened one main run").hasSize(1);
+        assertThat(starts.get(0).origin()).isEqualTo(RunEvent.RunStart.ORIGIN_PLAYBOOK);
+        assertThat(starts.get(0).prompt()).endsWith("Task: add a CSV export");
+    }
+
     @Test
     void aProviderThatCannotBeBuiltIsAnIllegalStateWithItsReason() {
         SessionPlaybookHost host = new SessionPlaybookHost(ws, e -> { }, null, null,

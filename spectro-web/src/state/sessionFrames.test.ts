@@ -100,10 +100,37 @@ describe("the frames a continued session holds", () => {
 
     expect(h.sockets[1].sent).toEqual([
       { type: "wake_session", sessionId: "20261012-090000-abcd" },
+      { type: "get_session_items" },
       MODE,
       GROUPS,
     ]);
     expect(h.sockets[0].sent).toEqual([]);
+  });
+
+  // Card 556: a model picked in a stored session is a frame of that session.
+  // It reaches the socket the wake holds, before the first message, so the
+  // run that message starts names the picked pair; the record in view, which
+  // holds another session, hears nothing.
+  it("a woken session takes the model switch before its first message", () => {
+    const SWITCH: ClientMessage = { type: "set_provider", provider: "ollama", model: "qwen3" };
+    h.sockets[0].status("open");
+    const key = h.set.open({ wake: "20261012-090000-abcd" });
+    h.sockets[1].status("open");
+
+    h.set.continueWoken(key, {
+      state: initialState,
+      events: [],
+      firstFrames: [SWITCH],
+      firstMessage: { text: "go on" },
+    });
+
+    expect(h.sockets[1].sent).toEqual([
+      { type: "wake_session", sessionId: "20261012-090000-abcd" },
+      { type: "get_session_items" },
+      SWITCH,
+      { type: "user_message", text: "go on" },
+    ]);
+    expect(h.sockets[0].sent, "the record in view holds another session").toEqual([]);
   });
 });
 

@@ -63,8 +63,7 @@ class PlaybookImportsRouteTest {
         spectroHome = Files.createDirectories(home.resolve(".spectro"));
         userSettings = spectroHome.resolve("settings.json");
         launch = Files.createDirectories(tmp.resolve("launch"));
-        controller = new PlaybookController(folders, PlaybookController.BUNDLE_ROOT,
-                new InstallLedger(tmp.resolve("ledger/playbook-installs.json")), spectroHome, launch, userSettings);
+        controller = new PlaybookController(folders, PlaybookController.BUNDLE_ROOT, spectroHome, launch, userSettings);
         dir = Files.createDirectories(tmp.resolve("pb"));
         Files.writeString(dir.resolve("playbook.json"), PlaybookLoaderTest.MINIMAL);
         write(dir, "skills/spectropowers/brainstorming/SKILL.md", "---\nname: brainstorming\ndescription: d\n---\nbody\n");
@@ -988,8 +987,7 @@ class PlaybookImportsRouteTest {
     // ---- fix round: the scope of a hook script -------------------------------------------------
 
     private PlaybookController launchedIn(Path launchDir) {
-        return new PlaybookController(folders, PlaybookController.BUNDLE_ROOT,
-                new InstallLedger(tmp.resolve("ledger/playbook-installs.json")), spectroHome, launchDir, userSettings);
+        return new PlaybookController(folders, PlaybookController.BUNDLE_ROOT, spectroHome, launchDir, userSettings);
     }
 
     private void hook(String command) throws IOException {

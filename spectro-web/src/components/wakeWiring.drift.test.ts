@@ -122,9 +122,16 @@ describe("the wake's wiring", () => {
   });
 
   it("the header chip is the stored folder, then the wake's answer", () => {
-    expect(app).toMatch(
-      /workspace=\{headerWorkspace\(\{[\s\S]*?woken: wokenSlot\?\.state\.workspace \?\? null,/,
-    );
+    // Card 554, task 13: the chip's workspace is one value the composer's
+    // playbook commands read too.
+    // Fix round 3, item 4: anchored on the call's own braces, so a later
+    // `woken:` line elsewhere in App cannot answer for it; the behaviour is
+    // pinned in playbookAppWiring.drift.test.ts.
+    const call = /const chipWorkspace = headerWorkspace\(\{([^{}]*)\}\);/.exec(app);
+    expect(call, "the chip's headerWorkspace call").not.toBeNull();
+    expect(call?.[1]).toContain("woken: wokenSlot?.state.workspace ?? null,");
+    expect(call?.[1]).toContain("storedCwd: shownStoredCwd,");
+    expect(app).toContain("workspace={chipWorkspace}");
   });
 
   it("the folder of a stored session cannot be changed from the chip", () => {

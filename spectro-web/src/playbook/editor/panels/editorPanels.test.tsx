@@ -11,6 +11,7 @@ import {
   select,
   type EditorViewWire,
 } from "../../../state/playbookEditor";
+import { __resetPlaybookContents, loadContents, type ContentsPreview } from "../../../state/playbookContents";
 import type { PlaybookDoc } from "../doc";
 import { EditorPanels } from "./EditorPanels";
 
@@ -64,7 +65,45 @@ beforeEach(() => {
     fetch: vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve(VIEW) }) as never,
   });
 });
-afterEach(() => __resetPlaybookEditor());
+afterEach(() => {
+  __resetPlaybookEditor();
+  __resetPlaybookContents();
+  vi.unstubAllGlobals();
+});
+
+/** The contents route's answer for a folder that holds one skill. */
+function folderWithSkill(dir: string, name: string): ContentsPreview {
+  return {
+    playbook: "tiny",
+    dir,
+    contentsHash: "c0",
+    items: [
+      {
+        kind: "skill",
+        name,
+        source: `skills/${name.replace(":", "/")}`,
+        sha256: "0".repeat(64),
+        state: "in-playbook",
+        scope: "sessions",
+        bytes: 1,
+        target: null,
+        command: null,
+        files: [],
+      },
+    ],
+    promptChars: 0,
+    hooksOrigin: null,
+    findings: [],
+  };
+}
+
+async function readContents(preview: ContentsPreview): Promise<void> {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve(preview) }),
+  );
+  await loadContents(preview.dir, null);
+}
 
 describe("the connected panels", () => {
   it("render nothing while no draft is open", () => {
@@ -85,5 +124,28 @@ describe("the connected panels", () => {
     const html = renderToStaticMarkup(<EditorPanels />);
     expect(html).toContain('data-field="goal"');
     expect(html).not.toContain(dict["pbe.nothingSelected"].en);
+  });
+
+  // Card 558: the step's skill options come from the folder the editor has
+  // open, read from the contents list, never from this machine's installed skills.
+  it("offer the skills of the open folder's contents, marked in the playbook", async () => {
+    await readContents(folderWithSkill("/pb", "tiny:review"));
+    await openEditor("/pb", null);
+    select({ kind: "node", id: "write" });
+    const html = renderToStaticMarkup(<EditorPanels />);
+    const from = html.indexOf('data-option="tiny:review"');
+    expect(from).toBeGreaterThan(-1);
+    expect(html.slice(from, html.indexOf("</li>", from))).toContain(
+      `<span class="pbe-note"> ${dict["pb.run.skillPlaybook"].en}</span>`,
+    );
+  });
+
+  it("offer no skill of another folder's contents", async () => {
+    await readContents(folderWithSkill("/other", "other:review"));
+    await openEditor("/pb", null);
+    select({ kind: "node", id: "write" });
+    const html = renderToStaticMarkup(<EditorPanels />);
+    expect(html).toContain('data-field="skills"');
+    expect(html).not.toContain('data-option="other:review"');
   });
 });

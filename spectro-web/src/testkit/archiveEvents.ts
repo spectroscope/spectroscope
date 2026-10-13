@@ -5,7 +5,8 @@
 // RunEvent union, the socket-only frames (provider_info, workspace_info,
 // permission_mode_info, tool_groups_info, local_mode_info, otlp_export, and
 // card 502's peer_message, peer_roster and peer_message_decision, card 503's send_peer_message, and card
-// 504's goal_info, loop_info and set_loop) and the import-only ones (user_message,
+// 504's goal_info, loop_info and set_loop, card 554's playbook_info and
+// playbook_confirm, card 558's session_items) and the import-only ones (user_message,
 // tool_result_detail, workflow_state, attachment_image, agent_detail). Which
 // types those are is read off reducer.ts by the test that uses this, so a type
 // the reducer learns later turns that test red until it is added here.
@@ -108,6 +109,64 @@ function cycle(c: number, ts: number): Array<Record<string, unknown>> {
       to: "ForgeDemo-7f",
       toSession: `peer-${c}`,
       text: "thanks",
+    });
+    // Card 554: the session's pick and one playbook run in the chat.
+    push({ type: "playbook_picked", dir: "/pb/spectro", name: "spectro" });
+    push({ type: "playbook_info", dir: "/pb/spectro", name: "spectro", found: c % 20 !== 0 });
+    // Card 558: the items the pick gives the session.
+    push({
+      type: "session_items",
+      playbook: { dir: "/pb/spectro", id: "spectro", name: "spectro" },
+      items: [
+        {
+          kind: "skill",
+          name: "brainstorming",
+          plain: "brainstorming",
+          source: "playbook",
+          namespace: "spectro",
+          description: "d",
+        },
+      ],
+    });
+    push({
+      type: "playbook_confirm",
+      dir: "/pb/spectro",
+      prompt: `task ${c}`,
+      preview: {
+        dir: "/pb/spectro",
+        hash: "sha256:ab",
+        findings: [],
+        steps: [],
+        skills: [],
+        commands: [],
+        refusals: [],
+      },
+    });
+    push({
+      type: "playbook_progress",
+      agentId: "playbook",
+      runId: `pr${c}`,
+      phase: "start",
+      playbook: "spectro",
+      task: `task ${c}`,
+    });
+    push({
+      type: "playbook_progress",
+      agentId: "playbook",
+      runId: `pr${c}`,
+      phase: "step",
+      node: "classify",
+      name: "Classify",
+      provider: "ollama",
+      model: "qwen2.5:7b",
+    });
+    push({
+      type: "playbook_progress",
+      agentId: "playbook",
+      runId: `pr${c}`,
+      phase: "end",
+      stopReason: "done",
+      result: "approved",
     });
   }
   push({ type: "user_message", text: `question ${c}` });

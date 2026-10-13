@@ -43,14 +43,12 @@ class PlaybookContentsTest {
     private Path dir;
     private Path home;
     private Path project;
-    private InstallLedger ledger;
 
     @BeforeEach
     void fixture() throws IOException {
         dir = Files.createDirectories(tmp.resolve("pb")).toRealPath();
         home = tmp.resolve("home/.spectro");
         project = tmp.resolve("launch/.spectro/skills");
-        ledger = new InstallLedger(tmp.resolve("home/playbook-installs.json"));
         String json = PlaybookLoaderTest.MINIMAL.replace("\"contents\": { \"skills\": [\"skills/spectropowers\"] }", CONTENTS);
         assertNotEquals(PlaybookLoaderTest.MINIMAL, json, "the fixture replaced the contents block");
         write("playbook.json", json);
@@ -78,7 +76,7 @@ class PlaybookContentsTest {
     private Preview preview(String hooksOrigin) throws IOException {
         PlaybookReader.Read read = PlaybookReader.read(Files.readString(dir.resolve("playbook.json")));
         Playbook playbook = read.playbook();
-        return PlaybookContents.preview(dir, playbook, home, project, ledger, hooksOrigin);
+        return PlaybookContents.preview(dir, playbook, home, hooksOrigin);
     }
 
     private static List<String> kindNameState(Preview p) {
@@ -104,11 +102,11 @@ class PlaybookContentsTest {
 
         assertEquals(List.of(), p.findings());
         assertEquals(List.of(
-                "skill spectropowers:brainstorming new",
-                "skill spectropowers:debugging new",
-                "command p:ship new",
-                "hook pre_tool_use run_command new",
-                "agent reviewer new",
+                "skill spectropowers:brainstorming in-playbook",
+                "skill spectropowers:debugging in-playbook",
+                "command p:ship in-playbook",
+                "hook pre_tool_use run_command in-playbook",
+                "agent reviewer in-playbook",
                 "workflow build.js not-run"), kindNameState(p));
         assertEquals("p", p.playbook());
         assertEquals(dir.toString(), p.dir());
@@ -242,7 +240,7 @@ class PlaybookContentsTest {
 
     private Preview previewIn(Path workspace) throws IOException {
         Playbook playbook = PlaybookReader.read(Files.readString(dir.resolve("playbook.json"))).playbook();
-        return PlaybookContents.preview(dir, playbook, home, project, ledger, null, workspace);
+        return PlaybookContents.preview(dir, playbook, home, null, workspace);
     }
 
     @Test
@@ -435,47 +433,6 @@ class PlaybookContentsTest {
         assertNotEquals(before, after);
     }
 
-    @Test
-    void aSkillFolderAlreadyUnderTheHomeIsTaken() throws IOException {
-        Files.createDirectories(home.resolve("skills/spectropowers/brainstorming"));
-
-        Preview p = preview();
-
-        assertEquals("taken", item(p, "skill", "spectropowers:brainstorming").state());
-        assertEquals("new", item(p, "skill", "spectropowers:debugging").state());
-    }
-
-    @Test
-    void aProjectRootSkillOfTheSamePackAndFolderIsTaken() throws IOException {
-        Files.createDirectories(project.resolve("spectropowers/debugging"));
-
-        Preview p = preview();
-
-        assertEquals("taken", item(p, "skill", "spectropowers:debugging").state());
-        assertEquals("new", item(p, "skill", "spectropowers:brainstorming").state());
-    }
-
-    @Test
-    void aCommandTargetThatExistsIsTaken() throws IOException {
-        Files.createDirectories(home.resolve("skills/p/ship"));
-        assertEquals("taken", item(preview(), "command", "p:ship").state());
-    }
-
-    @Test
-    void aUserSettingsHookEqualInAllFourFieldsThatTheLedgerDoesNotRecordIsTaken() throws IOException {
-        String command = "sh " + home.resolve("playbook-hooks/p") + "/guard.sh";
-        Files.createDirectories(home);
-        Files.writeString(home.resolve("settings.json"), "{\"hooks\":[{\"event\":\"pre_tool_use\",\"matcher\":\"run_command\","
-                + "\"command\":" + jsonString(command) + ",\"timeoutSeconds\":5}]}");
-
-        assertEquals("taken", item(preview(), "hook", "pre_tool_use run_command").state());
-
-        Files.writeString(home.resolve("settings.json"), "{\"hooks\":[{\"event\":\"pre_tool_use\",\"matcher\":\"run_command\","
-                + "\"command\":" + jsonString(command) + ",\"timeoutSeconds\":6}]}");
-        assertEquals("new", item(preview(), "hook", "pre_tool_use run_command").state(),
-                "a hook that differs in one field is not the same hook");
-    }
-
     private static String jsonString(String text) {
         return "\"" + text.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
     }
@@ -490,10 +447,10 @@ class PlaybookContentsTest {
         assertEquals(List.of("skills/spectropowers/debugging/notes.txt"), paths(p));
         assertTrue(p.findings().get(0).message().contains("symbolic link"), p.findings().get(0).message());
         assertEquals(List.of(
-                "skill spectropowers:brainstorming new",
-                "command p:ship new",
-                "hook pre_tool_use run_command new",
-                "agent reviewer new",
+                "skill spectropowers:brainstorming in-playbook",
+                "command p:ship in-playbook",
+                "hook pre_tool_use run_command in-playbook",
+                "agent reviewer in-playbook",
                 "workflow build.js not-run"), kindNameState(p));
     }
 
@@ -563,38 +520,6 @@ class PlaybookContentsTest {
     }
 
     @Test
-    void aLedgerEntryMakesAnUntouchedItemSameAndNamesWhichSideChanged() throws IOException {
-        Path source = dir.resolve("skills/spectropowers/brainstorming");
-        Path target = home.resolve("skills/spectropowers/brainstorming");
-        Files.createDirectories(target);
-        Files.copy(source.resolve("SKILL.md"), target.resolve("SKILL.md"));
-        Files.writeString(target.resolve("LICENSE"), "MIT\n");
-        Files.writeString(target.resolve("spectro-install.json"), "{}");
-        String sha = ContentHash.tree(SafeWalk.walk(dir, source));
-        ledger.put(new InstallLedger.Install("p", dir.toString(), "old", "2026-10-10", List.of(
-                new InstallLedger.Item("skill", "spectropowers:brainstorming", "skills/spectropowers/brainstorming", sha,
-                        target.toString(), List.of("LICENSE", "PROVENANCE.md", "spectro-install.json"), null))));
-
-        assertEquals("same", item(preview(), "skill", "spectropowers:brainstorming").state());
-        assertEquals("new", item(preview(), "skill", "spectropowers:debugging").state());
-
-        Files.writeString(target.resolve("SKILL.md"), "---\nname: brainstorming\ndescription: Shape an idea.\n---\nedited by hand\n");
-        assertEquals("copy-changed", item(preview(), "skill", "spectropowers:brainstorming").state());
-
-        Files.copy(source.resolve("SKILL.md"), target.resolve("SKILL.md"), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-        write("skills/spectropowers/brainstorming/SKILL.md", "---\nname: brainstorming\ndescription: Shape an idea.\n---\nnew upstream\n");
-        assertEquals("source-changed", item(preview(), "skill", "spectropowers:brainstorming").state());
-    }
-
-    @Test
-    void aTargetThatExistsWhileTheLedgerHoldsNoItemForItIsTakenEvenWithAnInstallRecorded() throws IOException {
-        Files.createDirectories(home.resolve("skills/spectropowers/debugging"));
-        ledger.put(new InstallLedger.Install("p", dir.toString(), "old", "2026-10-10", List.of()));
-
-        assertEquals("taken", item(preview(), "skill", "spectropowers:debugging").state());
-    }
-
-    @Test
     void thePreviewWritesNothingToTheHome() throws IOException {
         preview();
         assertTrue(Files.notExists(home), "the preview does not create the home folder");
@@ -621,17 +546,40 @@ class PlaybookContentsTest {
         assertNotEquals(before, preview().contentsHash());
     }
 
-    @Test
-    void aScriptChangedAfterTheInstallMakesTheHookSourceChanged() throws IOException {
-        recordHook(preview());
-        writeUserHooks(hookEntryJson(5));
-        assertEquals("same", item(preview(), "hook", "pre_tool_use run_command").state());
+    // ---- nothing is installed (owner, 2026-10-13) ---------------------------------------------
 
-        write("hooks/guard.sh", "#!/bin/sh\nexit 1\n");
-        assertEquals("source-changed", item(preview(), "hook", "pre_tool_use run_command").state());
+    @Test
+    void everySkillCommandHookAndAgentIsInThePlaybookWhateverTheHomeAndAnOldInstallRecordHold() throws IOException {
+        Item brainstorming = item(preview(), "skill", "spectropowers:brainstorming");
+        Files.createDirectories(home.resolve("skills/spectropowers/brainstorming"));
+        Files.createDirectories(project.resolve("spectropowers/debugging"));
+        Files.createDirectories(home.resolve("skills/p/ship"));
+        writeUserHooks(hookEntryJson(5));
+        Files.writeString(tmp.resolve("home/playbook-installs.json"), "{\"installs\":[{\"playbook\":\"p\",\"dir\":"
+                + jsonString(dir.toString()) + ",\"contentsHash\":\"old\",\"installedOn\":\"2026-10-10\",\"items\":["
+                + "{\"kind\":\"skill\",\"name\":\"spectropowers:brainstorming\",\"source\":"
+                + "\"skills/spectropowers/brainstorming\",\"sha256\":\"old\",\"target\":" + jsonString(brainstorming.target())
+                + ",\"generated\":[],\"entry\":null}]}]}");
+
+        assertEquals(List.of(
+                "skill spectropowers:brainstorming in-playbook",
+                "skill spectropowers:debugging in-playbook",
+                "command p:ship in-playbook",
+                "hook pre_tool_use run_command in-playbook",
+                "agent reviewer in-playbook",
+                "workflow build.js not-run"), kindNameState(preview()),
+                "an item is present in the playbook; a copy in the home, a user hook or an old install record changes nothing");
     }
 
-    // ---- ledger-driven states ----------------------------------------------------------------
+    @Test
+    void anOldInstallRecordThatDoesNotParseDoesNotStopThePreview() throws IOException {
+        Files.createDirectories(tmp.resolve("home"));
+        Files.writeString(tmp.resolve("home/playbook-installs.json"), "{ not json");
+
+        assertEquals(6, preview().items().size(), "the preview reads no install record");
+    }
+
+    // ---- helpers for the user's hooks --------------------------------------------------------
 
     private String hookCommand() {
         return "sh " + home.resolve("playbook-hooks/p") + "/guard.sh";
@@ -645,98 +593,5 @@ class PlaybookContentsTest {
     private void writeUserHooks(String... entries) throws IOException {
         Files.createDirectories(home);
         Files.writeString(home.resolve("settings.json"), "{\"hooks\":[" + String.join(",", entries) + "]}");
-    }
-
-    private void recordHook(Preview shown) {
-        Item hook = item(shown, "hook", "pre_tool_use run_command");
-        java.util.Map<String, Object> entry = new java.util.LinkedHashMap<>();
-        entry.put("event", "pre_tool_use");
-        entry.put("matcher", "run_command");
-        entry.put("command", hook.command());
-        entry.put("timeoutSeconds", 5);
-        ledger.put(new InstallLedger.Install("p", dir.toString(), "old", "2026-10-10", List.of(
-                new InstallLedger.Item("hook", hook.name(), hook.source(), hook.sha256(), hook.target(), List.of(), entry))));
-    }
-
-    @Test
-    void aHookTheLedgerRecordsIsSameWhileTheSettingsHoldItAndTheSourceIsUntouched() throws IOException {
-        recordHook(preview());
-        writeUserHooks(hookEntryJson(5));
-
-        assertEquals("same", item(preview(), "hook", "pre_tool_use run_command").state());
-    }
-
-    @Test
-    void aHookWhoseSourceChangedSinceTheInstallIsSourceChangedNotSame() throws IOException {
-        recordHook(preview());
-        writeUserHooks(hookEntryJson(5));
-        write("hooks/hooks.json", HOOKS.replace("\"timeoutSeconds\": 5", "\"timeoutSeconds\": 9"));
-
-        assertEquals("source-changed", item(preview(), "hook", "pre_tool_use run_command").state(),
-                "the installed entry is still in the settings, so the copy is intact and the source moved");
-    }
-
-    @Test
-    void aHookWhoseEntryLeftTheSettingsIsCopyChanged() throws IOException {
-        recordHook(preview());
-        writeUserHooks();
-
-        assertEquals("copy-changed", item(preview(), "hook", "pre_tool_use run_command").state());
-    }
-
-    @Test
-    void aHookWhoseEntryWasEditedInTheSettingsIsCopyChangedEvenWhenTheSourceIsUntouched() throws IOException {
-        recordHook(preview());
-        writeUserHooks(hookEntryJson(77));
-
-        assertEquals("copy-changed", item(preview(), "hook", "pre_tool_use run_command").state());
-    }
-
-    private void recordCommand(Preview shown) {
-        Item ship = item(shown, "command", "p:ship");
-        ledger.put(new InstallLedger.Install("p", dir.toString(), "old", "2026-10-10", List.of(
-                new InstallLedger.Item("command", ship.name(), ship.source(), ship.sha256(), ship.target(),
-                        List.of("SKILL.md"), null))));
-    }
-
-    @Test
-    void aCommandIsSameWhenItsFolderIsThereAndTheSourceIsUntouched() throws IOException {
-        recordCommand(preview());
-        Files.createDirectories(home.resolve("skills/p/ship"));
-        Files.writeString(home.resolve("skills/p/ship/SKILL.md"), "generated");
-
-        assertEquals("same", item(preview(), "command", "p:ship").state());
-    }
-
-    @Test
-    void aCommandWhoseSourceChangedSinceTheInstallIsSourceChanged() throws IOException {
-        recordCommand(preview());
-        Files.createDirectories(home.resolve("skills/p/ship"));
-        Files.writeString(home.resolve("skills/p/ship/SKILL.md"), "generated");
-        write("commands/ship.md", "---\ndescription: Ship it.\n---\nRun the release twice.\n");
-
-        assertEquals("source-changed", item(preview(), "command", "p:ship").state());
-    }
-
-    @Test
-    void aCommandWhoseInstalledFolderIsGoneIsCopyChanged() throws IOException {
-        recordCommand(preview());
-
-        assertEquals("copy-changed", item(preview(), "command", "p:ship").state());
-    }
-
-    private void recordAgent(Preview shown) {
-        Item reviewer = item(shown, "agent", "reviewer");
-        ledger.put(new InstallLedger.Install("p", dir.toString(), "old", "2026-10-10", List.of(
-                new InstallLedger.Item("agent", reviewer.name(), reviewer.source(), reviewer.sha256(), null, List.of(), null))));
-    }
-
-    @Test
-    void anAgentTheLedgerRecordsIsSameWhileTheFileIsUntouchedAndSourceChangedAfterAnEdit() throws IOException {
-        recordAgent(preview());
-        assertEquals("same", item(preview(), "agent", "reviewer").state());
-
-        write("agents/reviewer.md", "---\nname: reviewer\ndescription: Reads the diff.\ntype: explore\n---\nYou are the new reviewer.\n");
-        assertEquals("source-changed", item(preview(), "agent", "reviewer").state());
     }
 }

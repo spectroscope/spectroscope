@@ -50,9 +50,32 @@ public final class PlaybookRunner {
      * @param recorder    the session's sidecar
      * @param signal      the run's signal; Stop cancels it
      * @param sessionMode the session's permission mode at start, for the sidecar
+     * @param task        what the owner asked the run to do (card 554); every step prompt names
+     *                    it, the run start records it; null or blank when the run was started
+     *                    without one
      */
     public record Setup(PinnedPlaybook pinned, String runId, Path graphFile, PlaybookRecorder recorder,
-                        CancelSignal signal, String sessionMode) {
+                        CancelSignal signal, String sessionMode, String task) {
+
+        /** @param task the task as typed; blank reads as none and leaves the step prompts as they were */
+        public Setup {
+            task = task == null || task.isBlank() ? null : task.strip();
+        }
+
+        /**
+         * The pre-card-554 shape: a run without a task.
+         *
+         * @param pinned      the bytes this run holds
+         * @param runId       12 hex characters
+         * @param graphFile   where the engine writes the lifecycle
+         * @param recorder    the session's sidecar
+         * @param signal      the run's signal; Stop cancels it
+         * @param sessionMode the session's permission mode at start, for the sidecar
+         */
+        public Setup(PinnedPlaybook pinned, String runId, Path graphFile, PlaybookRecorder recorder,
+                     CancelSignal signal, String sessionMode) {
+            this(pinned, runId, graphFile, recorder, signal, sessionMode, null);
+        }
     }
 
     /**
@@ -165,7 +188,12 @@ public final class PlaybookRunner {
         start.put("hash", setup.pinned().hash());
         start.put("mode", setup.sessionMode());
         start.put("chat", Map.of("provider", chatBefore.provider(), "model", chatBefore.model()));
+        if (setup.task() != null) {
+            start.put("task", setup.task());
+        }
         setup.recorder().record("playbook_start", start);
+        host.emit(RunEvent.PlaybookProgress.started(AGENT_ID, setup.runId(), p.name(), setup.task(),
+                System.currentTimeMillis()));
         List<String> refused = refusals(setup.pinned(), host.asker() != null, host::kindOf);
         if (!refused.isEmpty()) {
             return end(RunStop.REFUSED, null, String.join("; ", refused), began);
@@ -205,6 +233,8 @@ public final class PlaybookRunner {
         f.put("steps", ran.get());
         f.put("durationMs", System.currentTimeMillis() - began);
         setup.recorder().record("playbook_end", f);
+        host.emit(RunEvent.PlaybookProgress.ended(AGENT_ID, setup.runId(), stop, result, detail,
+                System.currentTimeMillis()));
         return new Outcome(setup.runId(), stop, result, ran.get(), detail);
     }
 
@@ -223,7 +253,7 @@ public final class PlaybookRunner {
             recordStepStart(s, model, agent);
             Map<String, String> found = documents(state);
             Map<String, Map<Path, Long>> before = snapshots(s.produces());
-            StepPrompt.Prompt prompt = StepPrompt.of(setup.pinned(), s, found);
+            StepPrompt.Prompt prompt = StepPrompt.of(setup.pinned(), s, found, setup.task());
             host.permissionFloor("inherit".equals(s.permission()) ? null : s.permission());
             if ("child".equals(s.performer())) {
                 LlmProvider provider = provider(model.ref());
@@ -334,7 +364,7 @@ public final class PlaybookRunner {
                         manager, host::emit, signal, "playbook:" + d.id());
             }
             case "human" -> {
-                HumanCheck.Asked a = HumanCheck.ask(callId(), c.ask(), labels, host.asker(), host::emit);
+                HumanCheck.Asked a = HumanCheck.ask(callId(), withTask(c.ask()), labels, host.asker(), host::emit);
                 yield new CheckResult(a.label(), a.answer() == null ? "no answer" : "answered " + a.answer());
             }
             default -> CheckResult.fail("unknown check kind " + c.kind());
@@ -350,7 +380,8 @@ public final class PlaybookRunner {
                 return ok;
             }
             ModelResolver.Unavailable u = (ModelResolver.Unavailable) r;
-            HumanCheck.Asked a = HumanCheck.ask(callId(), nodeId + ": " + u.sentence() + ". Retry or stop?",
+            HumanCheck.Asked a = HumanCheck.ask(callId(),
+                    withTask(nodeId + ": " + u.sentence() + ". Retry or stop?"),
                     List.of("retry", "stop"), host.asker(), host::emit);
             if (!"retry".equals(a.label())) {
                 throw new RunStopped(RunStop.MODEL_UNAVAILABLE, nodeId + ": " + u.sentence());
@@ -371,8 +402,8 @@ public final class PlaybookRunner {
             return;
         }
         if (privateRan && "cloud".equals(host.kindOf(ref.provider())) && cloudConfirmed.add(ref.provider())) {
-            HumanCheck.Asked a = HumanCheck.ask(callId(), "The next step sends this chat's history to "
-                    + ref.provider() + " " + ref.model() + ". A private step ran earlier in this run. Continue?",
+            HumanCheck.Asked a = HumanCheck.ask(callId(), withTask("The next step sends this chat's history to "
+                    + ref.provider() + " " + ref.model() + ". A private step ran earlier in this run. Continue?"),
                     List.of("continue", "stop"), host.asker(), host::emit);
             Map<String, Object> f = new LinkedHashMap<>();
             f.put("run", setup.runId());
@@ -394,7 +425,7 @@ public final class PlaybookRunner {
         if (!s.nod()) {
             return;
         }
-        HumanCheck.Asked a = HumanCheck.ask(callId(), "Approve the handover of " + s.name() + "?",
+        HumanCheck.Asked a = HumanCheck.ask(callId(), withTask("Approve the handover of " + s.name() + "?"),
                 List.of("approve", "stop"), host.asker(), host::emit);
         Map<String, Object> f = new LinkedHashMap<>();
         f.put("run", setup.runId());
@@ -405,6 +436,17 @@ public final class PlaybookRunner {
         if (!"approve".equals(a.label())) {
             throw new RunStopped(RunStop.NOD_REFUSED, s.id() + ": the handover was not approved");
         }
+    }
+
+    /**
+     * Card 554, criterion 8g, and the integrator's decision of 2026-10-12:
+     * every question a run asks a person names the task the owner typed.
+     *
+     * @param question the question as the run words it
+     * @return the question, with the task below it when the run has one
+     */
+    private String withTask(String question) {
+        return setup.task() == null ? question : question + "\n\nTask: " + setup.task();
     }
 
     private void stopIfCancelled(String nodeId) {
@@ -557,6 +599,8 @@ public final class PlaybookRunner {
         f.put("walked", model.walked().stream().map(r -> r.provider() + "/" + r.model()).toList());
         f.put("permission", Permissions.effective(setup.sessionMode(), s.permission()));
         setup.recorder().record("step_start", f);
+        host.emit(RunEvent.PlaybookProgress.step(AGENT_ID, setup.runId(), s.id(), s.name(),
+                model.ref().provider(), model.ref().model(), System.currentTimeMillis()));
     }
 
     private void recordStepEnd(Playbook.Step s, String childId, boolean ok, String error, long t0) {

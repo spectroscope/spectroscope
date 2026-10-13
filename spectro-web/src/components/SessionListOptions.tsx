@@ -1,6 +1,6 @@
 // The options control at the head of the session list (card 214).
 //
-// One option today — density, normal or extended — and the panel is built to
+// One option today, density (minimal, normal or extended), and the panel is built to
 // hold the ones that come later without being rebuilt: a section head, then one
 // settings row per option, each a label on the left and its current value on the
 // right. It ships with exactly one row rather than with empty ones: a control

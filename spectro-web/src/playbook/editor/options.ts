@@ -7,17 +7,34 @@ import { arrowKey, outcomesOf, type PlaybookDoc, type Selection } from "./doc";
 /** One list for the command that drops a kind's stale fields and the panel that shows them. */
 export { CHECK_FIELDS } from "./commands";
 
-/** The installed skills in their order, then each named skill that is not installed, once. */
+/**
+ * The skills the playbook folder holds, in their order, then each named skill
+ * that list does not hold, once. A run reads a step's skills from the playbook
+ * folder in place (card 558), so a skill is in the playbook when the folder's
+ * list holds it or the server's step resolution says the folder holds it, the
+ * source the Steps table reads. This machine's installed skills play no part.
+ *
+ * @param folder the skill names of the folder's contents list
+ * @param named the skills the step names
+ * @param resolved the server's resolution of the step's named skills
+ */
 export function skillOptions(
-  installed: readonly { name: string }[],
-  named: string[],
-): { name: string; installed: boolean }[] {
-  const have = new Set(installed.map((s) => s.name));
-  const out = installed.map((s) => ({ name: s.name, installed: true }));
+  folder: readonly string[],
+  named: readonly string[],
+  resolved: readonly { name: string; inPlaybook?: boolean }[],
+): { name: string; inPlaybook: boolean }[] {
+  const held = new Set(resolved.filter((s) => s.inPlaybook === true).map((s) => s.name));
+  const seen = new Set<string>();
+  const out: { name: string; inPlaybook: boolean }[] = [];
+  for (const name of folder) {
+    if (seen.has(name)) continue;
+    seen.add(name);
+    out.push({ name, inPlaybook: true });
+  }
   for (const name of named) {
-    if (have.has(name)) continue;
-    have.add(name);
-    out.push({ name, installed: false });
+    if (seen.has(name)) continue;
+    seen.add(name);
+    out.push({ name, inPlaybook: held.has(name) });
   }
   return out;
 }

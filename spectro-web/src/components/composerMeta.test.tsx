@@ -7,7 +7,7 @@
 
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { ComposerMeta, ThinkingMenu, thinkingLabel } from "./ComposerMeta";
+import { ComposerMeta, ThinkingMenu, canSwitchModel, thinkingLabel } from "./ComposerMeta";
 import { blockOf, read, stripComments } from "../testkit/source";
 
 function meta(over: Partial<Parameters<typeof ComposerMeta>[0]> = {}): string {
@@ -45,19 +45,49 @@ describe("the block under the composer", () => {
     expect(meta({ lastInputTokens: 0 })).not.toContain("context-wrap");
   });
 
-  it("in a recorded session shows the model as a plain chip: no menu, no thinking chip", () => {
-    // Review 2026-09-29: the header drew a static chip whenever it was not the
-    // live view, and a switch pressed in a recorded one would go to whatever
-    // socket is live.
-    const html = meta({ liveView: false });
-    // The ring keeps its own details popover; the chip before it offers none.
-    const chip = html.slice(0, html.indexOf("context-wrap"));
-    expect(chip).toContain("qwen2.5:7b");
-    expect(chip).toContain("ollama");
-    expect(chip).not.toContain("aria-haspopup");
-    expect(chip).not.toContain("provider-chip--button");
-    expect(html).not.toContain("thinking-picker");
+  // Card 556 replaces the pin of review 2026-09-29, which held every recorded
+  // session to a plain chip because a switch pressed there went to whatever
+  // socket was live. The switch now leaves on the stored session's own route
+  // (App's sessionFrame), so a session the next message continues gets the
+  // picker, preset to the pair its record names. An archive that cannot be
+  // continued keeps the chip.
+  it("in a stored session the next message continues shows the picker, preset to the recorded pair", () => {
+    const html = meta({ liveView: false, continuable: true, provider: "llamacpp", model: "old-model" });
+    const picker = html.slice(0, html.indexOf("context-wrap"));
+    expect(picker).toMatch(/class="provider-chip provider-chip--button[^"]*"[^>]*aria-haspopup="dialog"/);
+    expect(picker).toContain("old-model");
     expect(html).toContain("context-wrap");
+  });
+
+  it("in an archive that cannot be continued shows the model as a plain chip: no menu", () => {
+    for (const html of [meta({ liveView: false }), meta({ liveView: false, continuable: false })]) {
+      // The ring keeps its own details popover; the chip before it offers none.
+      const chip = html.slice(0, html.indexOf("context-wrap"));
+      expect(chip).toContain("qwen2.5:7b");
+      expect(chip).toContain("ollama");
+      expect(chip).not.toContain("aria-haspopup");
+      expect(chip).not.toContain("provider-chip--button");
+      expect(html).not.toContain("thinking-picker");
+      expect(html).toContain("context-wrap");
+    }
+  });
+
+  it("the picker opens in a continuable stored session; the thinking chip stays with the live view", () => {
+    expect(canSwitchModel(true, undefined)).toBe(true);
+    expect(canSwitchModel(true, false)).toBe(true);
+    expect(canSwitchModel(false, true)).toBe(true);
+    expect(canSwitchModel(false, false)).toBe(false);
+    expect(canSwitchModel(false, undefined)).toBe(false);
+    // The thinking chip renders nothing until its capability record arrives,
+    // which a static render never sees, so its gate is read from the source.
+    // The owner asked for the model only (card 556, integrator's call of
+    // 2026-10-12): the chip keeps the gate it had.
+    const own = stripComments(read("./ComposerMeta.tsx", import.meta.url));
+    expect(own).toContain("const switchable = canSwitchModel(props.liveView, props.continuable);");
+    expect(own).toContain("{switchable ? (");
+    expect(own).toContain('{props.liveView && model !== "" && <ThinkingPicker');
+    expect(own.match(/<ThinkingPicker/g) ?? []).toHaveLength(1);
+    expect(own).not.toMatch(/switchable && model !== ""/);
   });
 });
 

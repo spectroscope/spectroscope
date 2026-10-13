@@ -2,9 +2,12 @@
 // chatWidth.ts / disclosure.ts, persisted, and offered from the options control
 // at the head of the session list.
 //
-//   normal   — the name and the state dot, and nothing else
-//   extended — what a row draws today: the comb, the relative time, the turn
-//              and token counts, and the model once the rail is wide enough
+//   minimal:  the name and the state dot (card 555, owner: "Name und Punkt").
+//             The attention badge stays, because it asks for an action.
+//   normal:   minimal plus the folder and state line of a live session
+//             (card 503)
+//   extended: normal plus the comb, the relative time, the turn and token
+//             counts, and the model once the rail is wide enough
 //
 // normal is the DEFAULT, including for a reader who never opened the panel:
 // "less in the rail" is the ask, so the quiet shape is the one you get without
@@ -37,10 +40,10 @@
 import { useSyncExternalStore } from "react";
 
 /** How much a session row says. */
-export type Density = "normal" | "extended";
+export type Density = "minimal" | "normal" | "extended";
 
-/** Every value, in the order the panel offers them. */
-export const DENSITIES: readonly Density[] = ["normal", "extended"];
+/** Every value, in the order the panel offers them: quietest first. */
+export const DENSITIES: readonly Density[] = ["minimal", "normal", "extended"];
 
 /** Where the choice is written. Named so a test can look for it by name. */
 export const DENSITY_KEY = "spectroscope:sessions.density";
@@ -109,6 +112,9 @@ export interface RowParts {
   sigil: boolean;
   /** The line of relative time, turn count, token count and model. */
   meta: boolean;
+  /** The folder and state line a live session carries (card 503), and on a
+   *  row of another process its face as well (card 555). */
+  liveLine: boolean;
 }
 
 /**
@@ -120,10 +126,14 @@ export interface RowParts {
  * as a word as well as a hue (see {@code RunDot}). The comb goes with the
  * metadata line rather than with the name, because it is a second glyph and the
  * card asks normal for the name and the state dot.</p>
+ *
+ * <p>The live line (card 503) is cut at minimal only: card 555 asks minimal for
+ * the name and the dot, and normal keeps the folder and the state of a live
+ * session. The attention badge is not a part here, because no density cuts it.</p>
  */
 export function rowParts(at: Density): RowParts {
   const extended = at === "extended";
-  return { dot: true, sigil: extended, meta: extended };
+  return { dot: true, sigil: extended, meta: extended, liveLine: at !== "minimal" };
 }
 
 function subscribe(cb: () => void): () => void {

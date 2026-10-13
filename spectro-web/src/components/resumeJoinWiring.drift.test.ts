@@ -42,11 +42,16 @@ describe("App joins gear frames to the resume in flight", () => {
     expect(body, "no single frame slot left").not.toMatch(/firstFrame:/);
   });
 
+  // Card 556, fix round 1: the exits hand their frames to abandonResumeFrames,
+  // which drops each frame's held writes and lets a model pick among them go
+  // (storedModelSwitch.drift.test.ts runs it). The property pinned here is
+  // the same as before: the catch drops what its resume held, first.
   it("a failed fetch drops the frames its resume held", () => {
     const body = arrow(app, "resumeSession");
     const failed = body.slice(body.indexOf("} catch {"));
-    expect(failed).toMatch(
-      /^\} catch \{\s*for \(const frame of resumeJoin\.take\(ticket\)\) sentWrites\.drop\(id, frame\);/,
+    expect(failed).toMatch(/^\} catch \{\s*abandonResumeFrames\(id, resumeJoin\.take\(ticket\), true\);/);
+    expect(arrow(app, "abandonResumeFrames")).toContain(
+      "for (const frame of frames) sentWrites.drop(id, frame);",
     );
   });
 });
@@ -86,8 +91,11 @@ describe("an abandoned resume drops its frames", () => {
     expect(start, "positive: resumeSession is in App").toBeGreaterThan(-1);
     const body = app.slice(start, end);
     expect(
-      body.match(/for \(const frame of resumeJoin\.take\(ticket\)\) sentWrites\.drop\(id, frame\);/g) ?? [],
+      body.match(/abandonResumeFrames\(id, resumeJoin\.take\(ticket\), (?:true|false)\);/g) ?? [],
     ).toHaveLength(3);
+    expect(arrow(app, "abandonResumeFrames")).toContain(
+      "for (const frame of frames) sentWrites.drop(id, frame);",
+    );
     expect(body).not.toMatch(
       /if \(!navNonce\.isCurrent\(ticket\)\) return;\s*\/\/ a later navigation already won/,
     );

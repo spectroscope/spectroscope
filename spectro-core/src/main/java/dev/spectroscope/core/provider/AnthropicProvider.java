@@ -5,7 +5,9 @@ import com.anthropic.client.okhttp.AnthropicOkHttpClient;
 import com.anthropic.core.JsonMissing;
 import com.anthropic.core.JsonValue;
 import com.anthropic.core.ObjectMappers;
+import com.anthropic.core.Timeout;
 import com.anthropic.core.http.StreamResponse;
+import com.anthropic.errors.AnthropicIoException;
 import com.anthropic.errors.AnthropicServiceException;
 import com.anthropic.helpers.MessageAccumulator;
 import com.anthropic.models.messages.Base64ImageSource;
@@ -29,12 +31,14 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.json.JsonMapper;
+import dev.spectroscope.core.CancelInterrupt;
 import dev.spectroscope.core.config.governing.Governs;
 import dev.spectroscope.core.provider.LlmProvider.PStop.StopReason;
 import dev.spectroscope.core.wire.LlmWireTap;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Deque;
 import java.util.Iterator;
 import java.util.List;
@@ -113,7 +117,11 @@ public final class AnthropicProvider implements LlmProvider {
         this.wireUrl = (baseUrl != null ? baseUrl
                 : envBase != null && !envBase.isBlank() ? envBase.replaceAll("/$", "")
                 : DEFAULT_BASE_URL) + "/v1/messages";
-        AnthropicOkHttpClient.Builder builder = AnthropicOkHttpClient.builder().maxRetries(0);
+        // Card 557: only the connect part of the SDK's timeout is set; the
+        // read and request parts keep the SDK's own values, so a connected
+        // stream may take as long as before.
+        AnthropicOkHttpClient.Builder builder = AnthropicOkHttpClient.builder().maxRetries(0)
+                .timeout(Timeout.builder().connect(ProviderTimeouts.connect()).build());
         if (baseUrl != null) {
             builder.baseUrl(baseUrl);
         }
@@ -179,18 +187,75 @@ public final class AnthropicProvider implements LlmProvider {
         private TranslatingIterator(ProviderRequest request) {
             this.request = request;
             MessageCreateParams params = buildParams(model, promptCaching, request);
-            this.exchange = request.tap() == null ? null : request.tap().begin(wireRequest(params));
-            try {
-                this.response = client.messages().createStreaming(params);
+            // Card 557: a stop pressed before this request dials nothing and
+            // puts nothing on the wire record, because nothing was sent.
+            boolean stoppedBefore = stopped();
+            this.exchange = stoppedBefore || request.tap() == null ? null
+                    : request.tap().begin(wireRequest(params));
+            StreamResponse<RawMessageStreamEvent> opened = stoppedBefore ? null : open(params);
+            this.response = opened;
+            if (opened == null) {
+                this.sdkEvents = Collections.emptyIterator();
+                pending.add(new PStop(StopReason.ABORTED));
+                finished = true;
+                return;
+            }
+            // Cancellation: closing the StreamResponse aborts the underlying HTTP stream.
+            request.signal().onCancel(opened::close);
+            this.sdkEvents = opened.stream().iterator();
+        }
+
+        /** @return true once the run's stop was pressed */
+        private boolean stopped() {
+            return request.signal() != null && request.signal().isCancelled();
+        }
+
+        /**
+         * Opens the streaming call.
+         *
+         * <p>Card 557: until the headers arrive the SDK blocks in OkHttp on a
+         * socket, connecting or reading, and nothing else can end that wait.
+         * On a virtual thread, which every agent run has, an interrupt closes
+         * the socket, so the call runs inside a {@link CancelInterrupt} scope.
+         * The scope closes, and clears its interrupt, before anything is
+         * written to the wire record.</p>
+         *
+         * @param params the built SDK params
+         * @return the open stream, or null when a stop ended the wait
+         */
+        private StreamResponse<RawMessageStreamEvent> open(MessageCreateParams params) {
+            try (CancelInterrupt stop = CancelInterrupt.open(request.signal())) {
+                return client.messages().createStreaming(params);
             } catch (RuntimeException openFailure) {
+                if (stopped()) {
+                    // The stop ended the wait before any answer: aborted, not failed.
+                    endExchange(null, null, true);
+                    return null;
+                }
                 // An answered-but-refused call (HTTP 4xx/5xx) surfaces here —
                 // close the exchange with the real status before rethrowing.
                 endExchange(statusOf(openFailure), openFailure.toString(), false);
+                if (openFailure instanceof AnthropicIoException) {
+                    // Card 557: the SDK says only "Request failed". The run's
+                    // error names the host that was not reached, and stays a
+                    // failure the retry wrapper retries.
+                    throw new TransientProviderException("Anthropic: the request to " + wireUrl + " failed: "
+                            + rootMessage(openFailure), openFailure);
+                }
                 throw openFailure;
             }
-            // Cancellation: closing the StreamResponse aborts the underlying HTTP stream.
-            request.signal().onCancel(response::close);
-            this.sdkEvents = response.stream().iterator();
+        }
+
+        /**
+         * @param failure the SDK's exception
+         * @return the message of the innermost cause, which is the transport's own words
+         */
+        private static String rootMessage(Throwable failure) {
+            Throwable root = failure;
+            while (root.getCause() != null && root.getCause() != root) {
+                root = root.getCause();
+            }
+            return root.getMessage() == null ? root.getClass().getSimpleName() : root.getMessage();
         }
 
         /**

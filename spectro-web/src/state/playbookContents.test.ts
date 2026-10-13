@@ -3,10 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   __resetPlaybookContents,
-  changedItems,
-  installContents,
   loadContents,
-  removeContents,
   usePlaybookContents,
   type ContentItem,
   type ContentState,
@@ -75,9 +72,20 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+describe("the store's writes", () => {
+  // Owner answer of 2026-10-13 (card 558): the server has no install or
+  // remove route, so the store carries no write that would call one.
+  it("carries no install or remove call, only the read of the contents", async () => {
+    const store: Record<string, unknown> = await import("./playbookContents");
+    expect(typeof store.loadContents).toBe("function");
+    expect(store.installContents).toBeUndefined();
+    expect(store.removeContents).toBeUndefined();
+  });
+});
+
 describe("loadContents", () => {
   it("reads the preview from the contents route with dir and workspace and publishes it", async () => {
-    const p = preview([item("a", "new")]);
+    const p = preview([item("a", "in-playbook")]);
     fetchMock.mockResolvedValue(reply(200, p));
     await loadContents("/p/spectro", "/w space");
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -94,136 +102,11 @@ describe("loadContents", () => {
   });
 
   it("clears the preview and throws the server's words on a refusal", async () => {
-    fetchMock.mockResolvedValueOnce(reply(200, preview([item("a", "new")])));
+    fetchMock.mockResolvedValueOnce(reply(200, preview([item("a", "in-playbook")])));
     await loadContents("/p/spectro", null);
     expect(probe()).not.toBeNull();
     fetchMock.mockResolvedValueOnce(reply(400, { message: "Not a registered playbook folder: /x" }));
     await expect(loadContents("/x", null)).rejects.toThrow("Not a registered playbook folder: /x");
     expect(probe()).toBeNull();
-  });
-});
-
-describe("installContents", () => {
-  it("posts dir, contentsHash and hooks and answers the installed names", async () => {
-    fetchMock.mockResolvedValue(reply(200, { installed: ["p:a", "p:b"] }));
-    const answer = await installContents("/p/spectro", "h1", true);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe("/api/playbooks/contents/install");
-    expect(init.method).toBe("POST");
-    expect(JSON.parse(init.body as string)).toEqual({ dir: "/p/spectro", contentsHash: "h1", hooks: true });
-    expect(answer).toEqual({ ok: true, installed: ["p:a", "p:b"] });
-  });
-
-  it("names the workspace the list was read for, so the hooks install for the same folder", async () => {
-    fetchMock.mockResolvedValueOnce(reply(200, preview([item("a", "new")])));
-    await loadContents("/p/spectro", "/ws");
-    fetchMock.mockResolvedValueOnce(reply(200, { installed: ["p:a"] }));
-    await installContents("/p/spectro", "h1", true);
-    const [, init] = fetchMock.mock.calls[1] as [string, RequestInit];
-    expect(JSON.parse(init.body as string)).toEqual({
-      dir: "/p/spectro",
-      contentsHash: "h1",
-      hooks: true,
-      workspace: "/ws",
-    });
-    fetchMock.mockResolvedValueOnce(reply(200, preview([item("a", "new")])));
-    await loadContents("/p/spectro", null);
-    fetchMock.mockResolvedValueOnce(reply(200, { installed: ["p:a"] }));
-    await installContents("/p/spectro", "h1", true);
-    const [, again] = fetchMock.mock.calls[3] as [string, RequestInit];
-    expect(JSON.parse(again.body as string)).toEqual({ dir: "/p/spectro", contentsHash: "h1", hooks: true });
-  });
-
-  it("maps a 409 to a failure with status, reason, message, names and leftover", async () => {
-    fetchMock.mockResolvedValue(
-      reply(409, { reason: "TAKEN", message: "a target exists", names: ["/h/.spectro/skills/p"] }),
-    );
-    const answer = await installContents("/p/spectro", "h1", false);
-    expect(answer).toEqual({
-      ok: false,
-      status: 409,
-      reason: "TAKEN",
-      message: "a target exists",
-      names: ["/h/.spectro/skills/p"],
-      leftover: [],
-    });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-  });
-
-  it("reloads the list once for the same folder when the reason is CHANGED", async () => {
-    fetchMock.mockResolvedValueOnce(reply(200, preview([item("a", "new")])));
-    await loadContents("/p/spectro", "/w");
-    fetchMock.mockClear();
-    const fresh = preview([item("a", "source-changed")], "h2");
-    fetchMock
-      .mockResolvedValueOnce(reply(409, { reason: "CHANGED", message: "the folder changed", names: [] }))
-      .mockResolvedValueOnce(reply(200, fresh));
-    const answer = await installContents("/p/spectro", "h1", false);
-    expect(answer.ok).toBe(false);
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(fetchMock.mock.calls[1][0]).toBe("/api/playbooks/contents?dir=%2Fp%2Fspectro&workspace=%2Fw");
-    expect(probe()).toEqual(fresh);
-  });
-
-  it.each(["ALREADY", "TAKEN"])("does not reload on a 409 with reason %s", async (reason) => {
-    fetchMock.mockResolvedValue(reply(409, { reason, message: "no", names: [] }));
-    await installContents("/p/spectro", "h1", false);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-  });
-
-  it("does not reload on a CHANGED reason that arrives with another status", async () => {
-    fetchMock.mockResolvedValue(reply(500, { reason: "CHANGED", message: "odd", leftover: ["/x"] }));
-    const answer = await installContents("/p/spectro", "h1", false);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(answer).toMatchObject({ ok: false, status: 500, leftover: ["/x"] });
-  });
-
-  it("answers a failure with status 0 when the request never arrived", async () => {
-    fetchMock.mockRejectedValue(new Error("offline"));
-    const answer = await installContents("/p/spectro", "h1", false);
-    expect(answer).toMatchObject({ ok: false, status: 0, reason: "NETWORK" });
-  });
-});
-
-describe("removeContents", () => {
-  it("posts the folder and answers removed and kept", async () => {
-    fetchMock.mockResolvedValue(reply(200, { removed: ["p:a"], kept: ["p:b"] }));
-    const answer = await removeContents("/p/spectro");
-    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe("/api/playbooks/contents/remove");
-    expect(init.method).toBe("POST");
-    expect(JSON.parse(init.body as string)).toEqual({ dir: "/p/spectro" });
-    expect(answer).toEqual({ ok: true, removed: ["p:a"], kept: ["p:b"] });
-  });
-
-  it("maps a 404 to a failure", async () => {
-    fetchMock.mockResolvedValue(reply(404, { reason: "NOT_INSTALLED", message: "not installed" }));
-    expect(await removeContents("/p/spectro")).toEqual({
-      ok: false,
-      status: 404,
-      reason: "NOT_INSTALLED",
-      message: "not installed",
-      names: [],
-      leftover: [],
-    });
-  });
-});
-
-describe("changedItems", () => {
-  it("returns exactly the source-changed and copy-changed items, in order", () => {
-    const p = preview([
-      item("n", "new"),
-      item("s", "source-changed"),
-      item("same", "same"),
-      item("t", "taken"),
-      item("c", "copy-changed"),
-      item("w", "not-run"),
-    ]);
-    expect(changedItems(p).map((i) => i.name)).toEqual(["s", "c"]);
-  });
-
-  it("is empty when nothing changed", () => {
-    expect(changedItems(preview([item("n", "new"), item("same", "same")]))).toEqual([]);
   });
 });

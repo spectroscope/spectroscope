@@ -18,21 +18,23 @@ import java.util.Map;
 import java.util.Set;
 import java.util.SortedMap;
 import java.util.TreeMap;
-import java.util.function.Function;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 /**
  * The bytes a run holds for its whole length: the file, the templates, the
- * skills and the agent files its steps name, read once at start, with the
- * hash the confirmation showed.
+ * skills and the agent files its steps name, read once at start from the
+ * playbook folder in place, with the hash the confirmation showed. Nothing is
+ * read from anywhere else (card 558): a skill a step names that the folder does
+ * not hold is missing, whatever the user's own folders carry, and an agent file
+ * runs as it is in the folder, its bytes in the hash.
  *
  * @param playbook      the playbook read from the folder
  * @param dir           the folder's real path
  * @param hash          sha256: and the hex digest over every pinned file
- * @param skills        the body of every skill a step names that resolved, by name
+ * @param skills        the body of every skill a step names that the folder holds, by name
  * @param templates     the template text by document id
- * @param missingSkills the skill names that resolved nowhere, in node order
+ * @param missingSkills the skill names the folder does not hold, in node order
  * @param agents        the agent file of every {@code agent:<name>} role that resolved, by name
  * @param missingAgents the agent names that did not resolve, in node order, each with the refusal sentence
  */
@@ -46,29 +48,12 @@ public record PinnedPlaybook(Playbook playbook, Path dir, String hash, Map<Strin
     private static final Pattern PLAIN_NAME = Pattern.compile("[\\p{L}\\p{N}][\\p{L}\\p{N}_-]*");
 
     /**
-     * Pins with no agent installed: every {@code agent:<name>} role is refused.
-     *
-     * @param dir           the playbook folder
-     * @param p             the playbook read from it
-     * @param installedBody an installed skill's body by name, or null when not installed
+     * @param dir the playbook folder
+     * @param p   the playbook read from it
      * @return the pinned copy
      * @throws IOException when a pinned file cannot be read
      */
-    public static PinnedPlaybook pin(Path dir, Playbook p, Function<String, String> installedBody) throws IOException {
-        return pin(dir, p, installedBody, source -> null);
-    }
-
-    /**
-     * @param dir                the playbook folder
-     * @param p                  the playbook read from it
-     * @param installedBody      an installed skill's body by name, or null when not installed
-     * @param installedAgentHash the sha256 the install ledger recorded for the agent file at this playbook
-     *                           relative path, or null when the install recorded none
-     * @return the pinned copy
-     * @throws IOException when a pinned file cannot be read
-     */
-    public static PinnedPlaybook pin(Path dir, Playbook p, Function<String, String> installedBody,
-                                     Function<String, String> installedAgentHash) throws IOException {
+    public static PinnedPlaybook pin(Path dir, Playbook p) throws IOException {
         Path root = dir.toRealPath();
         SortedMap<String, byte[]> files = new TreeMap<>();
         files.put("playbook.json", Files.readAllBytes(root.resolve("playbook.json")));
@@ -122,11 +107,6 @@ public record PinnedPlaybook(Playbook playbook, Path dir, String hash, Map<Strin
             }
             if (body != null) {
                 skills.put(name, new SkillBody(name, "playbook", body));
-                continue;
-            }
-            String installed = installedBody.apply(name);
-            if (installed != null) {
-                skills.put(name, new SkillBody(name, "installed", installed));
             } else {
                 missing.add(name);
             }
@@ -138,7 +118,7 @@ public record PinnedPlaybook(Playbook playbook, Path dir, String hash, Map<Strin
                     && s.role().startsWith(AGENT_ROLE)) {
                 String name = s.role().substring(AGENT_ROLE.length());
                 if (!agents.containsKey(name) && !missingAgents.containsKey(name)) {
-                    pinAgent(root, name, installedAgentHash, files, agents, missingAgents);
+                    pinAgent(root, name, files, agents, missingAgents);
                 }
             }
         }
@@ -148,14 +128,12 @@ public record PinnedPlaybook(Playbook playbook, Path dir, String hash, Map<Strin
 
     /**
      * Reads one agent file into the pinned bytes, so the start hash covers the
-     * preamble the child runs on, and resolves it only when the install ledger
-     * recorded exactly these bytes. The ledger's folder is not compared: a
-     * second folder with the same id and the same bytes runs the preamble that
-     * was confirmed at the install.
+     * preamble the child runs on, and resolves it when it reads clean. The
+     * folder is the only source (card 558): an edit after the confirmation
+     * moves the hash the start frame must repeat.
      */
-    private static void pinAgent(Path root, String name, Function<String, String> installedAgentHash,
-                                 SortedMap<String, byte[]> files, Map<String, AgentFile> agents,
-                                 Map<String, String> missingAgents) throws IOException {
+    private static void pinAgent(Path root, String name, SortedMap<String, byte[]> files,
+                                 Map<String, AgentFile> agents, Map<String, String> missingAgents) throws IOException {
         String source = "agents/" + name + ".md";
         Path f = root.resolve(source).normalize();
         if (!PLAIN_NAME.matcher(name).matches() || !f.startsWith(root)
@@ -165,18 +143,6 @@ public record PinnedPlaybook(Playbook playbook, Path dir, String hash, Map<Strin
         }
         byte[] bytes = Files.readAllBytes(f);
         files.put(source, bytes);
-        String recorded = installedAgentHash.apply(source);
-        if (recorded == null) {
-            missingAgents.put(name, "agent not installed: " + name + " (" + source
-                    + " is listed in contents.agents; install the playbook's contents first)");
-            return;
-        }
-        // The contents preview hashes an agent file as a walk of that one file: its name and its bytes.
-        if (!recorded.equals(ContentHash.entries(Map.of(f.getFileName().toString(), bytes)))) {
-            missingAgents.put(name, "agent changed since install: " + name + " (" + source
-                    + " is not the file that was installed; remove the playbook's contents and install them again)");
-            return;
-        }
         AgentFile.Read read = AgentFile.read(new String(bytes, StandardCharsets.UTF_8), source);
         if (read.agent() == null || !read.findings().isEmpty()) {
             missingAgents.put(name, "agent " + name + ": " + String.join("; ", read.findings().stream()

@@ -148,7 +148,8 @@ public class SpectroSocketHandler extends TextWebSocketHandler {
                     connection.onSetWindowOverride(frame.path("tokens"));
             case "set_provider" ->                             // provider picker, additive
                     connection.onSetProvider(
-                            frame.path("provider").asText(""), frame.path("model").asText(""));
+                            frame.path("provider").asText(""), frame.path("model").asText(""),
+                            frame.path("ask").asText(""));                 // card 556: echoed in the answer
             case "set_workspace" ->                            // workspace chooser: random | default | set
                     connection.onSetWorkspace(frame.path("mode").asText("set"), frame.path("path").asText(""));
             case "set_permission_mode" ->                      // composer gear, additive
@@ -192,15 +193,39 @@ public class SpectroSocketHandler extends TextWebSocketHandler {
             // whole draft that it is one.
             case "compact_context" -> connection.onCompactContext(); // additive (card 471)
             case "clear_context" -> connection.onClearContext();     // additive (card 471)
+            // Card 554: /run-with-playbook <prompt> asks for the confirmation
+            // sheet of the session's playbook; the answer is playbook_confirm.
+            case "confirm_playbook" -> connection.onConfirmPlaybook(  // additive (card 554)
+                    frame.path("dir").isTextual() ? frame.path("dir").asText() : null,
+                    frame.path("prompt").asText(""));
             // Card 482: the confirmation sheet's Start. The hash is the one the
             // sheet showed; the connection refuses when the folder moved since.
+            // Card 554: the prompt is the run's task and is required.
             case "start_playbook" -> connection.onStartPlaybook(frame.path("dir").asText(""),
-                    frame.path("hash").asText(""));
+                    frame.path("hash").asText(""), frame.path("prompt").asText(""));
+            // Card 554: the owner picked a playbook for this session (the
+            // header dropdown or /playbook use). Absent or null withdraws it;
+            // with none true it is the explicit "No playbook" (decision b).
+            case "set_playbook" -> connection.onSetPlaybook(          // additive (card 554)
+                    frame.path("dir").isTextual() ? frame.path("dir").asText() : null,
+                    frame.path("none").asBoolean(false));
             // Card 506: Run on a workflow of the playbook module, with the
             // hash the module listed and the text typed beside it.
-            case "start_workflow" -> connection.onStartWorkflow(frame.path("dir").asText(""),  // additive (card 506)
-                    frame.path("file").asText(""), frame.path("hash").asText(""),
-                    frame.path("input").asText(""), frame.path("lang").asText("en"));
+            // Card 554: from the chat a workflow is named, not listed with a
+            // hash, and runs at once; the frame then carries name instead of
+            // file and hash, and dir only when the page names one.
+            case "start_workflow" -> {                                            // additive (card 506)
+                if (frame.has("name")) {
+                    connection.onStartWorkflowByName(
+                            frame.path("dir").isTextual() ? frame.path("dir").asText() : null,
+                            frame.path("name").asText(""), frame.path("input").asText(""),
+                            frame.path("lang").asText("en"));
+                } else {
+                    connection.onStartWorkflow(frame.path("dir").asText(""),
+                            frame.path("file").asText(""), frame.path("hash").asText(""),
+                            frame.path("input").asText(""), frame.path("lang").asText("en"));
+                }
+            }
             // Card 498: a click into the message box of a stored session. Binds
             // the session to this socket and announces its folder; starts no
             // run and calls no model.
@@ -209,6 +234,9 @@ public class SpectroSocketHandler extends TextWebSocketHandler {
             // Card 504: /loop from the chat and Stop on the loop chip. From a
             // person at a browser; the model paces a loop with schedule_wakeup.
             case "set_loop" -> connection.onSetLoop(frame);   // additive (card 504)
+            // Card 558: the page asks for the session's skills, commands and
+            // agents; the answer is session_items. Reads only.
+            case "get_session_items" -> connection.onGetSessionItems(); // additive (card 558)
             default -> connection.sendError("Unknown message type.");
         }
     }

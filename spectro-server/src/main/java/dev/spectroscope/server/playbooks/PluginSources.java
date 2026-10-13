@@ -56,7 +56,7 @@ final class PluginSources {
     private static final String MCP_JSON = ".mcp.json";
     private static final String SKILL_FILE = "SKILL.md";
     private static final List<String> LICENCE_NAMES = List.of("LICENSE", "LICENSE.md", "LICENSE.txt");
-    private static final Set<String> SKIPPED = Set.of(".disabled", ".DS_Store", PlaybookInstaller.INSTALL_RECORD, MCP_JSON);
+    private static final Set<String> SKIPPED = Set.of(".disabled", ".DS_Store", PlaybookFolders.INSTALL_RECORD, MCP_JSON);
     private static final Pattern ROOT_REF = Pattern.compile(
             "\\$\\{CLAUDE_PLUGIN_ROOT\\}/([A-Za-z0-9._/-]+)|\\$CLAUDE_PLUGIN_ROOT/([A-Za-z0-9._/-]+)");
     private static final Pattern KEY_LINE = Pattern.compile("([A-Za-z0-9_][A-Za-z0-9_-]*):(.*)");

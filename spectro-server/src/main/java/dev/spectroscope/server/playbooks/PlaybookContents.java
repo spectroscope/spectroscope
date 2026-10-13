@@ -21,7 +21,6 @@ import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -33,20 +32,17 @@ import java.util.stream.Stream;
 /**
  * The preview of what a playbook folder brings: one {@link Item} per skill, command, hook, agent
  * and workflow, each with its source, content hash, state and reach, computed without writing
- * anything. The confirmation of the playbook installer shows this list before a click, and the
- * contents hash binds the click to the list that was shown.
+ * anything. The Playbook pane and the run sheet show this list; nothing installs it (owner,
+ * 2026-10-13, card 558).
  *
  * <p>An item is listed only when its source is clean: a source with a finding (a link inside a
  * skill folder, a hooks entry with an unknown field, a command without a description) is named
- * under {@link Preview#findings()} and not listed, because the installer refuses a folder with
- * findings anyway. The order of the items is the order of the confirmation: skills, commands,
+ * under {@link Preview#findings()} and not listed. The order of the items is skills, commands,
  * hooks, agents, workflows.
  *
- * <p>The state of an item follows the install ledger entry of the playbook id, the source hash and
- * the hash of the installed copy (the copy hash skips the files the installer generated). A
- * command is installed as a generated {@code SKILL.md}, so an edit of that file is not told apart
- * here; a command whose installed folder is gone is {@code copy-changed}. When both sides of an
- * item changed, the state is {@code copy-changed}, because the removal keeps edited copies.
+ * <p>A skill, command, hook or agent has the state {@code in-playbook}: a session reads it from
+ * the folder in place, so neither the home, the user's hooks nor the install record an earlier
+ * version left decides it. A workflow is {@code runnable} or {@code not-run}.
  */
 public final class PlaybookContents {
 
@@ -69,6 +65,9 @@ public final class PlaybookContents {
     public record Preview(String playbook, String dir, String contentsHash, List<Item> items,
                           int promptChars, String hooksOrigin, List<Finding> findings) {}
 
+    /** The state of every skill, command, hook and agent: a session reads it from the folder in place. */
+    static final String IN_PLAYBOOK = "in-playbook";
+
     /** The largest text file the preview reads whole. */
     static final long MAX_TEXT_BYTES = 1024L * 1024;
 
@@ -83,24 +82,17 @@ public final class PlaybookContents {
     private final Path spectroHome;
     /** The home folder: the parent of {@link #spectroHome}. */
     private final Path userHome;
-    private final Path projectSkills;
     private final Path workspace;
     private final String id;
-    private final Map<String, InstallLedger.Item> recorded = new HashMap<>();
-    private final List<HookConfig> userHooks;
     private final List<Finding> findings = new ArrayList<>();
     private int promptChars;
 
-    private PlaybookContents(Path root, Path spectroHome, Path projectSkills, Path workspace, String id,
-                             Optional<InstallLedger.Install> installed, List<HookConfig> userHooks) {
+    private PlaybookContents(Path root, Path spectroHome, Path workspace, String id) {
         this.root = root;
         this.spectroHome = spectroHome;
         this.userHome = spectroHome.getParent();
-        this.projectSkills = projectSkills;
         this.workspace = workspace;
         this.id = id;
-        this.userHooks = userHooks;
-        installed.ifPresent(i -> i.items().forEach(item -> recorded.put(key(item.kind(), item.source()), item)));
     }
 
     /**
@@ -109,15 +101,12 @@ public final class PlaybookContents {
      * @param dir           the playbook folder
      * @param playbook      the playbook read from its {@code playbook.json}
      * @param spectroHome   {@code ~/.spectro}
-     * @param projectSkills the launch directory's {@code .spectro/skills}
-     * @param ledger        the install ledger
      * @param hooksOrigin   the settings layer whose hooks block is in force, or null
      * @return the items, the hashes and the findings
      * @throws IOException when the folder cannot be read
      */
-    public static Preview preview(Path dir, Playbook playbook, Path spectroHome, Path projectSkills,
-                                  InstallLedger ledger, String hooksOrigin) throws IOException {
-        return preview(dir, playbook, spectroHome, projectSkills, ledger, hooksOrigin, null);
+    public static Preview preview(Path dir, Playbook playbook, Path spectroHome, String hooksOrigin) throws IOException {
+        return preview(dir, playbook, spectroHome, hooksOrigin, null);
     }
 
     /**
@@ -127,21 +116,18 @@ public final class PlaybookContents {
      * @param dir           the playbook folder
      * @param playbook      the playbook read from its {@code playbook.json}
      * @param spectroHome   {@code ~/.spectro}
-     * @param projectSkills the launch directory's {@code .spectro/skills}
-     * @param ledger        the install ledger
      * @param hooksOrigin   the settings layer whose hooks block is in force, or null
      * @param workspace     the folder {@code {project}} stands for, or null when none is known; a hook
      *                      that names {@code {project}} is then a finding
      * @return the items, the hashes and the findings
      * @throws IOException when the folder cannot be read
      */
-    public static Preview preview(Path dir, Playbook playbook, Path spectroHome, Path projectSkills,
-                                  InstallLedger ledger, String hooksOrigin, Path workspace) throws IOException {
+    public static Preview preview(Path dir, Playbook playbook, Path spectroHome, String hooksOrigin, Path workspace)
+            throws IOException {
         Path root = dir.toRealPath();
         Path home = spectroHome.toAbsolutePath().normalize();
-        PlaybookContents run = new PlaybookContents(root, home, projectSkills.toAbsolutePath().normalize(),
-                workspace == null ? null : workspace.toAbsolutePath().normalize(),
-                playbook.id(), ledger.find(playbook.id()), readUserHooks(home.resolve("settings.json")));
+        PlaybookContents run = new PlaybookContents(root, home,
+                workspace == null ? null : workspace.toAbsolutePath().normalize(), playbook.id());
         Playbook.Contents c = playbook.contents();
         List<Item> items = new ArrayList<>();
         items.addAll(run.skills(list(c == null ? null : c.skills())));
@@ -152,6 +138,30 @@ public final class PlaybookContents {
         List<String> lines = items.stream().map(i -> i.kind() + " " + i.name() + " " + i.sha256()).toList();
         return new Preview(playbook.id(), root.toString(), ContentHash.contents(lines), List.copyOf(items),
                 run.promptChars, hooksOrigin, List.copyOf(run.findings));
+    }
+
+    /**
+     * Card 558: the skills, commands and agents for a session that reads the folder in place.
+     * Reads only.
+     *
+     * @param dir           the playbook folder
+     * @param playbook      the playbook read from its {@code playbook.json}
+     * @param spectroHome   {@code ~/.spectro}
+     * @return the items and the findings
+     * @throws IOException when the folder cannot be read
+     */
+    public static Preview listing(Path dir, Playbook playbook, Path spectroHome) throws IOException {
+        Path root = dir.toRealPath();
+        Path home = spectroHome.toAbsolutePath().normalize();
+        PlaybookContents run = new PlaybookContents(root, home, null, playbook.id());
+        Playbook.Contents c = playbook.contents();
+        List<Item> items = new ArrayList<>();
+        items.addAll(run.skills(list(c == null ? null : c.skills())));
+        items.addAll(run.commands(list(c == null ? null : c.commands())));
+        items.addAll(run.agents(list(c == null ? null : c.agents())));
+        List<String> lines = items.stream().map(i -> i.kind() + " " + i.name() + " " + i.sha256()).toList();
+        return new Preview(playbook.id(), root.toString(), ContentHash.contents(lines), List.copyOf(items),
+                run.promptChars, null, List.copyOf(run.findings));
     }
 
     private static List<String> list(List<String> entries) {
@@ -208,10 +218,8 @@ public final class PlaybookContents {
         String name = pack + SkillLibrary.NAMESPACE_SEPARATOR + folder;
         String sha = ContentHash.tree(walk);
         Path target = spectroHome.resolve("skills").resolve(pack).resolve(folder);
-        Path inProject = projectSkills.resolve(pack).resolve(folder);
-        String state = treeState("skill", rel, sha, target, inProject);
         promptChars += bullet(name, parsed.description());
-        return Optional.of(new Item("skill", name, rel, sha, state, "sessions", walk.bytes(), target.toString(), null, null));
+        return Optional.of(new Item("skill", name, rel, sha, IN_PLAYBOOK, "sessions", walk.bytes(), target.toString(), null, null));
     }
 
     // ---- commands ----------------------------------------------------------------------------
@@ -241,18 +249,8 @@ public final class PlaybookContents {
             String name = id + SkillLibrary.NAMESPACE_SEPARATOR + stem;
             String sha = ContentHash.tree(walk);
             Path target = spectroHome.resolve("skills").resolve(id).resolve(stem);
-            Path inProject = projectSkills.resolve(id).resolve(stem);
-            InstallLedger.Item rec = recorded.get(key("command", rel));
-            String state;
-            if (rec == null) {
-                state = exists(target) || exists(inProject) ? "taken" : "new";
-            } else if (!Files.isRegularFile(target.resolve("SKILL.md"), LinkOption.NOFOLLOW_LINKS)) {
-                state = "copy-changed";
-            } else {
-                state = rec.sha256().equals(sha) ? "same" : "source-changed";
-            }
             promptChars += bullet(name, description);
-            out.add(new Item("command", name, rel, sha, state, "sessions", walk.bytes(), target.toString(), null, null));
+            out.add(new Item("command", name, rel, sha, IN_PLAYBOOK, "sessions", walk.bytes(), target.toString(), null, null));
         }
         return out;
     }
@@ -322,7 +320,7 @@ public final class PlaybookContents {
                 if (!hits.isEmpty()) {
                     hits.forEach(h -> findings.add(new Finding(rel + "[" + index + "]"
                             + (HOOK_FIELDS.contains(h.field()) ? "." + h.field() : ""),
-                            HookTokens.message(h) + ". A hook that matches a key pattern is not installed.")));
+                            HookTokens.message(h) + ". A hook that matches a key pattern is not listed.")));
                     continue;
                 }
                 hook(tree.get(i), rel, i, hookFolder, scripts, scriptsHash).ifPresent(out::add);
@@ -362,9 +360,8 @@ public final class PlaybookContents {
     }
 
     /**
-     * The hash of a hook item: the resolved entry and the scripts beside it. The scripts are part of
-     * it because the contents hash is the only binding between the confirmation click and the
-     * install, and the install copies them.
+     * The hash of a hook item: the resolved entry and the scripts beside it, so that the contents
+     * hash changes when a script does.
      */
     private static String hookItemHash(String entryHash, String scriptsHash) {
         return ContentHash.contents(List.of("entry " + entryHash, "scripts " + scriptsHash));
@@ -421,20 +418,10 @@ public final class PlaybookContents {
             values.put(PROJECT_PLACEHOLDER, workspace.toString());
         }
         String resolved = HookCommands.substitute(command, values);
-        HookConfig entry = new HookConfig(matcher, event, resolved, timeout);
         String sha = hookItemHash(ContentHash.hook(event, matcher, resolved, timeout), scriptsHash);
         String name = event + " " + (matcher == null || matcher.isBlank() ? "*" : matcher);
         String source = rel + "#" + index;
-        InstallLedger.Item rec = recorded.get(key("hook", source));
-        String state;
-        if (rec == null) {
-            state = userHooks.contains(entry) ? "taken" : "new";
-        } else if (!userHooks.contains(entry) && !userHooks.contains(recordedEntry(rec))) {
-            state = "copy-changed";
-        } else {
-            state = rec.sha256().equals(sha) ? "same" : "source-changed";
-        }
-        return Optional.of(new Item("hook", name, source, sha, state, "tool-calls",
+        return Optional.of(new Item("hook", name, source, sha, IN_PLAYBOOK, "tool-calls",
                 resolved.getBytes(StandardCharsets.UTF_8).length, hookFolder.toString(), resolved, List.copyOf(scripts)));
     }
 
@@ -488,21 +475,6 @@ public final class PlaybookContents {
         return false;
     }
 
-    /** The hook entry a ledger item recorded, or null when it has none or it does not bind. */
-    static HookConfig recordedEntry(InstallLedger.Item rec) {
-        Map<String, Object> e = rec.entry();
-        if (e == null) {
-            return null;
-        }
-        try {
-            Object timeout = e.get("timeoutSeconds");
-            return new HookConfig((String) e.get("matcher"), (String) e.get("event"), (String) e.get("command"),
-                    timeout instanceof Number n ? n.intValue() : null);
-        } catch (IllegalArgumentException | ClassCastException unreadable) {
-            return null;
-        }
-    }
-
     /** The hook entries of a settings file that bind; a missing or unreadable file has none. */
     static List<HookConfig> readUserHooks(Path settings) {
         List<HookConfig> out = new ArrayList<>();
@@ -548,9 +520,7 @@ public final class PlaybookContents {
                 continue;
             }
             String sha = ContentHash.tree(walk);
-            InstallLedger.Item rec = recorded.get(key("agent", rel));
-            String state = rec == null ? "new" : rec.sha256().equals(sha) ? "same" : "source-changed";
-            out.add(new Item("agent", read.agent().name(), rel, sha, state, "runs", walk.bytes(), null, null, null));
+            out.add(new Item("agent", read.agent().name(), rel, sha, IN_PLAYBOOK, "runs", walk.bytes(), null, null, null));
         }
         return out;
     }
@@ -606,31 +576,6 @@ public final class PlaybookContents {
 
     // ---- shared ------------------------------------------------------------------------------
 
-    /**
-     * The state of an item that is copied as a tree: from the ledger item with the same kind and
-     * source, the source hash and the copy hash (the target without the files the installer wrote).
-     */
-    private String treeState(String kind, String source, String sha, Path target, Path inProject) throws IOException {
-        InstallLedger.Item rec = recorded.get(key(kind, source));
-        if (rec == null) {
-            return exists(target) || exists(inProject) ? "taken" : "new";
-        }
-        if (!exists(target) || !copyMatches(target, rec)) {
-            return "copy-changed";
-        }
-        return rec.sha256().equals(sha) ? "same" : "source-changed";
-    }
-
-    private boolean copyMatches(Path target, InstallLedger.Item rec) throws IOException {
-        SafeWalk.Walk copy = SafeWalk.walk(spectroHome, target);
-        if (!copy.refused().isEmpty()) {
-            return false;
-        }
-        Set<String> skip = new TreeSet<>(rec.generated());
-        skip.add(".disabled");
-        return ContentHash.tree(copy, skip).equals(rec.sha256());
-    }
-
     /** The path of a contents entry below the folder, or null when it leaves the folder or is not a path. */
     private Path inside(String entry) {
         if (entry == null || entry.isBlank()) {
@@ -679,10 +624,6 @@ public final class PlaybookContents {
 
     private static int bullet(String name, String description) {
         return ("- " + name + ": " + description).length() + 1;
-    }
-
-    private static String key(String kind, String source) {
-        return kind + "\u0000" + source;
     }
 
     private String slashed(Path path) {

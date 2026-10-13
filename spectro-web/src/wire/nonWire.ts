@@ -126,6 +126,19 @@ export const SOCKET_ONLY_TYPES: ReadonlySet<string> = new Set([
   // claim about a timer nobody holds once the server restarted.
   "loop_info",
   "set_loop",
+  // Card 554. Which playbook this session picked as the server sees it now
+  // (playbook_info), and the start sheet's content for one /run-with-playbook
+  // (playbook_confirm). The record of a pick is the playbook_picked line and
+  // the record of a run its playbook_progress lines, both in the union; a
+  // stored "the folder was found" would be a claim about a disk that changes.
+  "playbook_info",
+  "playbook_confirm",
+  // Card 558. The session's skills, commands and agents as the server reads
+  // them for its next turn (session_items), and the page's ask for them
+  // (get_session_items). The list is a reading of folders that change; the
+  // record of a pick is its playbook_picked line.
+  "session_items",
+  "get_session_items",
 ]);
 
 /** What an import read out of somebody else's transcript: the todo list, the

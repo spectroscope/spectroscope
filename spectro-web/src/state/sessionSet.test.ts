@@ -372,3 +372,148 @@ describe("several records at once (card 459)", () => {
     expect(row("s-b")?.attention).toBeNull();
   });
 });
+
+// Live check 0.15.3 D5 (card 556, criterion 3). A blank record's socket
+// loaded the user settings when it connected. A pick that wrote a new default
+// for new chats leaves that record on the old default, and New chat used to
+// hand exactly that record back.
+describe("blank records after the default for new chats changed", () => {
+  let h: ReturnType<typeof harness>;
+  beforeEach(() => {
+    h = harness();
+    h.set.start();
+    h.set.activate();
+    h.sockets[0].status("open");
+  });
+
+  it("closes a blank record out of view, and the next new chat opens a fresh socket", () => {
+    const a = h.set.viewKey();
+    h.set.send(a, "job a");
+    h.sockets[0].emit([workspace("s-a"), runStart("job a")]);
+    // A is used, so New chat adds a blank record beside it; then A is in view.
+    const fresh = h.set.newChat();
+    h.set.select(a);
+    expect(h.sockets).toHaveLength(2);
+
+    h.set.retireBlanks(a);
+
+    expect(h.sockets[1].closed).toBe(true);
+    expect(h.set.get(fresh)).toBeUndefined();
+    const next = h.set.newChat();
+    expect(next).not.toBe(fresh);
+    expect(h.sockets).toHaveLength(3);
+    expect(h.sockets[2].closed).toBe(false);
+    expect(h.set.viewKey()).toBe(next);
+  });
+
+  it("replaces a blank record in view with a fresh one in view, not with a session beside it", () => {
+    const a = h.set.viewKey();
+    h.set.send(a, "job a");
+    h.sockets[0].emit([workspace("s-a"), runStart("job a")]);
+    const blank = h.set.newChat();
+    h.set.open({ wake: "s-stored" });
+    expect(h.set.viewKey()).toBe(blank);
+
+    h.set.retireBlanks(null);
+
+    expect(h.sockets[1].closed).toBe(true);
+    expect(h.set.get(blank)).toBeUndefined();
+    expect(h.set.viewKey()).not.toBe(blank);
+    expect(h.set.viewKey()).not.toBe(a);
+    expect(h.set.view().sessionId).toBeNull();
+    expect(h.sockets[h.sockets.length - 1].closed).toBe(false);
+    expect(h.sockets[0].closed).toBe(false);
+  });
+
+  it("keeps the record whose own socket took the change", () => {
+    const asked = h.set.viewKey();
+    h.set.retireBlanks(asked);
+    expect(h.set.viewKey()).toBe(asked);
+    expect(h.sockets).toHaveLength(1);
+    expect(h.sockets[0].closed).toBe(false);
+  });
+
+  it("never touches a used, a resumed, a woken or a queued record", () => {
+    const used = h.set.viewKey();
+    h.set.send(used, "job");
+    const resumed = h.set.open({ resumeId: "s-old", state: initialState, events: [] });
+    const woken = h.set.open({ wake: "s-woken" });
+    const queued = h.set.open({ firstMessage: { text: "waits for open" } });
+    const before = h.sockets.length;
+
+    h.set.retireBlanks(null);
+
+    expect(h.sockets).toHaveLength(before);
+    expect(h.sockets.every((s) => !s.closed)).toBe(true);
+    for (const key of [used, resumed, woken, queued]) expect(h.set.get(key)).toBeDefined();
+  });
+});
+
+// Live check 0.15.3 D6 (card 557): against a host that never answers, the
+// server asks the backend for its window before run_start, about four
+// seconds. The message that left and Stop show for that whole gap.
+describe("the gap between a sent message and its run_start", () => {
+  let h: ReturnType<typeof harness>;
+  let key: string;
+  const info = { type: "provider_info", provider: "ollama", model: "m", host: "h" } as unknown as RunEvent;
+  const aborted = { type: "run_end", runId: "r1", stopReason: "aborted", ts: 3 } as RunEvent;
+  beforeEach(() => {
+    h = harness();
+    h.set.start();
+    h.set.activate();
+    h.sockets[0].status("open");
+    key = h.set.viewKey();
+  });
+
+  it("holds the message that left until its run_start", () => {
+    expect(h.set.view().starting).toBeNull();
+    h.set.send(key, "hello");
+    expect(h.sockets[0].sent).toEqual([{ type: "user_message", text: "hello" }]);
+    expect(h.set.view().starting).toBe("hello");
+    h.sockets[0].emit([info]);
+    expect(h.set.view().starting, "a frame that is not the run's keeps it").toBe("hello");
+    h.sockets[0].emit([runStart("hello")]);
+    expect(h.set.view().starting).toBeNull();
+    expect(h.set.view().state.running).toBe(true);
+  });
+
+  it("lets Stop leave in the gap and keeps it stopping until the run has ended", () => {
+    h.set.send(key, "hello");
+    h.set.abort(key);
+    expect(h.sockets[0].sent.map((m) => m.type)).toEqual(["user_message", "abort"]);
+    expect(h.set.view().stopRequested).toBe(true);
+    h.sockets[0].emit([info]);
+    expect(h.set.view().stopRequested, "a frame before run_start keeps it stopping").toBe(true);
+    h.sockets[0].emit([runStart("hello")]);
+    expect(h.set.view().stopRequested).toBe(true);
+    h.sockets[0].emit([aborted]);
+    expect(h.set.view().stopRequested).toBe(false);
+    expect(h.set.view().starting).toBeNull();
+  });
+
+  it("ends the gap on a refusal", () => {
+    h.set.send(key, "hello");
+    h.set.abort(key);
+    h.sockets[0].emit([
+      { type: "error", agentId: "main", message: "A run is already active.", ts: 1 } as RunEvent,
+    ]);
+    expect(h.set.view().starting).toBeNull();
+    expect(h.set.view().stopRequested).toBe(false);
+  });
+
+  it("counts no message that waits in the line, and the drained one once it leaves", () => {
+    h.sockets[0].status("closed");
+    h.set.send(key, "first");
+    expect(h.set.view().starting).toBeNull();
+    h.sockets[0].status("open");
+    expect(h.set.view().starting).toBe("first");
+  });
+
+  it("puts a second message of the gap in the line rather than into a run that has not started", () => {
+    h.set.send(key, "one");
+    h.set.send(key, "two");
+    expect(h.sockets[0].sent.map((m) => m.type)).toEqual(["user_message"]);
+    expect(h.set.view().queue.map((m) => m.text)).toEqual(["two"]);
+    expect(h.set.view().starting).toBe("one");
+  });
+});

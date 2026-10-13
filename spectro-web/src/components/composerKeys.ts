@@ -81,6 +81,8 @@ export interface RecallEntry {
 interface TurnLike {
   kind: string;
   text?: string;
+  /** Card 554: "playbook" on a prompt a playbook step sent, which is not the owner's. */
+  by?: string;
 }
 
 /** The shape of a queued message this module reads. */
@@ -115,7 +117,7 @@ export function recallEntries(turns: readonly TurnLike[], queued: readonly Queue
   }
   for (let i = turns.length - 1; i >= 0; i--) {
     const turn = turns[i];
-    if (turn !== undefined && turn.kind === "user" && turn.text !== undefined) {
+    if (turn !== undefined && turn.kind === "user" && turn.text !== undefined && turn.by === undefined) {
       push({ text: turn.text });
     }
   }

@@ -143,6 +143,19 @@ describe("sessionTitleLines", () => {
     expect(text).toContain("ran for 5.0 s");
   });
 
+  // Card 554, integrator decision e: a stored session shows the playbook it
+  // picked before it is woken.
+  it("names the playbook the session picked, by its folder, and nothing without one", () => {
+    const lines = sessionTitleLines(session({ playbook: "/home/me/playbooks/team-x" }), "en", 100_000).split(
+      "\n",
+    );
+    expect(lines).toContain("playbook: team-x");
+    expect(sessionTitleLines(session({ playbook: "/pb/a" }), "de", 100_000).split("\n")).toContain(
+      "Playbook: a",
+    );
+    expect(sessionTitleLines(session(), "en", 100_000)).not.toContain("playbook");
+  });
+
   it("never says one turns", () => {
     const text = sessionTitleLines(session({ turnCount: 1, tokens: 1 }), "en", 100_000);
     expect(text).toContain("1 turn ");

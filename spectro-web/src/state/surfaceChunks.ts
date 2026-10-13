@@ -62,6 +62,9 @@ const loadPlaybookPane = chunk("playbook/PlaybookPane", () => import("../playboo
 // surfaceChunks.test.ts reads each loader as one line, so prettier leaves this one alone.
 // prettier-ignore
 const loadSpectrolyzrPage = chunk("playbook/spectrolyzr/SpectrolyzrPage", () => import("../playbook/spectrolyzr/SpectrolyzrPage"));
+// Card 554: the start sheet the chat opens after /run-with-playbook; developer fetches it on idle.
+// prettier-ignore
+const loadPlaybookStartSheet = chunk("playbook/PlaybookStartSheet", () => import("../playbook/PlaybookStartSheet"));
 
 export const SpectrumView = lazy(() => loadSpectrumView().then((m) => ({ default: m.SpectrumView })));
 export const TraceView = lazy(() => loadTraceView().then((m) => ({ default: m.TraceView })));
@@ -79,6 +82,11 @@ export const StateGraphPane = lazy(() => loadStateGraphPane().then((m) => ({ def
 export const PlaybookPane = lazy(() => loadPlaybookPane().then((m) => ({ default: m.PlaybookPane })));
 export const SpectrolyzrPage = lazy(() =>
   loadSpectrolyzrPage().then((m) => ({ default: m.SpectrolyzrPage })),
+);
+// Card 554: the start sheet as the chat opens it after /run-with-playbook,
+// drawn by App under a ChunkBoundary (chunkBoundary.drift.test.ts).
+export const PlaybookChatSheet = lazy(() =>
+  loadPlaybookStartSheet().then((m) => ({ default: m.PlaybookChatSheet })),
 );
 
 /** The loaders of each surface's chunks, in the order of the table's list. */
@@ -98,7 +106,7 @@ export const SURFACE_LOADERS: Partial<Record<SurfaceId, ReadonlyArray<() => Prom
     loadFleetLab,
   ],
   stategraph: [loadStateGraphPane],
-  playbook: [loadPlaybookPane, loadSpectrolyzrPage],
+  playbook: [loadPlaybookPane, loadSpectrolyzrPage, loadPlaybookStartSheet],
 };
 
 /**

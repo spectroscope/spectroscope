@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { dict, t } from "../i18n/i18n";
 import type { PlaybookRunRow } from "../state/playbookRuns";
-import { runStatus } from "./runStatus";
+import { runStatus, runTask } from "./runStatus";
 
 /** The stop reasons the runner can write, read from RunStop.java itself. */
 const STOPS: string[] = [
@@ -99,5 +99,18 @@ describe("runStatus: the line above the run (card 482)", () => {
     const unrecorded = runStatus("en", row({}));
     expect(unrecorded.text).toBe(t("en", "pb.run.unrecorded"));
     expect(unrecorded.stop).toBeNull();
+  });
+});
+
+describe("what a run was asked (card 554, criterion 2)", () => {
+  it("names the task a run row carries, in both languages", () => {
+    expect(runTask("en", row({ task: "add a CSV export" }))).toBe("Asked: add a CSV export");
+    expect(runTask("de", row({ task: "add a CSV export" }))).toBe("Auftrag: add a CSV export");
+  });
+
+  it("says nothing for a run started without one, or a row from before the field", () => {
+    expect(runTask("en", row({ task: null }))).toBeNull();
+    expect(runTask("en", row({}))).toBeNull();
+    expect(runTask("en", row({ task: "  " }))).toBeNull();
   });
 });

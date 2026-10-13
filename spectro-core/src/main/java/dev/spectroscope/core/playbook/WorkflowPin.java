@@ -42,6 +42,40 @@ public final class WorkflowPin {
         });
     }
 
+    /**
+     * Card 554: the bytes of a workflow started by name from the chat, and
+     * their content hash.
+     *
+     * @param bytes the file's bytes
+     * @param hash  the content hash of those bytes, the one the playbook module lists for the file
+     */
+    public record Current(byte[] bytes, String hash) {
+    }
+
+    /**
+     * Card 554: a workflow started by name from the chat runs at once, with no
+     * sheet that showed a hash, so there is nothing to compare against. The
+     * file still passes the same walk as a confirmed start (one regular file,
+     * no link), it is read once, and the hash of that read is what the run
+     * records.
+     *
+     * @param folder the playbook folder, a real path
+     * @param target the workflow file below it
+     * @return the bytes and their hash, or null when the target is not one regular file
+     * @throws IOException when the file cannot be read
+     */
+    public static Current current(Path folder, Path target) throws IOException {
+        SafeWalk.Walk walk = SafeWalk.walk(folder, target);
+        if (walk.files().size() != 1 || !walk.root().resolve(walk.files().get(0)).equals(target)) {
+            return null;
+        }
+        byte[] bytes;
+        try (java.io.InputStream in = Files.newInputStream(target, java.nio.file.LinkOption.NOFOLLOW_LINKS)) {
+            bytes = in.readAllBytes();
+        }
+        return new Current(bytes, ContentHash.entries(java.util.Map.of(walk.files().get(0), bytes)));
+    }
+
     static Pinned pin(Path folder, Path target, String hash, Bytes reader) throws IOException {
         SafeWalk.Walk walk = SafeWalk.walk(folder, target);
         // A refused start lists no file; a directory lists what is inside it, never the target.

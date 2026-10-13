@@ -50,18 +50,29 @@ const MINIMAL: PlaybookDoc = {
 };
 
 describe("skillOptions", () => {
-  it("lists the installed names and keeps a named skill that is not installed, marked", () => {
-    const out = skillOptions([{ name: "a:one" }, { name: "a:two" }], ["a:two", "a:gone"]);
+  // Card 558: the folder's skills come first and are in the playbook; a named
+  // skill outside that list is marked by the server's step resolution.
+  it("lists the folder's skills, then a named skill the folder does not list, marked from the resolution", () => {
+    const out = skillOptions(
+      ["a:one", "a:two"],
+      ["a:two", "a:gone", "one"],
+      [
+        { name: "a:two", inPlaybook: true },
+        { name: "a:gone", inPlaybook: false },
+        { name: "one", inPlaybook: true },
+      ],
+    );
     expect(out).toEqual([
-      { name: "a:one", installed: true },
-      { name: "a:two", installed: true },
-      { name: "a:gone", installed: false },
+      { name: "a:one", inPlaybook: true },
+      { name: "a:two", inPlaybook: true },
+      { name: "a:gone", inPlaybook: false },
+      { name: "one", inPlaybook: true },
     ]);
   });
 
-  it("lists a missing name once however often it is named", () => {
-    const out = skillOptions([], ["x", "x"]);
-    expect(out).toEqual([{ name: "x", installed: false }]);
+  it("lists a missing name once however often it is named, and missing without a resolution", () => {
+    const out = skillOptions([], ["x", "x"], []);
+    expect(out).toEqual([{ name: "x", inPlaybook: false }]);
   });
 });
 

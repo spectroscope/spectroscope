@@ -23,6 +23,12 @@ export interface SkillOption {
   pack: string | null;
   description: string;
   disabled: boolean;
+  /** Card 558: a skill or a command of the session (session_items); absent for an /api/skills row. */
+  kind?: "skill" | "command";
+  /** Card 558: where the session reads it; absent for an /api/skills row. */
+  source?: "workspace" | "playbook" | "user";
+  /** Card 558: the playbook's name, for a playbook item's label. */
+  sourceName?: string;
 }
 
 /** A command being spelled at the caret: the text after the slash, and where

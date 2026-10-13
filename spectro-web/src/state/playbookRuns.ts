@@ -26,7 +26,8 @@ export interface StartPreview {
   hash: string | null;
   findings: { path: string; message: string }[];
   steps: StepPlan[];
-  skills: { name: string; source: "playbook" | "installed" | "missing" }[];
+  /** Card 558: a run reads a step's skills from the playbook folder in place. */
+  skills: { name: string; source: "playbook" | "missing" }[];
   commands: string[];
   refusals: string[];
 }
@@ -42,6 +43,9 @@ export interface PlaybookRunRow {
   result: string | null;
   live: boolean;
   graph: string;
+  /** Card 554: what the run was asked, the prompt after /run-with-playbook;
+   *  null for a run started without one, absent on a server before the field. */
+  task?: string | null;
 }
 
 /**

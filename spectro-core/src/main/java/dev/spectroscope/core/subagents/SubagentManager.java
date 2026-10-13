@@ -626,6 +626,122 @@ public final class SubagentManager {
     }
 
     /**
+     * Card 558: one named agent of the session, from its workspace's
+     * {@code .claude/agents} or {@code .spectro/agents} or from the picked
+     * playbook's {@code agents/}, read in place.
+     *
+     * @param name        the effective name the model calls it by
+     * @param description one line
+     * @param type        the child type: explore, worker or research
+     * @param preamble    the agent file's body
+     */
+    public record NamedAgent(String name, String description, String type, String preamble) {
+    }
+
+    /** Card 558: the wire name of the tool that starts a named agent. */
+    public static final String NAMED_AGENT_TOOL = "spawn_named_agent";
+
+    /**
+     * Card 558: the PARENT tool that starts one of the session's named agents
+     * (workspace or picked playbook), the way a role tool starts its role: the agent file's preamble
+     * and the task composed by {@link #roleTask}, run as ONE labelled child of
+     * the file's type. Offered only while the session has an agent; the list is
+     * read at every call, so a pick reaches the next run. Children never get it,
+     * so depth stays one.
+     *
+     * @param agents the session's agents now, read at every call
+     * @return the tool
+     */
+    public Tool namedAgentTool(java.util.function.Supplier<List<NamedAgent>> agents) {
+        return new NamedAgentTool(agents);
+    }
+
+    /** {@code spawn_named_agent}: one child as one of the session's named agents. */
+    private final class NamedAgentTool implements Tool {
+
+        private final java.util.function.Supplier<List<NamedAgent>> agents;
+
+        private NamedAgentTool(java.util.function.Supplier<List<NamedAgent>> agents) {
+            this.agents = agents;
+        }
+
+        private List<NamedAgent> now() {
+            List<NamedAgent> list = agents.get();
+            return list == null ? List.of() : list;
+        }
+
+        @Override
+        public String name() {
+            return NAMED_AGENT_TOOL;
+        }
+
+        /** A second call starts a new child, like the other spawn verbs. */
+        @Override
+        public boolean resultRepeatable() {
+            return false;
+        }
+
+        /** Names every agent the session has now, with its type. */
+        @Override
+        public String description() {
+            StringBuilder out = new StringBuilder("Starts one of this session's named agents as a subagent and "
+                    + "waits for its result. The agent brings its own instructions; give it a complete, "
+                    + "self-contained task. Agents:");
+            for (NamedAgent a : now()) {
+                out.append("\n- ").append(a.name()).append(" (").append(a.type()).append("): ")
+                        .append(a.description());
+            }
+            return out.toString();
+        }
+
+        @Override
+        public JsonNode inputSchema() {
+            return NAMED_AGENT_SCHEMA;
+        }
+
+        /** Permission-free, like the role tools: the child's own calls pass the gate. */
+        @Override
+        public boolean needsPermission() {
+            return false;
+        }
+
+        /** Offered while the session has an agent. */
+        @Override
+        public boolean offeredIn(java.nio.file.Path cwd) {
+            return !now().isEmpty();
+        }
+
+        @Override
+        public String execute(JsonNode input, ToolContext context) {
+            List<NamedAgent> list = now();
+            String name = input.path("agent").asText("");
+            NamedAgent agent = list.stream().filter(a -> a.name().equals(name)).findFirst().orElse(null);
+            if (agent == null) {
+                return "ERROR: no agent named \"" + name + "\" in this session. Agents: "
+                        + (list.isEmpty() ? "none" : list.stream().map(NamedAgent::name)
+                        .collect(Collectors.joining(", "))) + ".";
+            }
+            String task = input.path("task").asText("");
+            if (task.isBlank()) {
+                return "ERROR: task must be a non-empty string.";
+            }
+            AgentType type = AgentType.fromId(agent.type()).orElse(null);
+            if (type == null) {
+                return "ERROR: agent " + agent.name() + " names an unknown type: " + agent.type() + ".";
+            }
+            return runChildrenInParallel(List.of(new ChildRequest(type, roleTask(agent.preamble(), task),
+                    task.strip(), agent.name()))).getFirst();
+        }
+    }
+
+    private static final JsonNode NAMED_AGENT_SCHEMA = parseSchema("""
+            { "type": "object", "required": ["agent", "task"],
+              "properties": {
+                "agent": { "type": "string", "description": "An agent name exactly as the description lists it" },
+                "task": { "type": "string", "description": "Complete, self-contained assignment" } } }
+            """);
+
+    /**
      * The role tools for the PARENT registry — thin wrappers over a child
      * spawn: the four dev roles run as workers (specialization is prompt +
      * skill), the research role (card 205) as the research profile with the
