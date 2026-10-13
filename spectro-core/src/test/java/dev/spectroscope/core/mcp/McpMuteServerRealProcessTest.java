@@ -58,6 +58,9 @@ class McpMuteServerRealProcessTest {
     /** Short stand-in for the shipped 20 s read bound, so the suite stays quick. */
     private static final Duration BOUND = Duration.ofSeconds(2);
 
+    /** How long a timed-out channel's reader may take to leave once its stream is closed. */
+    private static final Duration READER_EXIT = Duration.ofSeconds(10);
+
     /**
      * What the whole probe may take, in the shape the shipped budget has: the read
      * bound plus the teardown tail. Derived rather than typed, so a change to either
@@ -325,6 +328,15 @@ class McpMuteServerRealProcessTest {
             }
 
             assertEquals(4, readers.size(), "four channels, four reader threads");
+            // A reader leaves once the teardown closed its stream, a moment after the timeout
+            // surfaced; on a loaded runner that moment was not over yet (0.15.3 tag run).
+            long deadline = System.nanoTime() + READER_EXIT.toNanos();
+            for (Thread reader : readers) {
+                long left = deadline - System.nanoTime();
+                if (left > 0) {
+                    reader.join(Duration.ofNanos(left));
+                }
+            }
             List<Thread> stillAlive = readers.stream().filter(Thread::isAlive).toList();
             assertTrue(stillAlive.isEmpty(),
                     stillAlive.size() + " of " + readers.size()

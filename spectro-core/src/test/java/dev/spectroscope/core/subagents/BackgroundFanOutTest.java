@@ -12,6 +12,8 @@ import dev.spectroscope.core.events.RunEvent;
 import dev.spectroscope.core.goal.GoalVerdict;
 import dev.spectroscope.core.goal.RunGoal;
 import dev.spectroscope.core.goal.SessionGoal;
+import dev.spectroscope.core.messaging.AgentRow;
+import dev.spectroscope.core.messaging.MessagingSeat;
 import dev.spectroscope.core.messaging.MessagingTools;
 import dev.spectroscope.core.messaging.SessionSeat;
 import dev.spectroscope.core.peer.PeerInbox;
@@ -42,9 +44,11 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiFunction;
 import java.util.function.BooleanSupplier;
 import java.util.function.Function;
+import java.util.function.UnaryOperator;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -213,13 +217,21 @@ class BackgroundFanOutTest {
         final Agent parent;
         final PeerInbox inbox = new PeerInbox();
         final ToolRegistry registry = new ToolRegistry();
+        /** The merged stream as the run hands it out, readable while the run is in flight. */
+        final List<RunEvent> events = new CopyOnWriteArrayList<>();
 
         Chat(LlmProvider provider, SubagentConfig.Builder config, long runBudgetMs, SessionGoal goal,
              Integer maxTurns, boolean inboxWired) {
+            this(provider, config, runBudgetMs, goal, maxTurns, inboxWired, UnaryOperator.identity());
+        }
+
+        Chat(LlmProvider provider, SubagentConfig.Builder config, long runBudgetMs, SessionGoal goal,
+             Integer maxTurns, boolean inboxWired, UnaryOperator<MessagingSeat> seatAround) {
             this.manager = new SubagentManager(config.provider(provider).cwd(Path.of(".")).parentAgentId("main")
                     .onPermission(request -> true).baseTools(List.of(listDir())).build(), runBudgetMs);
             manager.tools().forEach(registry::register);
-            MessagingTools.forSeat(new SessionSeat(() -> null, () -> "s", () -> manager, () -> true, "main"))
+            MessagingTools.forSeat(seatAround.apply(
+                            new SessionSeat(() -> null, () -> "s", () -> manager, () -> true, "main")))
                     .forEach(registry::register);
             manager.backgroundTools().forEach(registry::register);
             AgentOptions.Builder options = AgentOptions.builder()
@@ -241,7 +253,6 @@ class BackgroundFanOutTest {
         }
 
         List<RunEvent> run(CancelSignal signal) {
-            List<RunEvent> events = new CopyOnWriteArrayList<>();
             try (EventStream stream = manager.run(parent, "go", new RunOptions(signal, null))) {
                 stream.forEach(events::add);
             }
@@ -906,6 +917,7 @@ class BackgroundFanOutTest {
     void theParentAsksAChildForStatusAndTheAnswerComesBackInOrder() {
         CountDownLatch asked = new CountDownLatch(1);
         CountDownLatch releaseA = new CountDownLatch(1);
+        AtomicReference<Chat> chat = new AtomicReference<>();
         Script script = new Script()
                 .child("task A", (request, n) -> {
                     hold(releaseA, request);
@@ -922,7 +934,13 @@ class BackgroundFanOutTest {
                     return text("B done");
                 })
                 .parentSays(tool("p1", "spawn_agents", TWO_IN_BACKGROUND))
-                .parentSays(tool("p2", "send_message", "{\"to\":\"explore-2\",\"message\":\"status?\"}"))
+                .parentSays(request -> {
+                    // A child reads no message before it is working (the refusal says to send again
+                    // once list_agents shows it working), and its thread may not have started yet.
+                    await("explore-2 working", () -> chat.get().manager.backgroundSnapshotForTests()
+                            .contains("explore-2=working"));
+                    return tool("p2", "send_message", "{\"to\":\"explore-2\",\"message\":\"status?\"}");
+                })
                 .parentSays(request -> {
                     asked.countDown();
                     return tool("p3", "wait_agents", "{\"ids\":[\"explore-2\"]}");
@@ -932,8 +950,8 @@ class BackgroundFanOutTest {
                     return tool("p4", "wait_agents", "{}");
                 })
                 .parentSays(text("done"));
-        Chat chat = chat(script);
-        List<RunEvent> events = chat.run(new CancelSignal());
+        chat.set(chat(script));
+        List<RunEvent> events = chat.get().run(new CancelSignal());
 
         List<RunEvent.AgentMessage> peer = messages(events, "peer");
         List<String> order = peer.stream()
@@ -943,6 +961,202 @@ class BackgroundFanOutTest {
                 "explore-2>parent:sent", "explore-2>main:received"), order);
         assertTrue(history(script.childRequests.get("task B").get(1)).contains("status?"));
         record(events);
+    }
+
+    /**
+     * send_message delivers first and records the message as sent afterwards.
+     * The parent is held in that gap until the child has taken the message in
+     * and recorded it; the stream still carries the parent's sent record
+     * before the child's received record.
+     */
+    @Test
+    void aMessageTheChildTakesInBeforeTheParentRecordsItIsStillSentFirstOnTheStream() {
+        CountDownLatch delivered = new CountDownLatch(1);
+        AtomicReference<Chat> chat = new AtomicReference<>();
+        Script script = new Script()
+                .child("task A", (request, n) -> text("A done"))
+                .child("task B", (request, n) -> {
+                    if (n == 1) {
+                        hold(delivered, request);
+                        return tool("b1", "list_dir", "{}");
+                    }
+                    return text("B done");
+                })
+                .parentSays(tool("p1", "spawn_agents", TWO_IN_BACKGROUND))
+                .parentSays(request -> {
+                    await("explore-2 working", () -> chat.get().manager.backgroundSnapshotForTests()
+                            .contains("explore-2=working"));
+                    return tool("p2", "send_message", "{\"to\":\"explore-2\",\"message\":\"status?\"}");
+                })
+                .parentSays(tool("p3", "wait_agents", "{}"))
+                .parentSays(text("done"));
+        chat.set(new Chat(script, SubagentConfig.builder(), 30_000, null, null, true,
+                seat -> new HeldAfterDelivery(seat, () -> {
+                    delivered.countDown();
+                    await("explore-2's received record, on the stream or held back",
+                            () -> peerRecord(chat.get().events, "status?", "received") >= 0
+                                    || chat.get().manager.heldPeerRecordsForTests() > 0);
+                })));
+        List<RunEvent> events = chat.get().run(new CancelSignal());
+
+        int sent = peerRecord(events, "status?", "sent");
+        int received = peerRecord(events, "status?", "received");
+        assertTrue(sent >= 0 && received >= 0, "both records: sent at " + sent + ", received at " + received);
+        assertTrue(sent < received, "sent at " + sent + ", received at " + received);
+        assertTrue(history(script.childRequests.get("task B").getLast()).contains("status?"));
+    }
+
+    /**
+     * A playbook step's child writes its records to the step's own sink. Its
+     * message to the parent, taken in during a parent run, is not held on the
+     * run's stream for a sent record that never comes there.
+     */
+    @Test
+    @Timeout(value = 20, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    void aStepChildsMessageToTheParentIsNotHeldOnTheRunsStream() {
+        List<RunEvent> stepEvents = new CopyOnWriteArrayList<>();
+        AtomicReference<Chat> chat = new AtomicReference<>();
+        Script script = new Script()
+                .child("step task", (request, n) -> n == 1
+                        ? tool("s1", "send_message", "{\"to\":\"parent\",\"message\":\"from the step\"}")
+                        : text("step done"))
+                .parentSays(request -> {
+                    chat.get().manager.runStep(new SubagentManager.StepChild(AgentType.EXPLORE, "step task",
+                            "step task", "playbook:s", null), stepEvents::add, new CancelSignal());
+                    return tool("p1", "list_dir", "{}");
+                })
+                .parentSays(text("done"));
+        chat.set(chat(script));
+        List<RunEvent> events = chat.get().run(new CancelSignal());
+
+        assertTrue(peerRecord(stepEvents, "from the step", "sent") >= 0, "the step's sink has the sent record");
+        assertTrue(peerRecord(events, "from the step", "received") >= 0, "the run's stream has the received one");
+        assertEquals(-1, peerRecord(events, "from the step", "sent"));
+    }
+
+    /** Stop ends a run within a second (fdeb82fd), also when a record is held. */
+    private static final java.time.Duration STOP_WITHIN = java.time.Duration.ofSeconds(1);
+
+    /**
+     * A child's send_message delivered to the parent and died before it wrote
+     * its sent record. The parent's received record is held on the stream;
+     * Stop lets it go, and the run ends within a second.
+     */
+    @Test
+    @Timeout(value = 20, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    void stopEndsARunWhoseChildLostItsSentRecordWithinASecond() throws InterruptedException {
+        CountDownLatch releaseA = new CountDownLatch(1);
+        AtomicReference<Chat> chat = new AtomicReference<>();
+        AtomicReference<MessagingSeat.Sent> delivered = new AtomicReference<>();
+        Script script = new Script()
+                .child("task A", (request, n) -> {
+                    hold(releaseA, request);
+                    return text("A done");
+                })
+                .parentSays(tool("p1", "spawn_agents",
+                        "{\"background\":true,\"agents\":[{\"type\":\"explore\",\"task\":\"task A\"}]}"))
+                .parentSays(request -> {
+                    await("explore-1 working", () -> chat.get().manager.backgroundSnapshotForTests()
+                            .contains("explore-1=working"));
+                    // What explore-1's send_message does up to its sent record, which never comes.
+                    delivered.set(chat.get().manager.childSeat("explore-1").sendInRun(parentRow(), "lost?", "lost?",
+                            true));
+                    return tool("p2", "list_dir", "{}");
+                })
+                .parentSays(request -> {
+                    releaseA.countDown();
+                    return text("done");
+                });
+        chat.set(chat(script));
+        CancelSignal stop = new CancelSignal();
+        Thread runner = Thread.ofVirtual().start(() -> chat.get().run(stop));
+        await("the parent's received record held", () -> chat.get().manager.heldPeerRecordsForTests() == 1);
+        assertTrue(delivered.get().ok(), delivered.get().toString());
+
+        stop.cancel();
+        runner.join(STOP_WITHIN);
+
+        assertFalse(runner.isAlive(), "the run ended within " + STOP_WITHIN + " of Stop");
+        List<RunEvent> events = chat.get().events;
+        assertTrue(events.stream().anyMatch(e -> e instanceof RunEvent.RunEnd end
+                && "main".equals(agentOfRun(events, end.runId()))), "the parent's run_end is on the stream");
+        assertTrue(peerRecord(events, "lost?", "received") >= 0, "the held record was written, not dropped");
+    }
+
+    /**
+     * The same lost sent record in a workflow's fan-out step: Stop ends the
+     * step's wait for its children within a second.
+     */
+    @Test
+    @Timeout(value = 20, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    void stopEndsAWorkflowStepsWaitWhoseChildLostItsSentRecordWithinASecond() throws InterruptedException {
+        Script script = new Script().child("task W", (request, n) -> {
+            hold(new CountDownLatch(1), request);
+            return text("W done");
+        });
+        Chat chat = chat(script);
+        List<RunEvent> out = new CopyOnWriteArrayList<>();
+        CancelSignal stop = new CancelSignal();
+        try (SubagentManager.Orchestration step = chat.manager.orchestrate(out::add, stop)) {
+            step.spawn(List.of(new SubagentManager.Spawn("explore", "task W")));
+            await("explore-1 working", () -> chat.manager.backgroundSnapshotForTests().contains("explore-1=working"));
+            assertTrue(chat.manager.childSeat("explore-1").sendInRun(parentRow(), "lost?", "lost?", true).ok());
+            Thread waiting = Thread.ofVirtual().start(step::awaitChildren);
+            await("the received record held", () -> chat.manager.heldPeerRecordsForTests() == 1);
+
+            stop.cancel();
+            waiting.join(STOP_WITHIN);
+
+            assertFalse(waiting.isAlive(), "the step's wait ended within " + STOP_WITHIN + " of Stop");
+        }
+        assertTrue(peerRecord(out, "lost?", "received") >= 0, "the held record was written, not dropped");
+    }
+
+    private static AgentRow parentRow() {
+        return AgentRow.inRun(AgentRow.Kind.PARENT, "parent", "main", "main", "working", null);
+    }
+
+    /** @return the index of the first peer record with this state whose text contains {@code text}, or -1 */
+    private static int peerRecord(List<RunEvent> events, String text, String state) {
+        return indexOf(events, e -> e instanceof RunEvent.AgentMessage m && "peer".equals(m.role())
+                && state.equals(m.state()) && m.text().contains(text));
+    }
+
+    /** A seat that runs a step after each delivery inside the run, before send_message records it. */
+    private static final class HeldAfterDelivery implements MessagingSeat {
+        private final MessagingSeat seat;
+        private final Runnable afterDelivery;
+
+        HeldAfterDelivery(MessagingSeat seat, Runnable afterDelivery) {
+            this.seat = seat;
+            this.afterDelivery = afterDelivery;
+        }
+
+        @Override public String selfName() { return seat.selfName(); }
+        @Override public String selfRef() { return seat.selfRef(); }
+        @Override public boolean child() { return seat.child(); }
+        @Override public String agentId() { return seat.agentId(); }
+        @Override public boolean on() { return seat.on(); }
+        @Override public List<AgentRow> sessions() { return seat.sessions(); }
+        @Override public List<AgentRow> runAgents() { return seat.runAgents(); }
+        @Override public Sent sendToSession(AgentRow row, String text, String summary) {
+            return seat.sendToSession(row, text, summary);
+        }
+        @Override public Sent notifyWhenIdle(AgentRow row) { return seat.notifyWhenIdle(row); }
+
+        @Override
+        public Sent sendInRun(AgentRow row, String text, String summary) {
+            return sendInRun(row, text, summary, false);
+        }
+
+        @Override
+        public Sent sendInRun(AgentRow row, String text, String summary, boolean recorded) {
+            Sent sent = seat.sendInRun(row, text, summary, recorded);
+            if (sent.ok()) {
+                afterDelivery.run();
+            }
+            return sent;
+        }
     }
 
     /** Where a capture run writes this run's events as a session file would

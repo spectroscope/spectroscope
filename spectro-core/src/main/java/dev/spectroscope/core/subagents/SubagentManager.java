@@ -174,6 +174,19 @@ public final class SubagentManager {
      */
     private final java.util.Set<String> inRunToParent = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
+    /**
+     * The children whose records go into the merged stream of the run in
+     * flight: spawned by the parent's tools, not by a playbook step, whose
+     * records go to the step's own sink.
+     */
+    private final java.util.Set<String> childrenOnTheStream = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    /** @return whether the records of {@code agent}, the parent or a child, go into the run's merged stream */
+    private boolean onTheStream(String agent) {
+        return "parent".equals(agent) || (agent != null && agent.equals(config.parentAgentId()))
+                || (agent != null && childrenOnTheStream.contains(agent));
+    }
+
     /** @return how many in-run messages to the parent are still marked as the run's own (tests) */
     int inRunToParentPending() {
         return inRunToParent.size();
@@ -326,7 +339,23 @@ public final class SubagentManager {
      */
     public dev.spectroscope.core.messaging.MessagingSeat.Sent sendFromParent(
             dev.spectroscope.core.messaging.AgentRow row, String text, String summary) {
-        return inRun(config.parentAgentId(), "parent", config.parentAgentId(), row.id(), text, summary);
+        return sendFromParent(row, text, summary, false);
+    }
+
+    /**
+     * The parent's message to one of its running children, as its
+     * {@code send_message} sends it.
+     *
+     * @param row      the child
+     * @param text     the body
+     * @param summary  the preview line
+     * @param recorded true when the caller records the message as sent once it is delivered
+     * @return what happened
+     */
+    public dev.spectroscope.core.messaging.MessagingSeat.Sent sendFromParent(
+            dev.spectroscope.core.messaging.AgentRow row, String text, String summary, boolean recorded) {
+        return inRun(config.parentAgentId(), "parent", config.parentAgentId(), row.id(), text, summary,
+                recorded);
     }
 
     /**
@@ -341,7 +370,7 @@ public final class SubagentManager {
     public dev.spectroscope.core.messaging.MessagingSeat.Sent sendFromOperator(String childId, String text,
                                                                                String unused) {
         String summary = text == null ? "" : text.strip().lines().findFirst().orElse("");
-        return inRun(config.parentAgentId(), "parent", "operator", childId, text, summary);
+        return inRun(config.parentAgentId(), "parent", "operator", childId, text, summary, false);
     }
 
     /**
@@ -355,15 +384,27 @@ public final class SubagentManager {
         return childId == null ? null : childInboxes.get(childId);
     }
 
-    /** Card 503: one message inside the run, as the messaging tools send it. */
+    /** Card 503: one message inside the run, as the messaging tools send it.
+     *  @param recorded true when the sender records the message as sent once it is delivered */
     private dev.spectroscope.core.messaging.MessagingSeat.Sent inRun(String from, String replyAddress,
                                                                       String fromName, String to, String text,
-                                                                      String summary) {
+                                                                      String summary, boolean recorded) {
         String msgId = dev.spectroscope.core.peer.PeerFrames.newMsgId();
         dev.spectroscope.core.peer.PeerEnvelope envelope = dev.spectroscope.core.peer.PeerEnvelope.builder()
                 .msgId(msgId).from(replyAddress).fromName(fromName).priority("next").text(text)
                 .summary(summary).build();
-        return switch (deliverInRun(from, to, envelope)) {
+        // Announced before the receiver can take it in, so its received record
+        // waits on the stream for the sent record the sender writes afterwards.
+        // Only where both records go into that stream.
+        MergedEventStream stream = recorded && onTheStream(from) && onTheStream(to) ? currentStream : null;
+        if (stream != null) {
+            stream.expectSent(msgId);
+        }
+        InRunDelivery delivery = deliverInRun(from, to, envelope);
+        if (stream != null && delivery != InRunDelivery.QUEUED) {
+            stream.forgetSent(msgId);
+        }
+        return switch (delivery) {
             case QUEUED -> dev.spectroscope.core.messaging.MessagingSeat.Sent.ok(msgId);
             case FULL -> dev.spectroscope.core.messaging.MessagingSeat.Sent.failed("Not sent: " + to + " has too"
                     + " many undelivered messages queued; fold this into one later message.");
@@ -480,8 +521,14 @@ public final class SubagentManager {
 
         @Override
         public Sent sendInRun(dev.spectroscope.core.messaging.AgentRow row, String text, String summary) {
+            return sendInRun(row, text, summary, false);
+        }
+
+        @Override
+        public Sent sendInRun(dev.spectroscope.core.messaging.AgentRow row, String text, String summary,
+                              boolean recorded) {
             String to = row.kind() == dev.spectroscope.core.messaging.AgentRow.Kind.PARENT ? "parent" : row.id();
-            return inRun(childId, childId, childId, to, text, summary);
+            return inRun(childId, childId, childId, to, text, summary, recorded);
         }
 
         @Override
@@ -601,6 +648,14 @@ public final class SubagentManager {
      *  @param ms the interval */
     void checkInMs(long ms) {
         this.checkInMs = ms;
+    }
+
+    /** Test seam: how many received records of in-run messages the run's
+     *  stream holds back now, each until its sent record has passed.
+     *  @return the count, 0 between runs */
+    int heldPeerRecordsForTests() {
+        MergedEventStream stream = currentStream;
+        return stream == null ? 0 : stream.heldForTests();
     }
 
     /** Test seam: the background children of the run in flight, one
@@ -870,6 +925,8 @@ public final class SubagentManager {
         List<RunEvent.Attachment> attachments =
                 options.attachments() != null ? options.attachments() : List.of();
         MergedEventStream merged = new MergedEventStream(parentSignal::cancel);
+        // Stop lets every record the stream holds go at once.
+        Runnable unhookRelease = parentSignal.onCancel(merged::releaseHeld);
         currentStream = merged;
         currentParentSignal = parentSignal;
         currentParent = parent;
@@ -898,6 +955,7 @@ public final class SubagentManager {
                 currentParent = null;
                 background = null;
                 merged.end();
+                unhookRelease.run();
             }
         });
         return merged;
@@ -1017,7 +1075,13 @@ public final class SubagentManager {
         parentQueue.put(new RunEvent.AgentMessage(config.parentAgentId(), childId,
                 "task", "submitted", ownerTask, label, now()));
 
-        String outcome = executeChild(type, task, childId, parentQueue::put, parentSignal, ticket, null);
+        String outcome;
+        childrenOnTheStream.add(childId);
+        try {
+            outcome = executeChild(type, task, childId, parentQueue::put, parentSignal, ticket, null);
+        } finally {
+            childrenOnTheStream.remove(childId);
+        }
         boolean failed = outcome.startsWith("ERROR:");
         parentQueue.put(new RunEvent.AgentMessage(childId, config.parentAgentId(),
                 "result", failed ? "failed" : "completed", outcome, label, now()));
@@ -1546,6 +1610,7 @@ public final class SubagentManager {
         private final java.util.concurrent.BlockingQueue<Boolean> wake = new java.util.concurrent.LinkedBlockingQueue<>();
         private final Runnable unhookSubmit;
         private final Runnable unhookCancel;
+        private final Runnable unhookRelease;
         private boolean closed;
 
         private Orchestration(java.util.function.Consumer<RunEvent> out, CancelSignal signal) {
@@ -1560,6 +1625,8 @@ public final class SubagentManager {
             this.unhookSubmit = inbox == null ? () -> { } : inbox.addSubmitListener(() -> wake.offer(Boolean.TRUE));
             run.addEndListener(() -> wake.offer(Boolean.TRUE));
             this.unhookCancel = signal.onCancel(() -> wake.offer(Boolean.TRUE));
+            // Stop lets every record the step's stream holds go at once.
+            this.unhookRelease = signal.onCancel(merged::releaseHeld);
             this.pump = Thread.ofVirtual().name("spectroscope-workflow-pump").start(() -> {
                 for (RunEvent event : merged) {
                     out.accept(event);
@@ -1672,6 +1739,7 @@ public final class SubagentManager {
                 }
                 unhookSubmit.run();
                 unhookCancel.run();
+                unhookRelease.run();
                 dev.spectroscope.core.peer.PeerInbox inbox = parentInbox;
                 if (openedInbox && inbox != null) {
                     inbox.close();
@@ -1740,6 +1808,7 @@ public final class SubagentManager {
             queue.put(new RunEvent.AgentSpawn(childId, config.parentAgentId(), request.task(), now()));
             queue.put(new RunEvent.AgentMessage(config.parentAgentId(), childId,
                     "task", "submitted", request.ownerTask(), request.label(), now()));
+            childrenOnTheStream.add(childId);
             Thread.ofVirtual().name("spectroscope-background-" + childId).start(() -> {
                 String outcome;
                 try {
@@ -1748,6 +1817,7 @@ public final class SubagentManager {
                 } catch (RuntimeException failure) {
                     outcome = "ERROR: [" + childId + "] unexpected failure: " + describe(failure);
                 } finally {
+                    childrenOnTheStream.remove(childId);
                     slots.forget(ticket);
                 }
                 queue.put(new RunEvent.AgentMessage(childId, config.parentAgentId(), "result",

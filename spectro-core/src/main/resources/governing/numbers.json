@@ -1860,6 +1860,16 @@
     "explanation" : "Card 395: the most bytes the text of one merged delta may take once it is written as JSON (UTF-8, with the escapes JSON needs). The session file writes each line through Files.write, which hands the bytes over in chunks of 8,192, and a second writer landing between two chunks tears the line (card 406; measured on 2026-09-24 with a 12,000-character merged line). This budget leaves 512 bytes for the rest of the line, so a merge never builds a line of that size. A single delta that is larger already is handed out as it came."
   },
   {
+    "owner" : "dev.spectroscope.core.subagents.MergedEventStream",
+    "field" : "SENT_RECORD_WAIT_MS",
+    "value" : "2000",
+    "expression" : "2_000",
+    "kind" : "FIXED",
+    "unit" : "MILLISECONDS",
+    "key" : "",
+    "explanation" : "How long a received record waits for its sent record. The sender writes that record right after the delivery: of 164 holds in 6,000 runs of BackgroundFanOutTest's criterion 6 test on 2026-10-13 the longest took 0.48 ms. A sender that dies between delivery and record would hold the receiver's forwarder for good; past this bound the record is queued anyway and the order defect is logged once per stream."
+  },
+  {
     "owner" : "dev.spectroscope.core.subagents.SessionSlots",
     "field" : "RECHECK_MS",
     "value" : "500",

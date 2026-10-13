@@ -163,7 +163,7 @@ public final class SendMessageTool implements Tool {
             String summary = summaryOf(input.path("summary").isTextual() ? input.path("summary").asText() : null,
                     message);
             MessagingSeat.Sent sent = row.kind().inRun()
-                    ? seat.sendInRun(row, message, summary)
+                    ? seat.sendInRun(row, message, summary, context.emit() != null)
                     : seat.sendToSession(row, message, summary);
             if (!sent.ok()) {
                 return "ERROR: " + sent.error();

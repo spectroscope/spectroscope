@@ -371,4 +371,169 @@ class MergedEventStreamTest {
             }
         }
     }
+
+    // ── in-run peer messages: received never before sent ──────────────────
+
+    private static RunEvent peer(String msgId, String state) {
+        return new RunEvent.AgentMessage("main", "explore-2", "peer", state, "status?", msgId, 1L);
+    }
+
+    private static String describe(RunEvent event) {
+        return event instanceof RunEvent.AgentMessage m ? m.label() + ":" + m.state() : textOf(event);
+    }
+
+    private static void awaitTrue(String what, java.util.function.BooleanSupplier condition)
+            throws InterruptedException {
+        long until = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (!condition.getAsBoolean()) {
+            assertTrue(System.nanoTime() < until, "timed out waiting for " + what);
+            Thread.sleep(5);
+        }
+    }
+
+    @Test
+    void aReceivedRecordOfAnAnnouncedMessageWaitsForItsSentRecordAndNobodyElseWaits()
+            throws InterruptedException {
+        MergedEventStream stream = new MergedEventStream(() -> { });
+        stream.expectSent("m1");
+        Thread receiver = Thread.ofVirtual().start(() -> stream.put(peer("m1", "received")));
+        awaitTrue("the receiver's put to return or be held",
+                () -> !receiver.isAlive() || stream.heldForTests() == 1);
+        stream.put(delta("explore-1", "meanwhile"));
+        stream.put(peer("m1", "sent"));
+        receiver.join(5_000);
+        assertEquals(0, stream.heldForTests());
+        stream.end();
+        assertEquals(List.of("meanwhile", "m1:sent", "m1:received"),
+                drain(stream).stream().map(MergedEventStreamTest::describe).toList());
+    }
+
+    @Test
+    void aReceivedRecordWhoseSentRecordPassedFirstGoesAtOnce() {
+        MergedEventStream stream = new MergedEventStream(() -> { });
+        stream.expectSent("m2");
+        stream.put(peer("m2", "sent"));
+        stream.put(peer("m2", "received"));
+        stream.end();
+        assertEquals(List.of("m2:sent", "m2:received"),
+                drain(stream).stream().map(MergedEventStreamTest::describe).toList());
+    }
+
+    @Test
+    void aReceivedRecordNobodyAnnouncedGoesAtOnce() {
+        // The operator's reply and a peer session's message: no sent record of them is on this stream.
+        MergedEventStream stream = new MergedEventStream(() -> { });
+        stream.put(peer("m3", "received"));
+        stream.end();
+        assertEquals(List.of("m3:received"), drain(stream).stream().map(MergedEventStreamTest::describe).toList());
+    }
+
+    @Test
+    void aDeliveryThatFailedTakesItsAnnouncementBack() {
+        MergedEventStream stream = new MergedEventStream(() -> { });
+        stream.expectSent("m4");
+        stream.forgetSent("m4");
+        stream.put(peer("m4", "received"));
+        stream.end();
+        assertEquals(List.of("m4:received"), drain(stream).stream().map(MergedEventStreamTest::describe).toList());
+    }
+
+    @Test
+    void theEndOfTheStreamLetsAHeldRecordGoWithoutWritingIt() throws InterruptedException {
+        MergedEventStream stream = new MergedEventStream(() -> { });
+        stream.expectSent("m5");
+        Thread receiver = Thread.ofVirtual().start(() -> stream.put(peer("m5", "received")));
+        awaitTrue("the receiver's put to return or be held",
+                () -> !receiver.isAlive() || stream.heldForTests() == 1);
+        stream.end();
+        receiver.join(5_000);
+        assertTrue(!receiver.isAlive(), "the end released the receiver");
+        assertEquals(List.of(), drain(stream).stream().map(MergedEventStreamTest::describe).toList(),
+                "a record that waited past the end is dropped like any record after the end");
+    }
+
+    /** Runs {@code put} on its own thread, as a forwarder does. */
+    private static Thread receiving(MergedEventStream stream, String msgId) {
+        return Thread.ofVirtual().start(() -> stream.put(peer(msgId, "received")));
+    }
+
+    @Test
+    void aHeldRecordGoesIntoTheQueueOnceTheBoundHasPassed() {
+        MergedEventStream stream = new MergedEventStream(() -> { });
+        stream.expectSent("m6");
+        long started = System.nanoTime();
+        stream.put(peer("m6", "received"));
+        long waitedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
+        assertTrue(waitedMs >= MergedEventStream.SENT_RECORD_WAIT_MS, "waited " + waitedMs + " ms");
+        assertTrue(waitedMs < 2 * MergedEventStream.SENT_RECORD_WAIT_MS, "waited " + waitedMs + " ms");
+        assertEquals(0, stream.heldForTests());
+        stream.end();
+        assertEquals(List.of("m6:received"), drain(stream).stream().map(MergedEventStreamTest::describe).toList());
+    }
+
+    @Test
+    void theOrderDefectIsLoggedOncePerStream() {
+        ch.qos.logback.classic.Logger logger =
+                (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(MergedEventStream.class);
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> records =
+                new ch.qos.logback.core.read.ListAppender<>();
+        records.start();
+        logger.addAppender(records);
+        try {
+            MergedEventStream stream = new MergedEventStream(() -> { }, 50);
+            stream.expectSent("m7");
+            stream.expectSent("m8");
+            stream.put(peer("m7", "received"));
+            stream.put(peer("m8", "received"));
+            stream.end();
+            assertEquals(List.of("m7:received", "m8:received"),
+                    drain(stream).stream().map(MergedEventStreamTest::describe).toList());
+            List<String> warnings = records.list.stream()
+                    .filter(e -> e.getLevel() == ch.qos.logback.classic.Level.WARN)
+                    .map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage).toList();
+            assertEquals(1, warnings.size(), warnings.toString());
+            assertTrue(warnings.getFirst().contains("m7"), warnings.getFirst());
+        } finally {
+            logger.detachAppender(records);
+        }
+    }
+
+    @Test
+    void cancelLetsEveryHeldRecordGoAtOnceAndLaterOnesDoNotWait() throws InterruptedException {
+        AtomicBoolean cancelled = new AtomicBoolean();
+        MergedEventStream stream = new MergedEventStream(() -> cancelled.set(true));
+        stream.expectSent("c1");
+        stream.expectSent("c2");
+        Thread first = receiving(stream, "c1");
+        Thread second = receiving(stream, "c2");
+        awaitTrue("both records held", () -> stream.heldForTests() == 2);
+        stream.cancel();
+        java.time.Duration underTheBound = java.time.Duration.ofMillis(MergedEventStream.SENT_RECORD_WAIT_MS / 2);
+        first.join(underTheBound);
+        second.join(underTheBound);
+        assertTrue(!first.isAlive() && !second.isAlive(), "cancel let both go before the bound did");
+        assertTrue(cancelled.get(), "cancel still runs the stream's cancel hook");
+        stream.expectSent("c3");
+        long started = System.nanoTime();
+        stream.put(peer("c3", "received"));
+        assertTrue(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started) < underTheBound.toMillis(),
+                "a record of a message announced after the cancel does not wait");
+        stream.end();
+        List<String> got = drain(stream).stream().map(MergedEventStreamTest::describe).toList();
+        assertEquals(3, got.size(), got.toString());
+        assertTrue(got.containsAll(List.of("c1:received", "c2:received", "c3:received")), got.toString());
+    }
+
+    @Test
+    void closeLetsAHeldRecordGoAtOnce() throws InterruptedException {
+        MergedEventStream stream = new MergedEventStream(() -> { });
+        stream.expectSent("c4");
+        Thread receiver = receiving(stream, "c4");
+        awaitTrue("the record held", () -> stream.heldForTests() == 1);
+        stream.close();
+        receiver.join(java.time.Duration.ofMillis(MergedEventStream.SENT_RECORD_WAIT_MS / 2));
+        assertTrue(!receiver.isAlive(), "close let it go before the bound did");
+        stream.end();
+        assertEquals(List.of("c4:received"), drain(stream).stream().map(MergedEventStreamTest::describe).toList());
+    }
 }

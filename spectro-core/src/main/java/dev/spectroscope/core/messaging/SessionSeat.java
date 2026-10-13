@@ -112,11 +112,16 @@ public final class SessionSeat implements MessagingSeat {
 
     @Override
     public Sent sendInRun(AgentRow row, String text, String summary) {
+        return sendInRun(row, text, summary, false);
+    }
+
+    @Override
+    public Sent sendInRun(AgentRow row, String text, String summary, boolean recorded) {
         SubagentManager manager = subagents.get();
         if (manager == null) {
             return Sent.failed(dev.spectroscope.core.peer.PeerClient.unknownName(row.name()));
         }
-        return manager.sendFromParent(row, text, summary);
+        return manager.sendFromParent(row, text, summary, recorded);
     }
 
     @Override
