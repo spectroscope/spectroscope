@@ -53,6 +53,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * v0.14.4 tree ({@code git archive 8d7fcf48}) by the capture class kept in
  * {@code kanban/evidence/493/v0144-capture/}, which builds the same parent
  * with the v0.14.4 API and writes the two fields of each body.</p>
+ *
+ * <p>Card 601 changed the two spawn descriptions on purpose. Every read of a
+ * v0.14.4 capture applies exactly that change ({@link Card601SpawnTexts}); the
+ * messaging-on baseline was captured again after it.</p>
  */
 @Timeout(value = 30, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
 class LocalModeOffRequestBytesTest {
@@ -179,7 +183,8 @@ class LocalModeOffRequestBytesTest {
         try (InputStream in = LocalModeOffRequestBytesTest.class.getResourceAsStream(
                 "/localmode-v0144/" + name)) {
             assertNotNull(in, "the v0.14.4 capture " + name + " is not on the test classpath");
-            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+            // Card 601 changed the two spawn descriptions on purpose, and only those.
+            return Card601SpawnTexts.applied(new String(in.readAllBytes(), StandardCharsets.UTF_8));
         }
     }
 
