@@ -217,6 +217,58 @@ class ContinuationLeashTest {
         assertFalse(theLeashCallsItUnchanged(pairs.get(3)), "new step text is a plan that moved");
     }
 
+    // ── card 602: a question to the person stops the continuation ──────────
+
+    @Test
+    void aTurnThatEndsWithAQuestionToThePersonIsNotContinued() {
+        List<String> endings = List.of(
+                "Here is the plan.\n\nProceed as outlined, or adjust the order?",
+                "Shall I start with the parser?**",
+                "Which of the two do you want?\"",
+                "I can go on (or would you rather review first?)",
+                "_Is this the right folder?_\n\n   \n",
+                "Soll ich so weitermachen?\u201d",
+                "Shall I go on?'");
+        for (String text : endings) {
+            ContinuationLeash leash = new ContinuationLeash(3);
+            leash.startRun();
+            ContinuationLeash.Verdict verdict = leash.consider(plan("in_progress", "pending"), "a", text)
+                    .orElseThrow(() -> new AssertionError("the leash stayed silent for: " + text));
+            assertEquals(ContinuationLeash.Decision.QUESTION_TO_PERSON, verdict.decision(), text);
+            assertEquals("question_to_person", verdict.decision().wireName());
+            assertEquals("not continued: the turn ended with a question to the person", verdict.evidence());
+            assertNull(verdict.message(), "nothing is said to the model: the person answers");
+            assertEquals(0, leash.continuations(), "a question spends no continuation");
+        }
+    }
+
+    @Test
+    void aTurnThatDoesNotEndWithAQuestionIsContinuedAsToday() {
+        List<String> endings = new ArrayList<>(List.of(
+                "Should I add the test? I added it anyway.\nThe parser is next.",
+                "Done with step one.",
+                "   ",
+                "What is left: the parser? the docs.\n\nI will do the parser next."));
+        endings.add(null);
+        for (String text : endings) {
+            ContinuationLeash leash = new ContinuationLeash(3);
+            leash.startRun();
+            ContinuationLeash.Verdict verdict = leash.consider(plan("in_progress", "pending"), "a", text)
+                    .orElseThrow();
+            assertEquals(ContinuationLeash.Decision.CONTINUED, verdict.decision(), String.valueOf(text));
+            assertEquals(1, leash.continuations());
+        }
+    }
+
+    @Test
+    void theContinuationSaysItIsNotAnAnswerFromThePerson() {
+        ContinuationLeash leash = new ContinuationLeash(3);
+        leash.startRun();
+        String message = leash.consider(plan("pending"), "a", "Step one is done.").orElseThrow().message();
+        assertTrue(message.contains("This message comes from the harness, not from the person."), message);
+        assertTrue(message.contains("It is not an answer from the person"), message);
+    }
+
     // ── what the model is told (criterion 1) ───────────────────────────────
 
     @Test

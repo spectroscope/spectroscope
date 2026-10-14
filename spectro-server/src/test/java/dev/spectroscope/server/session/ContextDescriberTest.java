@@ -208,4 +208,19 @@ class ContextDescriberTest {
                 .description();
         assertThat(shipped).contains("fits 25 % of your context");
     }
+
+    /**
+     * Card 601: the System context tab shows the spawn descriptions the model
+     * gets, which name every tool of the explore belt, the code graph included.
+     */
+    @Test
+    void theDescribedSpawnToolsNameTheCodeGraphOfAnExploreChild(@TempDir Path cwd) throws IOException {
+        ContextInfo context = ContextDescriber.describe(SpectroConfig.load(SpectroConfig.Overrides.none(), cwd), cwd);
+        for (String spawn : java.util.List.of("spawn_agent", "spawn_agents")) {
+            String described = context.tools().stream().filter(tool -> spawn.equals(tool.name()))
+                    .findFirst().orElseThrow(() -> new AssertionError("no " + spawn + " described")).description();
+            assertThat(described).as(spawn)
+                    .contains("list_dir, read_file, glob, grep, code_graph when the folder has a code graph");
+        }
+    }
 }

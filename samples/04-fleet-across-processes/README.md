@@ -9,8 +9,8 @@ needed for the main path — it is choreography with the released binaries.
 
 From the [GitHub release](https://github.com/spectroscope/spectroscope/releases):
 
-- `spectro-server-0.15.4.jar` — the web cockpit; it also hosts the fleet hub
-- `spectro-0.15.4.zip` — the CLI (`bin/spectro`), which provides `spectro node`
+- `spectro-server-0.15.5.jar` — the web cockpit; it also hosts the fleet hub
+- `spectro-0.15.5.zip` — the CLI (`bin/spectro`), which provides `spectro node`
 
 Plus a model backend for the nodes: local Ollama
 (`SPECTRO_PROVIDER=ollama SPECTRO_MODEL=<name>`) keeps it key-free, or any
@@ -23,7 +23,7 @@ listens on loopback only), and `SPECTRO_HUB_PORT` sets its port (7700 when
 unset):
 
 ```bash
-SPECTRO_HUB_ENABLED=true SPECTRO_HUB_PORT=7700 java -XX:MaxRAMPercentage=33 -jar spectro-server-0.15.4.jar
+SPECTRO_HUB_ENABLED=true SPECTRO_HUB_PORT=7700 java -XX:MaxRAMPercentage=33 -jar spectro-server-0.15.5.jar
 ```
 
 The heap flag is the one every shipped launcher passes for you; a bare
@@ -45,13 +45,13 @@ Each node is one process running one prompt; its whole event stream rides
 the bus to the hub. `--context` names the fleet the nodes share:
 
 ```bash
-unzip spectro-0.15.4.zip
+unzip spectro-0.15.5.zip
 SPECTRO_PROVIDER=ollama SPECTRO_MODEL=qwen3 \
-  ./spectro-0.15.4/bin/spectro node -p "Summarize README.md in three lines" \
+  ./spectro-0.15.5/bin/spectro node -p "Summarize README.md in three lines" \
   --hub 127.0.0.1:7700 --context demo --id reader
 
 SPECTRO_PROVIDER=ollama SPECTRO_MODEL=qwen3 \
-  ./spectro-0.15.4/bin/spectro node -p "List the build files in this directory" \
+  ./spectro-0.15.5/bin/spectro node -p "List the build files in this directory" \
   --hub 127.0.0.1:7700 --context demo --id lister
 ```
 

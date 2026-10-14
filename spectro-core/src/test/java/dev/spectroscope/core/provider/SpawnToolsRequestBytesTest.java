@@ -39,6 +39,10 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
  * <p>The captures were written by this same test on that tree, with the
  * environment variable {@value #CAPTURE_ENV} naming the folder to write into.
  * Without the variable the test compares and writes nothing.</p>
+ *
+ * <p>Card 601 changed the two spawn descriptions on purpose. The comparison
+ * applies exactly that change to the capture ({@link Card601SpawnTexts}), so
+ * every other byte of v0.14.4 stays pinned.</p>
  */
 @Timeout(value = 30, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
 class SpawnToolsRequestBytesTest {
@@ -178,7 +182,7 @@ class SpawnToolsRequestBytesTest {
         try (InputStream in = SpawnToolsRequestBytesTest.class.getResourceAsStream(
                 "/subagents/" + name)) {
             assertNotNull(in, "the v0.14.4 capture " + name + " is not on the test classpath");
-            expected = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+            expected = Card601SpawnTexts.applied(new String(in.readAllBytes(), StandardCharsets.UTF_8));
         }
         assertEquals(expected, body,
                 "a chat with no session count set no longer posts what v0.14.4 posted: " + name);

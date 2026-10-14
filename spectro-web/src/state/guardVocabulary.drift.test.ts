@@ -15,6 +15,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { dict } from "../i18n/i18n";
 
 const java = (name: string): string =>
   readFileSync(fileURLToPath(new URL(`../../../${name}`, import.meta.url)), "utf8");
@@ -58,6 +59,25 @@ describe("the guard vocabularies the transcript draws", () => {
     );
     for (const value of values) {
       expect(setInReducer("PROGRESS_INTERVENTIONS").has(value), `${value} has no sentence`).toBe(true);
+    }
+  });
+
+  it("has a sentence, in both languages, for every decision the leash can write", () => {
+    const enumBody = java(LEASH).slice(
+      java(LEASH).indexOf("enum Decision"),
+      java(LEASH).indexOf("public String wireName()"),
+    );
+    const wireNames = new Set([...enumBody.matchAll(/\("([a-z_]+)"\)/g)].map((m) => m[1]));
+    expect(wireNames.has("continued"), "no decision wire names found, the enum's shape moved").toBe(true);
+    expect(wireNames.has("question_to_person"), "card 602's decision is gone from the enum").toBe(true);
+    for (const name of wireNames) {
+      expect(
+        setInReducer("CONTINUATION_DECISIONS").has(name),
+        `${name} falls to the other fallback: the line loses its sentence`,
+      ).toBe(true);
+      const entry = dict[`info.continuation.${name}`];
+      expect(entry, `${name} has no sentence in i18n.ts`).toBeDefined();
+      expect(entry.de.length > 0 && entry.en.length > 0 && entry.de !== entry.en, name).toBe(true);
     }
   });
 

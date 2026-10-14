@@ -786,9 +786,13 @@ const PROGRESS_INTERVENTIONS: ReadonlySet<string> = new Set(["CARRY_ON", "CHANGE
 const CONTINUATION_DECISIONS: ReadonlySet<string> = new Set([
   "continued",
   "no_progress",
-  "budget_spent",
+  // The value the Java leash writes for a spent budget; no Java build ever
+  // wrote "budget_spent", which this set named until 0.15.5.
+  "budget_exhausted",
   // Card 504: a failed goal check continued the run on the goal's own counter.
   "goal_continued",
+  // Card 602: the turn ended with a question to the person, so the run waits.
+  "question_to_person",
 ]);
 
 /** The goal check's verdicts (card 267). */
@@ -1855,7 +1859,8 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
           total: event.totalSteps,
           decision: event.decision,
         },
-        tone: event.decision === "continued" ? "neutral" : "warn",
+        // Card 602: a question waiting for the person is not a warning.
+        tone: event.decision === "continued" || event.decision === "question_to_person" ? "neutral" : "warn",
         agentId: event.agentId,
       });
 

@@ -111,13 +111,25 @@ const EVENTS: RunEvent[] = [
   {
     type: "continuation",
     agentId: "main",
-    decision: "budget_spent",
+    decision: "budget_exhausted",
     continuation: 3,
     budget: 3,
     openSteps: 1,
     totalSteps: 5,
     inputTokens: 0,
     evidence: "spent",
+    ts: 1,
+  },
+  {
+    type: "continuation",
+    agentId: "main",
+    decision: "question_to_person",
+    continuation: 0,
+    budget: 3,
+    openSteps: 3,
+    totalSteps: 4,
+    inputTokens: 0,
+    evidence: "asked",
     ts: 1,
   },
   {
@@ -197,7 +209,15 @@ const DETECTORS = ["identical_writes", "repeated_failure", "stalled_plan", "othe
 // arriving because nobody was there it does not. Two sentences, not one with
 // a variable, because one of them would be false half the time.
 const INTERVENTIONS = ["CARRY_ON", "CARRY_ON.stoodDown", "CHANGE_COURSE", "END", "other"];
-const DECISIONS = ["continued", "no_progress", "budget_spent", "goal_continued", "other"];
+const DECISIONS = [
+  "continued",
+  "no_progress",
+  "budget_exhausted",
+  "goal_continued",
+  // Card 602: the turn ended with a question, the run waits for the person.
+  "question_to_person",
+  "other",
+];
 // "unknown" is a REAL outcome here, which is why the fallback everywhere is
 // spelled "other" — a fallback that collides with a meaningful value hides it.
 // Card 504: the Java check sends met, failed and untested; a goal can also clear itself.

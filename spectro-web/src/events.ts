@@ -478,7 +478,7 @@ export type RunEvent =
       type: "continuation";
       agentId: string;
       /** The leash's decision as its own value — `continued`, `no_progress`,
-       *  `budget_spent`. NOT the same vocabulary as run_end's stopReason: the
+       *  `budget_exhausted`, `question_to_person` (card 602). NOT the same vocabulary as run_end's stopReason: the
        *  leash's exhaustion reads `unfinished_after_continuations` there, and a
        *  label keyed on the bare word "no_progress" would conflate card 266 with
        *  card 262. */

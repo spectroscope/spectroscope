@@ -325,6 +325,68 @@ class StandardToolsTest {
         assertTrue(result.contains("outside the working directory"));
     }
 
+    // ------------------------------------------- grep and glob: a file as the path
+
+    /** Card 603: a file named as grep's path is searched, in the folder format. */
+    @Test
+    void grepSearchesTheFileItsPathNames(@TempDir Path cwd) throws IOException {
+        Files.createDirectories(cwd.resolve("config"));
+        Files.writeString(cwd.resolve("config/settings.toml"), "name = \"demo\"\nport = 8080\nmode = test");
+        Files.writeString(cwd.resolve("config/other.toml"), "port = 9090");
+
+        ObjectNode call = JSON.createObjectNode();
+        call.put("pattern", "port");
+        call.put("path", "config/settings.toml");
+        String hits = tools(10).get("grep").execute(call, contextIn(cwd));
+        assertEquals("settings.toml:2:port = 8080\n", hits);
+
+        ObjectNode folder = JSON.createObjectNode();
+        folder.put("pattern", "port");
+        folder.put("path", "config");
+        assertEquals("other.toml:1:port = 9090\nsettings.toml:2:port = 8080\n",
+                tools(10).get("grep").execute(folder, contextIn(cwd)),
+                "the folder answer the file answer has to match in format");
+    }
+
+    /** Card 603: a path that is not there is named as missing, not as a folder. */
+    @Test
+    void grepOnAPathThatIsNotThereSaysNoSuchFileOrDirectory(@TempDir Path cwd) {
+        ObjectNode call = JSON.createObjectNode();
+        call.put("pattern", "port");
+        call.put("path", "config/absent.toml");
+        assertEquals("ERROR: no such file or directory: config/absent.toml",
+                tools(10).get("grep").execute(call, contextIn(cwd)));
+    }
+
+    /** Card 603: a file link that leaves the workspace is refused as before. */
+    @Test
+    void grepRefusesAFileLinkThatLeavesTheWorkspace(@TempDir Path tempDir) throws IOException {
+        Path cwd = Files.createDirectory(tempDir.resolve("cwd"));
+        Path outside = Files.writeString(tempDir.resolve("secret.txt"), "port = 1");
+        Files.createSymbolicLink(cwd.resolve("linked.txt"), outside);
+
+        ObjectNode call = JSON.createObjectNode();
+        call.put("pattern", "port");
+        call.put("path", "linked.txt");
+        String hits = tools(10).get("grep").execute(call, contextIn(cwd));
+        assertTrue(hits.startsWith("ERROR: path is outside the working directory"), hits);
+        assertFalse(hits.contains("port = 1"), hits);
+    }
+
+    /** Card 603: glob still walks a folder, and says so when handed a file. */
+    @Test
+    void globGivenAFileSaysItNeedsAFolder(@TempDir Path cwd) throws IOException {
+        Files.writeString(cwd.resolve("notes.md"), "# notes");
+
+        ObjectNode call = JSON.createObjectNode();
+        call.put("pattern", "*.md");
+        call.put("path", "notes.md");
+        assertEquals("ERROR: glob needs a folder as its path, and notes.md is a file",
+                tools(10).get("glob").execute(call, contextIn(cwd)));
+        assertEquals("notes.md", tools(10).get("glob").execute(input("pattern", "*.md"), contextIn(cwd)),
+                "the folder case is unchanged");
+    }
+
     // ---------------------------------------------------------------- sandbox
 
     @Test

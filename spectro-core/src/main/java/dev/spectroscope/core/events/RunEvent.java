@@ -955,8 +955,9 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
      * {@code evidence}, which is written for a person and may be reworded.</p>
      *
      * @param agentId      the agent whose run stopped with steps open
-     * @param decision     {@code continued}, {@code budget_exhausted} or
-     *                     {@code no_progress} — the three outcomes of
+     * @param decision     {@code continued}, {@code budget_exhausted},
+     *                     {@code no_progress} or {@code question_to_person}
+     *                     (card 602), the outcomes of
      *                     {@code ContinuationLeash.Decision}
      * @param continuation which continuation this is, 1-based; on a refusal, how
      *                     many had already been spent

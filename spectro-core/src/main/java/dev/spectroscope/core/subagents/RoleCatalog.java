@@ -1,6 +1,7 @@
 package dev.spectroscope.core.subagents;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -26,7 +27,13 @@ public final class RoleCatalog {
      * in its registry — more robust than any after-the-fact check.
      */
     static final Set<String> EXPLORE_TOOL_NAMES =
-            Set.of("list_dir", "read_file", "glob", "grep", "code_graph");
+            ordered("list_dir", "read_file", "glob", "grep", dev.spectroscope.core.tools.CodeGraphTool.NAME);
+
+    /**
+     * The workspace readers of a RESEARCH child: the file readers of explore,
+     * without {@code code_graph}. Its system prompt names them from here.
+     */
+    static final Set<String> RESEARCH_READ_TOOL_NAMES = ordered("list_dir", "read_file", "glob", "grep");
 
     /**
      * The base tools a RESEARCH child keeps (card 205): the four file readers
@@ -39,8 +46,20 @@ public final class RoleCatalog {
      * here: without it the child receives that skill's body and cannot open a
      * single file the body names.</p>
      */
-    static final Set<String> RESEARCH_BASE_TOOL_NAMES =
-            Set.of("list_dir", "read_file", "glob", "grep", "use_skill", "read_skill_file");
+    static final Set<String> RESEARCH_BASE_TOOL_NAMES = ordered(java.util.stream.Stream.concat(
+            RESEARCH_READ_TOOL_NAMES.stream(), java.util.stream.Stream.of("use_skill", "read_skill_file"))
+            .toArray(String[]::new));
+
+    /**
+     * An unmodifiable set that keeps the order it was written in, so a text
+     * derived from it reads the same on every run.
+     *
+     * @param names the members, in the order the texts name them
+     * @return the set
+     */
+    private static Set<String> ordered(String... names) {
+        return java.util.Collections.unmodifiableSequencedSet(new java.util.LinkedHashSet<>(List.of(names)));
+    }
 
     /**
      * The web grant of the research role, in the card's order. These names are
@@ -164,13 +183,25 @@ public final class RoleCatalog {
                     + "changed files, executed commands, results. Your final text is the only thing "
                     + "your requester sees.",
             AgentType.RESEARCH,
-            "You are a web research subagent (type research). You can read the workspace "
-                    + "(list_dir, read_file, glob, grep) and reach the web (web_search, web_fetch, "
-                    + "browse_page) — no writing, no command execution. Web calls are "
-                    + "permission-gated like everything else; a refused call is an answer, work "
-                    + "with what you have. Carry out exactly the research task you were given. "
-                    + "Answer as a compact memo WITH SOURCES: every claim names where it came "
-                    + "from. Your final text is the only thing your requester sees.");
+            researchSystemPrompt(RESEARCH_READ_TOOL_NAMES, WEB_TOOL_NAMES));
+
+    /**
+     * The research child's system prompt, naming its readers and its web tools
+     * from the sets its belt is built from (card 601).
+     *
+     * @param readTools the workspace readers, in the order the text names them
+     * @param webTools  the web grant, in the order the text names them
+     * @return the prompt
+     */
+    static String researchSystemPrompt(Collection<String> readTools, Collection<String> webTools) {
+        return "You are a web research subagent (type research). You can read the workspace "
+                + "(" + String.join(", ", readTools) + ") and reach the web (" + String.join(", ", webTools)
+                + ") \u2014 no writing, no command execution. Web calls are "
+                + "permission-gated like everything else; a refused call is an answer, work "
+                + "with what you have. Carry out exactly the research task you were given. "
+                + "Answer as a compact memo WITH SOURCES: every claim names where it came "
+                + "from. Your final text is the only thing your requester sees.";
+    }
 
     /**
      * Card 470: when the parent reads for itself and when it sends a child. One
@@ -214,35 +245,81 @@ public final class RoleCatalog {
             "You are spectroscope, a coding agent in the terminal. Use the tools when they help, "
                     + "and answer in English. " + DISCOVERY_GUIDANCE + " Working directory: ";
 
-    /** Descriptions of the parent-only spawn tools — also surfaced by the
-     *  System-Kontext view, so they live as constants (single source of truth). */
-    static final String SPAWN_AGENT_DESC =
-            "Starts a subagent with a fresh context and waits for its result. type=explore: "
-                    + "read-only (list_dir, read_file, glob, grep), for research. type=worker: all tools, for real "
-                    + "subtasks. The subagent sees ONLY the task text, so phrase it as a self-contained "
-                    + "assignment and ask the child for a short digest with path and line, not for file "
-                    + "contents.";
-    /** Everything of the {@code spawn_agents} description after its width. */
-    private static final String SPAWN_AGENTS_DESC_TAIL =
-            " subagents IN PARALLEL and waits until "
-                    + "all of them are finished. For independent subtasks (e.g. investigating several "
-                    + "directories at the same time). Write each task as a self-contained assignment and "
-                    + "ask each child for a short digest with path and line, not for file contents.";
-    /** The {@code spawn_agents} description of a chat with no session count:
-     *  the v0.14.4 text. */
+    /**
+     * The explore tools as the spawn descriptions name them (card 601): every
+     * name of the set, in its order, with {@code code_graph} marked as offered
+     * only when the folder has a code graph.
+     *
+     * @param exploreTools the explore belt, {@link #EXPLORE_TOOL_NAMES} in a shipped text
+     * @return the list for the parentheses
+     */
+    static String exploreToolList(Collection<String> exploreTools) {
+        return exploreTools.stream()
+                .map(name -> dev.spectroscope.core.tools.CodeGraphTool.NAME.equals(name)
+                        ? name + " when the folder has a code graph" : name)
+                .collect(java.util.stream.Collectors.joining(", "));
+    }
+
+    /**
+     * The {@code spawn_agent} description of a chat with no session count,
+     * over the given explore belt.
+     *
+     * @param exploreTools the explore belt
+     * @return the description
+     */
+    private static String spawnAgentText(Collection<String> exploreTools) {
+        return "Starts a subagent with a fresh context and waits for its result. type=explore: "
+                + "read-only (" + exploreToolList(exploreTools) + "), for research. type=worker: all tools, "
+                + "for real subtasks. The subagent sees ONLY the task text, so phrase it as a self-contained "
+                + "assignment and ask the child for a short digest with path and line, not for file "
+                + "contents.";
+    }
+
+    /**
+     * Everything of the {@code spawn_agents} description after its width,
+     * over the given explore belt.
+     *
+     * @param exploreTools the explore belt
+     * @return the tail
+     */
+    private static String spawnAgentsTail(Collection<String> exploreTools) {
+        return " subagents IN PARALLEL and waits until "
+                + "all of them are finished. For independent subtasks (e.g. investigating several "
+                + "directories at the same time). type=explore: read-only (" + exploreToolList(exploreTools)
+                + "); type=worker: all tools. Write each task as a self-contained assignment and "
+                + "ask each child for a short digest with path and line, not for file contents.";
+    }
+
+    /** Descriptions of the parent-only spawn tools, also surfaced by the
+     *  System-Kontext view, so they live as constants (single source of truth).
+     *  The explore tools they name come from {@link #EXPLORE_TOOL_NAMES}. */
+    static final String SPAWN_AGENT_DESC = spawnAgentText(EXPLORE_TOOL_NAMES);
+    /** The {@code spawn_agents} description of a chat with no session count. */
     static final String SPAWN_AGENTS_DESC =
-            "Starts up to " + SubagentManager.MAX_PARALLEL_CHILDREN + SPAWN_AGENTS_DESC_TAIL;
+            "Starts up to " + SubagentManager.MAX_PARALLEL_CHILDREN + spawnAgentsTail(EXPLORE_TOOL_NAMES);
 
     /**
      * The description of {@code spawn_agent} in a chat with this count (card
-     * 490): the v0.14.4 text, plus {@link SessionCount#limitSentence()} when a
-     * count is set.
+     * 490): {@link #SPAWN_AGENT_DESC}, plus {@link SessionCount#limitSentence()}
+     * when a count is set.
      *
      * @param count the session count the run started with
      * @return the model-facing description
      */
     static String spawnAgentDescription(SessionCount count) {
-        return SPAWN_AGENT_DESC + count.limitSentence();
+        return spawnAgentDescription(EXPLORE_TOOL_NAMES, count);
+    }
+
+    /**
+     * The {@code spawn_agent} description over a given explore belt (card
+     * 601), so a test can widen the belt and watch the text follow.
+     *
+     * @param exploreTools the explore belt
+     * @param count        the session count the run started with
+     * @return the model-facing description
+     */
+    static String spawnAgentDescription(Collection<String> exploreTools, SessionCount count) {
+        return spawnAgentText(exploreTools) + count.limitSentence();
     }
 
     /**
@@ -255,7 +332,18 @@ public final class RoleCatalog {
      * @return the model-facing description
      */
     static String spawnAgentsDescription(SessionCount count) {
-        return "Starts up to " + count.batchWidth() + SPAWN_AGENTS_DESC_TAIL + count.limitSentence();
+        return spawnAgentsDescription(EXPLORE_TOOL_NAMES, count);
+    }
+
+    /**
+     * The {@code spawn_agents} description over a given explore belt (card 601).
+     *
+     * @param exploreTools the explore belt
+     * @param count        the session count the run started with
+     * @return the model-facing description
+     */
+    static String spawnAgentsDescription(Collection<String> exploreTools, SessionCount count) {
+        return "Starts up to " + count.batchWidth() + spawnAgentsTail(exploreTools) + count.limitSentence();
     }
 
     /** One development tool = a role wrapper over a child spawn. Static so both
