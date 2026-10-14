@@ -1055,7 +1055,11 @@ public final class StandardTools {
                     if (pattern.isBlank()) {
                         return "ERROR: pattern must be a non-empty string.";
                     }
-                    Path root = resolveInside(context, input.path("path").asText("."));
+                    String given = input.path("path").asText(".");
+                    Path root = resolveSearchPath(context, given);
+                    if (!Files.isDirectory(root)) {
+                        return "ERROR: glob needs a folder as its path, and " + given + " is a file";
+                    }
                     PathMatcher matcher = root.getFileSystem().getPathMatcher("glob:" + pattern);
                     List<String> matches = walkMatches(root, matcher, MAX_GLOB_RESULTS);
                     return matches.isEmpty() ? "(no matches)" : String.join("\n", matches);
@@ -1064,6 +1068,25 @@ public final class StandardTools {
                 }
             }
         };
+    }
+
+    /**
+     * The path of a glob or grep call, resolved by the sandbox rule, with a miss
+     * named for what it is (card 603). The rule's own exception carries only the
+     * absolute path, which reads like a fault in the file system rather than a
+     * path that is not there.
+     *
+     * @param context the call's context
+     * @param given   the path exactly as the model sent it
+     * @return the resolved path, a folder or a file
+     * @throws IOException when it escapes, does not exist, or cannot be resolved
+     */
+    private static Path resolveSearchPath(ToolContext context, String given) throws IOException {
+        try {
+            return resolveInside(context, given);
+        } catch (NoSuchFileException missing) {
+            throw new IOException("no such file or directory: " + given, missing);
+        }
     }
 
     /**
@@ -1174,14 +1197,22 @@ public final class StandardTools {
                     } catch (PatternSyntaxException invalid) {
                         return "ERROR: invalid regex: " + invalid.getMessage();
                     }
-                    Path root = resolveInside(context, input.path("path").asText("."));
+                    Path named = resolveSearchPath(context, input.path("path").asText("."));
                     String glob = input.path("glob").asText("");
                     PathMatcher matcher = glob.isBlank() ? null
-                            : root.getFileSystem().getPathMatcher("glob:" + glob);
+                            : named.getFileSystem().getPathMatcher("glob:" + glob);
+                    // Card 603: a file as the path is searched on its own, and
+                    // its hits name it the way a folder search names its files.
+                    boolean oneFile = Files.isRegularFile(named);
+                    Path root = oneFile ? named.getParent() : named;
+                    List<String> candidates = oneFile
+                            ? (matcher == null || matcher.matches(named.getFileName())
+                                    ? List.of(named.getFileName().toString()) : List.of())
+                            : walkMatches(root, matcher, Long.MAX_VALUE);
                     int clamp = ToolOutput.maxOutputChars(context.contextWindow());
                     StringBuilder out = new StringBuilder();
                     List<String> overFuse = new ArrayList<>();
-                    for (String rel : walkMatches(root, matcher, Long.MAX_VALUE)) {
+                    for (String rel : candidates) {
                         Path file = root.resolve(rel);
                         if (Files.size(file) > FUSE_BYTES) {
                             overFuse.add(rel); // named at the end, unless the hits fill the clamp first
