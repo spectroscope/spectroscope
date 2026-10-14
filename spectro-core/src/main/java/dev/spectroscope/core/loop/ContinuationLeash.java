@@ -98,7 +98,9 @@ public final class ContinuationLeash {
         BUDGET_EXHAUSTED("budget_exhausted"),
         /** Nothing changed since the last continuation, so a further one would
          *  be the spin card 262 was cut from. */
-        NO_PROGRESS("no_progress");
+        NO_PROGRESS("no_progress"),
+        /** The turn ended with a question to the person (card 602). */
+        QUESTION_TO_PERSON("question_to_person");
 
         private final String wireName;
 
@@ -107,7 +109,8 @@ public final class ContinuationLeash {
         }
 
         /** The stable snake_case name that travels on the wire.
-         *  @return {@code continued}, {@code budget_exhausted} or {@code no_progress} */
+         *  @return {@code continued}, {@code budget_exhausted}, {@code no_progress}
+         *          or {@code question_to_person} */
         public String wireName() {
             return wireName;
         }
@@ -205,12 +208,37 @@ public final class ContinuationLeash {
      *         at all
      */
     public Optional<Verdict> consider(RunEvent.Plan plan, String signature) {
+        return consider(plan, signature, null);
+    }
+
+    /**
+     * Decides what happens to a run that just stopped, knowing what the turn
+     * said last (card 602).
+     *
+     * <p>A turn whose final text ends with a question is waiting for the
+     * person. Continuing it would put the harness's nudge where the person's
+     * answer belongs, and a model has read "carry on" as the person's consent.
+     * So such a stop is not continued and spends no continuation; the line on
+     * the wire says why, in its own decision value.</p>
+     *
+     * @param plan      the run's plan ledger, latest-wins, or null when none was written
+     * @param signature what the run has to show for itself, from
+     *                  {@link #signature(RunEvent.Plan, int)}
+     * @param finalText the assistant text of the turn that stopped, or null
+     * @return the decision, or empty when the leash does not apply to this exit
+     *         at all
+     */
+    public Optional<Verdict> consider(RunEvent.Plan plan, String signature, String finalText) {
         int allowed = budget;
         if (allowed <= 0 || PlanVerdict.of(plan) != PlanVerdict.UNFINISHED) {
             return Optional.empty();
         }
         int open = PlanVerdict.openSteps(plan);
         int total = PlanVerdict.totalSteps(plan);
+        if (endsWithAQuestion(finalText)) {
+            return Optional.of(new Verdict(Decision.QUESTION_TO_PERSON, null, spent, allowed,
+                    "not continued: the turn ended with a question to the person"));
+        }
         if (spent >= allowed) {
             return Optional.of(new Verdict(Decision.BUDGET_EXHAUSTED, null, spent, allowed,
                     "not continued: " + open + " of " + total + " steps open, and this run's"
@@ -313,10 +341,44 @@ public final class ContinuationLeash {
             out.append("  - … and ").append(open.size() - MAX_LISTED_STEPS).append(" more\n");
         }
         out.append("Carry on with the next open step. If one cannot be done, mark it and say")
-                .append(" why rather than stopping. This is continuation ").append(spent)
+                .append(" why rather than stopping. This message comes from the harness, not from")
+                .append(" the person. It is not an answer from the person to anything you asked.")
+                .append(" This is continuation ").append(spent)
                 .append(" of ").append(allowed)
-                .append(" — after that the run ends with whatever is still open.");
+                .append(". After that the run ends with whatever is still open.");
         return out.toString();
+    }
+
+    /** What may close a sentence after its question mark: quotes, brackets
+     *  and markdown emphasis. */
+    private static final String CLOSERS = "\"'\u201C\u201D\u2018\u2019\u00AB\u00BB\u2039\u203A)]}*_~`";
+
+    /**
+     * Whether a turn's text ends with a question (card 602): its last line
+     * that is not blank ends with a question mark once closing quotes,
+     * brackets and markdown emphasis are trimmed off its end.
+     *
+     * @param text the turn's final assistant text, or null
+     * @return true when the last line asks something
+     */
+    static boolean endsWithAQuestion(String text) {
+        if (text == null) {
+            return false;
+        }
+        String[] lines = text.split("\\R");
+        for (int i = lines.length - 1; i >= 0; i--) {
+            String line = lines[i].strip();
+            if (line.isEmpty()) {
+                continue;
+            }
+            int end = line.length();
+            while (end > 0 && CLOSERS.indexOf(line.charAt(end - 1)) >= 0) {
+                end--;
+            }
+            String trimmed = line.substring(0, end).stripTrailing();
+            return trimmed.endsWith("?") || trimmed.endsWith("\uFF1F");
+        }
+        return false;
     }
 
     private static String clip(String text) {

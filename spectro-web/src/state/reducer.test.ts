@@ -2107,6 +2107,26 @@ describe("the run's self-reports are lines and not silence", () => {
     });
   });
 
+  it("draws a stop that waits for the person's answer (card 602)", () => {
+    const state = reduce(initialState, {
+      type: "continuation",
+      agentId: "main",
+      decision: "question_to_person",
+      continuation: 0,
+      budget: 3,
+      openSteps: 3,
+      totalSteps: 4,
+      inputTokens: 0,
+      evidence: "not continued: the turn ended with a question to the person",
+      ts: 3,
+    });
+    expect(state.turns[0]).toMatchObject({
+      kind: "info",
+      infoKey: "info.continuation.question_to_person",
+      tone: "neutral",
+    });
+  });
+
   it("draws the goal check's verdict", () => {
     const state = reduce(initialState, {
       type: "goal_check",

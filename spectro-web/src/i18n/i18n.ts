@@ -4315,6 +4315,10 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Nicht weitergeführt: alle {budget} Fortsetzungen sind aufgebraucht, {open} von {total} Schritten bleiben offen.",
     en: "Not carried on: all {budget} continuations are spent, {open} of {total} steps still open.",
   },
+  "info.continuation.question_to_person": {
+    de: "Nicht weitergeführt: der Zug endete mit einer Frage an dich, deine Antwort kommt zuerst.",
+    en: "Not carried on: the turn ended with a question to you, so your answer comes first.",
+  },
   "info.continuation.goal_continued": {
     de: "Das Ziel ist noch nicht erreicht, der Lauf geht weiter (Ziel-Fortsetzung {n}, höchstens {budget} Züge).",
     en: "The goal is not met yet, the run goes on (goal continuation {n}, at most {budget} turns).",

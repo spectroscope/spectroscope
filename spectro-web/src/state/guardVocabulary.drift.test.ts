@@ -61,6 +61,20 @@ describe("the guard vocabularies the transcript draws", () => {
     }
   });
 
+  it("has a sentence for the leash's question decision (card 602)", () => {
+    const enumBody = java(LEASH).slice(
+      java(LEASH).indexOf("enum Decision"),
+      java(LEASH).indexOf("public String wireName()"),
+    );
+    const wireNames = new Set([...enumBody.matchAll(/\("([a-z_]+)"\)/g)].map((m) => m[1]));
+    expect(wireNames.has("continued"), "no decision wire names found, the enum's shape moved").toBe(true);
+    expect(wireNames.has("question_to_person"), "the Java leash no longer reports a question").toBe(true);
+    expect(
+      setInReducer("CONTINUATION_DECISIONS").has("question_to_person"),
+      "question_to_person falls to the other fallback: the line loses its sentence",
+    ).toBe(true);
+  });
+
   it("keeps the leash's decisions and the run-end reasons apart", () => {
     // "no_progress" names three things in this codebase: the RunEvent subtype,
     // ProgressGuard.STOP_REASON and ContinuationLeash.Decision.NO_PROGRESS. The

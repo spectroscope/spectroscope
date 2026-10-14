@@ -1331,8 +1331,11 @@ public final class Agent {
                         // to the prompt before it, and continuing against it would
                         // overrule the user's own redirect at provider prices.
                         RunEvent.Plan ownLedger = planWrittenThisRun ? lastPlan : null;
+                        // Card 602: the turn's own text, so a stop that asks
+                        // the person something waits for the person.
                         Optional<ContinuationLeash.Verdict> held = leash.consider(
-                                ownLedger, ContinuationLeash.signature(ownLedger, productiveCalls));
+                                ownLedger, ContinuationLeash.signature(ownLedger, productiveCalls),
+                                text.toString());
                         if (held.isPresent()) {
                             ContinuationLeash.Verdict verdict = held.get();
                             emit.accept(new RunEvent.Continuation(agentId,

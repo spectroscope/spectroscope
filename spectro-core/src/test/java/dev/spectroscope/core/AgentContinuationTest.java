@@ -275,6 +275,39 @@ class AgentContinuationTest {
         return events.stream().filter(RunEvent.TurnStart.class::isInstance).count();
     }
 
+    // ── card 602: a question to the person ends the run ────────────────────
+
+    private static List<LlmProvider.ProviderEvent> questionTurn() {
+        return List.of(new LlmProvider.PTextDelta("The plan is written.\n\n"),
+                new LlmProvider.PTextDelta("Proceed as outlined, or adjust the order?"),
+                new LlmProvider.PStop(LlmProvider.PStop.StopReason.END_TURN));
+    }
+
+    @Test
+    void aTurnThatEndsWithAQuestionWaitsForThePerson() {
+        Recording provider = new Recording(scripted(
+                planTurn("c1", "completed", "in_progress", "pending", "pending"),
+                questionTurn()));
+        List<RunEvent> events = run(agent(provider, new ContinuationLeash(3)));
+
+        assertEquals(List.of("question_to_person"), decisions(events));
+        assertEquals("not continued: the turn ended with a question to the person",
+                continuations(events).getFirst().evidence());
+        assertEquals(2, provider.requests.size(), "no third turn: the harness does not answer for the person");
+        assertEquals(3, continuations(events).getFirst().openSteps());
+    }
+
+    @Test
+    void aTurnThatEndsWithoutAQuestionIsStillCarriedOn() {
+        Recording provider = new Recording(scripted(
+                planTurn("c1", "completed", "in_progress", "pending", "pending"),
+                answerTurn()));
+        List<RunEvent> events = run(agent(provider, new ContinuationLeash(3)));
+
+        assertEquals("continued", decisions(events).getFirst());
+        assertTrue(provider.requests.size() >= 3, "the harness started its own turn");
+    }
+
     // ── criterion 1: the loop starts another turn ──────────────────────────
 
     @Test
