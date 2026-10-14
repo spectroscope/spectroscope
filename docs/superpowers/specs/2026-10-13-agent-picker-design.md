@@ -1,6 +1,6 @@
 # Agent Picker
 
-Status: design, written 2026-10-13 for review. Card 593. Built on integration/0.15.4 after card 586 lands there; the branch `card-593` starts at c7c16528.
+Status: design, written 2026-10-13 for review. Card 593. Built on the integration branch after card 586 lands there; the branch `card-593` starts at c7c16528.
 
 ## Goal
 
@@ -16,11 +16,11 @@ Taken by the owner on 2026-10-13 (`kanban/evidence/feedback-2026-10-13/owner-wor
 | What a helper's context view shows | Its fill, its model and its parts with their sizes, without the texts. Helpers report part sizes each turn (a small core change) |
 | Helper plans | None, as today. For a helper the Plan view says it keeps no plan |
 | The empty Plan view | Seen "in a normal chat with helpers". Not reproduced in code |
-| Release | With 0.15.4 |
+| Release | With the release of 2026-10-13 |
 
 ## Facts
 
-Measured on integration/0.15.4 at c7c16528 on 2026-10-13 (`kanban/evidence/593/survey-context.md`, `survey-plan.md`, `survey-agents.md`). Web paths are under `spectro-web/src/`, core paths under `spectro-core/src/main/java/dev/spectroscope/core/`.
+Measured on the integration branch at c7c16528 on 2026-10-13 (`kanban/evidence/593/survey-context.md`, `survey-plan.md`, `survey-agents.md`). Web paths are under `spectro-web/src/`, core paths under `spectro-core/src/main/java/dev/spectroscope/core/`.
 
 - 33 web surfaces show agent data. 21 are agent-scoped, 18 of them keyed per agent. 3 show one agent without saying which: the ring (`components/ContextRing.tsx:59`, root only), the Plan panel (`components/PlanTab.tsx:17`, latest writer wins) and the System context panel (`components/SystemContextTab.tsx:111`, keyed through `RightPanel.selectedId`).
 - The ring reads `UiState.context`, `lastInputTokens` and `announcedWindow`, written for the root agent only (`state/reducer.ts:1892-1895`, `:1998-2019`). A child's `context_info` is dropped at `reducer.ts:2004` (card 521).
@@ -146,7 +146,7 @@ This card adds the per-writer slots of section 5 and two tests: the root plan su
 
 ## After 586
 
-- Base: integration/0.15.4 after the 586 merge; rebase `card-593` onto it first.
+- Base: the integration branch after the 586 merge; rebase `card-593` onto it first.
 - Names from 586 in use here: `UiState.runs`, `RunPanel`, `revealRunPanel`, the `PlanTab` props `runs`, `planAgent`, `live`, `wide`, `onToggleWide`, `onJump`, `onOpenPath`. `chatFocus` has an `agent` target; the picker does not use it.
 - Files both cards touch: `state/reducer.ts` (the `UiState` hunk next to `plan` and `planAgent` at `:459-464`, `initialState` at `:553-554`, the switch around `case "plan"` at `:2048` and 586's `case "run_step"`), `components/PlanTab.tsx`, `components/RightPanel.tsx` (`:136`, `:163`, `:215`, `:370`), `App.tsx` (`:3268-3279`), `i18n/i18n.ts`, `state/reducer.test.ts`, `components/PlanTab.test.ts`, `testkit/archiveEvents.ts`, `docs/guide-assets/parts/05-web-tabs.html` (the Plan panel paragraph; 593 adds one sentence each for the picker and the popover). 586 adds sites to `dockOpeners.drift.test.ts`; 593 adds none.
 - Order inside 593: core and wire first (independent of 586), then the reducer, then the picker, then the three views.

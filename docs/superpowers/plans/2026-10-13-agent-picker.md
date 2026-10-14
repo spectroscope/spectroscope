@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Branch `card-593` in worktree `spectroscope-harness/worktrees/wt-card-593`. Part A (Tasks 1 to 3) builds now, on `c7c16528` (integration/0.15.4). Part B (Tasks 4 to 10) builds after card 586 has landed in integration/0.15.4 and `card-593` has been rebased onto it (Task 4). Never push.
+- Branch `card-593` in worktree `spectroscope-harness/worktrees/wt-card-593`. Part A (Tasks 1 to 3) builds now, on `c7c16528` (the integration branch). Part B (Tasks 4 to 10) builds after card 586 has landed in the integration branch and `card-593` has been rebased onto it (Task 4). Never push.
 - Commits: explicit paths only, never `git add -A`; identity `git -c user.email=chris@spectroscope.ai -c user.name="Christopher Ezell" commit`; every message ends with a blank line and `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. Commit a task before you bite it.
 - No em dashes and no en dashes anywhere: code, comments, UI text, docs, test names, commit messages. Existing dashes in lines you do not otherwise touch stay as they are.
 - UI text in English and German (`spectro-web/src/i18n/i18n.ts`, entries `"key": { de: "...", en: "..." }`). Every new key passes the four drift tests of that folder: both languages (`i18n.test.ts`), each placeholder once (`placeholderOnce.test.ts`), no card number or private path (`publicText.test.ts`), function replacement for slot fills (`slotFill.drift.test.ts`). Dictionary text names no card number.
@@ -621,18 +621,18 @@ Bites into `bites-task3.log`: (a) delete `.introspectionTexts(false)` from the c
 
 ## Part B: the web, after card 586 has landed
 
-### Task 4: Rebase onto integration/0.15.4 and take a baseline
+### Task 4: Rebase onto the integration branch and take a baseline
 
 **Files:** none changed by hand.
 
 - [ ] **Step 1: Check that 586 is in**
 
-Run: `git -C worktrees/wt-card-593 log --oneline integration/0.15.4 -40 > kanban/evidence/593/base-log.txt; grep -ci 'card 586\|card-586' kanban/evidence/593/base-log.txt`
+Run: `git -C worktrees/wt-card-593 log --oneline the integration branch -40 > kanban/evidence/593/base-log.txt; grep -ci 'card 586\|card-586' kanban/evidence/593/base-log.txt`
 Expected: at least 1. If 0, stop here and report: Part B waits for 586.
 
 - [ ] **Step 2: Rebase**
 
-Run: `git status --porcelain` (empty), then `git rebase integration/0.15.4 > kanban/evidence/593/rebase.log 2>&1; echo $?`. Part A touches `AgentOptions.java`, `Agent.java`, `SubagentManager.java`, `SubagentConfig.java`, three core tests and `RunEventJsonTest.java`; 586 touches none of them, so a conflict is unexpected. If one appears, resolve it by reading both sides, never by taking one side blindly, and write what you did into `rebase.log`. Record `git rev-parse HEAD` and `git merge-base HEAD integration/0.15.4` in `rebase.log`.
+Run: `git status --porcelain` (empty), then `git rebase the integration branch > kanban/evidence/593/rebase.log 2>&1; echo $?`. Part A touches `AgentOptions.java`, `Agent.java`, `SubagentManager.java`, `SubagentConfig.java`, three core tests and `RunEventJsonTest.java`; 586 touches none of them, so a conflict is unexpected. If one appears, resolve it by reading both sides, never by taking one side blindly, and write what you did into `rebase.log`. Record `git rev-parse HEAD` and `git merge-base HEAD the integration branch` in `rebase.log`.
 
 - [ ] **Step 3: Fresh dependencies**
 
@@ -2503,7 +2503,7 @@ Run: `./gradlew :spectro-core:test --tests '*GuideDriftTest*' --tests '*ConfigDo
 
 `04-web-chat.html`, the context ring bullet, replace `clicking it opens the introspection popover above the ring (chapter 28).` with `clicking it opens the introspection popover above the ring (chapter 28). The popover's picker switches the ring to a helper: it then shows the helper's fill against the helper's own window, its model and the sizes of its parts, and the Plan panel and the System context tab follow the same choice.`
 
-`15-ref-events.html`, the `context_info` entry: replace `Emitted once per turn when introspection is on;` with `Emitted once per turn when introspection is on, by the main agent with the part texts and, since 0.15.4, by every helper with the sizes only (no <code>text</code> key);`.
+`15-ref-events.html`, the `context_info` entry: replace `Emitted once per turn when introspection is on;` with `Emitted once per turn when introspection is on, by the main agent with the part texts and, since the release of 2026-10-13, by every helper with the sizes only (no <code>text</code> key);`.
 
 No dashes in the new sentences; the existing ones in those paragraphs stay.
 
@@ -2532,8 +2532,8 @@ Also count on the session file of that run (`<temp home>/.spectro/sessions/<id>.
 
 - [ ] **Step 7: Live in the test app**
 
-The owner's live check runs in a test app. Build it as `kanban/evidence/release-0.15.4/testbuild/README.md` describes (section A of `kanban/evidence/release-0.15.2/RECIPE.md`, the scripts under `testbuild/scripts/`, the build stops at `spectroscope.app`, never the DMG, because `build-desktop-runkit.sh` deletes the released DMG), from this branch's head, label `0.15.4-beta (card-593, <sha>, <date>)`, and add its row to `TESTBUILDS.md` in the same run. Do not start the app yourself: the owner starts it. Write into `VERIFY.md` the app path and the three things to look at: one chat on the house backend with a prompt that spawns an explore child; pick the child in the ring, the popover shows its fill, its model and three parts with sizes; the Plan panel says it keeps no plan; and the session file counts of Step 6 on that session (`grep -c '"context_info"' ~/.spectro/sessions/<id>.jsonl`, none of the child's lines with `"text"`).
+The owner's live check runs in a test app. Build it as `the release evidence folder's testbuild/README.md` describes (section A of `kanban/evidence/release-0.15.2/RECIPE.md`, the scripts under `testbuild/scripts/`, the build stops at `spectroscope.app`, never the DMG, because `build-desktop-runkit.sh` deletes the released DMG), from this branch's head, label `<version>-beta (card-593, <sha>, <date>)`, and add its row to `TESTBUILDS.md` in the same run. Do not start the app yourself: the owner starts it. Write into `VERIFY.md` the app path and the three things to look at: one chat on the house backend with a prompt that spawns an explore child; pick the child in the ring, the popover shows its fill, its model and three parts with sizes; the Plan panel says it keeps no plan; and the session file counts of Step 6 on that session (`grep -c '"context_info"' ~/.spectro/sessions/<id>.jsonl`, none of the child's lines with `"text"`).
 
 - [ ] **Step 8: Write `VERIFY.md` and commit it in the home repo**
 
-`VERIFY.md` holds: the commits of this branch (`git log --oneline integration/0.15.4..card-593`), the gate counts with their method and date, the Playwright run (backend and model, session id, the assertions and their results, the screenshot names), the session file counts, the test app row, and what was not done and why. Commit it in the home repo with explicit paths (`kanban/evidence/593/VERIFY.md`, `kanban/evidence/593/verify.mjs`, the screenshots, the logs, `TESTBUILDS.md`): message `Card 593: verification evidence` with the trailer.
+`VERIFY.md` holds: the commits of this branch (`git log --oneline the integration branch..card-593`), the gate counts with their method and date, the Playwright run (backend and model, session id, the assertions and their results, the screenshot names), the session file counts, the test app row, and what was not done and why. Commit it in the home repo with explicit paths (`kanban/evidence/593/VERIFY.md`, `kanban/evidence/593/verify.mjs`, the screenshots, the logs, `TESTBUILDS.md`): message `Card 593: verification evidence` with the trailer.

@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Branch `card-586` in worktree `spectroscope-harness/worktrees/wt-card-586`, based on `integration/0.15.4` (`c7c16528`). Never push.
+- Branch `card-586` in worktree `spectroscope-harness/worktrees/wt-card-586`, based on `the integration branch` (`c7c16528`). Never push.
 - Commits: explicit paths only, never `git add -A`; identity `git -c user.email=chris@spectroscope.ai -c user.name="Christopher Ezell" commit`; every message ends with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 - No em dashes or en dashes anywhere (code, comments, UI text, docs, commit messages).
 - UI text in English and German (`spectro-web/src/i18n/i18n.ts`, entries `"key": { de: "...", en: "..." }`).

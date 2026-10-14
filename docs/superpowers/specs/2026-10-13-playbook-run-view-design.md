@@ -18,7 +18,7 @@ A playbook run, and a workflow run, becomes one living plan beside the chat. Eve
 | Compact panel | As in the mockup of 2026-10-13 (graph strip on top, one card per step) |
 | Wide view | The panel takes the full width; "small" brings the chat back |
 | Documents under dot folders such as `.superpowers/` | May open, but only files a run itself recorded as written documents; never `.env`, never anything under `.git` |
-| Release | With 0.15.4 |
+| Release | With the release of 2026-10-13 |
 
 ## What exists today
 
