@@ -786,7 +786,9 @@ const PROGRESS_INTERVENTIONS: ReadonlySet<string> = new Set(["CARRY_ON", "CHANGE
 const CONTINUATION_DECISIONS: ReadonlySet<string> = new Set([
   "continued",
   "no_progress",
-  "budget_spent",
+  // The value the Java leash writes for a spent budget; no Java build ever
+  // wrote "budget_spent", which this set named until 0.15.5.
+  "budget_exhausted",
   // Card 504: a failed goal check continued the run on the goal's own counter.
   "goal_continued",
   // Card 602: the turn ended with a question to the person, so the run waits.

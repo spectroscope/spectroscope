@@ -111,7 +111,7 @@ const EVENTS: RunEvent[] = [
   {
     type: "continuation",
     agentId: "main",
-    decision: "budget_spent",
+    decision: "budget_exhausted",
     continuation: 3,
     budget: 3,
     openSteps: 1,
@@ -212,7 +212,7 @@ const INTERVENTIONS = ["CARRY_ON", "CARRY_ON.stoodDown", "CHANGE_COURSE", "END",
 const DECISIONS = [
   "continued",
   "no_progress",
-  "budget_spent",
+  "budget_exhausted",
   "goal_continued",
   // Card 602: the turn ended with a question, the run waits for the person.
   "question_to_person",
