@@ -372,11 +372,11 @@ public final class ContinuationLeash {
                 continue;
             }
             int end = line.length();
-            while (end > 0 && CLOSERS.indexOf(line.charAt(end - 1)) >= 0) {
+            while (end > 0 && (CLOSERS.indexOf(line.charAt(end - 1)) >= 0
+                    || Character.isWhitespace(line.charAt(end - 1)))) {
                 end--;
             }
-            String trimmed = line.substring(0, end).stripTrailing();
-            return trimmed.endsWith("?") || trimmed.endsWith("\uFF1F");
+            return end > 0 && (line.charAt(end - 1) == '?' || line.charAt(end - 1) == '\uFF1F');
         }
         return false;
     }
