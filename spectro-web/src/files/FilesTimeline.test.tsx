@@ -17,6 +17,7 @@ import { FilesDetail } from "./FilesDetail";
 import { FilesExplorer } from "./FilesExplorer";
 import { FilesTimeline, timelineAxis, type FilesTimelineProps } from "./FilesTimeline";
 import { FilesView, type FilesViewProps } from "./FilesView";
+import { timeText } from "./axis";
 import { fileRows, foldFiles, type FileLedger } from "./fold";
 
 const T0 = 1_760_000_000_000;
@@ -596,8 +597,31 @@ describe("the files tab's timeline", () => {
           },
         }),
     ]);
-    expect(readout(dragged)).toBe("+432,641.0 s");
-    expect(readout(tree)).toBe("+1,382,400.0 s (end of run)");
+    // The cursor stands on the twelfth read of the second spell: its seven later reads and the third spell are dimmed.
+    expect(marks(dragged).filter((m) => m.classes.includes("files-tl__mark--after"))).toHaveLength(27);
+    expect(readout(dragged)).toBe("+5 d");
+    expect(readout(tree)).toBe("+16 d (end of run)");
+  });
+
+  it("theReadoutUsesTheAxisTimeFormat", () => {
+    const events = [
+      { type: "run_start", runId: "r1", agentId: "main", prompt: "go", workspace: "/ws", ts: T0 },
+      { ...call("c1", "read_file", { path: "a.ts" }), ts: T0 + 7_400 },
+      { ...result("c1"), ts: T0 + 7_500 },
+      { ...call("c2", "read_file", { path: "b.ts" }), ts: T0 + 13_972_900 },
+      { ...result("c2"), ts: T0 + 13_973_000 },
+    ] as unknown as RunEvent[];
+    expect(readout(run(props({ events, startAt: events[1] })))).toBe("+7.4 s");
+    expect(readout(run(props({ events, startAt: events[3] })))).toBe("+3 h 52 min");
+    expect(readout(run(props({ events })))).toBe("+3 h 52 min (end of run)");
+    // One formatter: the readout reads like the axis label of the same time.
+    expect(readout(run(props({ events, startAt: events[3] })))).toBe(`+${timeText("en", 13_972.9)}`);
+    const tree = run(props({ events }));
+    const ledger = foldFiles(events);
+    const axis = timelineAxis(ledger, events);
+    expect(byClass(tree, "files-tl__step").map((el) => textOf(el.props.children))).toEqual(
+      axis.steps.map((s) => timeText("en", s.value)),
+    );
   });
 
   it("playStartsAtTheFirstCall", () => {

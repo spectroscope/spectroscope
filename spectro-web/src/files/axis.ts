@@ -94,8 +94,9 @@ export function niceStep(span: number, table: readonly number[], unit: number, m
 /**
  * The labels of a timed axis, placed in the collapsed domain: a step from the
  * table along the axis, at most `max` labels. A label that would fall inside a
- * collapsed gap moves to where the work resumes. A label closer than half a
- * step to the one before it, or reading the same, is left out.
+ * collapsed gap moves to where the work resumes. A label closer than three
+ * quarters of a step to the one before it, or reading the same, is left out,
+ * so a label of two units never runs into its neighbour.
  */
 export function timeTicks(map: AxisMap, max = MAX_TICKS, maxGap = MAX_GAP): AxisTick[] {
   const step = niceStep(map.span, SECOND_STEPS, 86_400, max);
@@ -107,9 +108,9 @@ export function timeTicks(map: AxisMap, max = MAX_TICKS, maxGap = MAX_GAP): Axis
       if (pos > b.at - maxGap / 2 && pos < b.at + maxGap / 2) pos = b.at + maxGap / 2;
     }
     const value = map.fromX(pos);
-    const text = tickText("en", value);
+    const text = timeText("en", value);
     const prev = out[out.length - 1];
-    if (prev !== undefined && (pos - prev.pos < step / 2 || text === lastText)) continue;
+    if (prev !== undefined && (pos - prev.pos < step * 0.75 || text === lastText)) continue;
     out.push({ pos, value });
     lastText = text;
   }
@@ -135,29 +136,35 @@ const UNITS: readonly [Unit, number][] = [
 /** One decimal at most. */
 const round1 = (v: number): number => Math.round(v * 10) / 10;
 
-const unitText = (lang: Lang, unit: Unit, n: number): string =>
-  t(lang, `filesTab.timeline.unit.${unit}`, { n: n.toLocaleString(lang, { maximumFractionDigits: 1 }) });
+const unitText = (lang: Lang, unit: Unit, n: string): string =>
+  t(lang, `filesTab.timeline.unit.${unit}`, { n });
 
-/** A time on the axis in the largest unit it reaches: "0 s", "12.5 s", "1.5 min", "4 h", "11 d". */
-export function tickText(lang: Lang, seconds: number): string {
-  for (const [unit, size] of UNITS) {
-    const n = round1(seconds / size);
-    if (n >= 1 || unit === "s") return unitText(lang, unit, n);
+/**
+ * A time as the axis labels, the cursor readout and the break titles print it.
+ * Under a minute in seconds with one decimal ("7.4 s"); `fixed` keeps the
+ * decimal of a whole second ("3.0 s"), as the cursor does. From a minute on in
+ * whole units, the largest it reaches and the next one when that is not zero
+ * ("1 min 30 s", "3 h 52 min", "11 d").
+ */
+export function timeText(lang: Lang, seconds: number, fixed = false): string {
+  const r = round1(Math.max(0, seconds));
+  if (r < 60) {
+    const digits = { minimumFractionDigits: fixed ? 1 : 0, maximumFractionDigits: 1 };
+    return unitText(lang, "s", r.toLocaleString(lang, digits));
   }
-  return "";
-}
-
-/** A break mark's title: the idle time in whole units, the largest it reaches and the next one, "3 d 4 h idle". */
-export function gapText(lang: Lang, seconds: number): string {
-  const whole = Math.max(0, Math.floor(seconds));
-  const found = UNITS.findIndex(([, size]) => whole >= size);
-  const i = found < 0 ? UNITS.length - 1 : found;
+  const whole = Math.floor(r);
+  const i = UNITS.findIndex(([, size]) => whole >= size);
   const [unit, size] = UNITS[i];
-  const parts = [unitText(lang, unit, Math.floor(whole / size))];
+  const parts = [unitText(lang, unit, Math.floor(whole / size).toLocaleString(lang))];
   const next = UNITS[i + 1];
   if (next !== undefined) {
     const rest = Math.floor((whole % size) / next[1]);
-    if (rest > 0) parts.push(unitText(lang, next[0], rest));
+    if (rest > 0) parts.push(unitText(lang, next[0], rest.toLocaleString(lang)));
   }
-  return t(lang, "filesTab.timeline.idle", { gap: parts.join(" ") });
+  return parts.join(" ");
+}
+
+/** A break mark's title: the idle time, "3 d 4 h idle". */
+export function gapText(lang: Lang, seconds: number): string {
+  return t(lang, "filesTab.timeline.idle", { gap: timeText(lang, seconds) });
 }

@@ -6564,6 +6564,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   "filesTab.timeline.unit.h": { de: "{n} Std.", en: "{n} h" },
   "filesTab.timeline.unit.d": { de: "{n} T", en: "{n} d" },
   "filesTab.timeline.idle": { de: "{gap} Pause", en: "{gap} idle" },
+  "filesTab.timeline.elapsed": { de: "+{t}", en: "+{t}" },
   "filesTab.timeline.shell": { de: "Shell-Befehle", en: "shell commands" },
   "filesTab.timeline.more": {
     de: "+{n} weitere Dateien, im Explorer aufgeführt",

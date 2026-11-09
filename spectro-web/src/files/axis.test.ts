@@ -6,7 +6,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { Lang } from "../i18n/i18n";
-import { axisMap, gapText, tickText, timeTicks } from "./axis";
+import { axisMap, gapText, timeText, timeTicks } from "./axis";
 
 const DAY = 86_400;
 const HOUR = 3_600;
@@ -55,7 +55,7 @@ describe("the files timeline's axis", () => {
     expect(ticks[0]).toEqual({ pos: 0, value: 0 });
     for (const lang of ["en", "de"] as Lang[]) {
       const px = ticks.map((tick) => (tick.pos / map.span) * 1000);
-      const texts = ticks.map((tick) => tickText(lang, tick.value));
+      const texts = ticks.map((tick) => timeText(lang, tick.value));
       for (let i = 1; i < ticks.length; i++) {
         const apart = px[i] - px[i - 1];
         expect(apart, `${texts[i - 1]} to ${texts[i]}`).toBeGreaterThanOrEqual(
@@ -99,7 +99,7 @@ describe("the files timeline's axis", () => {
     }
     // The labels of a 40 s run, as before the change.
     expect(timeTicks(map)).toEqual([0, 10, 20, 30, 40].map((s) => ({ pos: s, value: s })));
-    expect(timeTicks(map).map((tick) => tickText("en", tick.value))).toEqual([
+    expect(timeTicks(map).map((tick) => timeText("en", tick.value))).toEqual([
       "0 s",
       "10 s",
       "20 s",
@@ -139,20 +139,32 @@ describe("the files timeline's axis", () => {
   });
 
   it("labelsAndBreaksSayTheTimeInItsUnit", () => {
-    expect([0, 12.5, 90, 14_400, 11 * DAY].map((s) => tickText("en", s))).toEqual([
+    // Under a minute in seconds with one decimal; from a minute on the largest
+    // unit and the next one, in whole units.
+    const times = [0, 7.4, 12.5, 59.97, 90, 13_972.9, 14_400, 11 * DAY];
+    expect(times.map((s) => timeText("en", s))).toEqual([
       "0 s",
+      "7.4 s",
       "12.5 s",
-      "1.5 min",
+      "1 min",
+      "1 min 30 s",
+      "3 h 52 min",
       "4 h",
       "11 d",
     ]);
-    expect([0, 12.5, 90, 14_400, 11 * DAY].map((s) => tickText("de", s))).toEqual([
+    expect(times.map((s) => timeText("de", s))).toEqual([
       "0 s",
+      "7,4 s",
       "12,5 s",
-      "1,5 Min.",
+      "1 Min.",
+      "1 Min. 30 s",
+      "3 Std. 52 Min.",
       "4 Std.",
       "11 T",
     ]);
+    // The cursor keeps the decimal of a whole second; the axis drops it.
+    expect([0, 3, 7.4].map((s) => timeText("en", s, true))).toEqual(["0.0 s", "3.0 s", "7.4 s"]);
+    expect(timeText("en", 13_972.9, true)).toBe("3 h 52 min");
     expect(gapText("en", 3 * DAY + 4 * HOUR + 59)).toBe("3 d 4 h idle");
     expect(gapText("de", 3 * DAY + 4 * HOUR + 59)).toBe("3 T 4 Std. Pause");
     expect(gapText("en", 5 * DAY)).toBe("5 d idle");

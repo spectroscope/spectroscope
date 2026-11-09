@@ -18,7 +18,7 @@ import {
   axisMap,
   callTicks,
   gapText,
-  tickText,
+  timeText,
   timeTicks,
   type AxisBreak,
   type AxisMap,
@@ -360,7 +360,7 @@ export function FilesTimeline(props: FilesTimelineProps): JSX.Element {
           <div className="files-tl__axis">
             {axis.steps.map((s) => (
               <span key={s.pos} className="files-tl__step" style={{ left: pct(s.pos) }}>
-                {axis.timed ? tickText(lang, s.value) : s.value.toLocaleString(lang)}
+                {axis.timed ? timeText(lang, s.value) : s.value.toLocaleString(lang)}
               </span>
             ))}
             {axis.breaks.map((b) => (
@@ -431,14 +431,19 @@ export function FilesTimeline(props: FilesTimelineProps): JSX.Element {
   );
 }
 
-/** What the cursor reads: its second or call, or the end of the run while it follows. */
+/**
+ * What the cursor reads: its time in the axis format (axis.ts), or its call,
+ * or the end of the run while it follows.
+ */
 function readout(lang: Lang, axis: TimelineAxis, cursor: Cursor, events: readonly RunEvent[]): string {
+  const elapsed = (seconds: number): string =>
+    t(lang, "filesTab.timeline.elapsed", { t: timeText(lang, seconds, true) });
   if (cursor.follow) {
     return axis.timed
-      ? t(lang, "filesTab.timeline.followEnd", { when: whenLabel(lang, axis.map.fromX(axis.end), 0) })
+      ? t(lang, "filesTab.timeline.followEnd", { when: elapsed(axis.map.fromX(axis.end)) })
       : t(lang, "filesTab.timeline.endOfRun");
   }
-  if (axis.timed) return whenLabel(lang, axis.map.fromX(cursorPos(axis, cursor, events)), 0);
+  if (axis.timed) return elapsed(axis.map.fromX(cursorPos(axis, cursor, events)));
   const k = callsAtOrBefore(axis, cursor.at);
   return k === 0 ? t(lang, "filesTab.timeline.beforeFirst") : t(lang, "filesTab.callNumber", { n: k });
 }
