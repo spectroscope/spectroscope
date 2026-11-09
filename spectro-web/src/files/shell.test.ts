@@ -122,6 +122,27 @@ describe("shellTouches rules", () => {
     expect(shortAll("ls d")).toEqual([{ path: "/w/d", kind: "read", folder: false }]);
   });
 
+  it("aGrepWithoutAPathReadsItsFolder", () => {
+    expect(touches("rg needle")).toEqual([
+      { written: ".", path: "/w", folder: true, kind: "read", reason: 'rg "needle"' },
+    ]);
+    expect(touches("grep -rn needle")).toEqual([
+      { written: ".", path: "/w", folder: true, kind: "read", reason: 'grep "needle"' },
+    ]);
+    expect(touches("grep -r -e needle")[0].reason).toBe('grep "needle"');
+    expect(shortAll("cd web && rg needle")).toEqual([{ path: "/w/web", kind: "read", folder: true }]);
+    expect(shortAll("rg needle", null)).toEqual([{ path: ".", kind: "read", folder: true }]);
+    // Input fed on stdin is what they search, not the folder.
+    expect(touches("git log | rg fix")).toEqual([]);
+    expect(shortAll("rg needle < a.txt")).toEqual([{ path: "/w/a.txt", kind: "read", folder: false }]);
+    // grep without -r and without a file reads its input, not the folder.
+    expect(touches("grep needle")).toEqual([]);
+    // With a path, the path.
+    expect(shortAll("rg needle src")).toEqual([{ path: "/w/src", kind: "read", folder: false }]);
+    // An unknown folder names nothing.
+    expect(touches("cd $DIR && rg needle")).toEqual([]);
+  });
+
   it("aFileReadByGrepOrLsIsNotAFolder", () => {
     // The live check of 2026-11-09 drew these as folders: NEXT-SESSION.md/.
     expect(shortAll("grep foo NEXT-SESSION.md")).toEqual([

@@ -114,7 +114,7 @@ describe("foldFiles", () => {
         R,
       ],
       ["Glob", { pattern: "*.md" }, {}, "read", "*.md", true, R],
-      ["Grep", { pattern: "needle" }, {}, "read", "needle", true, R],
+      ["Grep", { pattern: "needle" }, {}, "read", "/ws", true, R],
       ["create_file", { filePath: "/ws/c.ts", content: "x" }, {}, "write", "/ws/c.ts", false, R],
       [
         "replace_string_in_file",
@@ -405,7 +405,34 @@ describe("foldFiles", () => {
       [["/ws/docs/**/*.md", "/ws/docs/**/*.md", true]],
       [["*.json", "*.json", true]],
       [["src", "/ws/src", false]],
-      [["needle", "needle", true]],
+      [[".", "/ws", true]],
+    ]);
+  });
+
+  it("aGrepWithoutAPathReadsItsFolder", () => {
+    const touched = (rec: Rec) =>
+      foldFiles(rec.events).calls.map((c) => [
+        c.line,
+        c.touches.map((t) => [t.written, t.path, t.folder, t.reason]),
+      ]);
+    const rec = new Rec()
+      .start(W)
+      .tool("grep", { pattern: "needle" })
+      .tool("Grep", { pattern: "needle", path: "" })
+      .tool("grep_search", { query: "TODO" });
+    // The folder the call ran in, never the pattern; the call's line still names the pattern.
+    expect(touched(rec)).toEqual([
+      ["needle", [[".", "/ws", true, 'grep "needle"']]],
+      ["needle", [[".", "/ws", true, 'Grep "needle"']]],
+      ["TODO", [[".", "/ws", true, 'grep_search "TODO"']]],
+    ]);
+    // With no folder known, the folder is `.`.
+    expect(touched(new Rec().start().tool("Grep", { pattern: "needle" }))).toEqual([
+      ["needle", [[".", ".", true, 'Grep "needle"']]],
+    ]);
+    // A glob without a path is still its pattern.
+    expect(touched(new Rec().start(W).tool("Glob", { pattern: "*.md" }))).toEqual([
+      ["*.md", [["*.md", "*.md", true, "files matching *.md"]]],
     ]);
   });
 

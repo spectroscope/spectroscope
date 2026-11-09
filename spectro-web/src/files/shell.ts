@@ -524,12 +524,14 @@ interface Reader extends OptSpec {
   pattern?: string[];
   folder?: true | string[];
   files?: string[]; // options whose value is a file the verb reads
+  base?: true | string[]; // without a path and without input on stdin, it searches the folder it runs in (always, or with one of these options)
 }
 const GREP: Reader = {
   values: "efmABCdD",
   long: ["regexp", "file", "max-count", "after-context", "before-context", "context", "include", "exclude"],
   pattern: ["-e", "-f", "--regexp", "--file"],
   files: ["-f", "--file"],
+  base: ["-r", "-R", "--recursive"],
 };
 const READERS: Record<string, Reader> = {
   cat: {},
@@ -561,6 +563,7 @@ const READERS: Record<string, Reader> = {
     ],
     pattern: ["-e", "-f", "--regexp", "--file", "--files", "--type-list"],
     files: ["-f", "--file"],
+    base: true,
   },
   awk: { values: "Ffv", pattern: ["-f"], files: ["-f"] },
   jq: {
@@ -579,14 +582,22 @@ const READERS: Record<string, Reader> = {
 function reader(name: string, spec: Reader, args: Word[], c: Ctx): void {
   const o = getopt(args, spec);
   const operands = [...o.operands];
-  if (spec.pattern && !has(o, ...spec.pattern)) operands.shift();
+  const pattern = spec.pattern && !has(o, ...spec.pattern) ? operands.shift() : value(o, "-e", "--regexp");
   const folder = spec.folder === true || (spec.folder !== undefined && has(o, ...spec.folder));
   for (const f of spec.files ?? []) {
     const v = o.flags.get(f);
     if (v) add(c, v, "read", `${name} ${v.text}`);
   }
   for (const a of operands) if (!a.text.startsWith("+")) add(c, a, "read", `${name} ${a.text}`, { folder });
+  const base = spec.base === true || (spec.base !== undefined && has(o, ...spec.base));
+  if (base && operands.length === 0 && !fedStdin(c.seg)) {
+    add(c, ".", "read", pattern ? `${name} "${pattern.text}"` : name, { folder: true });
+  }
 }
+
+/** Input arrives on stdin: a pipe, a `<` redirect, a heredoc or a here-string. */
+const fedStdin = (seg: Segment): boolean =>
+  seg.piped || seg.docs.length > 0 || seg.redirects.some((r) => r.op === "<" || r.op === "<<<");
 
 function find(args: Word[], c: Ctx): void {
   let k = 0;

@@ -372,7 +372,10 @@ function matches(name: string, view: Extract<ToolView, { kind: "matches" }>, bas
     const joined = path === null || isRooted(pattern) ? pattern : `${path.replace(/\/+$/, "")}/${pattern}`;
     return recorded(joined, null, "read", `files matching ${pattern}`, { folder: true });
   }
-  if (path === null) return recorded(pattern, null, "read", `search for ${pattern}`, { folder: true });
+  if (path === null) {
+    // A grep without a path searched the folder the call ran in; the call's line keeps the pattern.
+    return { ...recorded(".", base, "read", `${name} "${pattern}"`, { folder: true }), line: pattern };
+  }
   // A grep on a plain path searched that file or folder; only the path itself can say folder.
   return recorded(path, base, "read", `search for ${pattern}`, { folder: saysFolder(path) });
 }
