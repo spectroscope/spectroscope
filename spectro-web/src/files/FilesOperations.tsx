@@ -33,9 +33,11 @@ export interface FilesOperationsProps {
   onPick: (callIndex: number) => void;
 }
 
-/** The compact list also names the selected file. */
+/** The compact list also names the selected file, and can let it go. */
 export interface FilesOpListProps extends FilesOperationsProps {
   rows: readonly FileRow[];
+  /** Clears the selected file, so the list shows every call again. */
+  onShowAll: () => void;
 }
 
 /**
@@ -122,6 +124,16 @@ export function FilesOpList(props: FilesOpListProps): JSX.Element {
       <div className="files-panel__head">
         {t(lang, "filesTab.ops.title")}
         <span className="files-panel__meta">{`${label} · ${calls.length}`}</span>
+        {path !== null && (
+          <button
+            type="button"
+            className="files-link files-panel__link"
+            data-action="all-calls"
+            onClick={props.onShowAll}
+          >
+            {t(lang, "filesTab.ops.allCalls")}
+          </button>
+        )}
       </div>
       <div className="files-panel__body">
         {calls.length === 0 ? (

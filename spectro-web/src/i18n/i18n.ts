@@ -6526,6 +6526,7 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "This session has no clock, so the table counts calls.",
   },
   "filesTab.ops.allFiles": { de: "alle Dateien", en: "all files" },
+  "filesTab.ops.allCalls": { de: "alle Aufrufe", en: "all calls" },
   "filesTab.ops.none": {
     de: "Kein Aufruf der gezeigten Agenten nennt diese Datei.",
     en: "No call by the agents shown names this file.",

@@ -165,6 +165,38 @@ const pressOp =
 /** The rows of the compact list in the view `all`. */
 const listRows = (tree: El[]): El[] => tree.filter((el) => el.type === "button" && hasClass(el, "files-op"));
 
+/** Three calls on src/a.ts (a read and two edits) around one created b.ts. */
+const A_THREE_TIMES = stamp([
+  { type: "run_start", runId: "r1", agentId: "main", prompt: "go", workspace: "/ws" },
+  call("c1", "read_file", { path: "src/a.ts" }),
+  result("c1"),
+  call("c2", "edit_file", { path: "src/a.ts", old_string: "1", new_string: "2" }),
+  result("c2", { fileChange: "changed" }),
+  call("c3", "write_file", { path: "b.ts", content: "b\n" }),
+  result("c3", { fileChange: "created" }),
+  call("c4", "edit_file", { path: "src/a.ts", old_string: "2", new_string: "3" }),
+  result("c4", { fileChange: "changed" }),
+]);
+
+/** The list's ids, the "all calls" buttons, the explorer row of src/a.ts and the selected list row. */
+function listState(tree: El[]): {
+  ops: unknown[];
+  allCalls: number;
+  rowPressed: unknown;
+  selected: unknown[];
+} {
+  return {
+    ops: listRows(tree).map((el) => el.props["data-op"]),
+    allCalls: tree.filter((el) => el.type === "button" && el.props["data-action"] === "all-calls").length,
+    rowPressed: tree.find(
+      (el) => el.type === "button" && hasClass(el, "files-row") && el.props["data-path"] === "/ws/src/a.ts",
+    )?.props["aria-pressed"],
+    selected: listRows(tree)
+      .filter((el) => hasClass(el, "files-op--sel"))
+      .map((el) => el.props["data-op"]),
+  };
+}
+
 beforeAll(() => setLang("en"));
 
 describe("the operations view", () => {
@@ -256,17 +288,7 @@ describe("the operations view", () => {
   });
 
   it("allListsTheSelectedFilesCalls", () => {
-    const events = stamp([
-      { type: "run_start", runId: "r1", agentId: "main", prompt: "go", workspace: "/ws" },
-      call("c1", "read_file", { path: "src/a.ts" }),
-      result("c1"),
-      call("c2", "edit_file", { path: "src/a.ts", old_string: "1", new_string: "2" }),
-      result("c2", { fileChange: "changed" }),
-      call("c3", "write_file", { path: "b.ts", content: "b\n" }),
-      result("c3", { fileChange: "created" }),
-      call("c4", "edit_file", { path: "src/a.ts", old_string: "2", new_string: "3" }),
-      result("c4", { fileChange: "changed" }),
-    ]);
+    const events = A_THREE_TIMES;
     const allFiles = dict["filesTab.ops.allFiles"]?.en;
     expect(allFiles).toBeTruthy();
     const head = (tree: El[]): string =>
@@ -293,5 +315,46 @@ describe("the operations view", () => {
     const diff = run(props({ events }), [press("view-diff")]);
     expect(listRows(diff)).toEqual([]);
     expect(diff.some((el) => hasClass(el, "files-explorer"))).toBe(true);
+  });
+
+  it("aSecondPressOnTheSelectedFileShowsEveryCallAgain", () => {
+    const p = props({ events: A_THREE_TIMES });
+    // Nothing selected yet: every call, and no button to ask for them.
+    expect(listState(run(p))).toEqual({ ops: [1, 3, 5, 7], allCalls: 0, rowPressed: false, selected: [] });
+    // One press: the file's calls, its latest change selected, and the button to widen again.
+    expect(listState(run(p, [pressRow("/ws/src/a.ts")]))).toEqual({
+      ops: [1, 3, 7],
+      allCalls: 1,
+      rowPressed: true,
+      selected: [7],
+    });
+    // A second press on the same row lets the file go: every call again, the
+    // call stays selected, and the button is gone.
+    const again = run(p, [pressRow("/ws/src/a.ts"), pressRow("/ws/src/a.ts")]);
+    expect(listState(again)).toEqual({ ops: [1, 3, 5, 7], allCalls: 0, rowPressed: false, selected: [7] });
+    expect(
+      only(
+        again.filter((el) => hasClass(el, "files-detail")),
+        "detail",
+      ).props.className,
+    ).not.toContain("files-detail--after");
+    expect(again.some((el) => hasClass(el, "files-placeholder"))).toBe(false);
+  });
+
+  it("theAllCallsButtonShowsEveryCallAgain", () => {
+    const label = dict["filesTab.ops.allCalls"];
+    expect(label).toEqual({ de: "alle Aufrufe", en: "all calls" });
+    const p = props({ events: A_THREE_TIMES });
+    const narrowed = run(p, [pressRow("/ws/src/a.ts")]);
+    expect(listState(narrowed)).toEqual({ ops: [1, 3, 7], allCalls: 1, rowPressed: true, selected: [7] });
+    const button = only(
+      narrowed.filter((el) => el.type === "button" && el.props["data-action"] === "all-calls"),
+      "all-calls button",
+    );
+    expect(textOf(button.props.children)).toBe(label?.en);
+    // The button lets the file go the same way a second press does.
+    const wide = run(p, [pressRow("/ws/src/a.ts"), press("all-calls")]);
+    expect(listState(wide)).toEqual({ ops: [1, 3, 5, 7], allCalls: 0, rowPressed: false, selected: [7] });
+    expect(wide.some((el) => hasClass(el, "files-placeholder"))).toBe(false);
   });
 });

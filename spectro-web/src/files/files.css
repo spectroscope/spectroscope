@@ -140,6 +140,10 @@
   color: var(--text-dim);
   font-size: var(--fs-12);
 }
+.files-panel__link {
+  letter-spacing: 0;
+  text-transform: none;
+}
 .files-panel__body {
   padding: 6px 0;
 }

@@ -208,6 +208,9 @@ export function FilesView(props: FilesViewProps): JSX.Element {
     setSelection({ call: pick[pick.length - 1].callIndex, path: row.path });
   };
 
+  /** Lets the selected file go; the call stays selected, so the detail keeps showing it. */
+  const releasePath = (): void => setSelection((before) => ({ call: before.call, path: null }));
+
   /** The detail's change stepper: the cursor moves with the change it shows. */
   const selectFromDetail = (next: FilesSelection): void => {
     setSelection(next);
@@ -380,9 +383,9 @@ export function FilesView(props: FilesViewProps): JSX.Element {
             selected={selection.path}
             limit={limit}
             firstSeen={(row) => whenLabel(lang, row.firstT, axis.ordinals.get(row.firstCall) ?? 0)}
-            onSelect={selectRow}
+            onSelect={(row) => (row.path === selection.path ? releasePath() : selectRow(row))}
           />
-          {view === "all" && <FilesOpList {...listProps} rows={rows} />}
+          {view === "all" && <FilesOpList {...listProps} rows={rows} onShowAll={releasePath} />}
           {detail()}
         </div>
       )}
