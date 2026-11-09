@@ -143,6 +143,13 @@ describe("the files tab", () => {
       { path: "/ws/README.md", letter: "R" },
       { path: "/ws/scripts/gen.py", letter: "R" },
     ]);
+    // A folder line names its folder in the same truncating span as a file line,
+    // so a long path ends in an ellipsis inside the panel.
+    const folders = tree.filter((el) => hasClass(el, "files-row--dir"));
+    expect(folders.map((el) => textOf(el.props.children))).toEqual(["src/", "scripts/"]);
+    for (const folder of folders) {
+      expect(inside(folder).some((el) => hasClass(el, "files-row__name"))).toBe(true);
+    }
   });
 
   it("aProbableRowIsNeverDrawnAsRecorded", () => {

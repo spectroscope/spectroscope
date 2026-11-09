@@ -144,8 +144,8 @@ function lines(node: Node, depth: number, prefix: string, props: FilesExplorerPr
     const depthStyle = { "--files-depth": depth } as CSSProperties;
     if (kid.rows.length === 0) {
       out.push(
-        <div key={key} className="files-row files-row--dir" style={depthStyle}>
-          {`${kid.name}/`}
+        <div key={key} className="files-row files-row--dir" style={depthStyle} title={`${kid.name}/`}>
+          <span className="files-row__name">{`${kid.name}/`}</span>
         </div>,
       );
     }
