@@ -50,6 +50,7 @@ const loadTraceView = chunk("components/TraceView", () => import("../components/
 const loadGraphView = chunk("graph/GraphView", () => import("../graph/GraphView"));
 const loadTextView = chunk("components/TextView", () => import("../components/TextView"));
 const loadLabView = chunk("lab/LabView", () => import("../lab/LabView"));
+const loadFilesView = chunk("files/FilesView", () => import("../files/FilesView"));
 const loadFleetLobby = chunk("spectrum/FleetLobby", () => import("../spectrum/FleetLobby"));
 const loadFleetBar = chunk("spectrum/FleetBar", () => import("../spectrum/FleetBar"));
 const loadFleetBus = chunk("spectrum/FleetBus", () => import("../spectrum/FleetBus"));
@@ -75,6 +76,7 @@ export const TraceView = lazy(() => loadTraceView().then((m) => ({ default: m.Tr
 export const GraphView = lazy(() => loadGraphView().then((m) => ({ default: m.GraphView })));
 export const TextView = lazy(() => loadTextView().then((m) => ({ default: m.TextView })));
 export const LabView = lazy(() => loadLabView().then((m) => ({ default: m.LabView })));
+export const FilesView = lazy(() => loadFilesView().then((m) => ({ default: m.FilesView })));
 export const FleetLobby = lazy(() => loadFleetLobby().then((m) => ({ default: m.FleetLobby })));
 export const FleetBar = lazy(() => loadFleetBar().then((m) => ({ default: m.FleetBar })));
 export const FleetBus = lazy(() => loadFleetBus().then((m) => ({ default: m.FleetBus })));
@@ -103,6 +105,7 @@ export const SURFACE_LOADERS: Partial<Record<SurfaceId, ReadonlyArray<() => Prom
   graph: [loadGraphView],
   text: [loadTextView],
   lab: [loadLabView],
+  files: [loadFilesView],
   fleets: [
     loadFleetLobby,
     loadFleetBar,

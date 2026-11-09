@@ -7,14 +7,16 @@ import { initDesign } from "./state/designPrefs";
 import { installBrowserLog } from "./state/browserLog";
 import { installSearchHotkey } from "./components/SearchBox";
 import { applyBuildTitle } from "./state/buildTitle";
-// Card 430: the views that import these four load from chunks of their own, and
-// a chunk's stylesheet would be appended after app.css and win its ties. Here
-// they keep the place they had in the entry stylesheet before the split, ahead
-// of the app's own rules (surfaceChunks.guard.test.ts holds both halves).
+// Card 430: the views that import these sheets load from chunks of their own,
+// and a chunk's stylesheet would be appended after app.css and win its ties.
+// Here they keep the place they had in the entry stylesheet before the split,
+// ahead of the app's own rules (surfaceChunks.guard.test.ts holds both halves).
+// Card 604: the files tab's sheet joins them; its view still loads lazily.
 import "@xyflow/react/dist/style.css";
 import "./lab/flowmap/flowmap.css";
 import "./lab/workflow/workflow.css";
 import "./styles/bus.css";
+import "./files/files.css";
 import "./tokens.css";
 import "./fonts.css";
 import "./app.css";

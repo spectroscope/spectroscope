@@ -1,0 +1,365 @@
+/* Card 604: the files tab. Colours come from tokens.css only, so both designs
+   follow; the five aliases below name what a colour means in this tab. Layout
+   follows the mockup of the design: a toolbar, then the explorer and the
+   detail side by side, stacked on a narrow window. */
+
+.files-tab {
+  --files-create: var(--ok);
+  --files-change: var(--sp-amber);
+  --files-read: var(--text-faint);
+  --files-shell: var(--text-dim);
+  --files-model: var(--sp-violet);
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow-y: auto;
+  background: var(--bg);
+  color: var(--text);
+  font-size: var(--fs-14);
+}
+
+.files-mono {
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+}
+
+.files-empty,
+.files-soon {
+  margin: 0;
+  padding: var(--sp-5) var(--sp-4);
+  color: var(--text-dim);
+  font-size: var(--fs-13);
+}
+
+/* The toolbar: the view switch, the diff style, the summary line. */
+.files-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2) var(--sp-4);
+  padding: var(--sp-3) var(--sp-4) var(--sp-2);
+}
+.files-seg {
+  display: inline-flex;
+  max-width: 100%;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  overflow: hidden;
+  background: var(--surface);
+}
+.files-seg__btn {
+  border: 0;
+  background: transparent;
+  padding: var(--sp-1) var(--sp-3);
+  font: inherit;
+  font-size: var(--fs-13);
+  color: var(--text-dim);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.files-seg__btn + .files-seg__btn {
+  border-left: 1px solid var(--border);
+}
+.files-seg__btn--on {
+  background: var(--surface-3);
+  color: var(--text);
+}
+.files-summary {
+  width: 100%;
+  margin: 0;
+  color: var(--text-dim);
+  font-size: var(--fs-12);
+}
+.files-summary b {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* The stage: explorer and detail side by side, stacked below 720px. */
+.files-panes {
+  display: grid;
+  gap: var(--sp-3);
+  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+  align-items: start;
+  padding: var(--sp-3) var(--sp-4) var(--sp-5);
+}
+@media (max-width: 720px) {
+  .files-panes {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.files-panel {
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+}
+.files-panel__head {
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--fs-11);
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+  color: var(--sp-violet);
+}
+.files-panel__body {
+  padding: 6px 0;
+}
+.files-placeholder {
+  margin: 0;
+  padding: var(--sp-5) var(--sp-3);
+  color: var(--text-dim);
+  font-size: var(--fs-13);
+}
+
+/* The explorer. --files-depth is set on each line by FilesExplorer.tsx. */
+.files-group__label {
+  padding: var(--sp-2) var(--sp-3) 2px;
+  font-size: var(--fs-11);
+  color: var(--text-dim);
+}
+.files-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 3px var(--sp-3) 3px calc(var(--sp-3) + var(--files-depth) * 14px);
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-13);
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.files-row:hover {
+  background: var(--surface-2);
+}
+.files-row--sel,
+.files-row--sel:hover {
+  background: var(--surface-3);
+  box-shadow: inset 2px 0 0 var(--sp-violet);
+}
+.files-row--dir {
+  color: var(--text-dim);
+  cursor: default;
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+}
+.files-row--dir:hover {
+  background: transparent;
+}
+.files-row__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+}
+.files-row__right {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  font-size: var(--fs-11);
+}
+.files-legend {
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3);
+  border-top: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: var(--fs-12);
+}
+
+/* The letter: solid when a file tool backs it, dashed when it is a guess. */
+.files-letter {
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  padding: 0 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 15px;
+}
+.files-letter--guess {
+  border-style: dashed;
+}
+.files-letter--create {
+  color: var(--files-create);
+}
+.files-letter--change {
+  color: var(--files-change);
+}
+.files-letter--delete {
+  color: var(--error);
+}
+.files-letter--read,
+.files-letter--unknown {
+  color: var(--files-shell);
+}
+
+/* The source tag beside a letter or a touch. */
+.files-src {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0 4px;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.files-src--recorded {
+  border-color: color-mix(in srgb, var(--files-create) 45%, var(--border));
+}
+.files-src--probable {
+  border-style: dashed;
+  border-color: var(--border-strong);
+}
+.files-src--model {
+  border-color: color-mix(in srgb, var(--files-model) 55%, var(--border));
+}
+
+/* The detail. */
+.files-detail__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px var(--sp-3);
+  padding: 10px var(--sp-3);
+  border-bottom: 1px solid var(--border);
+}
+.files-detail__when {
+  color: var(--text-dim);
+  font-size: var(--fs-12);
+}
+.files-detail__links {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  margin-left: auto;
+}
+.files-link {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--fs-12);
+  cursor: pointer;
+}
+.files-link:disabled {
+  color: var(--text-faint);
+  cursor: default;
+}
+.files-detail__tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--fs-12);
+}
+.files-stepper {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--text-dim);
+}
+.files-stepper button {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
+  background: var(--surface-2);
+  padding: 1px var(--sp-2);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.files-stepper button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.files-note {
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: var(--fs-12);
+}
+.files-cmd {
+  margin: 0;
+  padding: 10px var(--sp-3);
+  border-bottom: 1px solid var(--border);
+  background: var(--shade);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.files-reason {
+  color: var(--text-dim);
+}
+.files-plus {
+  color: var(--ok);
+}
+.files-minus {
+  color: var(--error);
+}
+
+/* The diff of one touch, unified or before | after. */
+.files-diff {
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  line-height: 1.6;
+}
+.files-diff__cap {
+  padding: var(--sp-1) var(--sp-2);
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-ui);
+  font-size: var(--fs-11);
+  color: var(--text-dim);
+}
+.files-diff__table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.files-diff__table td {
+  padding: 0 var(--sp-2);
+  vertical-align: top;
+  white-space: pre;
+}
+.files-diff__sign {
+  width: 1%;
+  color: var(--text-faint);
+  user-select: none;
+}
+.files-diff__add .files-diff__text,
+.files-diff__text--add {
+  background: color-mix(in srgb, var(--ok) 11%, transparent);
+}
+.files-diff__del .files-diff__text,
+.files-diff__text--del {
+  background: color-mix(in srgb, var(--error) 12%, transparent);
+}
+.files-diff__add .files-diff__sign {
+  color: var(--ok);
+}
+.files-diff__del .files-diff__sign {
+  color: var(--error);
+}
+.files-diff__table--split .files-diff__text {
+  width: 50%;
+}
+.files-diff__table .files-diff__gap {
+  width: 0;
+  padding: 0;
+  border-left: 1px solid var(--border);
+}
+.files-diff__text--none {
+  background: var(--shade);
+}

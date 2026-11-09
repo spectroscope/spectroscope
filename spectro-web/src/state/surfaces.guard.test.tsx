@@ -95,9 +95,9 @@ describe("the rendered tabs and nav rows are the table's (criterion 2)", () => {
         const tabs = tabsShown(mode, tutorial);
         // The rail's segment rows come first in the markup, then the tab row.
         expect(surfacesWithRole(html, "tab")).toEqual([...segments, ...tabs]);
-        // A positive promise beside the negative one: learn draws all six, and so
-        // does developer while the tutorial is on (card 513).
-        if (mode === "learn" || (mode === "developer" && tutorial)) expect(tabs).toHaveLength(6);
+        // A positive promise beside the negative one: learn draws every tab, and
+        // so does developer while the tutorial is on (card 513).
+        if (mode === "learn" || (mode === "developer" && tutorial)) expect(tabs).toHaveLength(7);
       });
 
       it(`${mode}, tutorial ${tutorial ? "on" : "off"}: every nav row in the rail's head is one the table opens`, async () => {
