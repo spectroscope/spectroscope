@@ -4,15 +4,21 @@
 // and that a blocked localStorage costs the remembered pick and nothing else.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { RunEvent } from "../events";
+import { buildFilesDigest } from "./digest";
 import {
   fetchFilesEngine,
   filesAnalysisOf,
   loadPick,
   PICK_STORAGE_KEY,
+  readingHolds,
   resetFilesAnalysis,
   savePick,
+  stampOf,
   startFilesAnalysis,
+  type ReadingStamp,
 } from "./filesAnalysis";
+import { foldFiles } from "./fold";
 
 /** A response whose body the case writes line by line, and closes when it likes. */
 function controlledStream(): { response: Response; write: (line: object) => void; close: () => void } {
@@ -34,6 +40,8 @@ function ndjson(lines: object[]): Response {
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 const PICK = { provider: "ollama", model: "qwen2.5:7b" };
+/** A stamp every stream holds: these cases are about the wire, not the stream. */
+const ANY: ReadingStamp = { first: null, count: 0 };
 const META = { provider: "ollama", model: "qwen2.5:7b", address: "localhost:11434" };
 
 beforeEach(() => {
@@ -48,7 +56,7 @@ describe("the files analysis store", () => {
   it("sendsTheChosenPair", async () => {
     const fetchMock = vi.fn(async () => ndjson([{ meta: META }, { delta: '{"files":[]}' }, { done: true }]));
     vi.stubGlobal("fetch", fetchMock);
-    await startFilesAnalysis("v", "workspace: /ws\n#1 1.0s main ls: x", PICK, "de");
+    await startFilesAnalysis("v", "workspace: /ws\n#1 1.0s main ls: x", PICK, "de", ANY);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe("/api/files/analyze");
@@ -87,7 +95,7 @@ describe("the files analysis store", () => {
       "fetch",
       vi.fn(async () => stream.response),
     );
-    const run = startFilesAnalysis("a", "digest of a", PICK, "en");
+    const run = startFilesAnalysis("a", "digest of a", PICK, "en", ANY);
     stream.write({ meta: META });
     stream.write({ delta: '{"files":' });
     await flush();
@@ -107,19 +115,19 @@ describe("the files analysis store", () => {
       "fetch",
       vi.fn(async () => ndjson([{ meta: META }, { delta: "{" }])),
     );
-    await startFilesAnalysis("v", "d", PICK, "en");
+    await startFilesAnalysis("v", "d", PICK, "en", ANY);
     expect(filesAnalysisOf("v").status).toBe("error");
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => new Response(JSON.stringify({ error: "pick a provider" }), { status: 400 })),
     );
-    await startFilesAnalysis("v", "d", PICK, "en");
+    await startFilesAnalysis("v", "d", PICK, "en", ANY);
     expect(filesAnalysisOf("v")).toMatchObject({ status: "error", error: "pick a provider" });
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => ndjson([{ meta: META }, { error: "model not found" }])),
     );
-    await startFilesAnalysis("v", "d", PICK, "en");
+    await startFilesAnalysis("v", "d", PICK, "en", ANY);
     expect(filesAnalysisOf("v")).toMatchObject({ status: "error", error: "model not found" });
   });
 
@@ -150,5 +158,34 @@ describe("the files analysis store", () => {
     expect(loadPick()).toBeNull();
     kept.set(PICK_STORAGE_KEY, "not json");
     expect(loadPick()).toBeNull();
+  });
+
+  it("aStampHoldsWhileTheStreamOnlyGrows", () => {
+    const T0 = 1_760_000_000_000;
+    const stream = (runId: string): RunEvent[] =>
+      [
+        { type: "run_start", runId, agentId: "main", prompt: "go", workspace: "/ws" },
+        { type: "tool_call", agentId: "main", callId: "c1", name: "read_file", input: { path: "a.ts" } },
+        { type: "tool_result", agentId: "main", callId: "c1", output: "ok", isError: false, durationMs: 5 },
+        { type: "tool_call", agentId: "main", callId: "c2", name: "run_command", input: { command: "ls" } },
+        { type: "tool_result", agentId: "main", callId: "c2", output: "a.ts", isError: false, durationMs: 5 },
+      ].map((e, i) => ({ ts: T0 + i * 1000, ...e }) as unknown as RunEvent);
+    const a = stream("r1");
+    const ledger = foldFiles(a);
+    const stamp = stampOf(ledger, buildFilesDigest(ledger), a);
+    expect(stamp).toEqual({ first: { at: 1, event: a[1] }, count: 5 });
+    // The same stream, and the same stream grown, hold.
+    expect(readingHolds(stamp, a)).toBe(true);
+    expect(readingHolds(stamp, [...a, ...stream("r1").slice(0, 2)])).toBe(true);
+    // An equal copy is another stream: the event is matched by identity.
+    expect(readingHolds(stamp, stream("r1"))).toBe(false);
+    // A cleared stream, and a new one shorter than the old.
+    expect(readingHolds(stamp, [])).toBe(false);
+    expect(readingHolds(stamp, [a[0], a[1]])).toBe(false);
+    // A cut digest names its newest calls only: the stamp takes its first.
+    const cut = stampOf(ledger, { text: "", truncated: true, calls: 1 }, a);
+    expect(cut.first).toEqual({ at: 3, event: a[3] });
+    // A digest without calls stamps the length alone.
+    expect(stampOf(ledger, { text: "", truncated: true, calls: 0 }, a)).toEqual({ first: null, count: 5 });
   });
 });

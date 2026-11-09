@@ -17,6 +17,7 @@ import { useEffect, useMemo, useState, type JSX, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { pickerOption } from "../components/providerPickerMode";
 import { useProviderModels } from "../components/providerModelField";
+import type { RunEvent } from "../events";
 import { t, type Lang } from "../i18n/i18n";
 import {
   checkProviders,
@@ -32,6 +33,7 @@ import {
   loadPick,
   openFilesConsent,
   savePick,
+  stampOf,
   startFilesAnalysis,
   useFilesConsent,
   type ModelPick,
@@ -47,6 +49,8 @@ export interface FilesModelControlsProps {
   viewKey: string;
   mode: ReadingMode;
   onMode: (mode: ReadingMode) => void;
+  /** The events the ledger was folded from; the reading remembers which stream it read. */
+  events: readonly RunEvent[];
   /** The heuristic ledger: the digest is built from it, never from a merged one. */
   ledger: FileLedger;
   /** The session's reading, from useFilesAnalysis. */
@@ -70,7 +74,7 @@ function optionOf(lang: Lang, row: ProviderRow): { label: string; disabled: bool
 }
 
 export function FilesModelControls(props: FilesModelControlsProps): JSX.Element {
-  const { lang, viewKey, mode, onMode, ledger, analysis } = props;
+  const { lang, viewKey, mode, onMode, events, ledger, analysis } = props;
   const offered = offeredRows(useProviderRows());
   const [chosen, setChosen] = useState<ModelPick>(() => loadPick() ?? NO_PICK);
   const usable = offered.find((row) => row.id === chosen.provider && !pickerOption(row, "").disabled);
@@ -103,13 +107,14 @@ export function FilesModelControls(props: FilesModelControlsProps): JSX.Element 
     if (!ready || streaming) return;
     const pick = { provider, model: model.trim() };
     savePick(pick);
-    openFilesConsent(viewKey, pick, buildFilesDigest(ledger));
+    const digest = buildFilesDigest(ledger);
+    openFilesConsent(viewKey, pick, digest, stampOf(ledger, digest, events));
   };
 
   const run = (): void => {
     if (consent === null || consent.report?.available !== true || streaming) return;
     closeFilesConsent(viewKey);
-    void startFilesAnalysis(viewKey, consent.digest.text, consent.pick, lang);
+    void startFilesAnalysis(viewKey, consent.digest.text, consent.pick, lang, consent.stamp);
   };
 
   const pickMode = (next: ReadingMode): void => {

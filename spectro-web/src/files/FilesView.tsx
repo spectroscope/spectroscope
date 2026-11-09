@@ -115,7 +115,7 @@ export function FilesView(props: FilesViewProps): JSX.Element {
   const heuristic = useMemo(() => foldFiles(events), [events]);
   // With a model's reading shown, the merged ledger replaces the heuristic one downstream.
   const [readingMode, setReadingMode] = useState<ReadingMode>("heuristic");
-  const { ledger, analysis, modelShown } = useShownLedger(viewKey, heuristic, readingMode);
+  const { ledger, analysis, modelShown } = useShownLedger(viewKey, heuristic, readingMode, events);
   const agents = useMemo(() => agentsOf(ledger), [ledger]);
   const [hidden, setHidden] = useState<ReadonlySet<string>>(NO_AGENTS);
   const shown = useMemo(() => shownAgents(agents, hidden), [agents, hidden]);
@@ -347,6 +347,7 @@ export function FilesView(props: FilesViewProps): JSX.Element {
           viewKey={viewKey}
           mode={readingMode}
           onMode={setReadingMode}
+          events={events}
           ledger={heuristic}
           analysis={analysis}
         />

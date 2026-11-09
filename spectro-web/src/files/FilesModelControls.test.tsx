@@ -24,6 +24,7 @@ import {
   filesConsentOf,
   PICK_STORAGE_KEY,
   resetFilesAnalysis,
+  stampOf,
   startFilesAnalysis,
 } from "./filesAnalysis";
 import { FilesModelControls, type ReadingMode } from "./FilesModelControls";
@@ -132,6 +133,7 @@ function controls(over: { mode?: ReadingMode; analysis?: AnalysisState; viewKey?
       viewKey={viewKey}
       mode={over.mode ?? "model"}
       onMode={() => {}}
+      events={EVENTS}
       ledger={LEDGER}
       analysis={over.analysis ?? filesAnalysisOf(viewKey)}
     />
@@ -275,6 +277,7 @@ describe("the model picker", () => {
         viewKey="s-1"
         mode="heuristic"
         onMode={onMode}
+        events={EVENTS}
         ledger={LEDGER}
         analysis={IDLE}
       />,
@@ -359,11 +362,18 @@ describe("consent before anything is sent", () => {
 
 describe("the consent sheet", () => {
   const digest = buildFilesDigest(LEDGER);
+  const stamp = stampOf(LEDGER, digest, EVENTS);
   const sheet = (over: Partial<Parameters<typeof FilesConsent>[0]> = {}) =>
     drive(
       <FilesConsent
         lang="en"
-        consent={{ pick: { provider: "ollama", model: "qwen2.5:7b" }, digest, report: null, error: null }}
+        consent={{
+          pick: { provider: "ollama", model: "qwen2.5:7b" },
+          digest,
+          stamp,
+          report: null,
+          error: null,
+        }}
         running={false}
         onRun={() => {}}
         onClose={() => {}}
@@ -379,6 +389,7 @@ describe("the consent sheet", () => {
       consent: {
         pick: { provider: "ollama", model: "qwen2.5:7b" },
         digest,
+        stamp,
         report: { available: true, ...META },
         error: null,
       },
@@ -396,6 +407,7 @@ describe("the consent sheet", () => {
       consent: {
         pick: { provider: "anthropic", model: "claude-sonnet" },
         digest,
+        stamp,
         report: {
           available: true,
           provider: "anthropic",
@@ -415,6 +427,7 @@ describe("the consent sheet", () => {
           consent={{
             pick: { provider: "ollama", model: "qwen2.5:7b" },
             digest,
+            stamp,
             report: { available: true, ...META },
             error: null,
           }}
@@ -437,6 +450,7 @@ describe("the consent sheet", () => {
       consent: {
         pick: { provider: "openai", model: "gpt" },
         digest,
+        stamp,
         report: { available: false, reason: "needs-key", detail: "OPENAI_API_KEY is not set" },
         error: null,
       },
@@ -447,6 +461,7 @@ describe("the consent sheet", () => {
       consent: {
         pick: { provider: "ollama", model: "qwen2.5:7b" },
         digest,
+        stamp,
         report: { available: true, ...META },
         error: null,
       },
@@ -454,7 +469,7 @@ describe("the consent sheet", () => {
     });
     expect(action(running, "consent-run").props.disabled).toBe(true);
     const failed = sheet({
-      consent: { pick: { provider: "ollama", model: "m" }, digest, report: null, error: "HTTP 404" },
+      consent: { pick: { provider: "ollama", model: "m" }, digest, stamp, report: null, error: "HTTP 404" },
     });
     expect(action(failed, "consent-run").props.disabled).toBe(true);
     expect(texts(failed).some((s) => s.includes("HTTP 404"))).toBe(true);
@@ -468,6 +483,7 @@ describe("the consent sheet", () => {
       consent: {
         pick: { provider: "ollama", model },
         digest,
+        stamp,
         report: { available: true, provider: "ollama", model, address: "localhost:11434" },
         error: null,
       },
@@ -493,6 +509,7 @@ describe("the consent sheet", () => {
           consent={{
             pick: { provider: "ollama", model: "minimax-m3:cloud" },
             digest,
+            stamp,
             report: {
               available: true,
               provider: "ollama",
@@ -527,7 +544,7 @@ describe("the consent sheet", () => {
   it("aCutDigestSaysSo", () => {
     const cut = { ...digest, truncated: true };
     const tree = sheet({
-      consent: { pick: { provider: "ollama", model: "m" }, digest: cut, report: null, error: null },
+      consent: { pick: { provider: "ollama", model: "m" }, digest: cut, stamp, report: null, error: null },
     });
     expect(texts(tree).some((s) => s.includes("the tab cut the oldest outputs first"))).toBe(true);
     expect(texts(sheet()).some((s) => s.includes("the tab cut the oldest outputs first"))).toBe(false);
@@ -550,11 +567,13 @@ describe("the reading in the tab", () => {
       "fetch",
       vi.fn(async () => ndjson([{ meta }, { delta: answer }, { done: true }])),
     );
+    const digest = buildFilesDigest(LEDGER);
     await startFilesAnalysis(
       "s-1",
-      buildFilesDigest(LEDGER).text,
+      digest.text,
       { provider: "ollama", model: "qwen2.5:7b" },
       "en",
+      stampOf(LEDGER, digest, EVENTS),
     );
     expect(filesAnalysisOf("s-1").status).toBe("done");
   }
@@ -647,6 +666,48 @@ describe("the reading in the tab", () => {
     await readAs(ANSWER);
     const parsed = drive(<FilesView {...viewProps} />, VIEW, [press("mode-model")]);
     expect(parsed.some((el) => hasClass(el, "files-model__note"))).toBe(false);
+  });
+
+  it("aClearedChatDropsTheModelReading", async () => {
+    await readAs(ANSWER);
+    // Stream B under the same key, as after /clear in the same live chat: new
+    // events, and a shell call at the index the model's entries name.
+    const cleared = stamp([
+      { type: "run_start", runId: "r2", agentId: "main", prompt: "again", workspace: "/ws" },
+      { type: "tool_call", agentId: "main", callId: "d1", name: "read_file", input: { path: "b.ts" } },
+      { type: "tool_result", agentId: "main", callId: "d1", output: "ok", isError: false, durationMs: 5 },
+      {
+        type: "tool_call",
+        agentId: "main",
+        callId: "d2",
+        name: "run_command",
+        input: { command: "make all" },
+      },
+      { type: "tool_result", agentId: "main", callId: "d2", output: "done", isError: false, durationMs: 5 },
+    ]);
+    expect(foldFiles(cleared).calls.find((call) => call.callIndex === SHELL_CALL)?.shell).toBe(true);
+    const tree = drive(<FilesView {...viewProps} events={cleared} />, VIEW, [press("mode-model")]);
+    expect(tree.some((el) => el.props["data-path"] === "/ws/out/x.txt")).toBe(false);
+    expect(tree.some((el) => hasClass(el, "files-src--model"))).toBe(false);
+    // The store is reset for that key, so going back shows nothing of it either.
+    expect(filesAnalysisOf("s-1")).toEqual(IDLE);
+    const back = drive(<FilesView {...viewProps} />, VIEW, [press("mode-model")]);
+    expect(back.some((el) => el.props["data-path"] === "/ws/out/x.txt")).toBe(false);
+  });
+
+  it("aGrowingStreamKeepsTheModelReading", async () => {
+    await readAs(ANSWER);
+    // The same events, and more after them: the chat went on.
+    const grown = [
+      ...EVENTS,
+      ...stamp([
+        { type: "user_message", text: "and now?" },
+        { type: "tool_call", agentId: "main", callId: "c9", name: "read_file", input: { path: "b.ts" } },
+      ]),
+    ];
+    const tree = drive(<FilesView {...viewProps} events={grown} />, VIEW, [press("mode-model")]);
+    expect(tree.some((el) => el.props["data-path"] === "/ws/out/x.txt")).toBe(true);
+    expect(filesAnalysisOf("s-1").status).toBe("done");
   });
 
   it("theModelRingDrawsInTheModelColour", () => {
