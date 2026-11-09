@@ -15,6 +15,7 @@ import { drive, type El, type Step } from "../testkit/driveComponent";
 import { blockOf, read } from "../testkit/source";
 import { FilesDetail } from "./FilesDetail";
 import { FilesExplorer } from "./FilesExplorer";
+import { FilesOperations, FilesOpList } from "./FilesOperations";
 import { FilesTimeline, timelineAxis, type FilesTimelineProps } from "./FilesTimeline";
 import { FilesView, type FilesViewProps } from "./FilesView";
 import { timeText } from "./axis";
@@ -622,6 +623,50 @@ describe("the files tab's timeline", () => {
     expect(byClass(tree, "files-tl__step").map((el) => textOf(el.props.children))).toEqual(
       axis.steps.map((s) => timeText("en", s.value)),
     );
+  });
+
+  it("everyTimeOnTheTabReadsTheSameWay", () => {
+    // A read at 7.4 s and an edit fourteen days later, at 1,234,567.8 s.
+    const events = [
+      { type: "run_start", runId: "r1", agentId: "main", prompt: "go", workspace: "/ws", ts: T0 },
+      { ...call("c1", "read_file", { path: "a.ts" }), ts: T0 + 7_400 },
+      { ...result("c1"), ts: T0 + 7_500 },
+      {
+        ...call("c2", "edit_file", { path: "b.ts", old_string: "x = 1", new_string: "x = 2" }),
+        ts: T0 + 1_234_567_800,
+      },
+      { ...result("c2", { fileChange: "changed" }), ts: T0 + 1_234_567_900 },
+    ] as unknown as RunEvent[];
+    const late = `+${timeText("en", 1_234_567.8, true)}`;
+    // The operations view and the list of the all view render inside the tab.
+    const runAll = (p: FilesViewProps, steps: Step[] = []): El[] =>
+      drive(<FilesView {...p} />, [...EXPAND, FilesOperations, FilesOpList], steps);
+    expect(late).toBe("+14 d 6 h");
+    // The operations table and the list of the all view.
+    const ops = runAll(props({ events }), [press("view-operations")]);
+    expect(byClass(ops, "files-ops__t").map((el) => textOf(el.props.children))).toEqual(["+7.4 s", late]);
+    const all = runAll(props({ events }), [pressRow("/ws/b.ts")]);
+    expect(byClass(all, "files-op__t").map((el) => textOf(el.props.children))).toEqual([late]);
+    // The detail head and the mark's title.
+    const head = textOf(only(byClass(all, "files-detail__when"), "detail head").props.children);
+    expect(head).toBe(`${late} · main · edit_file`);
+    const mark = only(
+      byClass(all, "files-tl__mark").filter((el) => el.props["data-call"] === 3),
+      "mark of the edit",
+    );
+    expect(String(mark.props.title).startsWith(`${late} · main · `)).toBe(true);
+    // The explorer says when a file not reached yet first appears.
+    const early = run(props({ events, startAt: events[1] }));
+    const later = only(
+      early.filter((el) => hasClass(el, "files-row") && el.props["data-path"] === "/ws/b.ts"),
+      "b.ts row",
+    );
+    expect(textOf(inside(later).find((el) => hasClass(el, "files-row__when"))?.props.children)).toBe(
+      `at ${late}`,
+    );
+    // No time on the tab is printed in raw seconds past a minute.
+    const titles = all.map((el) => String(el.props.title ?? "")).join("\n");
+    expect(titles).not.toMatch(/1,234,567/);
   });
 
   it("playStartsAtTheFirstCall", () => {

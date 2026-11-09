@@ -5,6 +5,7 @@
 
 import type { RunEvent } from "../events";
 import { t, type Lang } from "../i18n/i18n";
+import { timeText } from "./axis";
 import type { FileCall } from "./fold";
 
 /** Where the cursor stands: at the end of the run, or on an event index (inclusive). */
@@ -61,7 +62,8 @@ export function stepCall(
 }
 
 /**
- * When a call ran, as the tab prints it: seconds from the start of the run, or
+ * When a call ran, as every place on the tab prints it: the time from the
+ * start of the run in the axis format ("+7.4 s", "+3 h 52 min", axis.ts), or
  * the call's number when the recording has no clock for it (C12).
  *
  * @param seconds the call's `t`
@@ -69,6 +71,5 @@ export function stepCall(
  */
 export function whenLabel(lang: Lang, seconds: number | null, ordinal: number): string {
   if (seconds === null) return t(lang, "filesTab.callNumber", { n: ordinal });
-  const s = seconds.toLocaleString(lang, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-  return t(lang, "filesTab.seconds", { s });
+  return t(lang, "filesTab.timeline.elapsed", { t: timeText(lang, seconds, true) });
 }

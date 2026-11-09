@@ -436,8 +436,7 @@ export function FilesTimeline(props: FilesTimelineProps): JSX.Element {
  * or the end of the run while it follows.
  */
 function readout(lang: Lang, axis: TimelineAxis, cursor: Cursor, events: readonly RunEvent[]): string {
-  const elapsed = (seconds: number): string =>
-    t(lang, "filesTab.timeline.elapsed", { t: timeText(lang, seconds, true) });
+  const elapsed = (seconds: number): string => whenLabel(lang, seconds, 0);
   if (cursor.follow) {
     return axis.timed
       ? t(lang, "filesTab.timeline.followEnd", { when: elapsed(axis.map.fromX(axis.end)) })

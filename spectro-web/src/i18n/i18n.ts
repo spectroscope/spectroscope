@@ -6449,7 +6449,6 @@ export const dict: Record<string, { de: string; en: string }> = {
   "filesTab.detail.title": { de: "Operation", en: "operation" },
   "filesTab.detail.shellTitle": { de: "Shell-Befehl", en: "shell command" },
   "filesTab.detail.pick": { de: "Wähle eine Datei im Explorer.", en: "Pick a file in the explorer." },
-  "filesTab.seconds": { de: "+{s} s", en: "+{s} s" },
   "filesTab.callNumber": { de: "Aufruf {n}", en: "call {n}" },
   "filesTab.detail.openInTrace": { de: "im Trace öffnen", en: "open in trace" },
   "filesTab.detail.openScript": { de: "{script} öffnen", en: "open {script}" },
