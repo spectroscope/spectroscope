@@ -49,6 +49,39 @@ describe("fileFootprint — the native vocabulary", () => {
     // A directory listing is a READ of that path, not a write.
     expect([...fp.touches[2].readers]).toEqual(["main"]);
   });
+
+  // Card 604: the native edit and the two native searches used to leave no
+  // touch at all, so a run that changed a file through edit_file read as a
+  // run that never wrote it.
+  it("countsANativeEditAsAWrite", () => {
+    const fp = fileFootprint([
+      call("main", "edit_file", { path: "a.ts", old_string: "x", new_string: "y" }, 10),
+    ]);
+    expect(fp.touches).toHaveLength(1);
+    expect(fp.touches[0].path).toBe("a.ts");
+    expect(fp.touches[0].pattern).toBe(false);
+    expect([...fp.touches[0].writers]).toEqual(["main"]);
+    expect(fp.touches[0].readers.size).toBe(0);
+  });
+
+  it("countsNativeGrepAndGlobAsReads", () => {
+    const fp = fileFootprint([
+      call("main", "grep", { pattern: "x", path: "src" }, 10),
+      call("main", "glob", { pattern: "**/*.ts" }, 20),
+      // A grep without a path searches by its pattern alone, so the pattern is
+      // the key and it is marked as one.
+      call("main", "grep", { pattern: "TODO" }, 30),
+    ]);
+    expect(fp.touches.map((t) => [t.path, t.pattern])).toEqual([
+      ["src", false],
+      ["**/*.ts", true],
+      ["TODO", true],
+    ]);
+    for (const touch of fp.touches) {
+      expect([...touch.readers], touch.path).toEqual(["main"]);
+      expect(touch.writers.size, touch.path).toBe(0);
+    }
+  });
 });
 
 describe("fileFootprint — the imported Claude Code vocabulary", () => {

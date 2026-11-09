@@ -8,13 +8,14 @@
 // stream into "who touched what". This module does, and only that.
 //
 // THE ALIASING IS THE WHOLE JOB. One disk touch is spelled two ways depending
-// on where the stream came from — a native run says read_file/write_file/
-// list_dir, an imported Claude Code transcript says Read/Write/Edit/MultiEdit/
-// Glob — and the path itself hides under three different keys. The grammar for
-// that already existed in TWO places (labScene's advanceLoop and toolViews'
-// firstStr) and must not become three: the tool-name sets are IMPORTED from
-// labScene rather than copied, so the map's disk station and this tree can
-// never disagree about what a disk touch is.
+// on where the stream came from. A native run reads with read_file, list_dir,
+// grep, glob and view_file and writes with write_file and edit_file (card 604);
+// an imported Claude Code transcript reads with Read and Glob and writes with
+// Write, Edit and MultiEdit. The path itself hides under three different keys.
+// The grammar for that already existed in TWO places (labScene's advanceLoop
+// and toolViews' firstStr) and must not become three: the tool-name sets are
+// IMPORTED from labScene rather than copied, so the map's disk station and this
+// tree can never disagree about what a disk touch is.
 //
 // SHELL WORK IS INVISIBLE HERE, AND THAT IS RECORDED RATHER THAN HIDDEN. An
 // agent that writes through `run_command`/`Bash` leaves a command string and no
@@ -25,7 +26,7 @@
 
 import type { RunEvent } from "../events";
 import { elapsedAt, stepBoundaries, stepOfEvent } from "../state/stepper";
-import { CC_DISK_READ, CC_DISK_WRITE, DISK_TOOLS, SHELL_TOOLS } from "./labScene";
+import { CC_DISK_READ, CC_DISK_WRITE, NATIVE_DISK_READ, NATIVE_DISK_WRITE, SHELL_TOOLS } from "./labScene";
 import { workspaceBasename } from "../workspace/paths";
 
 /** One path the run touched, and everyone who touched it. */
@@ -106,20 +107,22 @@ export function fileFootprint(events: readonly RunEvent[], upto?: number): FileF
       return;
     }
 
-    const native = DISK_TOOLS.has(name);
-    const ccRead = CC_DISK_READ.has(name);
+    const nativeWrite = NATIVE_DISK_WRITE.has(name);
     const ccWrite = CC_DISK_WRITE.has(name);
-    if (!native && !ccRead && !ccWrite) return;
+    if (!NATIVE_DISK_READ.has(name) && !nativeWrite && !CC_DISK_READ.has(name) && !ccWrite) return;
 
-    // A Glob names a PATTERN and no file. Its pattern is still the only thing
-    // it touched, so it goes on the tree marked as what it is.
-    const isGlob = name === "Glob";
-    const key = isGlob ? nonBlank(inputStr(e.input, "pattern")) : pathOf(e.input);
+    // A glob names a PATTERN and no file. Its pattern is still the only thing
+    // it touched, so it goes on the tree marked as what it is. A native grep
+    // is keyed by the folder it searched; without one it searched by pattern
+    // alone, and the pattern is the key.
+    const isGlob = name === "Glob" || name === "glob";
+    const path = isGlob ? null : pathOf(e.input);
+    const isPattern = isGlob || (name === "grep" && path === null);
+    const key = isPattern ? nonBlank(inputStr(e.input, "pattern")) : path;
     if (key === null) return;
 
-    // Only write_file among the native verbs writes; list_dir and read_file
-    // read. On the imported side the set the name is in decides.
-    const writes = native ? name === "write_file" : ccWrite;
+    // The set the name is in decides the direction, on both sides.
+    const writes = nativeWrite || ccWrite;
 
     let entry = byPath.get(key);
     if (entry === undefined) {
@@ -128,7 +131,7 @@ export function fileFootprint(events: readonly RunEvent[], upto?: number): FileF
       entry = {
         readers,
         writers,
-        touch: { path: key, pattern: isGlob, readers, writers, firstEvent: e, firstIndex: at },
+        touch: { path: key, pattern: isPattern, readers, writers, firstEvent: e, firstIndex: at },
       };
       byPath.set(key, entry);
     }

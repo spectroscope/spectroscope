@@ -82,11 +82,21 @@ export interface Scene extends Loop {
  *  is exactly how the two would come apart. */
 export const ROOT_AGENT = "main";
 const MAIN = ROOT_AGENT;
-/** The native disk verbs. EXPORTED (card 301) so the file footprint folds the
- *  same names this map lights a station for: the map and the tree must never
- *  disagree about what counts as a disk touch, and two copies of a set is
- *  exactly how they would. */
-export const DISK_TOOLS = new Set(["read_file", "write_file", "list_dir"]);
+/** The native disk verbs, split by direction (card 604). EXPORTED (card 301) so
+ *  the file footprint and the run view fold the same names this map lights a
+ *  station for: the map and the tree must never disagree about what counts as
+ *  a disk touch, and two copies of a set is exactly how they would.
+ *  `view_image` is not a read here: describeTool draws it as an image and the
+ *  belt has no chip for that kind (card 604 plan, C15).
+ *  `diskVocabulary.drift.test.ts` holds both sets to describeTool's kinds. */
+export const NATIVE_DISK_READ: ReadonlySet<string> = new Set([
+  "read_file",
+  "list_dir",
+  "grep",
+  "glob",
+  "view_file",
+]);
+export const NATIVE_DISK_WRITE: ReadonlySet<string> = new Set(["write_file", "edit_file"]);
 // Imported Claude Code transcripts carry Claude Code's tool names. The fold
 // routes them to the same stations the native names reach — the recorded name
 // itself is NEVER rewritten (the wire is evidence), so activeTool keeps the
@@ -218,12 +228,12 @@ export function advanceLoop(loop: Loop, event: RunEvent): Loop {
       if (SHELL_TOOLS.has(event.name)) {
         return { ...base, focus: "cmd", activeCommand: inputStr(event.input, SHELL_COMMAND_KEY) };
       }
-      if (DISK_TOOLS.has(event.name)) {
+      if (NATIVE_DISK_READ.has(event.name) || NATIVE_DISK_WRITE.has(event.name)) {
         const path = inputStr(event.input, "path");
         return {
           ...base,
           focus: "disk",
-          disk: event.name === "write_file" ? "write" : "read",
+          disk: NATIVE_DISK_WRITE.has(event.name) ? "write" : "read",
           activeFile: path !== null ? fileLabel(path) : null,
         };
       }

@@ -22,7 +22,8 @@
 //   - every name in the coverage cases is read out of `describeTool`'s own
 //     `case "…":` labels in toolViews.ts (card 314's sourceBlock technique);
 //   - every name in the station cases is read out of the sets labScene
-//     exports (DISK_TOOLS, CC_DISK_READ, CC_DISK_WRITE, SHELL_TOOLS).
+//     exports (NATIVE_DISK_READ, NATIVE_DISK_WRITE, CC_DISK_READ, CC_DISK_WRITE,
+//     SHELL_TOOLS).
 //
 // Names ARE typed below, and the sentence is kept narrow enough to be true: the
 // three the owner is looking at (their own cases, so a failure names the tool
@@ -51,7 +52,8 @@ import {
   initialScene,
   CC_DISK_READ,
   CC_DISK_WRITE,
-  DISK_TOOLS,
+  NATIVE_DISK_READ,
+  NATIVE_DISK_WRITE,
   ROOT_AGENT,
   SHELL_TOOLS,
 } from "../labScene";
@@ -310,7 +312,14 @@ describe("the coverage is derived from describeTool, not listed (card 321)", () 
   // past a guard whose title promises it cannot (measured 2026-08-30).
   it("belt.ts spells no vocabulary but its own chip labels", () => {
     const own = new Set([...TOOL_CHIPS, ...LAUNCH_CHIPS]);
-    const searched = [...CASE_NAMES, ...DISK_TOOLS, ...CC_DISK_READ, ...CC_DISK_WRITE, ...SHELL_TOOLS];
+    const searched = [
+      ...CASE_NAMES,
+      ...NATIVE_DISK_READ,
+      ...NATIVE_DISK_WRITE,
+      ...CC_DISK_READ,
+      ...CC_DISK_WRITE,
+      ...SHELL_TOOLS,
+    ];
     for (const name of new Set(searched)) {
       if (own.has(name)) continue;
       expect(new RegExp(`\\b${name}\\b`).test(BELT_CODE), `belt.ts names ${name} in its code`).toBe(false);
@@ -423,9 +432,15 @@ const STATION_CHIPS: Record<string, string[]> = {
 // quietly widened.
 describe("every name the fold routes to a station lights a chip of it (card 321)", () => {
   it("every name the fold routes to a station lights a chip of that station", () => {
-    const routed = [...DISK_TOOLS, ...CC_DISK_READ, ...CC_DISK_WRITE, ...SHELL_TOOLS];
-    // Floor: 3 + 2 + 3 + 2 on 2026-08-30 (labScene.ts).
-    expect(routed.length).toBeGreaterThanOrEqual(10);
+    const routed = [
+      ...NATIVE_DISK_READ,
+      ...NATIVE_DISK_WRITE,
+      ...CC_DISK_READ,
+      ...CC_DISK_WRITE,
+      ...SHELL_TOOLS,
+    ];
+    // Floor: 5 + 2 + 2 + 3 + 2 on 2026-11-09 (labScene.ts, card 604).
+    expect(routed.length).toBeGreaterThanOrEqual(14);
     for (const name of routed) {
       const where = routedTo(name);
       const allowed = STATION_CHIPS[where];
