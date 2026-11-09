@@ -13,12 +13,13 @@ import { dict } from "../i18n/i18n";
 import { setLang } from "../state/lang";
 import { drive, type El, type Step } from "../testkit/driveComponent";
 import { blockOf, read } from "../testkit/source";
+import { FilesCreated } from "./FilesCreated";
 import { FilesDetail } from "./FilesDetail";
 import { FilesExplorer } from "./FilesExplorer";
 import { FilesOperations, FilesOpList } from "./FilesOperations";
 import { FilesTimeline, timelineAxis, type FilesTimelineProps } from "./FilesTimeline";
 import { FilesView, type FilesViewProps } from "./FilesView";
-import { timeText } from "./axis";
+import { clockText, timeText } from "./axis";
 import { fileRows, foldFiles, type FileLedger } from "./fold";
 
 const T0 = 1_760_000_000_000;
@@ -598,13 +599,14 @@ describe("the files tab's timeline", () => {
           },
         }),
     ]);
-    // The cursor stands on the twelfth read of the second spell: its seven later reads and the third spell are dimmed.
+    // The cursor stands on the thirteenth read of the second spell, 391 + 10 + 12 * 20 = 641 s
+    // into the fifth day: its seven later reads and the third spell are dimmed.
     expect(marks(dragged).filter((m) => m.classes.includes("files-tl__mark--after"))).toHaveLength(27);
-    expect(readout(dragged)).toBe("+5 d");
-    expect(readout(tree)).toBe("+16 d (end of run)");
+    expect(readout(dragged)).toBe("+5 d 00:10:41");
+    expect(readout(tree)).toBe("+16 d 00:00:00 (end of run)");
   });
 
-  it("theReadoutUsesTheAxisTimeFormat", () => {
+  it("theReadoutKeepsItsSecondsAndTheAxisItsUnits", () => {
     const events = [
       { type: "run_start", runId: "r1", agentId: "main", prompt: "go", workspace: "/ws", ts: T0 },
       { ...call("c1", "read_file", { path: "a.ts" }), ts: T0 + 7_400 },
@@ -613,16 +615,36 @@ describe("the files tab's timeline", () => {
       { ...result("c2"), ts: T0 + 13_973_000 },
     ] as unknown as RunEvent[];
     expect(readout(run(props({ events, startAt: events[1] })))).toBe("+7.4 s");
-    expect(readout(run(props({ events, startAt: events[3] })))).toBe("+3 h 52 min");
-    expect(readout(run(props({ events })))).toBe("+3 h 52 min (end of run)");
-    // One formatter: the readout reads like the axis label of the same time.
-    expect(readout(run(props({ events, startAt: events[3] })))).toBe(`+${timeText("en", 13_972.9)}`);
+    expect(readout(run(props({ events, startAt: events[3] })))).toBe("+3:52:52");
+    expect(readout(run(props({ events })))).toBe("+3:52:53 (end of run)");
+    // The readout prints a call's time the way every call time on the tab does.
+    expect(readout(run(props({ events, startAt: events[3] })))).toBe(`+${clockText("en", 13_972.9)}`);
+    // The axis labels keep their two units.
     const tree = run(props({ events }));
     const ledger = foldFiles(events);
     const axis = timelineAxis(ledger, events);
-    expect(byClass(tree, "files-tl__step").map((el) => textOf(el.props.children))).toEqual(
-      axis.steps.map((s) => timeText("en", s.value)),
-    );
+    const steps = byClass(tree, "files-tl__step").map((el) => textOf(el.props.children));
+    expect(steps).toEqual(axis.steps.map((s) => timeText("en", s.value)));
+    expect(steps.some((text) => / h( \d+ min)?$/.test(text))).toBe(true);
+    expect(steps.some((text) => text.includes(":"))).toBe(false);
+  });
+
+  it("theReadoutMovesBetweenCallsSecondsApartPastAnHour", () => {
+    // Three reads three seconds apart, an hour and 25 minutes into the run.
+    const events = [
+      { type: "run_start", runId: "r1", agentId: "main", prompt: "go", workspace: "/ws", ts: T0 },
+      { ...call("c1", "read_file", { path: "a.ts" }), ts: T0 + 5_100_000 },
+      { ...result("c1"), ts: T0 + 5_100_100 },
+      { ...call("c2", "read_file", { path: "b.ts" }), ts: T0 + 5_103_000 },
+      { ...result("c2"), ts: T0 + 5_103_100 },
+      { ...call("c3", "read_file", { path: "c.ts" }), ts: T0 + 5_106_000 },
+      { ...result("c3"), ts: T0 + 5_106_100 },
+    ] as unknown as RunEvent[];
+    const p = props({ events });
+    // Play starts on the first call; each step moves the readout by three seconds.
+    expect(readout(run(p, [press("play")]))).toBe("+1:25:00");
+    expect(readout(run(p, [press("play"), key("ArrowRight")]))).toBe("+1:25:03");
+    expect(readout(run(p, [press("play"), key("ArrowRight"), key("ArrowRight")]))).toBe("+1:25:06");
   });
 
   it("everyTimeOnTheTabReadsTheSameWay", () => {
@@ -637,11 +659,11 @@ describe("the files tab's timeline", () => {
       },
       { ...result("c2", { fileChange: "changed" }), ts: T0 + 1_234_567_900 },
     ] as unknown as RunEvent[];
-    const late = `+${timeText("en", 1_234_567.8, true)}`;
+    const late = `+${clockText("en", 1_234_567.8)}`;
     // The operations view and the list of the all view render inside the tab.
     const runAll = (p: FilesViewProps, steps: Step[] = []): El[] =>
       drive(<FilesView {...p} />, [...EXPAND, FilesOperations, FilesOpList], steps);
-    expect(late).toBe("+14 d 6 h");
+    expect(late).toBe("+14 d 06:56:07");
     // The operations table and the list of the all view.
     const ops = runAll(props({ events }), [press("view-operations")]);
     expect(byClass(ops, "files-ops__t").map((el) => textOf(el.props.children))).toEqual(["+7.4 s", late]);
@@ -664,6 +686,19 @@ describe("the files tab's timeline", () => {
     expect(textOf(inside(later).find((el) => hasClass(el, "files-row__when"))?.props.children)).toBe(
       `at ${late}`,
     );
+    // The created view's card says when the file was made.
+    const made = [
+      { type: "run_start", runId: "r1", agentId: "main", prompt: "go", workspace: "/ws", ts: T0 },
+      { ...call("w1", "write_file", { path: "c.ts", content: "c\n" }), ts: T0 + 1_234_567_800 },
+      { ...result("w1", { fileChange: "created" }), ts: T0 + 1_234_567_900 },
+    ] as unknown as RunEvent[];
+    const created = drive(
+      <FilesView {...props({ events: made })} />,
+      [...EXPAND, FilesCreated],
+      [press("view-created")],
+    );
+    const meta = textOf(only(byClass(created, "files-card__meta"), "card meta").props.children);
+    expect(meta).toContain(`${late} · write_file`);
     // No time on the tab is printed in raw seconds past a minute.
     const titles = all.map((el) => String(el.props.title ?? "")).join("\n");
     expect(titles).not.toMatch(/1,234,567/);

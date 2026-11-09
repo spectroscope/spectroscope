@@ -432,8 +432,8 @@ export function FilesTimeline(props: FilesTimelineProps): JSX.Element {
 }
 
 /**
- * What the cursor reads: its time in the axis format (axis.ts), or its call,
- * or the end of the run while it follows.
+ * What the cursor reads: its time with its seconds, as a call time prints
+ * (`whenLabel`), or its call, or the end of the run while it follows.
  */
 function readout(lang: Lang, axis: TimelineAxis, cursor: Cursor, events: readonly RunEvent[]): string {
   const elapsed = (seconds: number): string => whenLabel(lang, seconds, 0);

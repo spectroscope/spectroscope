@@ -140,9 +140,9 @@ const unitText = (lang: Lang, unit: Unit, n: string): string =>
   t(lang, `filesTab.timeline.unit.${unit}`, { n });
 
 /**
- * A time as the axis labels, the cursor readout and the break titles print it.
- * Under a minute in seconds with one decimal ("7.4 s"); `fixed` keeps the
- * decimal of a whole second ("3.0 s"), as the cursor does. From a minute on in
+ * A time as the axis labels and the break titles print it. Under a minute in
+ * seconds with one decimal ("7.4 s"); `fixed` keeps the decimal of a whole
+ * second ("3.0 s"), as a call time does (`clockText`). From a minute on in
  * whole units, the largest it reaches and the next one when that is not zero
  * ("1 min 30 s", "3 h 52 min", "11 d").
  */
@@ -162,6 +162,29 @@ export function timeText(lang: Lang, seconds: number, fixed = false): string {
     if (rest > 0) parts.push(unitText(lang, next[0], rest.toLocaleString(lang)));
   }
   return parts.join(" ");
+}
+
+const two = (n: number): string => String(n).padStart(2, "0");
+
+/**
+ * A call's time as the tab prints it, with its seconds kept at any length: under
+ * a minute as the cursor prints it ("7.4 s"), then as a clock, minutes and
+ * seconds under an hour ("12:05"), hours, minutes and seconds under a day
+ * ("1:25:32"), and days before a clock beyond ("3 d 04:12:05"). The axis labels
+ * keep `timeText`.
+ */
+export function clockText(lang: Lang, seconds: number): string {
+  const r = round1(Math.max(0, seconds));
+  if (r < 60) return timeText(lang, r, true);
+  const whole = Math.floor(r);
+  const days = Math.floor(whole / 86_400);
+  const hours = Math.floor((whole % 86_400) / 3_600);
+  const minutes = Math.floor((whole % 3_600) / 60);
+  const secs = whole % 60;
+  if (days > 0)
+    return `${unitText(lang, "d", days.toLocaleString(lang))} ${two(hours)}:${two(minutes)}:${two(secs)}`;
+  if (hours > 0) return `${hours}:${two(minutes)}:${two(secs)}`;
+  return `${minutes}:${two(secs)}`;
 }
 
 /** A break mark's title: the idle time, "3 d 4 h idle". */

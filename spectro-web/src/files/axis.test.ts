@@ -6,7 +6,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { Lang } from "../i18n/i18n";
-import { axisMap, gapText, timeText, timeTicks } from "./axis";
+import { axisMap, clockText, gapText, timeText, timeTicks } from "./axis";
 
 const DAY = 86_400;
 const HOUR = 3_600;
@@ -170,5 +170,44 @@ describe("the files timeline's axis", () => {
     expect(gapText("en", 5 * DAY)).toBe("5 d idle");
     expect(gapText("en", 130)).toBe("2 min 10 s idle");
     expect(gapText("de", 130)).toBe("2 Min. 10 s Pause");
+  });
+
+  it("aCallTimeKeepsItsSecondsAtEveryBoundary", () => {
+    // Under a minute in seconds with the decimal kept, then a clock that never
+    // drops the seconds: minutes:seconds, hours:minutes:seconds, days and a clock.
+    const times = [0, 7.4, 59.9, 60, 725, 3_599, 3_600, 5_132, 86_399, 86_400, 274_325, 1_234_567.8];
+    expect(times.map((s) => clockText("en", s))).toEqual([
+      "0.0 s",
+      "7.4 s",
+      "59.9 s",
+      "1:00",
+      "12:05",
+      "59:59",
+      "1:00:00",
+      "1:25:32",
+      "23:59:59",
+      "1 d 00:00:00",
+      "3 d 04:12:05",
+      "14 d 06:56:07",
+    ]);
+    expect(times.map((s) => clockText("de", s))).toEqual([
+      "0,0 s",
+      "7,4 s",
+      "59,9 s",
+      "1:00",
+      "12:05",
+      "59:59",
+      "1:00:00",
+      "1:25:32",
+      "23:59:59",
+      "1 T 00:00:00",
+      "3 T 04:12:05",
+      "14 T 06:56:07",
+    ]);
+    // A tenth that rounds up to the minute reads as the minute, never "60.0 s".
+    expect(clockText("en", 59.96)).toBe("1:00");
+    // Two calls three seconds apart past an hour read apart; the axis form reads them the same.
+    expect(clockText("en", 5_100)).not.toBe(clockText("en", 5_103));
+    expect(timeText("en", 5_100)).toBe(timeText("en", 5_103));
   });
 });
