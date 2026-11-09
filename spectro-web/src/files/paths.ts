@@ -13,7 +13,8 @@ export function resolvePath(written: string, base: string | null): string {
   return fold(base.endsWith("/") ? base + written : `${base}/${written}`);
 }
 
-function isRooted(p: string): boolean {
+/** True for a path that does not depend on the base: absolute, or under `~`. */
+export function isRooted(p: string): boolean {
   return p.startsWith("/") || p === "~" || p.startsWith("~/");
 }
 

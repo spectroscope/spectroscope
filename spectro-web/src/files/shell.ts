@@ -4,7 +4,8 @@
 // probable. The rule table follows section 2 of the design document
 // (docs/superpowers/specs/2026-11-09-files-tab-design.md).
 
-import { resolvePath } from "./paths";
+import { isRooted, resolvePath } from "./paths";
+import { segments, unescape, type Segment, type Word } from "./shellTokens";
 
 export type TouchKind =
   "read" | "create" | "change" | "overwrite" | "write" | "append" | "delete" | "unknown";
@@ -28,9 +29,9 @@ export interface ShellReading {
 
 export function shellTouches(command: string, cwd: string | null): ShellReading {
   const out: ShellReading = { touches: [], script: null, inline: false };
-  const outer: (string | null)[] = [];
-  let base = cwd;
-  for (const item of group(lex(command))) {
+  const outer: Base[] = [];
+  let base: Base = cwd;
+  for (const item of segments(command)) {
     if (item === "(") outer.push(base);
     else if (item === ")") base = outer.length > 0 ? (outer.pop() ?? null) : base;
     else base = segment(item, base, out);
@@ -38,245 +39,20 @@ export function shellTouches(command: string, cwd: string | null): ShellReading 
   return out;
 }
 
-// Tokenizer.
-
-interface Word {
-  text: string; // the value after quote removal
-  dynamic: boolean; // holds a variable or a substitution, so the value is unknown
-  glob: boolean; // holds an unquoted pattern character
-  quoted?: boolean;
-}
-interface Heredoc {
-  strip: boolean;
-  delimiter: string;
-  body: string;
-}
-type Tok =
-  | { k: "word"; w: Word }
-  | { k: "op"; op: string }
-  | { k: "redir"; op: string; fd: number | null }
-  | { k: "doc"; doc: Heredoc };
-
-const OPS = ["<<<", "<<-", "&>>", ">>", "<<", "<>", "<&", ">&", ">|", "&>", "&&", "||", "|&", ";;"];
-const META = " \t\r\n;&|()<>";
-
-function opAt(src: string, i: number): string | null {
-  for (const op of OPS) if (src.startsWith(op, i)) return op;
-  return "><|&;()".includes(src[i]) ? src[i] : null;
-}
-
-function lex(src: string): Tok[] {
-  const toks: Tok[] = [];
-  let pending: Heredoc[] = [];
-  let i = 0;
-  while (i < src.length) {
-    const c = src[i];
-    if (c === "\\" && src[i + 1] === "\n") i += 2;
-    else if (c === " " || c === "\t" || c === "\r") i++;
-    else if (c === "\n") {
-      toks.push({ k: "op", op: "\n" });
-      // A heredoc body is text up to its terminator and is never lexed.
-      i = readBodies(src, i + 1, pending);
-      pending = [];
-    } else if (c === "#") {
-      while (i < src.length && src[i] !== "\n") i++;
-    } else if (c === "(" && src[i + 1] === "(") {
-      i = skipBalanced(src, i); // `(( a > b ))` is arithmetic, not a redirect
-    } else {
-      let op = (c === "<" || c === ">") && src[i + 1] === "(" ? null : opAt(src, i);
-      let fd: number | null = null;
-      if (op === null) {
-        const [w, j] = readWord(src, i);
-        const after = opAt(src, j);
-        if (!w.quoted && /^\d+$/.test(w.text) && after && /^[<>]/.test(after) && src[j + 1] !== "(") {
-          fd = Number(w.text);
-          op = after;
-          i = j;
-        } else {
-          toks.push({ k: "word", w });
-          i = j;
-          continue;
-        }
-      }
-      i += op.length;
-      if (op === "<<" || op === "<<-") {
-        while (src[i] === " " || src[i] === "\t") i++;
-        const [d, j] = readWord(src, i);
-        i = j;
-        const doc = { strip: op === "<<-", delimiter: d.text, body: "" };
-        pending.push(doc);
-        toks.push({ k: "doc", doc });
-      } else if (/[<>]/.test(op)) toks.push({ k: "redir", op, fd });
-      else toks.push({ k: "op", op });
-    }
-  }
-  return toks;
-}
-
-function readBodies(src: string, i: number, docs: Heredoc[]): number {
-  for (const doc of docs) {
-    let body = "";
-    while (i < src.length) {
-      const nl = src.indexOf("\n", i);
-      const end = nl === -1 ? src.length : nl;
-      const line = doc.strip ? src.slice(i, end).replace(/^\t+/, "") : src.slice(i, end);
-      i = nl === -1 ? src.length : nl + 1;
-      if (line === doc.delimiter) break;
-      body += line + "\n";
-    }
-    doc.body = body;
-  }
-  return i;
-}
-
-function readWord(src: string, start: number): [Word, number] {
-  let text = "";
-  let dynamic = false;
-  let glob = false;
-  let quoted = false;
-  let brace = false;
-  let i = start;
-  while (i < src.length) {
-    const c = src[i];
-    if ((c === "<" || c === ">") && src[i + 1] === "(" && i === start) {
-      i = skipBalanced(src, i + 1);
-      dynamic = true;
-    } else if (META.includes(c)) break;
-    else if (c === "\\") {
-      if (src[i + 1] !== "\n") text += src[i + 1] ?? "";
-      quoted = true;
-      i += 2;
-    } else if (c === "'") {
-      const e = src.indexOf("'", i + 1);
-      const end = e === -1 ? src.length : e;
-      text += src.slice(i + 1, end);
-      quoted = true;
-      i = end + 1;
-    } else if (c === '"') {
-      quoted = true;
-      i++;
-      while (i < src.length && src[i] !== '"') {
-        const d = src[i];
-        if (d === "\\" && '$`"\\\n'.includes(src[i + 1] ?? "")) {
-          if (src[i + 1] !== "\n") text += src[i + 1];
-          i += 2;
-        } else if (d === "$" || d === "`") {
-          const [e, lit]: [number, string | null] =
-            d === "$" ? dollar(src, i, true) : [skipTick(src, i), null];
-          if (lit === null) dynamic = true;
-          else text += lit;
-          i = e;
-        } else {
-          text += d;
-          i++;
-        }
-      }
-      i++;
-    } else if (c === "$" || c === "`") {
-      const [e, lit]: [number, string | null] = c === "$" ? dollar(src, i, false) : [skipTick(src, i), null];
-      if (lit === null) dynamic = true;
-      else text += lit;
-      if (c === "$" && src[i + 1] === "'") quoted = true;
-      i = e;
-    } else {
-      if (c === "*" || c === "?" || c === "[") glob = true;
-      if (c === "{") brace = true;
-      text += c;
-      i++;
-    }
-  }
-  if (brace && text.includes(",")) glob = true;
-  return [{ text, dynamic, glob, quoted }, i];
-}
-
-// Returns the end of a `$` form and its literal text, or null when its value is unknown.
-function dollar(src: string, i: number, inDouble: boolean): [number, string | null] {
-  const n = src[i + 1] ?? "";
-  if (n === "(" || n === "{") return [skipBalanced(src, i + 1), null];
-  if (/[A-Za-z_]/.test(n)) {
-    let j = i + 2;
-    while (j < src.length && /\w/.test(src[j])) j++;
-    return [j, null];
-  }
-  if (/[0-9@*#?$!-]/.test(n)) return [i + 2, null];
-  if (!inDouble && n === "'") {
-    let j = i + 2;
-    while (j < src.length && src[j] !== "'") j += src[j] === "\\" ? 2 : 1;
-    return [j + 1, unescape(src.slice(i + 2, j))];
-  }
-  if (!inDouble && n === '"') return [i + 1, ""];
-  return [i + 1, "$"];
-}
-
-function skipBalanced(src: string, i: number): number {
-  const open = src[i];
-  const close = open === "(" ? ")" : "}";
-  let depth = 0;
-  for (; i < src.length; i++) {
-    const c = src[i];
-    if (c === "\\") i++;
-    else if (c === "'" || c === '"') {
-      let j = i + 1;
-      while (j < src.length && src[j] !== c) j += src[j] === "\\" && c === '"' ? 2 : 1;
-      i = j;
-    } else if (c === open) depth++;
-    else if (c === close && --depth === 0) return i + 1;
-  }
-  return src.length;
-}
-
-function skipTick(src: string, i: number): number {
-  let j = i + 1;
-  while (j < src.length && src[j] !== "`") j += src[j] === "\\" ? 2 : 1;
-  return j + 1;
-}
-
-const ESCAPES: Record<string, string> = { n: "\n", t: "\t", r: "\r", "\\": "\\", "'": "'", '"': '"' };
-function unescape(s: string): string {
-  return s.replace(/\\(.)/g, (_, ch: string) => ESCAPES[ch] ?? "\\" + ch);
-}
-
-// Grouping: words, redirects and heredocs per simple command.
-
-interface Redirect {
-  op: string;
-  fd: number | null;
-  target: Word | null;
-}
-interface Segment {
-  words: Word[];
-  redirects: Redirect[];
-  docs: Heredoc[];
-  piped: boolean; // stdin comes from a pipe
-}
-
-function group(toks: Tok[]): (Segment | "(" | ")")[] {
-  const items: (Segment | "(" | ")")[] = [];
-  const blank = (piped: boolean): Segment => ({ words: [], redirects: [], docs: [], piped });
-  let seg = blank(false);
-  for (let k = 0; k < toks.length; k++) {
-    const t = toks[k];
-    if (t.k === "word") seg.words.push(t.w);
-    else if (t.k === "doc") seg.docs.push(t.doc);
-    else if (t.k === "redir") {
-      const next = toks[k + 1];
-      const target = next?.k === "word" ? next.w : null;
-      if (target) k++;
-      seg.redirects.push({ op: t.op, fd: t.fd, target });
-    } else {
-      if (seg.words.length > 0 || seg.redirects.length > 0 || seg.docs.length > 0) items.push(seg);
-      seg = blank(t.op === "|" || t.op === "|&");
-      if (t.op === "(" || t.op === ")") items.push(t.op);
-    }
-  }
-  if (seg.words.length > 0 || seg.redirects.length > 0 || seg.docs.length > 0) items.push(seg);
-  return items;
-}
-
 // Rules.
 
+// The base after a `cd` the heuristic cannot follow (`cd $DIR`, `cd -`, `cd ~`:
+// the home is not known). Relative paths after it name no file; absolute ones do.
+const LOST = Symbol("lost base");
+type Base = string | null | typeof LOST;
+
+function locate(text: string, base: Base): string | null {
+  if (base !== LOST) return resolvePath(text, base);
+  return isRooted(text) ? resolvePath(text, "/") : null;
+}
+
 interface Ctx {
-  base: string | null;
+  base: Base;
   seg: Segment;
   out: ShellReading;
 }
@@ -290,7 +66,7 @@ function strip(words: Word[]): Word[] {
   return words.slice(k);
 }
 
-function segment(seg: Segment, base: string | null, out: ShellReading): string | null {
+function segment(seg: Segment, base: Base, out: ShellReading): Base {
   const words = strip(seg.words);
   const head = words[0];
   if (head?.text === "cd" && !head.dynamic) return cdTarget(words.slice(1), base);
@@ -312,11 +88,10 @@ function segment(seg: Segment, base: string | null, out: ShellReading): string |
   return base;
 }
 
-function cdTarget(args: Word[], base: string | null): string | null {
+function cdTarget(args: Word[], base: Base): Base {
   const dir = args.find((a) => !/^-[LPe@]+$/.test(a.text));
-  if (!dir) return "~";
-  if (dir.dynamic || dir.text === "-") return null;
-  return resolvePath(dir.text, base);
+  if (!dir || dir.dynamic || dir.text === "-" || dir.text === "~" || dir.text.startsWith("~/")) return LOST;
+  return locate(dir.text, base) ?? LOST;
 }
 
 function stdoutText(words: Word[], seg: Segment): { text: string; from: string } | null {
@@ -359,11 +134,13 @@ function add(
   const word = typeof w === "string" ? { text: w, dynamic: false, glob: false } : w;
   const text = word.text;
   if (word.dynamic || text === "" || text === "-" || text.startsWith("/dev/")) return null;
+  const path = locate(text, c.base);
+  if (path === null) return null;
   const { folder, ...rest } = extra;
   const looksLikeFolder = folderish(text);
   const touch: ShellTouch = {
     written: text,
-    path: resolvePath(text, c.base),
+    path,
     folder: folder === true || word.glob || looksLikeFolder,
     kind,
     reason,
@@ -377,7 +154,7 @@ const folderish = (t: string) => t.endsWith("/") || /(^|\/)\.\.?$/.test(t);
 const part = (w: Word, text: string): Word => ({ text, dynamic: w.dynamic, glob: w.glob });
 const basename = (t: string) => t.replace(/\/+$/, "").split("/").pop() ?? t;
 const at = (c: Ctx, dir: Word | null | undefined): Ctx =>
-  dir && !dir.dynamic ? { ...c, base: resolvePath(dir.text, c.base) } : c;
+  !dir ? c : { ...c, base: dir.dynamic ? LOST : (locate(dir.text, c.base) ?? LOST) };
 const pathLike = (t: string) =>
   !t.startsWith("-") &&
   !t.includes("://") &&
@@ -611,8 +388,10 @@ function git(args: Word[], c: Ctx): void {
   const change = (a: Word) => add(g, a, "change", `git ${sub} ${a.text}`);
   if (sub === "checkout") {
     const r = getopt(before, { values: "bB", long: ["orphan"] });
-    const files = r.operands.filter((a) => a.text === "." || /\.[A-Za-z]\w*$/.test(a.text));
-    if (paths.length > 0 || files.length > 0) [...files, ...paths].forEach(change);
+    // Without `--` an operand may be a branch, a tag or a path; only `.` is surely a path.
+    const here = r.operands.filter((a) => a.text === ".");
+    if (paths.length > 0) paths.forEach(change);
+    else if (here.length > 0) here.forEach(change);
     else if (r.operands.length > 0) repo();
   } else if (sub === "restore") {
     const r = getopt(before, { values: "s", long: ["source"] });
@@ -706,6 +485,9 @@ const MANAGERS: Record<string, Manager> = {
   },
 };
 
+const FROZEN = ["--frozen-lockfile", "--immutable"]; // install exactly what is locked, write nothing
+const LOCKED = ["--frozen", "--locked"]; // uv and cargo leave the lockfile as it is
+
 function manager(name: string, m: Manager, args: Word[], c: Ctx, depth: number): void {
   const o = getopt(args, { ...m, posix: true });
   const [sub, ...rest] = o.operands;
@@ -718,10 +500,12 @@ function manager(name: string, m: Manager, args: Word[], c: Ctx, depth: number):
     return;
   }
   if (has(o, "-g", "--global") || has(r, "-g", "--global")) return;
+  if (has(o, ...FROZEN) || has(r, ...FROZEN)) return;
   let files: string[] = [];
   if (!sub) files = m.bare ? [m.lock] : [];
   else if (m.edit.includes(sub.text)) files = r.operands.length > 0 ? [m.manifest, m.lock] : [m.lock];
   else if (m.lockOnly?.includes(sub.text)) files = [m.lock];
+  if (has(o, ...LOCKED) || has(r, ...LOCKED)) files = files.filter((f) => f !== m.lock);
   for (const f of files) add(cc, f, "change", sub ? `${name} ${sub.text}` : name);
 }
 
@@ -859,7 +643,8 @@ function interpreter(label: string, spec: Interpreter, args: Word[], c: Ctx, dep
   const fed = c.seg.docs.length > 0 || c.seg.piped || c.seg.redirects.some((r) => r.op === "<<<");
   if (fed || script) return inlineScript(c);
   const from = c.seg.redirects.find((r) => r.op === "<" && r.target && !r.target.dynamic)?.target;
-  if (from && c.out.script === null) c.out.script = resolvePath(from.text, c.base);
+  const path = from ? locate(from.text, c.base) : null;
+  if (path !== null && c.out.script === null) c.out.script = path;
 }
 
 function runScript(script: Word, rest: Word[], label: string, c: Ctx): void {
@@ -874,8 +659,8 @@ function runScript(script: Word, rest: Word[], label: string, c: Ctx): void {
 
 function inlineScript(c: Ctx): void {
   c.out.inline = true;
-  const here = resolvePath(".", c.base);
-  if (!c.out.touches.some((t) => t.reason === "inline script" && t.path === here)) {
+  const here = locate(".", c.base);
+  if (here !== null && !c.out.touches.some((t) => t.reason === "inline script" && t.path === here)) {
     add(c, ".", "unknown", "inline script", { folder: true });
   }
 }

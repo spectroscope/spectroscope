@@ -373,3 +373,56 @@ describe("shellTouches beyond the brief's list", () => {
     ]);
   });
 });
+
+describe("shellTouches review fixes", () => {
+  it("a dotted operand without -- is a branch or tag, not a changed file", () => {
+    const repo = [{ path: "/w", kind: "unknown", folder: true }];
+    expect(shortAll("git checkout release.x")).toEqual(repo);
+    expect(shortAll("git checkout v1.x")).toEqual(repo);
+    expect(shortAll("git checkout main -- src/a.ts")).toEqual([
+      { path: "/w/src/a.ts", kind: "change", folder: false },
+    ]);
+    expect(shortAll("git checkout .")).toEqual([{ path: "/w", kind: "change", folder: true }]);
+  });
+
+  it("a lost base drops relative paths and keeps absolute ones", () => {
+    expect(touches("cd $DIR && touch a && touch /tmp/b")).toEqual([
+      { written: "/tmp/b", path: "/tmp/b", folder: false, kind: "create", reason: "touch /tmp/b" },
+    ]);
+    expect(touches("cd - && touch a")).toEqual([]);
+    expect(touches("cd && touch a")).toEqual([]);
+    expect(touches("cd ~ && touch a")).toEqual([]);
+    expect(shortAll("cd $DIR && cat ~/notes.md")).toEqual([
+      { path: "~/notes.md", kind: "read", folder: false },
+    ]);
+    expect(shortAll("cd $DIR && cd /tmp && touch a")).toEqual([
+      { path: "/tmp/a", kind: "create", folder: false },
+    ]);
+    expect(touches("cd $DIR && python3 -c 'x()'")).toEqual([]);
+    expect(touches("git -C $DIR pull")).toEqual([]);
+    expect(touches("npm --prefix $X install y")).toEqual([]);
+    // The loss ends with the subshell that caused it.
+    expect(shortAll("(cd $DIR && touch a); touch b")).toEqual([
+      { path: "/w/b", kind: "create", folder: false },
+    ]);
+  });
+
+  it("a frozen install writes neither manifest nor lockfile", () => {
+    for (const command of [
+      "npm install --frozen-lockfile",
+      "yarn install --frozen-lockfile",
+      "pnpm install --frozen-lockfile",
+      "yarn install --immutable",
+      "yarn --frozen-lockfile",
+      "uv sync --locked",
+      "uv sync --frozen",
+    ]) {
+      expect(touches(command)).toEqual([]);
+    }
+    expect(shortAll("uv add --frozen x")).toEqual([
+      { path: "/w/pyproject.toml", kind: "change", folder: false },
+    ]);
+    // The positive twin: the same install without the flag names its lockfile.
+    expect(shortAll("pnpm install")).toEqual([{ path: "/w/pnpm-lock.yaml", kind: "change", folder: false }]);
+  });
+});
