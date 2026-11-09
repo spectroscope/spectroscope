@@ -152,14 +152,16 @@ timeline marks are dashed or ringed.</p>
 provider and the model for this reading. The picker starts empty, so nothing runs on the chat's
 model by accident, and later it offers the pair you used last. Local providers such as Ollama and
 LM Studio are on the list, so sensitive output can stay on this machine. The built-in model is not
-offered yet. Pressing <em>analyze with model</em> opens a sheet before anything is sent. It names
-the provider, the model and the address, says whether the text leaves this machine, and shows the
-exact text. That text has one line per file call and holds 60,000 characters at most, with each
-shell output cut to 2,000 characters. It leaves out what <code>write_file</code> and
-<code>edit_file</code> wrote. The tab sends nothing until you press send. The model's entries
-count for shell commands only. Where the model names a file that the heuristic found on the same
-call, the tag reads <em>probable · model</em>. The status line names the model whose reading is
-shown, and the reading is not saved with the session.</p>
+offered. Pressing <em>analyze with model</em> opens a sheet before anything is sent. It names the
+provider, the model and the address, says whether the text leaves this machine, and shows how many
+characters go out. You can open the exact text from the sheet. It starts with the workspace folder
+and then has one line per file call. A shell command also sends its output, cut to 2,000
+characters. The whole text holds 60,000 characters at most and leaves out what
+<code>write_file</code> and <code>edit_file</code> wrote. The tab sends nothing until you press
+send. The model's entries count for shell commands only. Where the model names a file that the
+heuristic found on the same call, the entry carries the <em>probable</em> tag and the
+<em>model</em> tag. The status line names the model whose reading is shown, and the reading is not
+saved with the session.</p>
 
 <h2 id="ch-tabs-text">The Text tab</h2>
 

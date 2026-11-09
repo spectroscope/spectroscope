@@ -21,7 +21,16 @@
 // Every later pass, the light one included, finds that session by its prompt
 // and opens the same recording, so both designs show the same calls. A run
 // that did not produce a successful edit_file exits 1 instead of shooting:
-// start again from fresh copies.
+// start again from fresh copies. The plate comes from a live run of a local
+// model, so a second run from fresh copies is not byte-identical: the calls,
+// their seconds and the model's words can differ.
+//
+// The script sends chat turns, allows any permission gate and renames the
+// session on the server BASE_URL names. Before any of that it checks the
+// target and exits 2 unless the host is this machine, the port is outside
+// 8080 to 8100 and the server's configured workspace (GET /api/files with
+// scope=prospective, the read the app's Files panel makes before a run) is a
+// folder named spectro-demo or demo-workspace.
 
 import { chromium } from "playwright";
 import { mkdirSync } from "node:fs";
@@ -33,7 +42,6 @@ const BASE_URL = process.env.BASE_URL ?? "http://localhost:8791";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const OUT_DIR = process.env.OUT_DIR ?? path.join(HERE, THEME === "light" ? "shots-light" : "shots");
 const DESIGN = THEME === "light" ? "paper" : "spectroscope";
-mkdirSync(OUT_DIR, { recursive: true });
 
 // The file the run edits, and the messages that ask for it, one step each: a
 // small local model follows one tool call per message far more reliably than a
@@ -62,6 +70,45 @@ const MESSAGES = [
   ].join("\n"),
   "Now call run_command once with the command: python3 run_checks.py. Then say in one sentence what changed.",
 ];
+
+/** Stops the script before it writes anything to a server that is not the demo one. */
+function refuse(why) {
+  console.error(`refused: ${why}. Start the server from the copies the header names and point BASE_URL at it.`);
+  process.exit(2);
+}
+
+/** The target check: this machine, a port outside 8080 to 8100, the demo workspace. */
+async function guardTarget() {
+  let url;
+  try {
+    url = new URL(BASE_URL);
+  } catch {
+    refuse(`BASE_URL ${BASE_URL} is not a URL`);
+  }
+  if (!["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)) {
+    refuse(`BASE_URL names ${url.hostname}, not this machine`);
+  }
+  const port = Number(url.port || (url.protocol === "https:" ? 443 : 80));
+  if (port >= 8080 && port <= 8100) {
+    refuse(`port ${port} is inside 8080 to 8100, where the apps in daily use run`);
+  }
+  let res;
+  try {
+    res = await fetch(`${BASE_URL}/api/files?scope=prospective`);
+  } catch (e) {
+    refuse(`no server answers at ${BASE_URL} (${e.cause?.code ?? e.message})`);
+  }
+  if (!res.ok) refuse(`GET /api/files?scope=prospective answered ${res.status}, so the server names no workspace`);
+  const tree = await res.json().catch(() => ({}));
+  const root = typeof tree.root === "string" ? tree.root : "";
+  if (!/spectro-demo|demo-workspace/.test(root)) {
+    refuse(`the server's workspace is "${root}", not a copy named spectro-demo or demo-workspace`);
+  }
+  console.log(`target ${BASE_URL}, workspace ${root}`);
+}
+
+await guardTarget();
+mkdirSync(OUT_DIR, { recursive: true });
 
 const browser = await chromium.launch({ channel: "chrome", headless: true });
 const ctx = await browser.newContext({
