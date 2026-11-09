@@ -25,8 +25,7 @@
   font-size: var(--fs-12);
 }
 
-.files-empty,
-.files-soon {
+.files-empty {
   margin: 0;
   padding: var(--sp-5) var(--sp-4);
   color: var(--text-dim);
@@ -85,10 +84,31 @@
   align-items: start;
   padding: var(--sp-3) var(--sp-4) var(--sp-5);
 }
+/* The view all: explorer, operations and detail; the detail wraps below 1100px. */
+.files-panes--three {
+  grid-template-columns: minmax(220px, 280px) minmax(240px, 320px) minmax(0, 1fr);
+}
+@media (max-width: 1100px) {
+  .files-panes--three {
+    grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
+  }
+  .files-panes--three > .files-detail {
+    grid-column: 1 / -1;
+  }
+}
 @media (max-width: 720px) {
-  .files-panes {
+  .files-panes,
+  .files-panes--three {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+/* The views created and operations: one column of panels. */
+.files-stage {
+  display: grid;
+  gap: var(--sp-3);
+  align-items: start;
+  padding: var(--sp-3) var(--sp-4) var(--sp-5);
 }
 
 .files-panel {
@@ -98,12 +118,27 @@
   background: var(--surface);
 }
 .files-panel__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px var(--sp-3);
   padding: var(--sp-2) var(--sp-3);
   border-bottom: 1px solid var(--border);
   font-size: var(--fs-11);
   letter-spacing: var(--track-eyebrow);
   text-transform: uppercase;
   color: var(--sp-violet);
+}
+.files-panel__meta {
+  min-width: 0;
+  margin-left: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text-dim);
+  font-size: var(--fs-12);
 }
 .files-panel__body {
   padding: 6px 0;
@@ -362,6 +397,212 @@
 }
 .files-diff__text--none {
   background: var(--shade);
+}
+.files-diff__cap--pair {
+  border-top: 1px solid var(--border);
+  font-size: 10px;
+}
+
+/* An agent named in a row or a card: its dot in its accent, decoration only. */
+.files-agent {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-dim);
+  font-size: var(--fs-12);
+  white-space: nowrap;
+}
+.files-agent__dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--files-agent);
+}
+
+/* What a call did: one word per touch kind, after a short bar in its colour. */
+.files-kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: var(--sp-2);
+  white-space: nowrap;
+}
+.files-kind::before {
+  content: "";
+  flex: none;
+  width: 2px;
+  height: 12px;
+  background: var(--files-change);
+}
+.files-kind--create::before {
+  background: var(--files-create);
+}
+.files-kind--delete::before {
+  background: var(--error);
+}
+.files-kind--read::before {
+  background: var(--files-read);
+}
+.files-kind--unknown::before {
+  background: var(--files-shell);
+}
+.files-kind--none {
+  color: var(--text-dim);
+}
+.files-kind--none::before {
+  background: transparent;
+}
+.files-kind--failed {
+  color: var(--error);
+}
+.files-kind--failed::before {
+  background: var(--error);
+}
+
+/* The compact operations list of the view all. */
+.files-op {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 2px var(--sp-2);
+  width: 100%;
+  padding: 5px var(--sp-3);
+  border: 0;
+  border-left: 2px solid transparent;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-13);
+  text-align: left;
+  cursor: pointer;
+}
+.files-op:hover {
+  background: var(--surface-2);
+}
+.files-op--sel,
+.files-op--sel:hover {
+  background: var(--surface-3);
+  border-left-color: var(--sp-violet);
+}
+.files-op__t {
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+}
+.files-op__what {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px var(--sp-2);
+  min-width: 0;
+}
+.files-op__line {
+  grid-column: 2 / 3;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+}
+
+/* The operations table. */
+.files-ops__wrap {
+  overflow-x: auto;
+}
+.files-ops__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-13);
+}
+.files-ops__table th {
+  padding: var(--sp-2) 10px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  font-weight: 500;
+  font-size: var(--fs-11);
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+  color: var(--sp-violet);
+  white-space: nowrap;
+}
+.files-ops__table td {
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.files-ops__row {
+  cursor: pointer;
+}
+.files-ops__row:hover {
+  background: var(--surface-2);
+}
+.files-ops__row--sel,
+.files-ops__row--sel:hover {
+  background: var(--surface-3);
+  box-shadow: inset 2px 0 0 var(--sp-violet);
+}
+.files-ops__t,
+.files-ops__p,
+.files-ops__tool {
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  white-space: nowrap;
+}
+.files-ops__line {
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  word-break: break-all;
+}
+.files-ops__fx {
+  display: block;
+  white-space: nowrap;
+}
+@media (max-width: 720px) {
+  .files-hide-narrow {
+    display: none;
+  }
+}
+
+/* The created view: one card per created file. */
+.files-created {
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+}
+@media (max-width: 720px) {
+  .files-created {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.files-card__head {
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--fs-13);
+}
+.files-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px var(--sp-2);
+  padding: 6px var(--sp-3);
+  border-bottom: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: var(--fs-12);
+}
+.files-card__link {
+  margin-left: auto;
+}
+.files-card__body {
+  max-height: 300px;
+  overflow: auto;
+}
+.files-card__none {
+  border-bottom: 0;
 }
 
 /* The agent chips: each agent's dot in its accent, decoration only. */
@@ -679,4 +920,9 @@
 }
 .files-detail--after {
   opacity: 0.55;
+}
+.files-op--after,
+.files-ops__row--after,
+.files-card--after {
+  opacity: 0.45;
 }

@@ -148,7 +148,7 @@ function lastAnchorAtOrBefore(anchors: readonly Anchor[], ok: (a: Anchor) => boo
 }
 
 /** The mark colour of a touch kind; the stylesheet maps each to a files alias. */
-const KIND_CLASS: Record<TouchKind, string> = {
+export const KIND_CLASS: Record<TouchKind, string> = {
   create: "create",
   change: "change",
   overwrite: "change",

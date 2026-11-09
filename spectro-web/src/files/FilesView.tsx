@@ -29,8 +29,10 @@ import { t, type Lang } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { DEFAULT_INTERVAL_MS } from "../state/stepper";
 import { cursorLimit, FOLLOW, initialCursor, stepCall, whenLabel, type Cursor } from "./cursor";
+import { FilesCreated } from "./FilesCreated";
 import { FilesDetail } from "./FilesDetail";
 import { FilesExplorer } from "./FilesExplorer";
+import { FilesOperations, FilesOpList } from "./FilesOperations";
 import { FilesTimeline, timelineAxis } from "./FilesTimeline";
 import {
   fileRows,
@@ -179,10 +181,18 @@ export function FilesView(props: FilesViewProps): JSX.Element {
   const callAt = (callIndex: number): FileCall | undefined =>
     ledger.calls[(axis.ordinals.get(callIndex) ?? 0) - 1];
 
-  /** A call picked on the timeline or by a key: selected, and the cursor stands on it. */
+  /** A call picked on the timeline, in a list or by a key: selected, and the cursor stands on it. */
   const pickCall = (call: FileCall, path?: string | null): void => {
     setSelection((before) => selectionFor(call, before, path));
     setCursor({ follow: false, at: call.callIndex });
+  };
+
+  /** A press on a call's mark, row or card; it stops play. */
+  const pickAt = (callIndex: number, path?: string | null): void => {
+    const call = callAt(callIndex);
+    if (call === undefined) return;
+    setPlaying(false);
+    pickCall(call, path);
   };
 
   /**
@@ -245,6 +255,32 @@ export function FilesView(props: FilesViewProps): JSX.Element {
     setPlaying(false);
     pickCall(call);
   };
+
+  const listProps = {
+    lang,
+    ledger,
+    calls,
+    ordinals: axis.ordinals,
+    limit,
+    selection,
+    agents: agents.length > 1,
+    onPick: pickAt,
+  };
+  const detail = (pickKey?: string): JSX.Element => (
+    <FilesDetail
+      lang={lang}
+      events={events}
+      ledger={ledger}
+      rows={rows}
+      selection={selection}
+      diffStyle={diffStyle}
+      limit={limit}
+      onSelect={selectFromDetail}
+      onFocusEvent={onFocusEvent}
+      onOpenPath={onOpenPath}
+      pickKey={pickKey}
+    />
+  );
 
   return (
     <div className="files-tab" data-view={view} tabIndex={0} onKeyDown={onKeyDown}>
@@ -310,12 +346,7 @@ export function FilesView(props: FilesViewProps): JSX.Element {
         cursor={cursor}
         playing={playing}
         selection={selection}
-        onPick={(callIndex, path) => {
-          const call = callAt(callIndex);
-          if (call === undefined) return;
-          setPlaying(false);
-          pickCall(call, path);
-        }}
+        onPick={pickAt}
         onSelectRow={selectRow}
         onCursor={place}
         onPlay={togglePlay}
@@ -324,10 +355,25 @@ export function FilesView(props: FilesViewProps): JSX.Element {
           setCursor(FOLLOW);
         }}
       />
-      {view === "created" || view === "operations" ? (
-        <p className="files-soon">{t(lang, "filesTab.view.soon")}</p>
+      {view === "created" ? (
+        <FilesCreated
+          lang={lang}
+          ledger={ledger}
+          rows={rows}
+          ordinals={axis.ordinals}
+          limit={limit}
+          onShowInDiff={(callIndex, path) => {
+            setView("diff");
+            pickAt(callIndex, path);
+          }}
+        />
+      ) : view === "operations" ? (
+        <div className="files-stage">
+          <FilesOperations {...listProps} />
+          {detail("filesTab.detail.pickCall")}
+        </div>
       ) : (
-        <div className="files-panes">
+        <div className={view === "all" ? "files-panes files-panes--three" : "files-panes"}>
           <FilesExplorer
             lang={lang}
             rows={rows}
@@ -336,18 +382,8 @@ export function FilesView(props: FilesViewProps): JSX.Element {
             firstSeen={(row) => whenLabel(lang, row.firstT, axis.ordinals.get(row.firstCall) ?? 0)}
             onSelect={selectRow}
           />
-          <FilesDetail
-            lang={lang}
-            events={events}
-            ledger={ledger}
-            rows={rows}
-            selection={selection}
-            diffStyle={diffStyle}
-            limit={limit}
-            onSelect={selectFromDetail}
-            onFocusEvent={onFocusEvent}
-            onOpenPath={onOpenPath}
-          />
+          {view === "all" && <FilesOpList {...listProps} rows={rows} />}
+          {detail()}
         </div>
       )}
     </div>

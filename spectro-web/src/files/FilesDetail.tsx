@@ -4,7 +4,7 @@
 // drawn as a diff, written and appended text as added lines. A shell call shows
 // its command and output first. A call after the tab's cursor is dimmed.
 
-import type { JSX } from "react";
+import { Fragment, type JSX } from "react";
 import { describeTool } from "../components/toolViews";
 import type { RunEvent } from "../events";
 import { t, type Lang } from "../i18n/i18n";
@@ -26,6 +26,8 @@ export interface FilesDetailProps {
   onSelect: (selection: FilesSelection) => void;
   onFocusEvent: (agentId: string, event: RunEvent) => void;
   onOpenPath: ((path: string) => void) | null;
+  /** What the empty detail asks for; the explorer by default. */
+  pickKey?: string;
 }
 
 export function FilesDetail(props: FilesDetailProps): JSX.Element {
@@ -35,7 +37,7 @@ export function FilesDetail(props: FilesDetailProps): JSX.Element {
     return (
       <div className="files-panel files-detail">
         <div className="files-panel__head">{t(lang, "filesTab.detail.title")}</div>
-        <p className="files-placeholder">{t(lang, "filesTab.detail.pick")}</p>
+        <p className="files-placeholder">{t(lang, props.pickKey ?? "filesTab.detail.pick")}</p>
       </div>
     );
   }
@@ -75,7 +77,7 @@ function head(props: FilesDetailProps, call: FileCall, at: number): JSX.Element 
             type="button"
             className="files-link"
             data-action="open-script"
-            title={script}
+            title={t(lang, "filesTab.detail.openScriptTitle", { script })}
             disabled={onOpenPath === null}
             onClick={() => onOpenPath?.(script)}
           >
@@ -186,11 +188,19 @@ function touchBlock(props: FilesDetailProps, call: FileCall, touch: FileTouch, i
       {diff !== null && (
         <div className="files-diff">
           <div className="files-diff__cap">{t(lang, captionKey(touch))}</div>
-          {diff.pairs.map((rows, k) =>
-            props.diffStyle === "split"
-              ? splitTable(rows, `${call.callIndex}-${i}-${k}`)
-              : unifiedTable(rows, k),
-          )}
+          {diff.pairs.map((rows, k) => (
+            <Fragment key={k}>
+              {/* Several pairs (MultiEdit): each gets its count, so two tables never read as one diff. */}
+              {diff.pairs.length > 1 && (
+                <div className="files-diff__cap files-diff__cap--pair">
+                  {t(lang, "filesTab.diff.pairOf", { k: k + 1, n: diff.pairs.length })}
+                </div>
+              )}
+              {props.diffStyle === "split"
+                ? splitTable(rows, `${call.callIndex}-${i}-${k}`)
+                : unifiedTable(rows, k)}
+            </Fragment>
+          ))}
         </div>
       )}
     </div>
@@ -224,8 +234,13 @@ function diffOf(touch: FileTouch): { pairs: DiffRow[][]; rows: DiffRow[] } | nul
 
 const plus = (text: string): DiffRow => ({ sign: "+", text });
 
+/** A text drawn as added lines, the way the detail draws written content. */
+export function addedLines(text: string): JSX.Element {
+  return unifiedTable(linesOf(text).map(plus), 0);
+}
+
 /** A text's lines; a closing line break opens no empty last line. */
-function linesOf(s: string): string[] {
+export function linesOf(s: string): string[] {
   if (s === "") return [];
   return s.replace(/\r?\n$/, "").split(/\r?\n/);
 }

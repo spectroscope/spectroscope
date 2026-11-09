@@ -3,6 +3,8 @@
 // presses its buttons (testkit/driveComponent.tsx). Nothing a case needs may
 // happen in an effect, because effects never run here.
 
+import { readdirSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { isValidElement, type ReactNode } from "react";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import type { RunEvent } from "../events";
@@ -195,6 +197,60 @@ describe("the files tab", () => {
     expect(folderless.some((el) => textOf(el.props.children) === note)).toBe(true);
   });
 
+  it("openScriptSaysWhereItOpens", () => {
+    const title = (): unknown => action(run(props(), [pressRow("/ws/out")]), "open-script").props.title;
+    expect(title()).toBe("Opens /ws/scripts/gen.py in the Files panel beside the chat.");
+    setLang("de");
+    try {
+      expect(title()).toBe("Öffnet /ws/scripts/gen.py im Panel Dateien neben dem Chat.");
+    } finally {
+      setLang("en");
+    }
+  });
+
+  it("eachReplacementOfAMultiEditHasItsCaption", () => {
+    const multi = stamp([
+      { type: "run_start", runId: "r1", agentId: "main", prompt: "go", workspace: "/ws" },
+      call("m1", "MultiEdit", {
+        file_path: "/ws/a.ts",
+        edits: [
+          { old_string: "one", new_string: "1" },
+          { old_string: "two", new_string: "2" },
+          { old_string: "three", new_string: "3" },
+        ],
+      }),
+      result("m1"),
+      call("e1", "edit_file", { path: "b.ts", old_string: "x", new_string: "y" }),
+      result("e1", { fileChange: "changed" }),
+    ]);
+    const captions = (tree: El[]) =>
+      tree.filter((el) => hasClass(el, "files-diff__cap--pair")).map((el) => textOf(el.props.children));
+    const mainCaption = dict["filesTab.diff.replaced"]?.en;
+    expect(mainCaption).toBeTruthy();
+    const three = run(props({ events: multi }), [pressRow("/ws/a.ts")]);
+    expect(captions(three)).toEqual(["replacement 1 of 3", "replacement 2 of 3", "replacement 3 of 3"]);
+    expect(three.filter((el) => el.type === "table" && hasClass(el, "files-diff__table"))).toHaveLength(3);
+    // Before | after keeps one caption per pair.
+    const split = run(props({ events: multi }), [pressRow("/ws/a.ts"), press("style-split")]);
+    expect(captions(split)).toHaveLength(3);
+    setLang("de");
+    try {
+      expect(captions(run(props({ events: multi }), [pressRow("/ws/a.ts")]))).toEqual([
+        "Ersetzung 1 von 3",
+        "Ersetzung 2 von 3",
+        "Ersetzung 3 von 3",
+      ]);
+    } finally {
+      setLang("en");
+    }
+    // One pair needs no count: the edit shows its caption and no pair caption.
+    const one = run(props({ events: multi }), [pressRow("/ws/b.ts")]);
+    expect(captions(one)).toEqual([]);
+    expect(
+      one.some((el) => hasClass(el, "files-diff__cap") && textOf(el.props.children) === mainCaption),
+    ).toBe(true);
+  });
+
   it("openInTraceHandsTheCallEvent", () => {
     const onFocusEvent = vi.fn();
     run(props({ onFocusEvent }), [pressRow("/ws/src/a.ts"), press("open-in-trace")]);
@@ -227,14 +283,14 @@ describe("the files tab", () => {
   });
 
   it("everyKeyTheTabUsesIsInTheDictionary", () => {
-    // Literal keys, read off the three views, and the families built from a value.
-    const literal = [
-      "FilesView.tsx",
-      "FilesExplorer.tsx",
-      "FilesDetail.tsx",
-      "FilesTimeline.tsx",
-      "cursor.ts",
-    ].flatMap((file) => [
+    // Literal keys, read off every source file of the tab, and the families built from a value.
+    const sources = readdirSync(fileURLToPath(new URL(".", import.meta.url)))
+      .filter((file) => /\.tsx?$/.test(file) && !/\.test\.tsx?$/.test(file))
+      .sort();
+    expect(sources).toEqual(
+      expect.arrayContaining(["FilesCreated.tsx", "FilesOperations.tsx", "FilesView.tsx"]),
+    );
+    const literal = sources.flatMap((file) => [
       ...stripComments(read(`./${file}`, import.meta.url)).matchAll(/"(filesTab\.[\w.]+)"/g),
     ]);
     expect(literal.length).toBeGreaterThan(20);
