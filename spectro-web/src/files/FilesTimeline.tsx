@@ -1,8 +1,10 @@
 // Card 604: the timeline of the files tab. One row per explorer path and a row
 // for the shell commands; each touch is a mark at its second, or at its call
-// number when the recording has no clock (C12). Prompts are numbered on the
-// axis. The tab's own cursor (C2) stands over the rows: it can be dragged, it
-// dims what comes after it, and it never moves the session's stepper.
+// number when the recording has no clock (C12). An idle gap of more than two
+// minutes is collapsed to two minutes and marked with a break (axis.ts).
+// Prompts are numbered on the axis. The tab's own cursor (C2) stands over the
+// rows: it can be dragged, it dims what comes after it, and it never moves the
+// session's stepper.
 //
 // The rows are drawn with HTML and percentages rather than an SVG measured in
 // pixels, so the timeline needs no layout effect: a test renders it as it is.
@@ -12,6 +14,16 @@ import type { JSX, PointerEvent } from "react";
 import type { RunEvent } from "../events";
 import { t, type Lang } from "../i18n/i18n";
 import { elapsedAt } from "../state/stepper";
+import {
+  axisMap,
+  callTicks,
+  gapText,
+  tickText,
+  timeTicks,
+  type AxisBreak,
+  type AxisMap,
+  type AxisTick,
+} from "./axis";
 import { cursorLimit, whenLabel, type Cursor } from "./cursor";
 import { shownPath } from "./FilesExplorer";
 import type { FileCall, FileLedger, FileRow, FileTouch, PromptMark } from "./fold";
@@ -30,8 +42,10 @@ interface Anchor {
 export interface TimelineAxis {
   /** Seconds from the start of the run, or call numbers when the ledger has no clock. */
   timed: boolean;
-  /** The axis runs from 0 to `end`; never 0. */
+  /** The axis runs from 0 to `end`; never 0. With a clock, idle gaps are collapsed (axis.ts). */
   end: number;
+  /** Seconds, or call numbers, to axis positions and back; one to one without a clock. */
+  map: AxisMap;
   /** Where each call of the ledger stands, by its event index. */
   callPos: ReadonlyMap<number, number>;
   /** Each call's 1-based number in the ledger, by its event index. */
@@ -41,28 +55,27 @@ export interface TimelineAxis {
   /** Calls and prompts in event order; their positions never go down. */
   anchors: readonly Anchor[];
   prompts: readonly { mark: PromptMark; pos: number }[];
-  /** Where the axis is labelled. */
-  steps: readonly number[];
+  /** Where the axis is labelled, and the time or call number each label prints. */
+  steps: readonly AxisTick[];
+  /** The collapsed idle gaps; none without a clock. */
+  breaks: readonly AxisBreak[];
 }
 
-const SECOND_STEPS = [
-  0.1, 0.2, 0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 14400, 43200,
-];
-const CALL_STEPS = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000];
-/** No more labels than this on the axis. */
-const MAX_STEPS = 7;
+/** One to one, for a ledger without a clock. */
+const CALL_AXIS = axisMap([], Infinity);
 
 /**
  * The axis of a ledger. With a clock, a call stands at its second; a call
  * without a stamp in an otherwise timed run stands where the last one before
- * it stood, so positions never run backwards. Without a clock, call k stands
- * at k and a prompt halfway between the calls around it.
+ * it stood, so positions never run backwards. A gap of more than two minutes
+ * between two drawn events (calls with a mark, prompts) is collapsed. Without
+ * a clock, call k stands at k and a prompt halfway between the calls around it.
  */
 export function timelineAxis(ledger: FileLedger, events: readonly RunEvent[]): TimelineAxis {
-  const callPos = new Map<number, number>();
-  const ordinals = new Map<number, number>();
-  const anchors: Anchor[] = [];
-  const prompts: { mark: PromptMark; pos: number }[] = [];
+  const rawCalls: { call: FileCall; pos: number }[] = [];
+  const rawPrompts: { mark: PromptMark; pos: number }[] = [];
+  const order: ({ call: FileCall; pos: number } | { mark: PromptMark; pos: number })[] = [];
+  const drawn: number[] = [];
   const { calls } = ledger;
   let c = 0;
   let p = 0;
@@ -71,33 +84,56 @@ export function timelineAxis(ledger: FileLedger, events: readonly RunEvent[]): T
     const call = calls[c];
     const prompt = ledger.prompts[p];
     if (prompt === undefined || (call !== undefined && call.callIndex < prompt.eventIndex)) {
-      const pos = ledger.timed ? Math.max(last, call.t ?? last) : c + 1;
-      callPos.set(call.callIndex, pos);
-      ordinals.set(call.callIndex, c + 1);
-      anchors.push({ at: call.callIndex, pos });
-      last = pos;
+      const entry = { call, pos: ledger.timed ? Math.max(last, call.t ?? last) : c + 1 };
+      rawCalls.push(entry);
+      order.push(entry);
+      if (call.touches.length > 0 || call.shell) drawn.push(entry.pos);
+      last = entry.pos;
       c++;
     } else {
-      const pos = ledger.timed ? Math.max(last, prompt.t ?? last) : c + 0.5;
-      prompts.push({ mark: prompt, pos });
-      anchors.push({ at: prompt.eventIndex, pos });
-      last = pos;
+      const entry = { mark: prompt, pos: ledger.timed ? Math.max(last, prompt.t ?? last) : c + 0.5 };
+      rawPrompts.push(entry);
+      order.push(entry);
+      drawn.push(entry.pos);
+      last = entry.pos;
       p++;
     }
   }
-  let end: number;
+  let map = CALL_AXIS;
+  let end = calls.length + 1;
   if (ledger.timed) {
     const ms = elapsedAt(events, events.length - 1);
-    end = Math.max(last, ms === null ? 0 : ms / 1000);
-  } else end = calls.length + 1;
+    const until = Math.max(last, ms === null ? 0 : ms / 1000);
+    map = axisMap([...drawn, until]);
+    end = map.toX(until);
+  }
   if (!(end > 0)) end = 1;
-  const span = ledger.timed ? end : calls.length;
-  const table = ledger.timed ? SECOND_STEPS : CALL_STEPS;
-  const step = table.find((s) => span / s <= MAX_STEPS) ?? table[table.length - 1];
-  const steps: number[] = [];
-  for (let k = ledger.timed ? 0 : 1; k * step <= span + 1e-9; k++) steps.push(k * step);
+  const callPos = new Map<number, number>();
+  const ordinals = new Map<number, number>();
+  rawCalls.forEach(({ call, pos }, i) => {
+    callPos.set(call.callIndex, map.toX(pos));
+    ordinals.set(call.callIndex, i + 1);
+  });
+  const anchors = order.map((entry) =>
+    "call" in entry
+      ? { at: entry.call.callIndex, pos: map.toX(entry.pos) }
+      : { at: entry.mark.eventIndex, pos: map.toX(entry.pos) },
+  );
+  const prompts = rawPrompts.map(({ mark, pos }) => ({ mark, pos: map.toX(pos) }));
+  const steps = ledger.timed ? timeTicks(map) : callTicks(calls.length);
   const callIndexes = calls.map((call) => call.callIndex);
-  return { timed: ledger.timed, end, callPos, ordinals, callIndexes, anchors, prompts, steps };
+  return {
+    timed: ledger.timed,
+    end,
+    map,
+    callPos,
+    ordinals,
+    callIndexes,
+    anchors,
+    prompts,
+    steps,
+    breaks: map.breaks,
+  };
 }
 
 /** Where the cursor stands on the axis. */
@@ -107,7 +143,7 @@ export function cursorPos(axis: TimelineAxis, cursor: Cursor, events: readonly R
   if (at < 0) return 0;
   if (axis.timed) {
     const ms = elapsedAt(events, at);
-    if (ms !== null) return Math.min(axis.end, ms / 1000);
+    if (ms !== null) return Math.min(axis.end, axis.map.toX(ms / 1000));
     const before = lastAnchorAtOrBefore(axis.anchors, (a) => a.at <= at);
     return before === null ? 0 : before.pos;
   }
@@ -322,17 +358,28 @@ export function FilesTimeline(props: FilesTimelineProps): JSX.Element {
         <div className="files-tl__plot" onPointerDown={onPointerDown} onPointerMove={onPointerMove}>
           <div className="files-tl__axis">
             {axis.steps.map((s) => (
-              <span key={s} className="files-tl__step" style={{ left: pct(s) }}>
-                {axis.timed
-                  ? t(lang, "filesTab.timeline.step", {
-                      s: s.toLocaleString(lang, { maximumFractionDigits: 1 }),
-                    })
-                  : s.toLocaleString(lang)}
+              <span key={s.pos} className="files-tl__step" style={{ left: pct(s.pos) }}>
+                {axis.timed ? tickText(lang, s.value) : s.value.toLocaleString(lang)}
               </span>
+            ))}
+            {axis.breaks.map((b) => (
+              <span
+                key={`break-${b.at}`}
+                className="files-tl__break"
+                style={{ left: pct(b.at) }}
+                role="img"
+                title={gapText(lang, b.gap)}
+                aria-label={gapText(lang, b.gap)}
+              />
             ))}
           </div>
           {axis.steps.map((s) => (
-            <span key={`grid-${s}`} className="files-tl__grid" style={{ left: pct(s) }} aria-hidden="true" />
+            <span
+              key={`grid-${s.pos}`}
+              className="files-tl__grid"
+              style={{ left: pct(s.pos) }}
+              aria-hidden="true"
+            />
           ))}
           {axis.prompts.map(({ mark: prompt, pos }) => (
             <span
@@ -387,10 +434,10 @@ export function FilesTimeline(props: FilesTimelineProps): JSX.Element {
 function readout(lang: Lang, axis: TimelineAxis, cursor: Cursor, events: readonly RunEvent[]): string {
   if (cursor.follow) {
     return axis.timed
-      ? t(lang, "filesTab.timeline.followEnd", { when: whenLabel(lang, axis.end, 0) })
+      ? t(lang, "filesTab.timeline.followEnd", { when: whenLabel(lang, axis.map.fromX(axis.end), 0) })
       : t(lang, "filesTab.timeline.endOfRun");
   }
-  if (axis.timed) return whenLabel(lang, cursorPos(axis, cursor, events), 0);
+  if (axis.timed) return whenLabel(lang, axis.map.fromX(cursorPos(axis, cursor, events)), 0);
   const k = callsAtOrBefore(axis, cursor.at);
   return k === 0 ? t(lang, "filesTab.timeline.beforeFirst") : t(lang, "filesTab.callNumber", { n: k });
 }

@@ -6559,7 +6559,11 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Diese Session hat keine Uhr, darum zählt die Achse Aufrufe.",
     en: "This session has no clock, so the axis counts calls.",
   },
-  "filesTab.timeline.step": { de: "{s} s", en: "{s} s" },
+  "filesTab.timeline.unit.s": { de: "{n} s", en: "{n} s" },
+  "filesTab.timeline.unit.min": { de: "{n} Min.", en: "{n} min" },
+  "filesTab.timeline.unit.h": { de: "{n} Std.", en: "{n} h" },
+  "filesTab.timeline.unit.d": { de: "{n} T", en: "{n} d" },
+  "filesTab.timeline.idle": { de: "{gap} Pause", en: "{gap} idle" },
   "filesTab.timeline.shell": { de: "Shell-Befehle", en: "shell commands" },
   "filesTab.timeline.more": {
     de: "+{n} weitere Dateien, im Explorer aufgeführt",

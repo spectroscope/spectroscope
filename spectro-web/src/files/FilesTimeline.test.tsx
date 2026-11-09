@@ -59,6 +59,55 @@ const EVENTS = stamp(PLAIN);
 
 const EXPAND = [FilesView, FilesExplorer, FilesDetail, FilesTimeline];
 
+const DAY = 86_400;
+
+/**
+ * Sixteen days, shaped like the live session of 2026-11-09: three spells of
+ * twenty reads of five files, a prompt five days after the first two spells,
+ * and the run's last event at the end of the sixteenth day.
+ */
+function idleRun(): RunEvent[] {
+  const out: object[] = [];
+  const at = (s: number, e: object) => out.push({ ...e, ts: T0 + s * 1000 });
+  let n = 0;
+  const spell = (from: number) => {
+    for (let i = 0; i < 20; i++) {
+      const id = `c${n++}`;
+      at(from + 10 + 20 * i, call(id, "read_file", { path: `f${i % 5}.ts` }));
+      at(from + 11 + 20 * i, result(id));
+    }
+  };
+  at(0, { type: "run_start", runId: "r1", agentId: "main", prompt: "go", workspace: "/ws" });
+  spell(0);
+  at(391 + 5 * DAY, { type: "user_message", text: "again" });
+  spell(391 + 5 * DAY);
+  at(782 + 10 * DAY, { type: "user_message", text: "once more" });
+  spell(782 + 10 * DAY);
+  at(16 * DAY, { type: "run_end", runId: "r1", stopReason: "end_turn" });
+  return out as unknown as RunEvent[];
+}
+
+/** The timeline's props for a whole session, every agent shown, the cursor at the end. */
+function timelineProps(events: readonly RunEvent[], lang: "en" | "de"): FilesTimelineProps {
+  const ledger = foldFiles(events);
+  return {
+    lang,
+    ledger,
+    events,
+    axis: timelineAxis(ledger, events),
+    rows: fileRows(ledger, null),
+    calls: ledger.calls,
+    cursor: { follow: true },
+    playing: false,
+    selection: { call: null, path: null },
+    onPick: () => {},
+    onSelectRow: () => {},
+    onCursor: () => {},
+    onPlay: () => {},
+    onFollow: () => {},
+  };
+}
+
 function props(over: Partial<FilesViewProps> = {}): FilesViewProps {
   return {
     viewKey: "s-1",
@@ -465,6 +514,60 @@ describe("the files tab's timeline", () => {
     expect(readout(ended)).toBe("+8.0 s (end of run)");
     expect(action(ended, "cursor-end").props["aria-pressed"]).toBe(true);
     expect(action(dragged, "cursor-end").props["aria-pressed"]).toBe(false);
+  });
+
+  it("anIdleSessionCollapsesItsGaps", () => {
+    const events = idleRun();
+    const tree = run(props({ events }));
+    const leftOf = (el: El): number => parseFloat(String((el.props.style as { left: string }).left));
+    // The marks spread over the axis: no stretch without a mark wider than a tenth of it.
+    const lefts = byClass(tree, "files-tl__mark")
+      .map(leftOf)
+      .sort((a, b) => a - b);
+    let empty = Math.max(lefts[0], 100 - lefts[lefts.length - 1]);
+    for (let i = 1; i < lefts.length; i++) empty = Math.max(empty, lefts[i] - lefts[i - 1]);
+    expect(empty).toBeLessThanOrEqual(10);
+    // At most seven labels, none the same, none over its neighbour at 1,000 px.
+    const steps = byClass(tree, "files-tl__step");
+    const texts = steps.map((el) => textOf(el.props.children));
+    expect(texts).toEqual(["0 s", "5 min", "5 d", "10 d", "16 d"]);
+    const px = steps.map((el) => leftOf(el) * 10);
+    for (let i = 1; i < px.length; i++) {
+      expect(px[i] - px[i - 1]).toBeGreaterThanOrEqual(Math.max(texts[i - 1].length, texts[i].length) * 7.1);
+    }
+    // One break mark per idle gap, its real length in the title.
+    const breaks = byClass(tree, "files-tl__break");
+    expect(breaks.map((el) => el.props.title)).toEqual(["5 d idle", "5 d idle", "5 d 23 h idle"]);
+    const de = drive(<FilesTimeline {...timelineProps(events, "de")} />, [FilesTimeline], []);
+    expect(byClass(de, "files-tl__break").map((el) => el.props.title)).toEqual([
+      "5 T Pause",
+      "5 T Pause",
+      "5 T 23 Std. Pause",
+    ]);
+    expect(byClass(de, "files-tl__step").map((el) => textOf(el.props.children))).toEqual([
+      "0 s",
+      "5 Min.",
+      "5 T",
+      "10 T",
+      "16 T",
+    ]);
+    // The cursor uses the same mapping: half way along lands in the second spell of work.
+    type PointerHandler = (e: unknown) => void;
+    const dragged = run(props({ events }), [
+      (t) =>
+        (only(byClass(t, "files-tl__plot"), "plot").props.onPointerDown as PointerHandler)({
+          clientX: 600,
+          pointerId: 1,
+          target: { closest: () => null },
+          currentTarget: {
+            getBoundingClientRect: () => ({ left: 100, width: 1000 }),
+            setPointerCapture: () => {},
+            hasPointerCapture: () => true,
+          },
+        }),
+    ]);
+    expect(readout(dragged)).toBe("+432,641.0 s");
+    expect(readout(tree)).toBe("+1,382,400.0 s (end of run)");
   });
 
   it("playStartsAtTheFirstCall", () => {

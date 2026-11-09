@@ -849,6 +849,19 @@
   border-left: 1px solid var(--border);
   pointer-events: none;
 }
+/* A collapsed idle gap: two slanted strokes on the axis line. Its title gives
+   the real length; it stays out of the rows, so it never covers a mark. */
+.files-tl__break {
+  position: absolute;
+  top: 17px;
+  width: 6px;
+  height: 12px;
+  margin-left: -3px;
+  border-left: 1.5px solid var(--text-dim);
+  border-right: 1.5px solid var(--text-dim);
+  transform: skewX(-20deg);
+  cursor: help;
+}
 .files-tl__prompt {
   position: absolute;
   top: 16px;
