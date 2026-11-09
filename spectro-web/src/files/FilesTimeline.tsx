@@ -26,6 +26,7 @@ import {
 } from "./axis";
 import { cursorLimit, whenLabel, type Cursor } from "./cursor";
 import { shownPath } from "./FilesExplorer";
+import { fitLabel, LABEL_CHARS, LABEL_CHARS_NARROW } from "./label";
 import type { FileCall, FileLedger, FileRow, FileTouch, PromptMark } from "./fold";
 import type { FilesSelection } from "./FilesView";
 import type { TouchKind } from "./shell";
@@ -343,7 +344,7 @@ export function FilesTimeline(props: FilesTimelineProps): JSX.Element {
               title={row.path}
               onClick={() => props.onSelectRow(row)}
             >
-              {tail(
+              {fitted(
                 shownPath(
                   row.label,
                   row.touches.some((touch) => touch.folder),
@@ -451,10 +452,16 @@ function callOf(ledger: FileLedger, axis: TimelineAxis, callIndex: number): File
   return ledger.calls[(axis.ordinals.get(callIndex) ?? 1) - 1];
 }
 
-/** A long label keeps its end, where the file name is. */
-function tail(label: string): string {
-  const MAX = 34;
-  return label.length <= MAX ? label : `…${label.slice(label.length - MAX + 1)}`;
+/** A row label fitted to the wide and to the narrow column; the stylesheet shows one of the two. */
+function fitted(label: string): JSX.Element[] {
+  return [
+    <span key="wide" className="files-tl__fit files-tl__fit--wide">
+      {fitLabel(label, LABEL_CHARS)}
+    </span>,
+    <span key="narrow" className="files-tl__fit files-tl__fit--narrow">
+      {fitLabel(label, LABEL_CHARS_NARROW)}
+    </span>,
+  ];
 }
 
 function clip(text: string, max: number): string {

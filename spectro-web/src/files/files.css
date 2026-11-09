@@ -778,19 +778,33 @@
 
 .files-tl__body {
   display: grid;
-  grid-template-columns: 180px minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr);
   column-gap: var(--sp-2);
   padding: 0 var(--sp-4) 6px 0;
 }
-@media (max-width: 720px) {
-  .files-tl__body {
-    grid-template-columns: 128px minmax(0, 1fr);
-  }
-}
+/* The label column is as wide as LABEL_CHARS characters of its monospace font
+   (label.ts), and every label is fitted to that many, so no label is cut here. */
 .files-tl__labels {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  width: calc(32ch + 2 * var(--sp-2));
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+}
+.files-tl__fit--narrow {
+  display: none;
+}
+@media (max-width: 720px) {
+  .files-tl__labels {
+    width: calc(18ch + 2 * var(--sp-2));
+  }
+  .files-tl__fit--wide {
+    display: none;
+  }
+  .files-tl__fit--narrow {
+    display: inline;
+  }
 }
 .files-tl__corner,
 .files-tl__axis {
@@ -810,7 +824,6 @@
   text-align: left;
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
   cursor: pointer;
 }
 .files-tl__label--sel {

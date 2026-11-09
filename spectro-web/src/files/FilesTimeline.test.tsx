@@ -233,7 +233,10 @@ describe("the files tab's timeline", () => {
     const shell = inside(rows[rows.length - 1]).filter((el) => hasClass(el, "files-tl__mark"));
     expect(shell.map((el) => Number(el.props["data-call"]))).toEqual([7]);
     // The labels beside the rows, in the same order, and no "+K more" line at this size.
-    const labels = byClass(tree, "files-tl__label").map((el) => textOf(el.props.children));
+    // A path label carries a wide and a narrow fit of its text; the stylesheet shows one of them.
+    const labels = byClass(tree, "files-tl__label").map((el) =>
+      textOf(inside(el).find((c) => hasClass(c, "files-tl__fit--wide")) ?? el.props.children),
+    );
     expect(labels).toEqual([
       "src/a.ts",
       "src/new.ts",
@@ -514,6 +517,33 @@ describe("the files tab's timeline", () => {
     expect(readout(ended)).toBe("+8.0 s (end of run)");
     expect(action(ended, "cursor-end").props["aria-pressed"]).toBe(true);
     expect(action(dragged, "cursor-end").props["aria-pressed"]).toBe(false);
+  });
+
+  it("aLongPathKeepsItsFileNameAndTheTitleTheWholePath", () => {
+    const outside = "/Users/someone/.claude/projects/-Users-someone-Spectroscope/memory/audit-2026-09-21.md";
+    const deep = "spectro-server/src/main/java/dev/spectroscope/server/session/SessionConnection.java";
+    const events = stamp([
+      { type: "run_start", runId: "r1", agentId: "main", prompt: "go", workspace: "/ws" },
+      call("c1", "read_file", { path: outside }),
+      result("c1"),
+      call("c2", "read_file", { path: deep }),
+      result("c2"),
+    ]);
+    const labels = byClass(run(props({ events })), "files-tl__label").filter((el) => el.type === "button");
+    expect(labels.map((el) => el.props.title)).toEqual([outside, `/ws/${deep}`]);
+    const fit = (el: El, which: string): string =>
+      textOf(
+        only(
+          inside(el).filter((c) => hasClass(c, `files-tl__fit--${which}`)),
+          which,
+        ).props.children,
+      );
+    expect(labels.map((el) => fit(el, "wide"))).toEqual([
+      "…/memory/audit-2026-09-21.md",
+      "…/session/SessionConnection.java",
+    ]);
+    // The narrow column has room for 18 characters, so the longer name is cut in its middle.
+    expect(labels.map((el) => fit(el, "narrow"))).toEqual(["audit-2…6-09-21.md", "Sessio…ection.java"]);
   });
 
   it("anIdleSessionCollapsesItsGaps", () => {
