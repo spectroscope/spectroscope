@@ -6519,7 +6519,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   "filesTab.created.laterOne": { de: "{n} spätere Änderung", en: "{n} later change" },
   "filesTab.created.showInDiff": { de: "im Diff zeigen", en: "show in diff" },
   "filesTab.ops.title": { de: "Operationen", en: "operations" },
-  "filesTab.ops.seconds": { de: "Sekunden seit dem Start des Laufs", en: "seconds from the start of the run" },
+  "filesTab.ops.fromStart": { de: "Zeit seit dem Start des Laufs", en: "time from the start of the run" },
   "filesTab.ops.calls": {
     de: "Diese Session hat keine Uhr, darum zählt die Tabelle Aufrufe.",
     en: "This session has no clock, so the table counts calls.",

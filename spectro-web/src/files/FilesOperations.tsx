@@ -1,11 +1,11 @@
 // Card 604: the operations of the files tab. The view `operations` draws every
-// call the agent chips leave on as a table row: when it ran (seconds, or its
-// number when the session has no clock), the prompt it belongs to, its agent
-// when there is more than one, what it did, its call line, the files it touched
-// with their sources, and its tool. The view `all` draws the same rows as a
-// compact list beside the detail, narrowed to the selected file. A press
-// selects the call; rows after the tab's cursor are dimmed. A failed call
-// names no file.
+// call the agent chips leave on as a table row: when it ran (its time from the
+// start, or its number when the session has no clock), the prompt it belongs
+// to, its agent when there is more than one, what it did, its call line, the
+// files it touched with their sources, and its tool. The view `all` draws the
+// same rows as a compact list beside the detail, narrowed to the selected
+// file. A press selects the call; rows after the tab's cursor are dimmed. A
+// failed call names no file.
 
 import type { CSSProperties, JSX } from "react";
 import { agentAccent } from "../format";
@@ -62,7 +62,7 @@ export function FilesOperations(props: FilesOperationsProps): JSX.Element {
       <div className="files-panel__head">
         {t(lang, "filesTab.ops.title")}
         <span className="files-panel__meta">
-          {t(lang, ledger.timed ? "filesTab.ops.seconds" : "filesTab.ops.calls")}
+          {t(lang, ledger.timed ? "filesTab.ops.fromStart" : "filesTab.ops.calls")}
         </span>
       </div>
       <div className="files-ops__wrap">

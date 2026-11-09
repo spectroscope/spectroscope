@@ -139,6 +139,8 @@ const pressChip =
       `chip ${agent}`,
     ).props.onClick?.();
 
+const byClassName = (tree: El[], name: string): El[] => tree.filter((el) => hasClass(el, name));
+
 /** The rows of the operations table. */
 const tableRows = (tree: El[]): El[] =>
   tree.filter((el) => el.type === "tr" && hasClass(el, "files-ops__row"));
@@ -225,10 +227,15 @@ describe("the operations view", () => {
     expect(textOf(echo.props.children)).toContain("overwritten");
     // One agent: no agent column.
     expect(tree.some((el) => hasClass(el, "files-ops__agent"))).toBe(false);
-    // The seconds are named in the head, and the detail sits below the table.
-    expect(textOf(tree.find((el) => hasClass(el, "files-ops"))?.props.children)).toContain(
-      dict["filesTab.ops.seconds"]?.en,
-    );
+    // The head says what the time column counts from, and the detail sits below the table.
+    expect(dict["filesTab.ops.fromStart"]).toEqual({
+      de: "Zeit seit dem Start des Laufs",
+      en: "time from the start of the run",
+    });
+    const head = textOf(only(byClassName(tree, "files-panel__meta"), "operations head").props.children);
+    expect(head).toBe("time from the start of the run");
+    // The key that said seconds over cells in clock form is gone.
+    expect(dict["filesTab.ops.seconds"]).toBeUndefined();
     expect(tree.some((el) => hasClass(el, "files-detail"))).toBe(true);
     expect(tree.some((el) => hasClass(el, "files-explorer"))).toBe(false);
   });
