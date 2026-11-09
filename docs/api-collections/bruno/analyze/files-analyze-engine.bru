@@ -1,0 +1,24 @@
+meta {
+  name: file-analysis pre-flight
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/api/files/analyze/engine
+  body: none
+  auth: none
+}
+
+params:query {
+  ~provider: ollama
+  ~model: qwen2.5:7b
+}
+
+docs {
+  Whether the provider and model the person picked can run the files tab's model reading: {available:true,provider,model,address} or {available:false,reason,detail,provider?,model?} with reason missing-pair | builtin-model | needs-key. The consent sheet asks this before it offers its send button, so the button never fails after consent (card 604).
+  
+  Fence: host+origin. Loopback fence plus Origin check: an Origin header, if present, must be loopback. REST clients send no Origin header, which counts as safe — requests pass. A manually added foreign Origin answers a blank 404.
+  
+  Writes state: no
+}

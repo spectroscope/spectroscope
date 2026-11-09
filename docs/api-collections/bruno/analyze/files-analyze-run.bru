@@ -1,0 +1,36 @@
+meta {
+  name: analyze a session's file calls (NDJSON stream)
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/api/files/analyze
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "digest": "workspace: /tmp/demo\n#1 0.5s main run_command: echo hi > notes.txt",
+    "provider": "ollama",
+    "model": "qwen2.5:7b",
+    "lang": "en"
+  }
+}
+
+docs {
+  Opt-in one-shot LLM reading of the files tab's digest (one line per file call), on the provider and model named in the body, local providers included and the built-in model refused. Streamed as NDJSON ({meta:{provider,model,address}}, {delta}..., {done}|{error}). Reasoning is off; an empty answer is an error with a fixed sentence, not a done. The digest is never logged. 400 blank digest, missing pair or built-in model; 413 oversize; 503 pair cannot be built (card 604).
+  
+  Body: FilesAnalyzeBody(String digest, String provider, String model, String lang): digest required, max 60000 chars; provider and model required; lang en | de.
+  
+  CAUTION: Spends the key of the picked provider on every call, unless that provider is local.
+  
+  Fence: host+origin+json. Loopback fence plus Origin check, and the request must carry Content-Type: application/json — anything else is 415.
+  
+  Writes state: no
+}
