@@ -12,6 +12,7 @@ import { drive, type El, type Step } from "../testkit/driveComponent";
 import { read, stripComments } from "../testkit/source";
 import { FilesDetail } from "./FilesDetail";
 import { FilesExplorer } from "./FilesExplorer";
+import { FilesTimeline } from "./FilesTimeline";
 import { FilesView, type FilesViewProps } from "./FilesView";
 
 const T0 = 1_760_000_000_000;
@@ -21,16 +22,16 @@ function stamp(events: object[]): RunEvent[] {
   return events.map((e, i) => ({ ts: T0 + i * 1000, ...e }) as unknown as RunEvent);
 }
 
-const call = (callId: string, name: string, input: unknown) => ({
+const call = (callId: string, name: string, input: unknown, agentId = "main") => ({
   type: "tool_call",
-  agentId: "main",
+  agentId,
   callId,
   name,
   input,
 });
-const result = (callId: string, extra: object = {}) => ({
+const result = (callId: string, extra: object = {}, agentId = "main") => ({
   type: "tool_result",
-  agentId: "main",
+  agentId,
   callId,
   output: "ok",
   isError: false,
@@ -51,7 +52,7 @@ const EVENTS = stamp([
   result("c4", { output: "wrote out/x.txt" }),
 ]);
 
-const EXPAND = [FilesView, FilesExplorer, FilesDetail];
+const EXPAND = [FilesView, FilesExplorer, FilesDetail, FilesTimeline];
 
 function props(over: Partial<FilesViewProps> = {}): FilesViewProps {
   return {
@@ -227,7 +228,13 @@ describe("the files tab", () => {
 
   it("everyKeyTheTabUsesIsInTheDictionary", () => {
     // Literal keys, read off the three views, and the families built from a value.
-    const literal = ["FilesView.tsx", "FilesExplorer.tsx", "FilesDetail.tsx"].flatMap((file) => [
+    const literal = [
+      "FilesView.tsx",
+      "FilesExplorer.tsx",
+      "FilesDetail.tsx",
+      "FilesTimeline.tsx",
+      "cursor.ts",
+    ].flatMap((file) => [
       ...stripComments(read(`./${file}`, import.meta.url)).matchAll(/"(filesTab\.[\w.]+)"/g),
     ]);
     expect(literal.length).toBeGreaterThan(20);
@@ -242,6 +249,82 @@ describe("the files tab", () => {
     ];
     const missing = [...literal.map((m) => m[1]), ...families].filter((key) => dict[key] === undefined);
     expect(missing).toEqual([]);
+  });
+
+  it("agentChipsFilterTheRowsAndTheSummary", () => {
+    const two = stamp([
+      { type: "run_start", runId: "r1", agentId: "main", prompt: "go", workspace: "/ws" },
+      call("m1", "edit_file", { path: "a.ts", old_string: "1", new_string: "2" }),
+      result("m1", { fileChange: "changed" }),
+      call("w1", "write_file", { path: "b.ts", content: "b\n" }, "worker-1"),
+      result("w1", { fileChange: "created" }, "worker-1"),
+      call("w2", "run_command", { command: "echo hi > c.txt" }, "worker-1"),
+      result("w2", {}, "worker-1"),
+    ]);
+    const chips = (tree: El[]) =>
+      tree
+        .filter((el) => el.type === "button" && el.props["data-agent"] !== undefined)
+        .map((el) => [el.props["data-agent"], el.props["aria-pressed"]]);
+    const paths = (tree: El[]) =>
+      [...groupRows(tree, "changed"), ...groupRows(tree, "read")].map((r) => r.path);
+    const summary = (tree: El[]) => textOf(tree.find((el) => hasClass(el, "files-summary"))?.props.children);
+    const lanes = (tree: El[]) =>
+      tree
+        .filter((el) => hasClass(el, "files-tl__row"))
+        .map((el) => el.props["data-path"] ?? el.props["data-row"]);
+    const both = run(props({ events: two }));
+    expect(chips(both)).toEqual([
+      ["main", true],
+      ["worker-1", true],
+    ]);
+    expect(paths(both)).toEqual(["/ws/a.ts", "/ws/b.ts", "/ws/c.txt"]);
+    expect(summary(both)).toBe(
+      "2 files changed by file tools · 1 more probably changed by shell commands · 0 only read · 1 shell command, 0 of them ran a script whose effect is not in the session",
+    );
+    // Switching worker-1 off takes its files, its shell call and its counts away.
+    const pressChip =
+      (agent: string): Step =>
+      (tree) =>
+        tree.find((el) => el.type === "button" && el.props["data-agent"] === agent)?.props.onClick?.();
+    const mainOnly = run(props({ events: two }), [pressChip("worker-1")]);
+    expect(chips(mainOnly)).toEqual([
+      ["main", true],
+      ["worker-1", false],
+    ]);
+    expect(paths(mainOnly)).toEqual(["/ws/a.ts"]);
+    expect(lanes(mainOnly)).toEqual(["/ws/a.ts", "shell"]);
+    expect(summary(mainOnly)).toBe(
+      "1 file changed by file tools · 0 more probably changed by shell commands · 0 only read · 0 shell commands",
+    );
+    // The last agent shown stays on, so the tab never filters itself empty.
+    const kept = run(props({ events: two }), [pressChip("worker-1"), pressChip("main")]);
+    expect(chips(kept)).toEqual([
+      ["main", true],
+      ["worker-1", false],
+    ]);
+    // And worker-1 comes back.
+    const again = run(props({ events: two }), [pressChip("worker-1"), pressChip("worker-1")]);
+    expect(paths(again)).toEqual(["/ws/a.ts", "/ws/b.ts", "/ws/c.txt"]);
+  });
+
+  it("oneAgentShowsNoChips", () => {
+    const tree = run(props());
+    expect(tree.some((el) => el.props["data-agent"] !== undefined)).toBe(false);
+    // The fixture really has one agent and real file calls, so the absence means something.
+    expect(tree.some((el) => hasClass(el, "files-explorer"))).toBe(true);
+  });
+
+  it("aSessionChangeDropsTheStartOfAnotherSession", () => {
+    // App cannot render here, so its half of the seam is read off disk: the
+    // effect that closes the lightbox on a session change also drops a files
+    // start that is not an event of the session now shown.
+    const app = stripComments(read("../App.tsx", import.meta.url));
+    const end = app.indexOf("}, [replay?.id, enteredFleet]);");
+    expect(end).toBeGreaterThan(-1);
+    const effect = app.slice(app.lastIndexOf("useEffect(", end), end);
+    expect(effect).toContain("setLightboxAt(null)");
+    expect(effect).toMatch(/setFilesFocus\(/);
+    expect(effect).toContain(".events.includes(");
   });
 
   it("aSessionWithoutFileCallsSaysSo", () => {

@@ -6501,6 +6501,43 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "the content written. What it replaced is not in the session.",
   },
   "filesTab.diff.appended": { de: "der angehängte Text", en: "the text appended" },
+  "filesTab.agents.aria": { de: "Agenten", en: "Agents" },
+  "filesTab.timeline.aria": { de: "Zeitleiste der Dateien", en: "File timeline" },
+  "filesTab.timeline.play": { de: "abspielen", en: "play" },
+  "filesTab.timeline.pause": { de: "anhalten", en: "pause" },
+  "filesTab.timeline.end": { de: "Ende", en: "end" },
+  "filesTab.timeline.endTitle": {
+    de: "Der Cursor folgt dem Ende des Laufs.",
+    en: "The cursor follows the end of the run.",
+  },
+  "filesTab.timeline.cursor": { de: "Cursor", en: "cursor" },
+  "filesTab.timeline.followEnd": { de: "{when} (Ende des Laufs)", en: "{when} (end of run)" },
+  "filesTab.timeline.endOfRun": { de: "Ende des Laufs", en: "end of run" },
+  "filesTab.timeline.beforeFirst": { de: "vor dem ersten Aufruf", en: "before the first call" },
+  "filesTab.timeline.axisCalls": {
+    de: "Diese Session hat keine Uhr, darum zählt die Achse Aufrufe.",
+    en: "This session has no clock, so the axis counts calls.",
+  },
+  "filesTab.timeline.step": { de: "{s} s", en: "{s} s" },
+  "filesTab.timeline.shell": { de: "Shell-Befehle", en: "shell commands" },
+  "filesTab.timeline.more": {
+    de: "+{n} weitere Dateien, im Explorer aufgeführt",
+    en: "+{n} more files, listed in the explorer",
+  },
+  "filesTab.timeline.moreOne": {
+    de: "+{n} weitere Datei, im Explorer aufgeführt",
+    en: "+{n} more file, listed in the explorer",
+  },
+  "filesTab.timeline.prompt": { de: "Prompt {n}: {text}", en: "prompt {n}: {text}" },
+  "filesTab.timeline.at": { de: "ab {when}", en: "at {when}" },
+  "filesTab.timeline.legendCreate": { de: "erstellt", en: "create" },
+  "filesTab.timeline.legendChange": { de: "geändert", en: "change" },
+  "filesTab.timeline.legendRead": { de: "gelesen", en: "read" },
+  "filesTab.timeline.legendProbable": {
+    de: "wahrscheinlich, aus einem Shell-Befehl",
+    en: "probable, from a shell command",
+  },
+  "filesTab.timeline.legendModel": { de: "Lesart eines Modells", en: "a model's reading" },
 };
 
 /** Chrome string for `key` in `lang`; `{var}` placeholders fill from `vars`.

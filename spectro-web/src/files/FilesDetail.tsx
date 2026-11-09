@@ -2,13 +2,14 @@
 // it ran, which agent and tool, a way into the trace and, for a script, a way
 // to open it; then one block per touch with its source and its text. Edits are
 // drawn as a diff, written and appended text as added lines. A shell call shows
-// its command and output first.
+// its command and output first. A call after the tab's cursor is dimmed.
 
 import type { JSX } from "react";
 import { describeTool } from "../components/toolViews";
 import type { RunEvent } from "../events";
 import { t, type Lang } from "../i18n/i18n";
 import { shortenPath } from "../lab/fileTree";
+import { whenLabel } from "./cursor";
 import { shownPath, sourceTags } from "./FilesExplorer";
 import type { FileCall, FileLedger, FileRow, FileTouch } from "./fold";
 import type { DiffStyle, FilesSelection } from "./FilesView";
@@ -20,6 +21,8 @@ export interface FilesDetailProps {
   rows: readonly FileRow[];
   selection: FilesSelection;
   diffStyle: DiffStyle;
+  /** The cursor's last event index; a call after it is dimmed. */
+  limit: number;
   onSelect: (selection: FilesSelection) => void;
   onFocusEvent: (agentId: string, event: RunEvent) => void;
   onOpenPath: ((path: string) => void) | null;
@@ -38,7 +41,13 @@ export function FilesDetail(props: FilesDetailProps): JSX.Element {
   }
   const call = ledger.calls[at];
   return (
-    <div className="files-panel files-detail">
+    <div
+      className={
+        call.callIndex > props.limit
+          ? "files-panel files-detail files-detail--after"
+          : "files-panel files-detail"
+      }
+    >
       <div className="files-panel__head">
         {t(lang, call.shell ? "filesTab.detail.shellTitle" : "filesTab.detail.title")}
       </div>
@@ -51,20 +60,13 @@ export function FilesDetail(props: FilesDetailProps): JSX.Element {
   );
 }
 
-/** Seconds from the start of the run, or the call's number when the recording has no clock. */
-function when(lang: Lang, call: FileCall, at: number): string {
-  if (call.t === null) return t(lang, "filesTab.callNumber", { n: at + 1 });
-  const s = call.t.toLocaleString(lang, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-  return t(lang, "filesTab.seconds", { s });
-}
-
 function head(props: FilesDetailProps, call: FileCall, at: number): JSX.Element {
   const { lang, onOpenPath, ledger } = props;
   const script = call.script;
   return (
     <div className="files-detail__head">
       <span className="files-detail__when">
-        {when(lang, call, at)} · <span className="files-mono">{call.agentId}</span> ·{" "}
+        {whenLabel(lang, call.t, at + 1)} · <span className="files-mono">{call.agentId}</span> ·{" "}
         <span className="files-mono">{call.tool}</span>
       </span>
       <span className="files-detail__links">

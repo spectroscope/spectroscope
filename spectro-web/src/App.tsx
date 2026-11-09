@@ -2452,7 +2452,14 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [imageRequest.seq]);
   // A session change closes it — the picture that was open is not in this one.
-  useEffect(() => setLightboxAt(null), [replay?.id, enteredFleet]);
+  // Card 604: the files tab's start event goes the same way, unless it is an
+  // event of the session now shown (a route that opened this session at it).
+  useEffect(() => {
+    setLightboxAt(null);
+    setFilesFocus((focus) =>
+      focus !== null && enteredFleet === null && replayRef.current?.events.includes(focus) ? focus : null,
+    );
+  }, [replay?.id, enteredFleet]);
 
   const labReplay = useMemo(
     () =>

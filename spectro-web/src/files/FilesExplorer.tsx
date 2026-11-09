@@ -2,7 +2,8 @@
 // changed or probably changed and the files it read or probably read, each
 // drawn as a folder tree. A row shows a letter and the source behind that
 // letter; a letter no file tool backs is drawn dashed, so a guess never looks
-// recorded (P4 of the design).
+// recorded (P4 of the design). A file the cursor has not reached yet is dimmed
+// and shows when it first appears instead.
 
 import type { CSSProperties, JSX } from "react";
 import { t, type Lang } from "../i18n/i18n";
@@ -66,6 +67,10 @@ export interface FilesExplorerProps {
   lang: Lang;
   rows: readonly FileRow[];
   selected: string | null;
+  /** The cursor's last event index; a row first touched after it is dimmed. */
+  limit: number;
+  /** When a row was first touched, as the tab prints it. */
+  firstSeen: (row: FileRow) => string;
   onSelect: (row: FileRow) => void;
 }
 
@@ -165,11 +170,15 @@ function rowLine(
   const guess = !sources.includes("recorded");
   const selected = props.selected === row.path;
   const folder = row.touches.some((touch) => touch.folder);
+  const later = row.firstCall > props.limit;
+  const classes = ["files-row"];
+  if (selected) classes.push("files-row--sel");
+  if (later) classes.push("files-row--later");
   return (
     <button
       key={row.path}
       type="button"
-      className={selected ? "files-row files-row--sel" : "files-row"}
+      className={classes.join(" ")}
       data-path={row.path}
       title={row.path}
       aria-pressed={selected}
@@ -177,14 +186,20 @@ function rowLine(
       onClick={() => props.onSelect(row)}
     >
       <span className="files-row__name">{shownPath(name, folder)}</span>
-      <span className="files-row__right">
-        {sourceTags(props.lang, sources)}
-        <span
-          className={`files-letter files-letter--${LETTER_CLASS[row.letter]}${guess ? " files-letter--guess" : ""}`}
-        >
-          {row.letter}
+      {later ? (
+        <span className="files-row__right files-row__when">
+          {t(props.lang, "filesTab.timeline.at", { when: props.firstSeen(row) })}
         </span>
-      </span>
+      ) : (
+        <span className="files-row__right">
+          {sourceTags(props.lang, sources)}
+          <span
+            className={`files-letter files-letter--${LETTER_CLASS[row.letter]}${guess ? " files-letter--guess" : ""}`}
+          >
+            {row.letter}
+          </span>
+        </span>
+      )}
     </button>
   );
 }
