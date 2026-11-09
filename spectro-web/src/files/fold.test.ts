@@ -311,13 +311,15 @@ describe("foldFiles", () => {
       .call("write_file", { path: "a.txt", content: "a" }, "main", "c1")
       .call("write_file", { path: "o.txt", content: "o" }, "other", "c1")
       .call("write_file", { path: "b.txt", content: "b" }, "main", "c1")
-      .result("c1", { fileChange: "created" }, "other")
+      .result("c1", { fileChange: "changed" }, "other")
       .result("c1", { fileChange: "created" }, "main")
-      .result("c1", { fileChange: "changed" }, "main");
+      .result("c1", {}, "main");
+    // Three different answers, so pairing by call id alone (b overwrite, o
+    // create) or with the earliest open call (a create, b write) reads differently.
     const got = foldFiles(rec.events).calls.map((c) => [c.line, c.touches[0].kind]);
     expect(got).toEqual([
-      ["a.txt", "overwrite"],
-      ["o.txt", "create"],
+      ["a.txt", "write"],
+      ["o.txt", "overwrite"],
       ["b.txt", "create"],
     ]);
   });
