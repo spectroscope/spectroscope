@@ -15,6 +15,7 @@ import { whenLabel } from "./cursor";
 import { shownPath, sourceTags } from "./FilesExplorer";
 import { KIND_CLASS } from "./FilesTimeline";
 import type { FileCall, FileLedger, FileRow, PromptMark } from "./fold";
+import { clip } from "./label";
 import type { FilesSelection } from "./FilesView";
 import type { TouchKind } from "./shell";
 
@@ -90,7 +91,9 @@ export function FilesOperations(props: FilesOperationsProps): JSX.Element {
                 <td className="files-ops__p">{promptOf(ledger.prompts, call.callIndex) ?? ""}</td>
                 {agents && <td className="files-ops__agent">{agentTag(call.agentId)}</td>}
                 <td className="files-ops__op">{operation(lang, call)}</td>
-                <td className="files-ops__line">{callLine(call)}</td>
+                <td className="files-ops__line" title={callLine(call)}>
+                  {clip(callLine(call), LINE_MAX)}
+                </td>
                 <td className="files-ops__files">{files(lang, ledger, call)}</td>
                 <td className="files-ops__tool files-hide-narrow">{call.tool}</td>
               </tr>
@@ -152,7 +155,9 @@ export function FilesOpList(props: FilesOpListProps): JSX.Element {
                 {operation(lang, call)}
                 {props.agents && agentTag(call.agentId)}
               </span>
-              <span className="files-op__line">{callLine(call)}</span>
+              <span className="files-op__line" title={callLine(call)}>
+                {clip(callLine(call), LINE_MAX)}
+              </span>
             </button>
           ))
         )}
@@ -216,6 +221,9 @@ function agentTag(agentId: string): JSX.Element {
     </span>
   );
 }
+
+/** A call line shows at most this many characters in the table and the list; its title holds the rest. */
+export const LINE_MAX = 200;
 
 const callLine = (call: FileCall): string => (call.shell ? `$ ${call.line}` : call.line);
 

@@ -2,6 +2,7 @@
 // as LABEL_CHARS characters of its monospace font (LABEL_CHARS_NARROW below
 // 720 px, files.css), and a label is fitted to that many characters here, so
 // the stylesheet never has to cut one. The full path is the row's title.
+// `clip` cuts a text at its end, for the call lines and titles of the tab.
 
 /** Characters a row label may take in the wide layout; files.css sizes the column to match. */
 export const LABEL_CHARS = 32;
@@ -31,6 +32,11 @@ export function fitLabel(label: string, max: number): string {
     return `…/${kept}`;
   }
   return name.length <= max ? name : middle(name, max);
+}
+
+/** A text in at most `max` characters: cut at its end, the last one an ellipsis. */
+export function clip(text: string, max: number): string {
+  return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
 }
 
 /** A name cut in its middle to `max` characters, its extension (and a folder's slash) kept. */

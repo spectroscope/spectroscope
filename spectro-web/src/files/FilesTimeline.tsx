@@ -26,7 +26,7 @@ import {
 } from "./axis";
 import { cursorLimit, whenLabel, type Cursor } from "./cursor";
 import { shownPath } from "./FilesExplorer";
-import { fitLabel, LABEL_CHARS, LABEL_CHARS_NARROW } from "./label";
+import { clip, fitLabel, LABEL_CHARS, LABEL_CHARS_NARROW } from "./label";
 import type { FileCall, FileLedger, FileRow, FileTouch, PromptMark } from "./fold";
 import type { FilesSelection } from "./FilesView";
 import type { TouchKind } from "./shell";
@@ -466,10 +466,6 @@ function fitted(label: string): JSX.Element[] {
       {fitLabel(label, LABEL_CHARS_NARROW)}
     </span>,
   ];
-}
-
-function clip(text: string, max: number): string {
-  return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
 }
 
 const firstLine = (text: string): string => text.split(/\r?\n/, 1)[0] ?? "";

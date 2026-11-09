@@ -18,6 +18,7 @@ import { FilesExplorer } from "./FilesExplorer";
 import { FilesOperations, FilesOpList } from "./FilesOperations";
 import { FilesTimeline } from "./FilesTimeline";
 import { FilesView, type FilesViewProps } from "./FilesView";
+import { foldFiles } from "./fold";
 
 const T0 = 1_760_000_000_000;
 
@@ -346,6 +347,32 @@ describe("the operations view", () => {
       ).props.className,
     ).not.toContain("files-detail--after");
     expect(again.some((el) => hasClass(el, "files-placeholder"))).toBe(false);
+  });
+
+  it("aLongCommandStaysOneLineWithTheWholeCommandInItsTitle", () => {
+    // A heredoc of 5,000 characters, then a short command.
+    const command = `cat > big.txt <<'EOF'\n${"x".repeat(5_000)}\nEOF`;
+    const events = stamp([
+      { type: "run_start", runId: "r1", agentId: "main", prompt: "go", workspace: "/ws" },
+      call("h1", "run_command", { command }),
+      result("h1"),
+      call("h2", "run_command", { command: "ls" }),
+      result("h2"),
+    ]);
+    const full = `$ ${foldFiles(events).calls[0].line}`;
+    expect(full.length).toBeGreaterThan(5_000);
+    const clipped = `${full.slice(0, 199)}…`;
+    expect(clipped).toHaveLength(200);
+    // The table: the cell shows 200 characters, the title the whole command.
+    const lines = (tree: El[], cls: string): El[] =>
+      tree.filter((el) => hasClass(el, cls) && (el.type === "td" || el.type === "span"));
+    const table = lines(run(props({ events }), [press("view-operations")]), "files-ops__line");
+    expect(table.map((el) => textOf(el.props.children))).toEqual([clipped, "$ ls"]);
+    expect(table.map((el) => el.props.title)).toEqual([full, "$ ls"]);
+    // The list of the view all does the same.
+    const list = lines(run(props({ events })), "files-op__line");
+    expect(list.map((el) => textOf(el.props.children))).toEqual([clipped, "$ ls"]);
+    expect(list.map((el) => el.props.title)).toEqual([full, "$ ls"]);
   });
 
   it("theAllCallsButtonShowsEveryCallAgain", () => {
