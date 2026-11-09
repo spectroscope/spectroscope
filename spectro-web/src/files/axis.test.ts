@@ -68,6 +68,8 @@ describe("the files timeline's axis", () => {
     // A label prints the real time at its place, not the place.
     for (const tick of ticks) expect(tick.value).toBeCloseTo(map.fromX(tick.pos), 6);
     expect(ticks[ticks.length - 1].value).toBeGreaterThan(10 * DAY);
+    // The labels reach the end of the axis, not only its first part.
+    expect(map.span - ticks[ticks.length - 1].pos).toBeLessThan(map.span / 5);
   });
 
   it("aLabelInsideABreakMovesToWhereTheWorkResumes", () => {
@@ -132,6 +134,8 @@ describe("the files timeline's axis", () => {
     const ticks = timeTicks(map);
     expect(ticks.length).toBeLessThanOrEqual(7);
     expect(ticks.length).toBeGreaterThanOrEqual(3);
+    // Seven labels a step of 43,200 s apart would stop at three quarters of the axis.
+    expect(map.span - ticks[ticks.length - 1].pos).toBeLessThan(map.span / 5);
   });
 
   it("labelsAndBreaksSayTheTimeInItsUnit", () => {
