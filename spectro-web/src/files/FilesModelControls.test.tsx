@@ -462,7 +462,7 @@ describe("the consent sheet", () => {
 
   const LOCAL = "Nothing leaves this machine.";
   const LOCAL_CLOUD =
-    "The address is on this machine, but this model runs in the provider's cloud. The digest leaves this machine.";
+    "The address is on this machine, but this model runs in the provider's cloud. The text below leaves this machine.";
   const atLocalhost = (model: string) =>
     sheet({
       consent: {
@@ -509,7 +509,7 @@ describe("the consent sheet", () => {
         [],
       );
       expect(texts(de)).toContain(
-        "Die Adresse liegt auf diesem Rechner, aber dieses Modell läuft in der Cloud des Anbieters. Der Auszug verlässt diesen Rechner.",
+        "Die Adresse liegt auf diesem Rechner, aber dieses Modell läuft in der Cloud des Anbieters. Der Text unten verlässt diesen Rechner.",
       );
       expect(texts(de)).not.toContain("Nichts verlässt diesen Rechner.");
     } finally {

@@ -6631,8 +6631,8 @@ export const dict: Record<string, { de: string; en: string }> = {
   "filesTab.consent.address": { de: "Adresse", en: "address" },
   "filesTab.consent.local": { de: "Nichts verlässt diesen Rechner.", en: "Nothing leaves this machine." },
   "filesTab.consent.localCloud": {
-    de: "Die Adresse liegt auf diesem Rechner, aber dieses Modell läuft in der Cloud des Anbieters. Der Auszug verlässt diesen Rechner.",
-    en: "The address is on this machine, but this model runs in the provider's cloud. The digest leaves this machine.",
+    de: "Die Adresse liegt auf diesem Rechner, aber dieses Modell läuft in der Cloud des Anbieters. Der Text unten verlässt diesen Rechner.",
+    en: "The address is on this machine, but this model runs in the provider's cloud. The text below leaves this machine.",
   },
   "filesTab.consent.remote": {
     de: "Diese Adresse liegt nicht auf diesem Rechner. Der Text unten verlässt ihn.",
