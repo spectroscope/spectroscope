@@ -80,7 +80,7 @@ describe("foldFiles", () => {
       ],
       ["edit_file", { path: "a.ts", old_string: "x", new_string: "y" }, {}, "change", "/ws/a.ts", false, R],
       ["list_dir", { path: "src" }, {}, "read", "/ws/src", true, R],
-      ["grep", { pattern: "TODO", path: "src" }, {}, "read", "/ws/src", true, R],
+      ["grep", { pattern: "TODO", path: "src" }, {}, "read", "/ws/src", false, R],
       ["glob", { pattern: "**/*.ts" }, {}, "read", "**/*.ts", true, R],
       ["view_file", { path: "a.ts" }, {}, "read", "/ws/a.ts", false, R],
       ["view_image", { path: "shot.png" }, {}, "read", "/ws/shot.png", false, R],
@@ -404,8 +404,27 @@ describe("foldFiles", () => {
       [["src/*.ts", "src/*.ts", true]],
       [["/ws/docs/**/*.md", "/ws/docs/**/*.md", true]],
       [["*.json", "*.json", true]],
-      [["src", "/ws/src", true]],
+      [["src", "/ws/src", false]],
       [["needle", "needle", true]],
+    ]);
+  });
+
+  it("aFileSearchedByGrepIsNotAFolder", () => {
+    const rec = new Rec()
+      .start(W)
+      .tool("grep", { pattern: "TODO", path: "NEXT-SESSION.md" })
+      .tool("Grep", { pattern: "TODO", path: "/ws/NEXT-SESSION.md" })
+      .tool("grep", { pattern: "TODO", path: "src/" })
+      .tool("grep_search", { query: "TODO", includePattern: "src/**/*.ts" })
+      .tool("list_dir", { path: "src" });
+    const got = foldFiles(rec.events).calls.map((c) => c.touches.map((t) => [t.path, t.folder]));
+    expect(got).toEqual([
+      [["/ws/NEXT-SESSION.md", false]],
+      [["/ws/NEXT-SESSION.md", false]],
+      // Where the call says folder or pattern, it stays one.
+      [["/ws/src", true]],
+      [["/ws/src/**/*.ts", true]],
+      [["/ws/src", true]],
     ]);
   });
 

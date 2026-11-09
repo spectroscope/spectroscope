@@ -361,6 +361,9 @@ function write(view: Extract<ToolView, { kind: "write" }>, base: string | null):
 /** describeTool folds globs and greps into one shape; a glob's pattern is a path pattern. */
 const GLOB_TOOLS: ReadonlySet<string> = new Set(["glob", "Glob", "file_search"]);
 
+/** A path that says it is a folder or a pattern: a trailing slash, `.` or `..`, or a glob character. */
+const saysFolder = (path: string): boolean => /\/$|(^|\/)\.\.?$|[*?[\]{}]/.test(path);
+
 function matches(name: string, view: Extract<ToolView, { kind: "matches" }>, base: string | null): Reading {
   const pattern = view.pattern;
   const path = view.path === "" ? null : view.path;
@@ -370,7 +373,8 @@ function matches(name: string, view: Extract<ToolView, { kind: "matches" }>, bas
     return recorded(joined, null, "read", `files matching ${pattern}`, { folder: true });
   }
   if (path === null) return recorded(pattern, null, "read", `search for ${pattern}`, { folder: true });
-  return recorded(path, base, "read", `search for ${pattern}`, { folder: true });
+  // A grep on a plain path searched that file or folder; only the path itself can say folder.
+  return recorded(path, base, "read", `search for ${pattern}`, { folder: saysFolder(path) });
 }
 
 function shell(view: Extract<ToolView, { kind: "command" }>, open: Open): Reading {

@@ -119,7 +119,25 @@ describe("shellTouches rules", () => {
     expect(shortAll("cat a | grep x")).toEqual([{ path: "/w/a", kind: "read", folder: false }]);
     expect(shortAll("head -5 b")).toEqual([{ path: "/w/b", kind: "read", folder: false }]);
     expect(shortAll("wc -l c")).toEqual([{ path: "/w/c", kind: "read", folder: false }]);
-    expect(shortAll("ls d")).toEqual([{ path: "/w/d", kind: "read", folder: true }]);
+    expect(shortAll("ls d")).toEqual([{ path: "/w/d", kind: "read", folder: false }]);
+  });
+
+  it("aFileReadByGrepOrLsIsNotAFolder", () => {
+    // The live check of 2026-11-09 drew these as folders: NEXT-SESSION.md/.
+    expect(shortAll("grep foo NEXT-SESSION.md")).toEqual([
+      { path: "/w/NEXT-SESSION.md", kind: "read", folder: false },
+    ]);
+    expect(shortAll("grep -rn foo src")).toEqual([{ path: "/w/src", kind: "read", folder: false }]);
+    expect(shortAll("ls -la /tmp/run/e08e93de.jsonl")).toEqual([
+      { path: "/tmp/run/e08e93de.jsonl", kind: "read", folder: false },
+    ]);
+    expect(shortAll("rg foo notes.md")).toEqual([{ path: "/w/notes.md", kind: "read", folder: false }]);
+    // The positive twin: where the command line says folder, it stays one.
+    expect(shortAll("ls src/")).toEqual([{ path: "/w/src", kind: "read", folder: true }]);
+    expect(shortAll("ls .")).toEqual([{ path: "/w", kind: "read", folder: true }]);
+    expect(shortAll("ls ..", "/w/web")).toEqual([{ path: "/w", kind: "read", folder: true }]);
+    expect(shortAll("grep -rn foo src/")).toEqual([{ path: "/w/src", kind: "read", folder: true }]);
+    expect(shortAll("mkdir out")).toEqual([{ path: "/w/out", kind: "create", folder: true }]);
   });
 
   it("aScriptIsNamedWithUnknownEffect", () => {
@@ -234,7 +252,7 @@ describe("shellTouches beyond the brief's list", () => {
   });
 
   it("a BSD ls flag does not swallow the folder", () => {
-    expect(shortAll("ls -w d")).toEqual([{ path: "/w/d", kind: "read", folder: true }]);
+    expect(shortAll("ls -w d")).toEqual([{ path: "/w/d", kind: "read", folder: false }]);
   });
 
   it("a copy into . lands inside the folder", () => {

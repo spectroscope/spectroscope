@@ -529,7 +529,6 @@ const GREP: Reader = {
   values: "efmABCdD",
   long: ["regexp", "file", "max-count", "after-context", "before-context", "context", "include", "exclude"],
   pattern: ["-e", "-f", "--regexp", "--file"],
-  folder: ["-r", "-R", "--recursive"],
   files: ["-f", "--file"],
 };
 const READERS: Record<string, Reader> = {
@@ -571,7 +570,9 @@ const READERS: Record<string, Reader> = {
     pattern: ["-f", "--from-file"],
     files: ["-f", "--from-file"],
   },
-  ls: { folder: true }, // BSD ls on macOS has no option that takes a value
+  // BSD ls on macOS has no option that takes a value. An operand is a folder
+  // only when it says so (a trailing slash, `.` or `..`): `ls -la f.jsonl` is a file.
+  ls: {},
   tree: { values: "LIPo", folder: true },
 };
 
