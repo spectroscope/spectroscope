@@ -284,6 +284,38 @@ describe("foldFiles", () => {
     ]);
   });
 
+  it("oneRecordIsOneMark", () => {
+    const at = T0 + 5000;
+    const rec = new Rec()
+      .start(undefined, { prompt: "first" })
+      .push({ type: "user_message", text: "look at this", ts: at })
+      .push({ type: "user_message", text: "and this", ts: at })
+      .push({ type: "user_message", text: "[Image: shot.png]", ts: at })
+      .tool("read_file", { path: "a" });
+    expect(foldFiles(rec.events).prompts).toEqual([
+      { eventIndex: 0, t: 0, n: 1, text: "first" },
+      { eventIndex: 1, t: 5, n: 2, text: "look at this\nand this\n[Image: shot.png]" },
+    ]);
+  });
+
+  it("twoRecordsAreTwoMarks", () => {
+    const at = T0 + 5000;
+    const rec = new Rec()
+      .start(undefined, { prompt: "first" })
+      .push({ type: "user_message", text: "second" })
+      .push({ type: "user_message", text: "third" })
+      .push({ type: "user_message", text: "fourth", ts: at })
+      .push({ type: "text_delta", agentId: "main", text: "ok", ts: at })
+      .push({ type: "user_message", text: "fifth", ts: at });
+    expect(foldFiles(rec.events).prompts.map((p) => [p.n, p.text])).toEqual([
+      [1, "first"],
+      [2, "second"],
+      [3, "third"],
+      [4, "fourth"],
+      [5, "fifth"],
+    ]);
+  });
+
   it("aStamplessStreamHasNoSeconds", () => {
     const rec = new Rec().start(W).tool("read_file", { path: "a" }).tool("Bash", { command: "touch b" });
     const stamped = foldFiles(rec.events);
@@ -437,7 +469,7 @@ describe("summarize", () => {
       .tool("read_file", { path: "r.txt" })
       .tool("Bash", { command: "python3 s.py" });
     const ledger = foldFiles(rec.events);
-    expect(summarize(ledger, fileRows(ledger, null))).toEqual({
+    expect(summarize(ledger, fileRows(ledger, null), null)).toEqual({
       recordedChanged: 1,
       probableChanged: 1,
       onlyRead: 2,
@@ -445,5 +477,31 @@ describe("summarize", () => {
       unknownScripts: 1,
     });
     expect(ledger.calls[3].script).toBe("/ws/s.py");
+  });
+
+  it("summaryFollowsTheAgentFilter", () => {
+    const rec = new Rec()
+      .start(W)
+      .tool("Bash", { command: "touch m.txt" })
+      .push({ type: "run_start", runId: "r2", agentId: "child-1", parentId: "main", prompt: "sub" })
+      .tool("Bash", { command: "python3 job.py" }, {}, "child-1");
+    const ledger = foldFiles(rec.events);
+    const count = (agents: ReadonlySet<string> | null) => {
+      const s = summarize(ledger, fileRows(ledger, agents), agents);
+      return [s.shellCalls, s.unknownScripts];
+    };
+    expect(count(null)).toEqual([2, 1]);
+    expect(count(new Set(["child-1"]))).toEqual([1, 1]);
+    expect(count(new Set(["main"]))).toEqual([1, 0]);
+  });
+
+  it("aFailedScriptHasNoUnknownEffect", () => {
+    const run = (res: Res) => {
+      const ledger = foldFiles(new Rec().start(W).tool("Bash", { command: "python3 s.py" }, res).events);
+      const s = summarize(ledger, fileRows(ledger, null), null);
+      return [s.shellCalls, s.unknownScripts];
+    };
+    expect(run({ isError: true, output: "Traceback" })).toEqual([1, 0]);
+    expect(run({})).toEqual([1, 1]);
   });
 });

@@ -118,6 +118,9 @@ export function foldFiles(events: readonly RunEvent[]): FileLedger {
   let runWorkspace: string | null = null;
   let importCwd: string | null = null;
   let workspace: string | null = null;
+  // The last user_message read: the importer writes one frame per text block
+  // and attachment note of a record, all on the record's ts.
+  let lastUser: { at: number; ts: unknown } | null = null;
 
   for (let i = 0; i < events.length; i++) {
     const e = events[i] as unknown as Record<string, unknown>;
@@ -132,9 +135,16 @@ export function foldFiles(events: readonly RunEvent[]): FileLedger {
         }
         break;
       }
-      case "user_message":
-        prompts.push(mark(events, i, prompts.length + 1, e.text));
+      case "user_message": {
+        // Limit: a sidechain coordinator message has no agent id, so it counts as a prompt in an agent transcript imported on its own.
+        const sameRecord =
+          lastUser !== null && lastUser.at === i - 1 && typeof e.ts === "number" && e.ts === lastUser.ts;
+        const said = typeof e.text === "string" ? e.text : "";
+        if (sameRecord) prompts[prompts.length - 1].text += `\n${said}`;
+        else prompts.push(mark(events, i, prompts.length + 1, said));
+        lastUser = { at: i, ts: e.ts };
         break;
+      }
       case "ground_info": {
         const cwd = text(e.cwd);
         if (cwd !== null) {
@@ -215,11 +225,16 @@ export function fileRows(ledger: FileLedger, agents: ReadonlySet<string> | null)
 }
 
 /**
- * The summary line's counts. Rows decide the file counts; the shell counts
- * read every call of the ledger, so a caller that filters by agent passes a
- * ledger with those calls only.
+ * The summary line's counts. The file counts come from `rows`, which are
+ * expected to be `fileRows(ledger, agents)` with the same set; the shell counts
+ * read the ledger's calls of those agents (all agents for null). A failed
+ * shell call counts as a shell call but not as a script with unknown effect.
  */
-export function summarize(ledger: FileLedger, rows: readonly FileRow[]): FilesSummary {
+export function summarize(
+  ledger: FileLedger,
+  rows: readonly FileRow[],
+  agents: ReadonlySet<string> | null,
+): FilesSummary {
   let recordedChanged = 0;
   let probableChanged = 0;
   let onlyRead = 0;
@@ -234,9 +249,9 @@ export function summarize(ledger: FileLedger, rows: readonly FileRow[]): FilesSu
   let shellCalls = 0;
   let unknownScripts = 0;
   for (const call of ledger.calls) {
-    if (!call.shell) continue;
+    if (!call.shell || (agents !== null && !agents.has(call.agentId))) continue;
     shellCalls++;
-    if (call.script !== null || call.inline) unknownScripts++;
+    if (call.status !== "failed" && (call.script !== null || call.inline)) unknownScripts++;
   }
   return { recordedChanged, probableChanged, onlyRead, shellCalls, unknownScripts };
 }
