@@ -364,12 +364,14 @@ describe("foldFiles", () => {
       .start(W)
       .tool("glob", { pattern: "*.ts", path: "src" })
       .tool("Glob", { pattern: "**/*.md", path: "/ws/docs/" })
+      .tool("Glob", { pattern: "*.json", path: "" })
       .tool("grep", { pattern: "TODO", path: "src" })
       .tool("Grep", { pattern: "needle" });
     const got = foldFiles(rec.events).calls.map((c) => c.touches.map((t) => [t.written, t.path, t.folder]));
     expect(got).toEqual([
       [["src/*.ts", "src/*.ts", true]],
       [["/ws/docs/**/*.md", "/ws/docs/**/*.md", true]],
+      [["*.json", "*.json", true]],
       [["src", "/ws/src", true]],
       [["needle", "needle", true]],
     ]);

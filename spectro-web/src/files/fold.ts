@@ -347,7 +347,8 @@ function write(view: Extract<ToolView, { kind: "write" }>, base: string | null):
 const GLOB_TOOLS: ReadonlySet<string> = new Set(["glob", "Glob", "file_search"]);
 
 function matches(name: string, view: Extract<ToolView, { kind: "matches" }>, base: string | null): Reading {
-  const { pattern, path } = view;
+  const pattern = view.pattern;
+  const path = view.path === "" ? null : view.path;
   if (GLOB_TOOLS.has(name)) {
     // Not resolved against the base: the pattern stays as the tool matched it.
     const joined = path === null || isRooted(pattern) ? pattern : `${path.replace(/\/+$/, "")}/${pattern}`;
