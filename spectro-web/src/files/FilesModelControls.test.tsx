@@ -15,7 +15,7 @@ import { __resetProviderRegistry, __seedProviderRows, type ProviderRow } from ".
 import type { AnalysisState } from "../state/runAnalysis";
 import { drive, type El, type Step } from "../testkit/driveComponent";
 import { buildFilesDigest } from "./digest";
-import { FilesConsent } from "./FilesConsent";
+import { FilesConsent, stayLocal } from "./FilesConsent";
 import { FilesDetail } from "./FilesDetail";
 import { FilesExplorer } from "./FilesExplorer";
 import {
@@ -458,6 +458,70 @@ describe("the consent sheet", () => {
     });
     expect(action(failed, "consent-run").props.disabled).toBe(true);
     expect(texts(failed).some((s) => s.includes("HTTP 404"))).toBe(true);
+  });
+
+  const LOCAL = "Nothing leaves this machine.";
+  const LOCAL_CLOUD =
+    "The address is on this machine, but this model runs in the provider's cloud. The digest leaves this machine.";
+  const atLocalhost = (model: string) =>
+    sheet({
+      consent: {
+        pick: { provider: "ollama", model },
+        digest,
+        report: { available: true, provider: "ollama", model, address: "localhost:11434" },
+        error: null,
+      },
+    });
+
+  it("aCloudModelOnLocalhostIsNotLocal", () => {
+    // Ollama forwards a model whose id ends in :cloud to the provider's cloud.
+    const cloud = atLocalhost("glm-5.3:cloud");
+    expect(texts(cloud)).toContain(LOCAL_CLOUD);
+    expect(texts(cloud)).not.toContain(LOCAL);
+    // Both spellings, any case, on any loopback address; a remote address stays remote.
+    expect(stayLocal("localhost:11434", "glm-5.3:cloud")).toBe("localCloud");
+    expect(stayLocal("localhost:11434", "minimax-m3:cloud")).toBe("localCloud");
+    expect(stayLocal("127.0.0.1:11434", "gpt-oss:120b-cloud")).toBe("localCloud");
+    expect(stayLocal("[::1]:11434", "Kimi-K2:CLOUD")).toBe("localCloud");
+    expect(stayLocal("api.example.com", "glm-5.3:cloud")).toBe("remote");
+    expect(stayLocal("localhost:11434", "cloudy:7b")).toBe("local");
+    setLang("de");
+    try {
+      const de = drive(
+        <FilesConsent
+          lang="de"
+          consent={{
+            pick: { provider: "ollama", model: "minimax-m3:cloud" },
+            digest,
+            report: {
+              available: true,
+              provider: "ollama",
+              model: "minimax-m3:cloud",
+              address: "localhost:11434",
+            },
+            error: null,
+          }}
+          running={false}
+          onRun={() => {}}
+          onClose={() => {}}
+        />,
+        [FilesConsent],
+        [],
+      );
+      expect(texts(de)).toContain(
+        "Die Adresse liegt auf diesem Rechner, aber dieses Modell läuft in der Cloud des Anbieters. Der Auszug verlässt diesen Rechner.",
+      );
+      expect(texts(de)).not.toContain("Nichts verlässt diesen Rechner.");
+    } finally {
+      setLang("en");
+    }
+  });
+
+  it("aLocalModelOnLocalhostStaysLocal", () => {
+    const local = atLocalhost("qwen2.5:7b");
+    expect(texts(local)).toContain(LOCAL);
+    expect(texts(local)).not.toContain(LOCAL_CLOUD);
+    expect(stayLocal("localhost:11434", "qwen2.5:7b")).toBe("local");
   });
 
   it("aCutDigestSaysSo", () => {

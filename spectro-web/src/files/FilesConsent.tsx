@@ -22,6 +22,28 @@ export interface FilesConsentProps {
   onClose: () => void;
 }
 
+/** Where the digest goes when the person presses send. */
+export type Destination = "local" | "localCloud" | "remote";
+
+/**
+ * Where the digest goes. A loopback address is local, unless the model id ends
+ * in `:cloud` or `-cloud`: a local Ollama forwards such a model to the
+ * provider's cloud, so the digest leaves this machine all the same.
+ *
+ * @param address the address the server reported, as `host:port`
+ * @param model   the model id the person picked
+ */
+export function stayLocal(address: string, model: string): Destination {
+  if (!isLoopbackAddress(address)) return "remote";
+  return /[:-]cloud$/i.test(model.trim()) ? "localCloud" : "local";
+}
+
+const DESTINATION_KEY: Record<Destination, string> = {
+  local: "filesTab.consent.local",
+  localCloud: "filesTab.consent.localCloud",
+  remote: "filesTab.consent.remote",
+};
+
 /** Why the pair cannot run, from the pre-flight's reason. */
 function outKey(report: AnalyzeEngineReport): string {
   switch (report.reason) {
@@ -84,7 +106,7 @@ export function FilesConsent(props: FilesConsentProps): JSX.Element {
                   {t(lang, "filesTab.consent.address")}: <span className="mono">{address}</span>
                 </p>
                 <p className="ob-opt-body">
-                  {t(lang, isLoopbackAddress(address) ? "filesTab.consent.local" : "filesTab.consent.remote")}
+                  {t(lang, DESTINATION_KEY[stayLocal(address, consent.pick.model)])}
                 </p>
               </>
             )}
