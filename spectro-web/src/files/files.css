@@ -76,6 +76,65 @@
   font-weight: 600;
 }
 
+/* The model controls: the switch, the picker, the button and the status line,
+   and below them the model's answer when it was not the asked-for JSON. */
+.files-model {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  max-width: 100%;
+}
+.files-model__select {
+  max-width: 260px;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
+  background: var(--surface);
+  color: var(--text);
+  padding: 3px var(--sp-2);
+  font: inherit;
+  font-size: var(--fs-12);
+}
+.files-model__go {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: var(--surface-2);
+  color: var(--text);
+  padding: var(--sp-1) var(--sp-3);
+  font: inherit;
+  font-size: var(--fs-13);
+  cursor: pointer;
+}
+.files-model__go:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.files-model__status {
+  color: var(--text-dim);
+  font-size: var(--fs-12);
+}
+.files-model__note {
+  width: 100%;
+  border: 1px solid color-mix(in srgb, var(--files-model) 55%, var(--border));
+  border-radius: var(--radius-chip);
+  padding: var(--sp-2) var(--sp-3);
+}
+.files-model__note-title {
+  color: var(--text-dim);
+  font-size: var(--fs-12);
+}
+.files-model__note-text {
+  max-height: 160px;
+  overflow: auto;
+  margin: var(--sp-1) 0 0;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 /* The stage: explorer and detail side by side, stacked below 720px. */
 .files-panes {
   display: grid;
@@ -864,6 +923,9 @@
 }
 .files-tl__mark--probable::before {
   border-left-style: dashed;
+}
+.files-tl__mark--model {
+  color: var(--files-model);
 }
 .files-tl__mark--model::before {
   top: calc(50% - 5px);

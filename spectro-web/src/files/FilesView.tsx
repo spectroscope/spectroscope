@@ -32,6 +32,8 @@ import { cursorLimit, FOLLOW, initialCursor, stepCall, whenLabel, type Cursor } 
 import { FilesCreated } from "./FilesCreated";
 import { FilesDetail } from "./FilesDetail";
 import { FilesExplorer } from "./FilesExplorer";
+import { useShownLedger, type ReadingMode } from "./filesAnalysis";
+import { FilesModelControls } from "./FilesModelControls";
 import { FilesOperations, FilesOpList } from "./FilesOperations";
 import { FilesTimeline, timelineAxis } from "./FilesTimeline";
 import {
@@ -110,7 +112,10 @@ function typing(target: unknown): boolean {
 export function FilesView(props: FilesViewProps): JSX.Element {
   const { viewKey, events, startAt, onStartHandled, onFocusEvent, onOpenPath } = props;
   const lang = useLang();
-  const ledger = useMemo(() => foldFiles(events), [events]);
+  const heuristic = useMemo(() => foldFiles(events), [events]);
+  // With a model's reading shown, the merged ledger replaces the heuristic one downstream.
+  const [readingMode, setReadingMode] = useState<ReadingMode>("heuristic");
+  const { ledger, analysis, modelShown } = useShownLedger(viewKey, heuristic, readingMode);
   const agents = useMemo(() => agentsOf(ledger), [ledger]);
   const [hidden, setHidden] = useState<ReadonlySet<string>>(NO_AGENTS);
   const shown = useMemo(() => shownAgents(agents, hidden), [agents, hidden]);
@@ -337,7 +342,15 @@ export function FilesView(props: FilesViewProps): JSX.Element {
             })}
           </div>
         )}
-        <p className="files-summary">{summaryLine(lang, summary)}</p>
+        <FilesModelControls
+          lang={lang}
+          viewKey={viewKey}
+          mode={readingMode}
+          onMode={setReadingMode}
+          ledger={heuristic}
+          analysis={analysis}
+        />
+        <p className="files-summary">{summaryLine(lang, summary, modelShown)}</p>
       </section>
       <FilesTimeline
         lang={lang}
@@ -394,7 +407,7 @@ export function FilesView(props: FilesViewProps): JSX.Element {
 }
 
 /** The summary line: each count in bold inside its sentence part. */
-function summaryLine(lang: Lang, s: FilesSummary): ReactNode[] {
+function summaryLine(lang: Lang, s: FilesSummary, modelShown: boolean): ReactNode[] {
   const parts: ReactNode[] = [
     bold(
       lang,
@@ -402,7 +415,11 @@ function summaryLine(lang: Lang, s: FilesSummary): ReactNode[] {
       s.recordedChanged,
     ),
     " · ",
-    bold(lang, "filesTab.summary.probable", s.probableChanged),
+    bold(
+      lang,
+      modelShown ? "filesTab.summary.probableModel" : "filesTab.summary.probable",
+      s.probableChanged,
+    ),
     " · ",
     bold(lang, "filesTab.summary.read", s.onlyRead),
     " · ",

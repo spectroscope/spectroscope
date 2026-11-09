@@ -6579,6 +6579,103 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "probable, from a shell command",
   },
   "filesTab.timeline.legendModel": { de: "Lesart eines Modells", en: "a model's reading" },
+  "filesTab.summary.probableModel": {
+    de: "{n} weitere wahrscheinlich durch Shell-Befehle oder laut der Lesart des Modells geändert",
+    en: "{n} more probably changed by shell commands or by the model's reading",
+  },
+  "filesTab.model.aria": { de: "Erkennung der Dateien", en: "File detection" },
+  "filesTab.model.heuristic": { de: "Heuristik", en: "heuristic" },
+  "filesTab.model.withModel": { de: "Heuristik + Modell", en: "heuristic + model" },
+  "filesTab.model.provider": { de: "Anbieter für diese Analyse", en: "Provider for this analysis" },
+  "filesTab.model.chooseProvider": { de: "Anbieter wählen", en: "choose a provider" },
+  "filesTab.model.model": { de: "Modell für diese Analyse", en: "Model for this analysis" },
+  "filesTab.model.chooseModel": { de: "Modell wählen", en: "choose a model" },
+  "filesTab.model.modelPh": { de: "Name des Modells", en: "model name" },
+  "filesTab.model.analyze": { de: "mit Modell analysieren", en: "analyze with model" },
+  "filesTab.model.again": { de: "erneut analysieren", en: "analyze again" },
+  "filesTab.model.choose": {
+    de: "Der Tab sendet nichts, bevor du ein Modell wählst und bestätigst.",
+    en: "The tab sends nothing until you choose a model and confirm.",
+  },
+  "filesTab.model.running": { de: "Das Modell liest die Session.", en: "The model is reading the session." },
+  "filesTab.model.runningAs": {
+    de: "{provider} · {model} liest die Session.",
+    en: "{provider} · {model} is reading the session.",
+  },
+  "filesTab.model.shown": {
+    de: "zeigt die Lesart von {provider} · {model}",
+    en: "showing the reading of {provider} · {model}",
+  },
+  "filesTab.model.prose": {
+    de: "{provider} · {model} hat nicht im Format geantwortet, das der Tab verlangt hat. Die Antwort steht darunter, und der Tab übernimmt keinen Eintrag daraus.",
+    en: "{provider} · {model} did not answer in the format the tab asked for. Its answer is below, and the tab adds no entry from it.",
+  },
+  "filesTab.model.failed": {
+    de: "Die Lesart des Modells ist fehlgeschlagen: {msg}",
+    en: "The model's reading failed: {msg}",
+  },
+  "filesTab.model.cutShort": {
+    de: "Der Stream endete, bevor der Server fertig war. Das ist darum nicht die ganze Lesart.",
+    en: "The stream ended before the server finished, so this is not the whole reading.",
+  },
+  "filesTab.model.noteTitle": { de: "die Antwort des Modells", en: "the model's answer" },
+  "filesTab.consent.title": {
+    de: "Ein Modell fragen, welche Dateien diese Session geändert hat",
+    en: "Ask a model which files this session changed",
+  },
+  "filesTab.consent.lede": {
+    de: "Der Tab sendet nichts, bevor du auf Senden drückst. Er bittet das Modell, anhand des Textes unten die Dateien zu nennen, die jeder Aufruf geändert hat. Jeder Eintrag der Lesart trägt das Etikett Modell, damit du ihn von dem unterscheiden kannst, was ein Dateiwerkzeug aufgezeichnet hat.",
+    en: "The tab sends nothing until you press send. It asks the model to name, from the text below, the files each call changed. Each entry of the model's reading carries the tag model, so you can tell it apart from what a file tool recorded.",
+  },
+  "filesTab.consent.model": { de: "Modell", en: "model" },
+  "filesTab.consent.address": { de: "Adresse", en: "address" },
+  "filesTab.consent.local": { de: "Nichts verlässt diesen Rechner.", en: "Nothing leaves this machine." },
+  "filesTab.consent.remote": {
+    de: "Diese Adresse liegt nicht auf diesem Rechner. Der Text unten verlässt ihn.",
+    en: "This address is not on this machine. The text below leaves it.",
+  },
+  "filesTab.consent.asking": {
+    de: "Der Server prüft, ob dieser Anbieter und dieses Modell laufen können.",
+    en: "The server is checking whether this provider and model can run.",
+  },
+  "filesTab.consent.askFailed": {
+    de: "Der Tab hat den Server nicht erreicht: {msg}",
+    en: "The tab could not reach the server: {msg}",
+  },
+  "filesTab.consent.out.missingPair": {
+    de: "Wähle zuerst einen Anbieter und ein Modell.",
+    en: "Pick a provider and a model first.",
+  },
+  "filesTab.consent.out.builtin": {
+    de: "Diese Analyse bietet das eingebaute Modell nicht an.",
+    en: "This analysis does not offer the built-in model.",
+  },
+  "filesTab.consent.out.needsKey": {
+    de: "Dieser Anbieter kann noch nicht laufen.",
+    en: "This provider cannot run yet.",
+  },
+  "filesTab.consent.out.generic": {
+    de: "Dieser Anbieter und dieses Modell können nicht laufen.",
+    en: "This provider and model cannot run.",
+  },
+  "filesTab.consent.plan": {
+    de: "{c} Zeichen aus {n} Werkzeugaufrufen. Der Tab kürzt jede Shell-Ausgabe auf {out} Zeichen und sendet nicht, was write_file und edit_file geschrieben haben.",
+    en: "{c} characters from {n} tool calls. The tab cuts each shell output to {out} characters and does not send what write_file and edit_file wrote.",
+  },
+  "filesTab.consent.planOne": {
+    de: "{c} Zeichen aus {n} Werkzeugaufruf. Der Tab kürzt jede Shell-Ausgabe auf {out} Zeichen und sendet nicht, was write_file und edit_file geschrieben haben.",
+    en: "{c} characters from {n} tool call. The tab cuts each shell output to {out} characters and does not send what write_file and edit_file wrote.",
+  },
+  "filesTab.consent.cut": {
+    de: "Der Text war länger als {max} Zeichen, darum hat der Tab zuerst die ältesten Ausgaben gekürzt.",
+    en: "The text was over {max} characters, so the tab cut the oldest outputs first.",
+  },
+  "filesTab.consent.show": {
+    de: "den Text zeigen, den der Tab sendet",
+    en: "show the text the tab sends",
+  },
+  "filesTab.consent.cancel": { de: "abbrechen", en: "cancel" },
+  "filesTab.consent.send": { de: "an {model} senden", en: "send to {model}" },
 };
 
 /** Chrome string for `key` in `lang`; `{var}` placeholders fill from `vars`.
