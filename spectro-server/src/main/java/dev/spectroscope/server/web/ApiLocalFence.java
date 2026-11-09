@@ -2,6 +2,7 @@ package dev.spectroscope.server.web;
 
 import dev.spectroscope.server.llm.AnalyzeController;
 import dev.spectroscope.server.llm.ExplainController;
+import dev.spectroscope.server.llm.FilesAnalyzeController;
 
 import jakarta.servlet.Filter;
 import jakarta.servlet.FilterChain;
@@ -118,6 +119,9 @@ public class ApiLocalFence implements Filter {
         }
         if ("/api/analyze".equals(path)) {
             return AnalyzeController.MAX_BODY_BYTES;
+        }
+        if ("/api/files/analyze".equals(path)) {
+            return FilesAnalyzeController.MAX_BODY_BYTES;
         }
         if ("/api/playbooks/write".equals(path)) {
             return dev.spectroscope.server.playbooks.PlaybookController.MAX_WRITE_BODY_BYTES;
