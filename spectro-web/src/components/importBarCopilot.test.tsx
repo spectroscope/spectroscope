@@ -254,7 +254,9 @@ describe("the dialog and the sidebar name the Copilot format (item 8)", () => {
   });
 
   it("every new import sentence of task 12 has no dash", () => {
-    const keys = Object.keys(dict).filter((k) => k.startsWith("imp.copilot.") || k === "filesTab.snapshot.entry");
+    const keys = Object.keys(dict).filter(
+      (k) => k.startsWith("imp.copilot.") || k === "filesTab.snapshot.entry",
+    );
     expect(keys.length).toBeGreaterThanOrEqual(12);
     for (const key of keys) {
       for (const lang of ["en", "de"] as const) expect(t(lang, key), `${key} ${lang}`).not.toMatch(DASH);
