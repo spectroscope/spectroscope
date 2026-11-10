@@ -521,6 +521,14 @@ export function heldCopilotSnapshots(sessionId: string | null | undefined): numb
   return heldSnapshots !== null && heldSnapshots.sessionId === sessionId ? heldSnapshots.count : 0;
 }
 
+/** The last segment of a folder path inside a pick. */
+const folderName = (folder: string): string => folder.slice(folder.lastIndexOf("/") + 1);
+
+/** The yaml name of an imported Copilot folder, the header's title (fix round 1 item 6), or null. */
+export function copilotName(source: Pick<ImportSource, "copilot"> | undefined): string | null {
+  return source?.copilot?.workspace?.name ?? null;
+}
+
 // ---- a store ----------------------------------------------------------------------
 
 /** A picked file as the store list reads it: its size and time come from the File, never from a read. */
@@ -533,6 +541,8 @@ export interface PickedFileInfo extends PickedText {
 export interface CopilotStoreRow {
   /** The index of the session folder in the store group. */
   session: number;
+  /** The first 8 characters of the folder's name, which tell unnamed sessions apart (fix round 1 item 6). */
+  id: string;
   /** workspace.yaml's name, or null. */
   name: string | null;
   /** created_at in epoch ms, else the last-modified time of events.jsonl. */
@@ -565,6 +575,7 @@ export async function copilotStoreRows(
     const created = ws?.createdAt == null ? NaN : Date.parse(ws.createdAt);
     rows.push({
       session: i,
+      id: folderName(pick.folder).slice(0, 8),
       name: ws?.name ?? null,
       created: Number.isFinite(created) ? created : events.lastModified,
       client: ws?.client ?? null,

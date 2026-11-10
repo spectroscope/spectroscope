@@ -282,3 +282,13 @@ describe("the bar says a half-written last line was left out (fix round 1 item 5
     expect(dialog).not.toMatch(/detectAndLoad\(raw\)/);
   });
 });
+
+describe("the header names an imported Copilot folder by its yaml name (fix round 1 item 6)", () => {
+  it("takes copilotName of the shown import before the first prompt", () => {
+    const app = read("../App.tsx", import.meta.url);
+    expect(app).toMatch(
+      /const importedName =\s*enteredFleet === null && replay !== null \? copilotName\(replay\.source\) : null;/,
+    );
+    expect(app).toMatch(/const title =\s*importedName \?\?/);
+  });
+});

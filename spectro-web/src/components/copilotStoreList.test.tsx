@@ -13,6 +13,7 @@ const NOW = Date.parse("2026-11-10T12:00:00.000Z");
 const rows: CopilotStoreRow[] = [
   {
     session: 1,
+    id: "1234abcd",
     name: null,
     created: Date.parse("2026-11-10T09:00:00.000Z"),
     client: null,
@@ -21,6 +22,7 @@ const rows: CopilotStoreRow[] = [
   },
   {
     session: 0,
+    id: "9876fedc",
     name: "Parser test",
     created: Date.parse("2026-11-07T12:00:00.000Z"),
     client: "copilot-intellij",
@@ -65,7 +67,10 @@ describe("the list of a Copilot store (item 5)", () => {
     expect(en).toContain("3 h ago");
     expect(en).toContain("3 d ago");
     const de = render("de");
-    expect(de).toContain("Session ohne Namen");
+    expect(de).toContain("Session ohne Namen 1234abcd");
+    expect(en).toContain("unnamed session 1234abcd");
+    // A named row keeps its name alone.
+    expect(en).not.toContain("9876fedc");
     expect(de).toContain("belegt");
     expect(de).toContain("vor 3 h");
     // Only the first row is live.

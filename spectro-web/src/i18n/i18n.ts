@@ -494,7 +494,7 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "{n} Ordner ohne events.jsonl ist nicht aufgeführt.",
     en: "{n} folder without an events.jsonl is not listed.",
   },
-  "imp.copilot.unnamed": { de: "Session ohne Namen", en: "unnamed session" },
+  "imp.copilot.unnamed": { de: "Session ohne Namen {id}", en: "unnamed session {id}" },
   "imp.copilot.liveMark": { de: "belegt", en: "in use" },
   "imp.copilot.liveOne": {
     de: "Eine Sperrdatei markierte diese Session beim Wählen als belegt. Lief sie noch, enthält der Import den {n} Eintrag, der bis dahin geschrieben war.",

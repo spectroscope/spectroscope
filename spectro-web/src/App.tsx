@@ -243,7 +243,7 @@ import {
 } from "./components/importBar";
 import { ImportNoteBar } from "./components/ImportNoteBar";
 import type { ImportedRunSummary } from "./import/claudeCodeRun";
-import { holdCopilotSnapshots } from "./import/copilotFolder";
+import { copilotName, holdCopilotSnapshots } from "./import/copilotFolder";
 import { importedPhasesOf, type WorkflowDeclaration } from "./lab/workflowGraph";
 import { withCommandMarks } from "./lab/labChatState";
 import { collectImages, imageLines, indexOf, withSourceLines } from "./state/sessionImages";
@@ -2806,12 +2806,15 @@ export function App() {
   const askVisible = enteredFleet === null && viewingLive && live.pendingAsks.length > 0;
 
   const firstUser = view.turns.find((turn) => turn.kind === "user");
+  // Card 605, task 12: an imported Copilot folder is titled by its yaml name, as the bar names it.
+  const importedName = enteredFleet === null && replay !== null ? copilotName(replay.source) : null;
   const title =
-    firstUser !== undefined && firstUser.kind === "user"
+    importedName ??
+    (firstUser !== undefined && firstUser.kind === "user"
       ? firstUser.text
       : viewingLive
         ? t(lang, "hdr.newSession")
-        : t(lang, "hdr.archivedSession");
+        : t(lang, "hdr.archivedSession"));
 
   /* The views that take the WHOLE surface. None belongs to one run: a
      state graph is a topology, a playbook is a folder (card 481) and the

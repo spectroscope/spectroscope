@@ -98,7 +98,9 @@ export function CopilotStoreList(props: {
               disabled={props.busy}
               onClick={() => props.onPick(row.session)}
             >
-              <span className="import-store-file">{row.name ?? t(lang, "imp.copilot.unnamed")}</span>
+              <span className="import-store-file">
+                {row.name ?? t(lang, "imp.copilot.unnamed", { id: row.id }).trim()}
+              </span>
               <span className="import-store-meta">
                 {row.client !== null && <span className="import-store-project mono">{row.client}</span>}
                 <span className="tabular">

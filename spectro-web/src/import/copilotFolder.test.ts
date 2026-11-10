@@ -8,6 +8,7 @@ import type { PickedCopilotFolder } from "./claudeCodeRun";
 import type { RunEvent } from "../events";
 import { detectAndLoad } from "./detect";
 import {
+  copilotName,
   copilotSideFile,
   copilotStoreRows,
   copilotWorkspace,
@@ -500,6 +501,7 @@ describe("the rows of a Copilot store (item 5)", () => {
     expect(rows).toEqual([
       {
         session: 1,
+        id: "b",
         name: null,
         created: Date.parse("2026-11-05T00:00:00.000Z"),
         client: null,
@@ -508,6 +510,7 @@ describe("the rows of a Copilot store (item 5)", () => {
       },
       {
         session: 2,
+        id: "c",
         name: null,
         created: Date.parse("2026-11-04T09:00:00.000Z"),
         client: "copilot-intellij",
@@ -516,6 +519,7 @@ describe("the rows of a Copilot store (item 5)", () => {
       },
       {
         session: 0,
+        id: "a",
         name: "Older one",
         created: Date.parse("2026-11-02T10:00:00.000Z"),
         client: "github/cli",
@@ -657,5 +661,38 @@ describe("a half-written last line is left out (fix round 1 item 5)", () => {
   it("a torn last line of a file that is no Copilot session fails as today", () => {
     const claudeTorn = `${CLAUDE.trimEnd()}\n{"type":"user","mess`;
     expect(() => loadEvents(claudeTorn)).toThrow("invalid JSONL");
+  });
+});
+
+// ---- fix round 1, item 6 -------------------------------------------------------------------
+
+describe("a session without a name is told apart by its folder (fix round 1 item 6)", () => {
+  it("a store row carries the first 8 characters of its folder name", async () => {
+    const rows = await copilotStoreRows(
+      [info("events.jsonl", "x", 10, 1000)],
+      [
+        {
+          folder: "session-state/1234abcd-5678-efgh",
+          events: 0,
+          workspace: null,
+          snapshots: null,
+          live: false,
+        },
+      ],
+    );
+    expect(rows[0].id).toBe("1234abcd");
+  });
+
+  it("the header takes the yaml name of an imported folder, and nothing else", () => {
+    const named = loadCopilotFolder({
+      events: FOLDER_EVENTS,
+      workspace: FOLDER_YAML,
+      snapshots: null,
+      live: false,
+    });
+    expect(copilotName(named.source)).toBe("Parser test");
+    const plain = loadCopilotFolder({ events: FOLDER_EVENTS, workspace: null, snapshots: null, live: false });
+    expect(copilotName(plain.source)).toBeNull();
+    expect(copilotName(undefined)).toBeNull();
   });
 });
