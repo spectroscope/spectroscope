@@ -12,13 +12,15 @@ import type { RunEvent } from "../events";
 import { dict } from "../i18n/i18n";
 import { setLang } from "../state/lang";
 import { drive, type El, type Step } from "../testkit/driveComponent";
+import { blockOf, read, rules } from "../testkit/source";
 import { FilesCreated } from "./FilesCreated";
 import { FilesDetail } from "./FilesDetail";
 import { FilesExplorer } from "./FilesExplorer";
-import { FilesOperations, FilesOpList } from "./FilesOperations";
+import { FilesOperations, FilesOpList, OPS_PATH_CHARS } from "./FilesOperations";
 import { FilesTimeline } from "./FilesTimeline";
 import { FilesView, type FilesViewProps } from "./FilesView";
 import { foldFiles } from "./fold";
+import { fitLabel } from "./label";
 
 const T0 = 1_760_000_000_000;
 
@@ -347,6 +349,75 @@ describe("the operations view", () => {
       ).props.className,
     ).not.toContain("files-detail--after");
     expect(again.some((el) => hasClass(el, "files-placeholder"))).toBe(false);
+  });
+
+  it("theTableFixesItsColumnsAndKeepsEachCellOnOneLine", () => {
+    const css = read("./files.css", import.meta.url);
+    // A fixed layout takes the column widths from the col elements, so a long
+    // path or command cannot squeeze the call column (D6: 63 px against 1,041 px).
+    expect(blockOf(css, ".files-ops__table")).toMatch(/table-layout:\s*fixed/);
+    // Below its min-width the table scrolls sideways rather than closing the files column.
+    expect(blockOf(css, ".files-ops__table")).toMatch(/min-width:\s*75em/);
+    for (const cell of [".files-ops__line", ".files-ops__fx"]) {
+      expect(blockOf(css, cell), cell).toMatch(/white-space:\s*nowrap/);
+      expect(blockOf(css, cell), cell).toMatch(/overflow:\s*hidden/);
+      expect(blockOf(css, cell), cell).toMatch(/text-overflow:\s*ellipsis/);
+    }
+    expect(blockOf(css, ".files-ops__line")).not.toMatch(/word-break/);
+    // One col per column, in the head's order, with and without the agent column.
+    const two = stamp([
+      { type: "run_start", runId: "r1", agentId: "main", prompt: "go", workspace: "/ws" },
+      call("m1", "read_file", { path: "a.ts" }),
+      result("m1"),
+      call("w1", "read_file", { path: "b.ts" }, "worker-1"),
+      result("w1", {}, "worker-1"),
+    ]);
+    const colsOf = (tree: El[]): string[] =>
+      tree
+        .filter((el) => el.type === "col")
+        .map((el) => /files-ops__col--(\w+)/.exec(String(el.props.className))?.[1] ?? "?");
+    const one = run(props(), [press("view-operations")]);
+    expect(colsOf(one)).toEqual(["when", "prompt", "op", "call", "files", "tool"]);
+    expect(one.filter((el) => el.type === "th")).toHaveLength(6);
+    const both = run(props({ events: two }), [press("view-operations")]);
+    expect(colsOf(both)).toEqual(["when", "prompt", "agent", "op", "call", "files", "tool"]);
+    expect(both.filter((el) => el.type === "th")).toHaveLength(7);
+    // The tool column leaves at narrow widths with its cells.
+    const tool = one.find((el) => el.type === "col" && String(el.props.className).includes("--tool"));
+    expect(String(tool?.props.className)).toContain("files-hide-narrow");
+    // Every column has a width except files, which takes the rest; call takes 38 %.
+    expect(blockOf(css, ".files-ops__col--call")).toMatch(/width:\s*38%/);
+    for (const name of ["when", "prompt", "agent", "op", "tool"]) {
+      expect(blockOf(css, `.files-ops__col--${name}`), name).toMatch(/width:/);
+    }
+    expect(rules("files.css", css).some((r) => r.subject === ".files-ops__col--files")).toBe(false);
+  });
+
+  it("aLongPathKeepsItsFileNameWithTheWholePathInItsTitle", () => {
+    const far =
+      "/home/example/projects/spectro/spectro-server/src/main/java/dev/example/server/session/SessionConnection.java";
+    const events = stamp([
+      { type: "run_start", runId: "r1", agentId: "main", prompt: "go", workspace: "/ws" },
+      call("e1", "edit_file", { path: far, old_string: "1", new_string: "2" }),
+      result("e1", { fileChange: "changed" }),
+      call("r1", "read_file", { path: "src/a.ts" }),
+      result("r1"),
+    ]);
+    const tree = run(props({ events }), [press("view-operations")]);
+    const paths = tableRows(tree).map(
+      (row) =>
+        only(
+          inside(row).filter((el) => hasClass(el, "files-ops__path")),
+          "path in the files cell",
+        ).props,
+    );
+    const shown = paths.map((p) => textOf(p.children as ReactNode));
+    // The file name stays, the folders give way from the front, the title holds the whole path.
+    expect(shown).toEqual([fitLabel(far, OPS_PATH_CHARS), "src/a.ts"]);
+    expect(shown[0].startsWith("…/")).toBe(true);
+    expect(shown[0].endsWith("/SessionConnection.java")).toBe(true);
+    expect(shown[0].length).toBeLessThanOrEqual(OPS_PATH_CHARS);
+    expect(paths.map((p) => p.title)).toEqual([far, "/ws/src/a.ts"]);
   });
 
   it("aLongCommandStaysOneLineWithTheWholeCommandInItsTitle", () => {

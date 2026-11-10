@@ -576,8 +576,33 @@
 }
 .files-ops__table {
   width: 100%;
+  min-width: 75em;
+  table-layout: fixed;
   border-collapse: collapse;
   font-size: var(--fs-13);
+}
+/* The column widths. A fixed layout reads them from the col elements, so a
+   long path or command cannot take the call column's width; the files column
+   takes what is left, and below the table's min-width the panel scrolls
+   sideways instead of closing it. The time column holds "+16 d 00:00:00",
+   the prompt column its header. */
+.files-ops__col--when {
+  width: 9em;
+}
+.files-ops__col--prompt {
+  width: 5.5em;
+}
+.files-ops__col--agent {
+  width: 8em;
+}
+.files-ops__col--op {
+  width: 9em;
+}
+.files-ops__col--call {
+  width: 38%;
+}
+.files-ops__col--tool {
+  width: 8em;
 }
 .files-ops__table th {
   padding: var(--sp-2) 10px;
@@ -617,11 +642,15 @@
 .files-ops__line {
   font-family: var(--font-mono);
   font-size: var(--fs-12);
-  word-break: break-all;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .files-ops__fx {
   display: block;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 @media (max-width: 720px) {
   .files-hide-narrow {

@@ -15,7 +15,7 @@ import { whenLabel } from "./cursor";
 import { shownPath, sourceTags } from "./FilesExplorer";
 import { KIND_CLASS } from "./FilesTimeline";
 import type { FileCall, FileLedger, FileRow, PromptMark } from "./fold";
-import { clip } from "./label";
+import { clip, fitLabel } from "./label";
 import type { FilesSelection } from "./FilesView";
 import type { TouchKind } from "./shell";
 
@@ -68,6 +68,15 @@ export function FilesOperations(props: FilesOperationsProps): JSX.Element {
       </div>
       <div className="files-ops__wrap">
         <table className="files-ops__table">
+          <colgroup>
+            <col className="files-ops__col--when" />
+            <col className="files-ops__col--prompt" />
+            {agents && <col className="files-ops__col--agent" />}
+            <col className="files-ops__col--op" />
+            <col className="files-ops__col--call" />
+            <col className="files-ops__col--files" />
+            <col className="files-ops__col--tool files-hide-narrow" />
+          </colgroup>
           <thead>
             <tr>
               <th>{t(lang, ledger.timed ? "filesTab.ops.col.time" : "filesTab.ops.col.number")}</th>
@@ -225,15 +234,24 @@ function agentTag(agentId: string): JSX.Element {
 /** A call line shows at most this many characters in the table and the list; its title holds the rest. */
 export const LINE_MAX = 200;
 
+/** A path in the table's files cell takes at most this many characters, its file name kept (`fitLabel`). */
+export const OPS_PATH_CHARS = 32;
+
 const callLine = (call: FileCall): string => (call.shell ? `$ ${call.line}` : call.line);
 
-/** Each file a call touched, with its sources and what happened to it; a failed call has none. */
+/**
+ * Each file a call touched, one line each, with its sources and what happened
+ * to it; a failed call has none. A long path keeps its file name and gives up
+ * folders from the front; the title holds the whole path.
+ */
 function files(lang: Lang, ledger: FileLedger, call: FileCall): JSX.Element[] {
   if (call.status === "failed") return [];
   return call.touches.map((touch, i) => (
     <span key={i} className="files-ops__fx">
       {sourceTags(lang, touch.sources)}{" "}
-      <span className="files-mono">{shownPath(shortenPath(touch.path, ledger.workspace), touch.folder)}</span>{" "}
+      <span className="files-mono files-ops__path" title={shownPath(touch.path, touch.folder)}>
+        {fitLabel(shownPath(shortenPath(touch.path, ledger.workspace), touch.folder), OPS_PATH_CHARS)}
+      </span>{" "}
       {t(lang, `filesTab.kind.${touch.kind}`)}
     </span>
   ));
