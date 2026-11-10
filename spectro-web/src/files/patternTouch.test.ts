@@ -67,8 +67,9 @@ describe("a touch is a listing or a search by its source (card 605)", () => {
 
   it("find, a recursive grep, rg, a pathless grep and the glob tools search", () => {
     expect(how("Bash", { command: "find src -name '*.ts'" })).toEqual([["/w/src", false, true]]);
-    expect(how("Bash", { command: "grep -rn TODO src" })).toEqual([["/w/src", false, true]]);
-    expect(how("Bash", { command: "rg TODO src" })).toEqual([["/w/src", false, true]]);
+    // An operand searches when it says folder, as a Grep tool's path does (task 11 item 2).
+    expect(how("Bash", { command: "grep -rn TODO src/" })).toEqual([["/w/src", false, true]]);
+    expect(how("Bash", { command: "rg TODO src/" })).toEqual([["/w/src", false, true]]);
     expect(how("Bash", { command: "rg TODO" })).toEqual([["/w", false, true]]);
     expect(how("Grep", { pattern: "TODO" })).toEqual([["/w", false, true]]);
     expect(how("Grep", { pattern: "TODO", path: "/w/src", glob: "*.ts" })).toEqual([
@@ -79,6 +80,8 @@ describe("a touch is a listing or a search by its source (card 605)", () => {
 
   it("a plain grep and a reader read; a path listed and read in one call was read", () => {
     expect(how("Bash", { command: "grep -q API .env" })).toEqual([["/w/.env", false, false]]);
+    expect(how("Bash", { command: "rg TODO src" })).toEqual([["/w/src", false, false]]);
+    expect(how("Bash", { command: "grep -rn TODO .env" })).toEqual([["/w/.env", false, false]]);
     expect(how("Bash", { command: "cat *.pem" })).toEqual([["/w/*.pem", false, false]]);
     expect(how("Bash", { command: "ls -la .env && cat .env" })).toEqual([["/w/.env", false, false]]);
     expect(how("Grep", { pattern: "TODO", path: "/w/NEXT-SESSION.md" })).toEqual([

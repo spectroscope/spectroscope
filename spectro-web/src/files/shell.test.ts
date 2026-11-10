@@ -144,6 +144,31 @@ describe("shellTouches rules", () => {
     expect(touches("cd $DIR && rg needle")).toEqual([]);
   });
 
+  it("aRecursiveGrepOrRgOnAFileReadsIt", () => {
+    // Task 11 item 2: only a pathless call and an operand that says folder search.
+    const how = (command: string) =>
+      touches(command).map((t) => [t.written, t.kind, t.folder, t.search === true]);
+    for (const [command, written] of [
+      ["rg KEY .env", ".env"],
+      ["rg -n API_KEY ~/.aws/credentials", "~/.aws/credentials"],
+      ["grep -r KEY .env", ".env"],
+      ["grep -rn token ~/.ssh/id_rsa", "~/.ssh/id_rsa"],
+      ["grep -R password .env.local", ".env.local"],
+      ["rg TODO /Users/a/other-project/notes.md", "/Users/a/other-project/notes.md"],
+    ])
+      expect(how(command), command).toEqual([[written, "read", false, false]]);
+    // The positive twin: no path, or a path that says folder, is a search.
+    expect(how("rg TODO")).toEqual([[".", "read", true, true]]);
+    expect(how("rg TODO src/")).toEqual([["src/", "read", true, true]]);
+    expect(how("grep -r TODO .")).toEqual([[".", "read", true, true]]);
+    expect(how("rg TODO 'src/*.ts'")).toEqual([["src/*.ts", "read", true, true]]);
+    // One call, one of each.
+    expect(how("rg TODO src/ .env")).toEqual([
+      ["src/", "read", true, true],
+      [".env", "read", false, false],
+    ]);
+  });
+
   it("aFileReadByGrepOrLsIsNotAFolder", () => {
     // The live check of 2026-11-09 drew these as folders: NEXT-SESSION.md/.
     expect(shortAll("grep foo NEXT-SESSION.md")).toEqual([

@@ -1352,8 +1352,10 @@ describe("searches and listings", () => {
       ["Bash", { command: "ls ~/.ssh" }],
       ["Bash", { command: "ls /tmp" }],
       ["Bash", { command: "find . -name '*.key'" }],
-      ["Bash", { command: "grep -rn password ~/.ssh" }],
+      ["Bash", { command: "grep -rn password ~/.ssh/" }],
       ["Bash", { command: "rg -n token" }],
+      ["Bash", { command: "rg TODO src/" }],
+      ["Bash", { command: "grep -r TODO ." }],
       ["Bash", { command: "stat .env && test -f .env && file .env" }],
       ["Grep", { pattern: "password" }],
       ["Grep", { pattern: "password", path: "/w/src", glob: "*.ts" }],
@@ -1366,6 +1368,22 @@ describe("searches and listings", () => {
       expect(report.files, what).toEqual([]);
       expect(report.verdict, what).toBe("project");
     }
+  });
+
+  it("a recursive grep or an rg on a file is a read of that file (task 11 item 2)", () => {
+    for (const command of [
+      "rg KEY .env",
+      "rg -n API_KEY ~/.aws/credentials",
+      "grep -r KEY .env",
+      "grep -rn token ~/.ssh/id_rsa",
+      "grep -R password .env.local",
+    ]) {
+      const report = verdictOf(["Bash", { command }]);
+      expect(ofKind(report, "secret-file").length, command).toBe(1);
+      expect(report.verdict, command).toBe("critical");
+    }
+    const outside = verdictOf(["Bash", { command: "rg TODO /Users/a/other-project/notes.md" }]);
+    expect(ofKind(outside, "outside").map((f) => f.file)).toEqual(["/Users/a/other-project/notes.md"]);
   });
 
   it("are listed with their pattern and the level of their literal base folder", () => {

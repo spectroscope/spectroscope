@@ -31,3 +31,10 @@ function fold(p: string): string {
   if (root === "~") return ["~", ...parts].join("/");
   return parts.length > 0 ? parts.join("/") : ".";
 }
+
+/**
+ * A path that says it is a folder or a pattern: a trailing slash, `.` or `..`,
+ * or a glob character. The fold reads a Grep tool's path with it, and the
+ * shell heuristic a recursive grep's or an rg's operand (card 605).
+ */
+export const saysFolder = (path: string): boolean => /\/$|(^|\/)\.\.?$|[*?[\]{}]/.test(path);

@@ -4,7 +4,7 @@
 // probable. The rule table follows section 2 of the design document
 // (docs/superpowers/specs/2026-11-09-files-tab-design.md).
 
-import { isRooted, resolvePath } from "./paths";
+import { isRooted, resolvePath, saysFolder } from "./paths";
 import { segments, unescape, type Segment, type Word } from "./shellTokens";
 
 export type TouchKind =
@@ -563,7 +563,7 @@ interface Reader extends OptSpec {
   pattern?: string[];
   folder?: true | string[];
   listing?: true; // its operands are listed, not read
-  search?: true | string[]; // its operands are searched as folders (always, or with one of these options)
+  search?: true | string[]; // an operand that says folder is searched (always, or with one of these options); a file is read
   files?: string[]; // options whose value is a file the verb reads
   base?: true | string[]; // without a path and without input on stdin, it searches the folder it runs in (always, or with one of these options)
 }
@@ -631,13 +631,19 @@ function reader(name: string, spec: Reader, args: Word[], c: Ctx): void {
     const v = o.flags.get(f);
     if (v) add(c, v, "read", `${name} ${v.text}`);
   }
+  // A recursive grep or an rg searches a folder; on a file it prints the
+  // file's matching lines, which is a read (task 11 item 2).
   const search = spec.search === true || (spec.search !== undefined && has(o, ...spec.search));
-  const how = {
-    ...(spec.listing ? { listing: true as const } : {}),
-    ...(search ? { search: true as const } : {}),
-  };
-  for (const a of operands)
-    if (!a.text.startsWith("+")) add(c, a, "read", `${name} ${a.text}`, { folder, ...how });
+  const listing = spec.listing ? { listing: true as const } : {};
+  for (const a of operands) {
+    if (a.text.startsWith("+")) continue;
+    const searched = search && (a.glob || saysFolder(a.text));
+    add(c, a, "read", `${name} ${a.text}`, {
+      folder: folder || searched,
+      ...listing,
+      ...(searched ? { search: true as const } : {}),
+    });
+  }
   const base = spec.base === true || (spec.base !== undefined && has(o, ...spec.base));
   if (base && operands.length === 0 && !fedStdin(c.seg)) {
     add(c, ".", "read", pattern ? `${name} "${pattern.text}"` : name, { folder: true, search: true });

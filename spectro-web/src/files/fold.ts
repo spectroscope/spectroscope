@@ -9,7 +9,7 @@ import { describeTool, fileChange, type PatchFile, type ToolView } from "../comp
 import { TITLE_AGENT_ID, type RunEvent } from "../events";
 import { shortenPath } from "../lab/fileTree";
 import { elapsedAt } from "../state/stepper";
-import { isRooted, resolvePath } from "./paths";
+import { isRooted, resolvePath, saysFolder } from "./paths";
 import { moreSpecific, shellTouches, type ShellTouch, type TouchKind } from "./shell";
 
 /** Who says the file was touched: a file tool, the shell heuristic, a model. */
@@ -462,9 +462,6 @@ function write(view: Extract<ToolView, { kind: "write" }>, base: string | null):
 
 /** describeTool folds globs and greps into one shape; a glob's pattern is a path pattern. */
 const GLOB_TOOLS: ReadonlySet<string> = new Set(["glob", "Glob", "file_search"]);
-
-/** A path that says it is a folder or a pattern: a trailing slash, `.` or `..`, or a glob character. */
-const saysFolder = (path: string): boolean => /\/$|(^|\/)\.\.?$|[*?[\]{}]/.test(path);
 
 function matches(name: string, view: Extract<ToolView, { kind: "matches" }>, base: string | null): Reading {
   const pattern = view.pattern;
