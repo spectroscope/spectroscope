@@ -208,6 +208,8 @@ interface Unit {
 }
 
 const BLANK = /[ \t\r\n]/;
+/** A word that is a path (`.x`, `/x`, `~/x`, `a/b`) or an option (`-v`): never a value taken from the next word. */
+const PATH_OR_OPTION = /^[./~-]|\//;
 const META = " \t\r\n;&|()<>";
 
 /**
@@ -326,16 +328,32 @@ function assignments(command: string, units: readonly Unit[], hits: CredentialHi
       let v = valueFrom(command, sign + 1, unit.end, quoteAt(command, unit.start, sign), unit.comment);
       let end = unit.comment ? unit.end : v.end;
       if (v.text === "") {
-        // The word ends in the sign: the value is the next word.
+        // The word ends in the sign: the value is the next word, when the name's
+        // word is not quoted (a search pattern is) and the next word is no path
+        // and no option (fix round 2 item 3).
         let at = v.stop;
         while (at < command.length && (command[at] === " " || command[at] === "\t")) at++;
         const next = units[k + 1];
-        if (next !== undefined && next.start === at && at >= unit.end) {
+        if (/["'\\]/.test(raw)) {
+          // A quoted name word takes nothing after it.
+        } else if (next !== undefined && next.start === at && at >= unit.end) {
           v = valueFrom(command, at, next.end, null, next.comment);
           end = next.comment ? next.end : v.end;
         } else if (at > v.stop && at < unit.end) {
           v = valueFrom(command, at, unit.end, null, unit.comment);
           end = unit.comment ? unit.end : v.end;
+        }
+        if (PATH_OR_OPTION.test(v.text)) {
+          // The rule's own blank after the sign read the same word: that is no value either.
+          const own = hits.findIndex(
+            (h) =>
+              h.rule === PASSWORD_RULE.name &&
+              h.start <= sign &&
+              sign < h.end &&
+              /\s/.test(command.slice(sign + 1, h.end - h.secret.length)),
+          );
+          if (own >= 0) hits.splice(own, 1);
+          continue;
         }
       }
       if (v.text.length < 6) continue;

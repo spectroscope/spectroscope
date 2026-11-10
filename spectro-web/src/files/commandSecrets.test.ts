@@ -90,6 +90,25 @@ describe("a password value however short its head (task 11 item 1)", () => {
     }
   });
 
+  it("takes no next word after a quoted name, nor a next word that is a path or an option (fix round 2 item 3)", () => {
+    for (const command of [
+      'grep "DB_PASSWORD=" .env.production',
+      "grep 'token:' app.log",
+      "rg 'secret:' src/main/",
+      "curl -d password= ./body.txt https://a.example.com",
+      "curl -d password= /tmp/x https://a.example.com",
+      "curl -d password= ~/x https://a.example.com",
+      "curl -d password= conf/x https://a.example.com",
+      "curl -d password= --verbose https://a.example.com",
+    ])
+      expect(read(command).hits, command).toEqual([]);
+    // The positive twin: an unquoted name and a plain next word.
+    const value = ["Ab1Cd2", ",Ef3xQz"].join("");
+    expect(ranged(`curl -d password= ${value} https://a.example.com`)).toEqual([
+      ["password-assignment", `password= ${value}`, value],
+    ]);
+  });
+
   it("masks a hit in a comment to the end of its token (1c)", () => {
     for (const head of [["Ab1", "Cd2"].join(""), SHORT]) {
       const value = `${head},${["Ef3", "xQz"].join("")}`;

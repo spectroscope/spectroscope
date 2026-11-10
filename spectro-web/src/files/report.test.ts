@@ -1581,6 +1581,25 @@ describe("dumps, getters and glued values (task 11 item 3)", () => {
   });
 });
 
+// Task 11 fix round 2 item 3 (review I1): a quoted search pattern is no assignment.
+describe("a quoted pattern before a file (fix round 2 item 3)", () => {
+  it("is a read of the file, its name printed, and no credential", () => {
+    const report = build(
+      new Rec().start(W).tool("Bash", { command: 'grep "DB_PASSWORD=" .env.production' }).events,
+    );
+    expect(report.findings.map((f) => [f.kind, f.file])).toEqual([["secret-file", ".env.production"]]);
+    expect(report.files.map((f) => f.label)).toEqual([".env.production"]);
+    const log = build(new Rec().start(W).tool("Bash", { command: 'grep "token:" app.log' }).events);
+    expect(log.findings).toEqual([]);
+    expect(log.verdict).toBe("project");
+    const both = build(
+      new Rec().start(W).tool("Bash", { command: 'grep -rn "token:" src/config.ts && cat src/config.ts' })
+        .events,
+    );
+    expect(both.findings.filter((f) => f.kind.startsWith("credential-"))).toEqual([]);
+  });
+});
+
 // Task 11 fix round 2 item 1: the display net hides what no rule counts, in
 // commands and in the title. The probes are the Task 11 review's C1, C2 and I3.
 describe("the display net in the report (task 11 fix round 2 item 1)", () => {
