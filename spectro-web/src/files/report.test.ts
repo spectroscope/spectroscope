@@ -10,6 +10,7 @@ import { foldFiles, type FileLedger } from "./fold";
 import { LEVEL_ORDER } from "./levels";
 import { mergeModel } from "./modelReading";
 import { buildReport, printableCommand, type Finding, type FilesReport } from "./report";
+import { sizeBand } from "./secrets";
 
 const T0 = 1_760_000_000_000;
 const W = "/w";
@@ -602,8 +603,8 @@ describe("buildReport", () => {
     const body = ["MIIEowIBAAKCAQEAx9Ym4Qz7Rt2Lp8Wk", "Nb3Vc6Hs1Jd5Gf0AhkiG9w0BAQEFAASC"];
     const url = `postgres://app:${DB_PW}@db.internal/app`;
 
-    it("an open block leaves the text after it to the other rules", () => {
-      // The review's probe: `head -n 2` of a key and an env file.
+    it("an open block masks to the end and registers what it holds", () => {
+      // The first review's probe: `head -n 2` of a key and an env file.
       const output = `==> id_rsa <==\n${head}\n${body[0]}\n\n==> prod.env <==\nDATABASE_URL=${url}\n`;
       const rec = new Rec()
         .start(W)
@@ -611,9 +612,9 @@ describe("buildReport", () => {
         .tool("Bash", { command: `curl -u app:${DB_PW} https://db.example.com/` });
       const report = build(rec.events);
 
-      // The block is the header and its one body line: 64 bytes.
+      // The block runs from the header to the end of the result; the value inside it is its own.
       expect(one(report, "credential-result").credentials).toEqual([
-        { label: "credential 1", rule: "private-key", band: "33-64" },
+        { label: "credential 1", rule: "private-key", band: sizeBand(output.slice(output.indexOf(head))) },
         { label: "credential 2", rule: "url-userinfo", band: "9-16" },
       ]);
       const used = one(report, "credential-used");
@@ -665,12 +666,133 @@ describe("buildReport", () => {
       expect(one(report, "credential-input").credentials).toEqual([
         { label: "credential 1", rule: "private-key", band: "65-128" },
       ]);
+      // The open block masks to the end of the command, tail included.
       expect(one(report, "secret-file")).toMatchObject({
         file: "k.pem",
-        command: "printf '%s\\n' '[credential 1: private-key]' > k.pem",
+        command: "printf '%s\\n' '[credential 1: private-key]",
       });
       expect(leaks(report, [body[0], "credential 2"])).toEqual([]);
     });
+
+    it("an open header in a command hides every body line after it", () => {
+      // The second review's probes: body lines that are not bare base64 lines.
+      const commands = [
+        `echo "${head}" > k.pem\necho "${body[0]}" >> k.pem\necho "${body[1]}" >> k.pem`,
+        `printf '%s\\n' \\\n  '${head}' \\\n  '${body[0]}' \\\n  '${body[1]}' > k.pem`,
+        `KEY="${head}\\\n${body[0]}\\\n${body[1]}"\necho "$KEY" > k.pem`,
+      ];
+      for (const command of commands) {
+        const report = build(new Rec().start(W).tool("Bash", { command }).events);
+        const input = one(report, "credential-input");
+        expect(
+          input.credentials.map((c) => c.label),
+          command,
+        ).toEqual(["credential 1"]);
+        expect(input.command, command).toContain("[credential 1: private-key]");
+        expect(leaks(report, [head, ...body, "credential 2"]), command).toEqual([]);
+      }
+    });
+
+    it("what an open block holds is registered and masked where it comes back", () => {
+      // The narrowed rule's probes: each line follows an open body and is inside the block.
+      const awsSecret = ["k7Vq2Lp9", "Xw3Zr8Tn4Ym6"].join("");
+      const token = ["abcdefghij", "0123456789KLMNOP"].join("");
+      const other = ["Qz8m", "N4rT2wX"].join("");
+      for (const [line, value, rule] of [
+        [`AWS_SECRET_ACCESS_KEY=${awsSecret}`, awsSecret, "password-assignment"],
+        [`Bearer ${token}`, token, "bearer"],
+        [`password: ${DB_PW}`, DB_PW, "password-assignment"],
+        [`Password: ${other}`, other, "password-assignment"],
+        [PAT, PAT, "github-pat"],
+      ]) {
+        const rec = new Rec()
+          .start(W)
+          .tool("Bash", { command: "cat notes.txt" }, { output: `${head}\n${body[0]}\n${line}\n` })
+          .tool("Bash", { command: `curl -H 'X-Key: ${value}' https://api.example.com/` });
+        const report = build(rec.events);
+
+        expect(
+          one(report, "credential-result").credentials.map((c) => [c.label, c.rule]),
+          line,
+        ).toEqual([
+          ["credential 1", "private-key"],
+          ["credential 2", rule],
+        ]);
+        const used = one(report, "credential-used");
+        expect(
+          used.credentials.map((c) => c.label),
+          line,
+        ).toEqual(["credential 2"]);
+        expect(used.command, line).toBe(
+          "curl -H 'X-Key: [credential 2: " + rule + "]' https://api.example.com/",
+        );
+        expect(leaks(report, [value]), line).toEqual([]);
+      }
+    });
+
+    it("body lines come from the PEM body, numbered or not", () => {
+      // `cat -n` of a key without its END line, then a hash the block covers but that is not body.
+      const sha = "9fceb02d0ae598e95dc970b74767f19372d61af8";
+      const numbered = [head, ...body].map((l, i) => `${String(i + 1).padStart(6)}\t${l}`).join("\n");
+      const rec = new Rec()
+        .start(W)
+        .tool(
+          "Bash",
+          { command: "cat -n id_rsa; git log -1 --format=%H" },
+          { output: `${numbered}\n-- head commit --\n${sha}\n` },
+        )
+        .tool("Bash", { command: `echo '${body[1]}' >> k2.pem` })
+        .tool("Bash", { command: `cat .env && git show ${sha}` });
+      const report = build(rec.events);
+
+      expect(one(report, "credential-used")).toMatchObject({
+        callIndex: 3,
+        credentials: [{ label: "credential 1", rule: "private-key" }],
+        command: "echo '[credential 1: private-key]' >> k2.pem",
+      });
+      // The hash is not a body line: it stays in the command and is no use of the key.
+      expect(ofKind(report, "secret-file").find((f) => f.callIndex === 5)?.command).toBe(
+        `cat .env && git show ${sha}`,
+      );
+      expect(leaks(report, body)).toEqual([]);
+    });
+
+    it("a nest of two thousand blocks costs four rescans", () => {
+      const output = `${Array.from({ length: 2000 }, () => head).join("\n")}\n${body[0]}\n${Array.from(
+        { length: 2000 },
+        () => tail,
+      ).join("\n")}\n`;
+      const rec = new Rec().start(W).tool("Bash", { command: "cat nest.pem" }, { output });
+      const ledger = foldFiles(rec.events);
+
+      const started = performance.now();
+      const report = build(rec.events, ledger);
+      const ms = performance.now() - started;
+
+      expect(ms).toBeLessThan(500);
+      // The block itself and four blocks inside it, one for each rescan.
+      expect(one(report, "credential-result").credentials.map((c) => c.rule)).toEqual(
+        Array.from({ length: 5 }, () => "private-key"),
+      );
+    });
+  });
+
+  it("a title that ends inside a value keeps no part of it", () => {
+    // The second review's probes: the title is cut at its end, after any character.
+    const fine = ["github", "_pat_", "11ABCDEFG0", "a1B2c3D4e5".repeat(8)].join("");
+    for (const [secret, title, masked] of [
+      [fine, `clone https://${fine.slice(0, 40)}`, "clone https://[credential 1: github-pat]"],
+      [PAT, `push with:${PAT.slice(0, 20)}`, "push with:[credential 1: github-pat]"],
+      [PAT, `-p'${PAT.slice(0, 20)}`, "-p'[credential 1: github-pat]"],
+    ]) {
+      const rec = new Rec().start(W, { prompt: `use ${secret}` });
+      const report = build(rec.events, undefined, title);
+      expect(report.title, title).toBe(masked);
+      expect(leaks(report, [secret.slice(0, 8)]), title).toEqual([]);
+    }
+    // Seven characters at the end are below the rule's eight and stay.
+    const rec = new Rec().start(W, { prompt: `use ${PAT}` });
+    expect(build(rec.events, undefined, `push ${PAT.slice(0, 7)}`).title).toBe(`push ${PAT.slice(0, 7)}`);
   });
 
   it("a title cut inside a value keeps no part of it", () => {

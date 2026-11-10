@@ -367,49 +367,59 @@ describe("private keys", () => {
     );
   });
 
-  it("a header without its END marker covers its PEM body", () => {
-    const open = `x ${head("EC ")}\n${BODY_A}`;
+  it("a header without its END marker masks to the end of its string", () => {
+    const open = `x ${head("EC ")}\n${BODY_A}\nnext: 1`;
     expect(maskCredentials(open, () => "credential 1")).toBe("x [credential 1: private-key]");
-    // An END marker of another kind does not close the block: it ends with the body.
+    // An END marker of another kind does not close the block.
     const crossed = `${head("RSA ")}\n${BODY_B}\n${tail("EC ")}\ntrailing`;
-    expect(findCredentials(crossed).hits.map((h) => h.secret)).toEqual([`${head("RSA ")}\n${BODY_B}`]);
+    expect(findCredentials(crossed).hits.map((h) => h.secret)).toEqual([crossed]);
+    // Body lines that are not bare base64 lines are covered all the same.
+    const echoes = `echo "${head("RSA ")}" > k.pem\necho "${BODY_B.split("\n")[0]}" >> k.pem`;
+    expect(maskCredentials(echoes, () => "c")).toBe('echo "[c: private-key]');
+    // A stop (the end of a string value) ends an open block, and an END marker past it does not count.
+    const value = `${head("RSA ")}\n${BODY_B}`;
+    const joined = `${value}", "next": "${tail("RSA ")}"`;
+    expect(findCredentials(joined, [value.length]).hits.map((h) => h.secret)).toEqual([value]);
   });
 
-  it("an open block ends where the PEM body ends", () => {
+  it("the PEM body decides which lines are body lines", () => {
+    const lines = ["MIIEowIBAAKCAQEAx9Ym4Qz7Rt2Lp8Wk", "Nb3Vc6Hs1Jd5Gf0AhkiG9w0BAQEFAASC"];
+    const sha = "9fceb02d0ae598e95dc970b74767f19372d61af8";
+    const bodyLines = (text: string) => keyBlockLines(findCredentials(text).hits[0]);
+    // Header fields, an empty line, base64 lines; the text the block covers after its body is not body.
+    const fields = `${head("RSA ")}\nProc-Type: 4,ENCRYPTED\nDEK-Info: AES-128-CBC,00AA\n\n${lines.join("\n")}`;
+    expect(bodyLines(`${fields}\n\nnext text\n${sha}\n`)).toEqual(lines);
+    // A base64 start before a quote is a body line; the escape for a line break is a line break.
+    expect(bodyLines(`'${head("RSA ")}\n${lines[0]}' > k.pem`)).toEqual([lines[0]]);
+    expect(bodyLines(`printf '${head("RSA ")}\\n${lines[0]}\\n${lines[1]}' > k.pem`)).toEqual(lines);
+    // Indented, as in a YAML block.
+    expect(bodyLines(`  ${head("")}\n  ${lines.join("\n  ")}\nnext: 1`)).toEqual(lines);
+    // Numbered by cat -n, by a numbered Read and by grep -n.
+    for (const mark of ["\t", "→", ":"]) {
+      const numbered = [head("RSA "), ...lines].map((l, i) => `${String(i + 1).padStart(6)}${mark}${l}`);
+      expect(bodyLines(numbered.join("\n")), JSON.stringify(mark)).toEqual(lines);
+    }
+  });
+
+  it("what an open block covers is found inside it", () => {
     const pw = "Hx7p" + "Lq2vZw";
-    const secretOf = (text: string) => findCredentials(text).hits.map((h) => [h.rule, h.secret]);
-    // Header fields, an empty line and base64 lines are the body; the text after it is not.
-    const fields = `${head("RSA ")}\nProc-Type: 4,ENCRYPTED\nDEK-Info: AES-128-CBC,00AA\n\n${BODY_B}`;
-    expect(secretOf(`${fields}\n\nThe ${"url"}: postgres://app:${pw}@db.internal/app`)).toEqual([
-      ["private-key", fields],
-      ["url-userinfo", pw],
-    ]);
-    // A line that goes on after its base64 start ends the block there.
-    expect(maskCredentials(`${head("RSA ")}\nMIIEowIBAAKCAQEA' > k.pem`, () => "credential 1")).toBe(
-      "[credential 1: private-key]' > k.pem",
-    );
-    // The escape a command or a JSON string writes for a line break is a line break.
-    const escaped = `printf '${head("RSA ")}\\nMIIEowIBAAKCAQEA\\nx9Ym4Qz7Rt2Lp8Wk' > k.pem`;
-    expect(maskCredentials(escaped, () => "credential 1")).toBe(
-      "printf '[credential 1: private-key]' > k.pem",
-    );
-    // Indented body lines, as in a YAML block, are body lines.
-    expect(maskCredentials(`  ${head("")}\n  ${BODY_B.replaceAll("\n", "\n  ")}\nnext: 1`, () => "c")).toBe(
-      "  [c: private-key]\nnext: 1",
-    );
-    // The header's own line is part of the block; a header field after the body is not.
-    expect(secretOf(`${head("RSA ")} '${BODY_B.slice(0, 16)}'\nnext line`)).toEqual([
-      ["private-key", `${head("RSA ")} '${BODY_B.slice(0, 16)}'`],
-    ]);
-    expect(secretOf(`${head("RSA ")}\n${BODY_B}\nHost: db`)[0][1]).toBe(`${head("RSA ")}\n${BODY_B}`);
-    // A line that only starts like base64 stays outside, so the match on it stands.
     const token = "abcdefghij" + "0123456789KLMNOP";
-    for (const line of [`AWS_SECRET_ACCESS_KEY=${pw}`, `Bearer ${token}`]) {
-      const rules = findCredentials(`${head("RSA ")}\n${BODY_B}\n${line}`).hits.map((h) => h.rule);
-      expect(rules, line).toEqual([
-        "private-key",
-        line.startsWith("Bearer") ? "bearer" : "password-assignment",
-      ]);
+    for (const [line, rule] of [
+      [`AWS_SECRET_ACCESS_KEY=${pw}`, "password-assignment"],
+      [`Bearer ${token}`, "bearer"],
+      [`password: ${pw}`, "password-assignment"],
+      [`Password: ${pw}`, "password-assignment"],
+      [`postgres://app:${pw}@db.internal/app`, "url-userinfo"],
+    ]) {
+      const { hits } = findCredentials(`${head("RSA ")}\n${BODY_B}\n${line}\n`);
+      expect(
+        hits.map((h) => h.rule),
+        line,
+      ).toEqual(["private-key"]);
+      expect(
+        keyBlockHits(hits[0]).map((h) => h.rule),
+        line,
+      ).toEqual([rule]);
     }
   });
 
@@ -431,8 +441,9 @@ describe("private keys", () => {
       "\n",
     );
     const inside = `${head("RSA ")}\n${Array.from({ length: 1000 }, () => head("EC ")).join("\n")}\n${tail("RSA ")}`;
+    // An open header covers the rest of the text, so the headers after it are inside it.
     for (const [name, text, count] of [
-      ["open", open, 1000],
+      ["open", open, 1],
       ["inside", inside, 1],
     ] as const) {
       const t0 = performance.now();

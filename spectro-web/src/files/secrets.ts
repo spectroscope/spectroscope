@@ -223,14 +223,18 @@ const DASHES = "-----";
 //
 // The twin's pattern matches only the BEGIN header, which would leave the key
 // body in plain text. findCredentials extends a header to its block: to the END
-// marker of the header's own kind when one follows, else over the header's line
-// and the PEM body only (empty lines, `Name: value` header fields before the
-// body, base64 lines), so an open block does not swallow the text after it. A line break is a real one
-// or the escape `\n` (or `\r\n`) a command or a JSON string writes for one.
+// marker of the header's own kind when one follows within the same string, else
+// to the end of that string. The extent errs toward hiding: a result is never
+// printed, and a command only loses more of its tail. Which lines of a block are
+// its PEM body (bodyEnd) matters only for the body lines a report registers.
+// A line break is a real one or the escape `\n` (or `\r\n`) a command or a JSON
+// string writes for one.
 
 const BASE64 = charTable(/[A-Za-z0-9+/=]/);
 const PEM_FIELD = /^[A-Za-z][A-Za-z0-9-]*: /;
 const BODY_LINE = /^[A-Za-z0-9+/=]{20,}$/;
+/** The line number `cat -n`, `grep -n` and a numbered Read put before a line: blanks, digits, then a tab, arrow, colon or bar. */
+const LINE_NUMBER = /[ \t]*\d+[\t\u2192:|]/y;
 /** What may follow the base64 start of a body line that ends a block: the end of a quoted or bracketed value. */
 const CLOSERS = new Set(["'", '"', "`", ")", "]", "}", ",", ";"]);
 
@@ -257,11 +261,18 @@ const skipBlanks = (text: string, i: number, stop: number): number => {
   return at;
 };
 
+/** After a line number at `at`, or `at` itself when none stands there. */
+function afterLineNumber(text: string, at: number, stop: number): number {
+  LINE_NUMBER.lastIndex = at;
+  const m = LINE_NUMBER.exec(text);
+  return m === null || LINE_NUMBER.lastIndex > stop ? at : skipBlanks(text, LINE_NUMBER.lastIndex, stop);
+}
+
 /**
- * Where an open block ends: after the header's whole line, then over the PEM
- * body (empty lines, header fields before the body, base64 lines; a base64
- * start followed by a quote or a closing bracket ends the block there), never
- * past `stop`.
+ * Where a block's PEM body ends: after the header's whole line, then over empty
+ * lines, header fields before the body and base64 lines (a line number before
+ * a line aside; a base64 start followed by a quote or a closing bracket ends the
+ * body there), never past `stop`.
  */
 function bodyEnd(text: string, headerEnd: number, stop: number): number {
   let at = lineEndFrom(text, headerEnd, stop);
@@ -270,7 +281,7 @@ function bodyEnd(text: string, headerEnd: number, stop: number): number {
   for (;;) {
     const brk = at < stop ? breakAt(text, at) : 0;
     if (brk === 0) return end; // the line went on with something else, or the value ended
-    at = skipBlanks(text, at + brk, stop);
+    at = afterLineNumber(text, skipBlanks(text, at + brk, stop), stop);
     if (at >= stop) return end;
     if (breakAt(text, at) > 0) continue; // an empty line
     const lineEnd = lineEndFrom(text, at, stop);
@@ -308,25 +319,21 @@ class Markers {
   }
 }
 
-/** The end of the block a header opens: after its END marker before `stop`, else the body's end. */
-function keyBlockEnd(
-  text: string,
-  header: string,
-  headerEnd: number,
-  stop: number,
-  markers: Markers,
-): number {
+/** The end of the block a header opens: after its END marker before `stop`, else `stop`. */
+function keyBlockEnd(header: string, headerEnd: number, stop: number, markers: Markers): number {
   const marker = `${DASHES}END ${header.slice(KEY_HEADER.length, -DASHES.length)}${DASHES}`;
   const at = markers.find(marker, headerEnd);
-  if (at >= 0 && at + marker.length <= stop) return at + marker.length;
-  return bodyEnd(text, headerEnd, stop);
+  return at >= 0 && at + marker.length <= stop ? at + marker.length : stop;
+}
+
+/** Where a block's header ends, inside the block. */
+function headerEndIn(block: string): number {
+  const close = block.indexOf(DASHES, KEY_HEADER.length);
+  return close < 0 ? block.length : close + DASHES.length;
 }
 
 /** The text of a block after its header. */
-function afterHeader(block: string): string {
-  const close = block.indexOf(DASHES, KEY_HEADER.length);
-  return close < 0 ? "" : block.slice(close + DASHES.length);
-}
+const afterHeader = (block: string): string => block.slice(headerEndIn(block));
 
 /**
  * The credentials inside a private-key block, after its header. The block's own
@@ -340,12 +347,19 @@ export function keyBlockHits(hit: CredentialHit): CredentialHit[] {
   return findCredentials(rest).hits.map((h) => ({ ...h, start: h.start + offset, end: h.end + offset }));
 }
 
-/** The base64 lines of 20 or more characters in a private-key block: a body line can come back alone. */
+/**
+ * The base64 lines of 20 or more characters in a block's PEM body (bodyEnd), a
+ * line number before them taken off: a body line can come back alone. Text the
+ * block covers after its body (a hash, a log line) is not a body line.
+ */
 export function keyBlockLines(hit: CredentialHit): string[] {
   if (hit.rule !== "private-key") return [];
-  return afterHeader(hit.match)
+  const block = hit.match;
+  const start = headerEndIn(block);
+  return block
+    .slice(start, bodyEnd(block, start, block.length))
     .split(/\r\n|\r|\n|\\r\\n|\\n/)
-    .map((line) => line.trim())
+    .map((line) => line.replace(/^[ \t]*\d+[\t\u2192:|]/, "").trim())
     .filter((line) => BODY_LINE.test(line));
 }
 
@@ -354,10 +368,10 @@ export function keyBlockLines(hit: CredentialHit): string[] {
  * CREDENTIAL_RULES, and a match that overlaps an earlier hit or placeholder is
  * skipped, so an earlier rule wins. A placeholder is counted, not returned. A
  * password-assignment value that is code or a plain identifier is skipped without
- * counting. A private-key match is its whole block (see keyBlockEnd), as match
- * and as secret; the placeholder test still reads the header alone. `stops`,
- * ascending, are offsets a block never runs past: the end of each string value
- * of a text built from several.
+ * counting. A private-key match is its whole block, to its END marker or to the
+ * end of its string (keyBlockEnd), as match and as secret; the placeholder test
+ * still reads the header alone. `stops`, ascending, are offsets a block never
+ * runs past: the end of each string value of a text built from several.
  */
 export function findCredentials(
   text: string,
@@ -379,7 +393,7 @@ export function findCredentials(
       let end = headerEnd;
       if (isKey) {
         while (stop < stops.length && stops[stop] < headerEnd) stop++;
-        end = keyBlockEnd(text, m[0], headerEnd, stops[stop] ?? text.length, markers);
+        end = keyBlockEnd(m[0], headerEnd, stops[stop] ?? text.length, markers);
         if (overlaps(start, end)) continue;
       }
       const match = isKey ? text.slice(start, end) : m[0];

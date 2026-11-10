@@ -310,6 +310,10 @@ const isWordAt = (text: string, at: number) => at >= 0 && at < text.length && WO
  * password rule's own shortest value.
  */
 const MASK_INSIDE_WORDS = 6;
+/** The shortest start of a value that a cut title is masked for. */
+const MIN_CUT = 8;
+/** How many times withInner reads a block found inside a block again: a nest of any depth costs four scans. */
+const MAX_NESTING = 4;
 
 /** The start of every occurrence of `value` in `text`; with `asWord`, only those with no word character beside them. */
 function occurrences(text: string, value: string, asWord: boolean): number[] {
@@ -367,9 +371,9 @@ class Credentials {
    * that a known value starts with takes that value's label.
    */
   maskTitle(text: string): string {
-    return this.mask(text).replace(/\S+/g, (word) => {
+    const words = this.mask(text).replace(/\S+/g, (word) => {
       const [, open = "", core = "", ellipsis = ""] = /^(["'`([{<]*)(.*?)(\u2026|\.\.\.)?$/.exec(word) ?? [];
-      if (core.length < 8) return word;
+      if (core.length < MIN_CUT) return word;
       for (const s of this.bySecret.values()) {
         if (s.secret.length > core.length && s.secret.startsWith(core)) {
           return `${open}[${s.ref.label}: ${s.ref.rule}]${ellipsis}`;
@@ -377,6 +381,29 @@ class Credentials {
       }
       return word;
     });
+    return this.maskTail(words);
+  }
+
+  /**
+   * The title with its tail masked when the tail is the start of a known value:
+   * the cut lands at the end of the title, after `https://`, `with:` or `-p'` as
+   * well as after a space. The longest such tail of eight or more characters wins.
+   */
+  private maskTail(text: string): string {
+    const [, body = text, ellipsis = ""] = /^([\s\S]*?)(\u2026|\.\.\.)?$/.exec(text) ?? [];
+    let best: { length: number; ref: CredentialRef } | null = null;
+    for (const s of this.bySecret.values()) {
+      const first = s.secret.charCodeAt(0);
+      for (let at = Math.max(0, body.length - s.secret.length); at <= body.length - MIN_CUT; at++) {
+        if (best !== null && body.length - at <= best.length) break;
+        if (body.charCodeAt(at) === first && s.secret.startsWith(body.slice(at))) {
+          best = { length: body.length - at, ref: s.ref };
+          break;
+        }
+      }
+    }
+    if (best === null) return text;
+    return `${body.slice(0, body.length - best.length)}[${best.ref.label}: ${best.ref.rule}]${ellipsis}`;
   }
 
   /** The secrets seen before `event`, in label order. */
@@ -615,11 +642,16 @@ function scanEvents(
 // ---- Small builders and readers ---------------------------------------------------
 
 /**
- * A hit and, for a key block, the credentials inside it, at any depth. The
- * block's mask covers them in place; each is still registered under a label of
- * its own and masked wherever it comes back.
+ * A hit and, for a key block, the credentials inside it, down to MAX_NESTING
+ * blocks deep. The block's mask covers them in place; each is still registered
+ * under a label of its own and masked wherever it comes back.
  */
-const withInner = (hit: CredentialHit): CredentialHit[] => [hit, ...keyBlockHits(hit).flatMap(withInner)];
+const withInner = (hit: CredentialHit): CredentialHit[] => nested(hit, 0);
+
+function nested(hit: CredentialHit, depth: number): CredentialHit[] {
+  if (depth >= MAX_NESTING || hit.rule !== "private-key") return [hit];
+  return [hit, ...keyBlockHits(hit).flatMap((inner) => nested(inner, depth + 1))];
+}
 
 /** What one path saw in one call: a touch of the fold, or a file a network command sent. */
 interface Mark {
