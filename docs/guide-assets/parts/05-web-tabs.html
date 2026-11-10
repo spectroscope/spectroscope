@@ -176,27 +176,45 @@ report on the session's files: it lists the files the session read, changed, cre
 sorted by level, and says whether secrets reached a model. The report covers the whole session,
 so the agent chips and the cursor do not change it. A sheet opens with the verdict line and three
 buttons. <em>PDF</em> opens the print dialog, where <em>Save as PDF</em> writes the file.
-<em>HTML</em> saves one self-contained page. <em>CSV</em> saves a table with one row per finding
-and one row per file. Each file and each finding has one of four levels. The level
-<em>critical</em> is for secrets, and <em>sensitive</em> is for files outside the project, network
-commands and personal data. A script whose effect the recording does not show is
-<em>unknown</em>, and a file inside the workspace is <em>project</em>. The verdict is the highest
-level. When nothing ranks above <em>project</em>, the report lists what it checked and says that
-it found none of it. A finding is one match of the report's rules in the recording. It can be a
-secret file such as <code>.env</code> or a key under <code>.ssh/</code>, or a credential in a tool
-result, a tool input or a prompt. A credential that a later call uses again is a finding of its
-own. So is a command that prints the environment or a stored secret. A network command is a
-finding too, shown with its host and the files it sends. The remaining findings are a file outside
-the project, personal data such as email addresses in tool results, and a script with unknown
-effect. Entries from a model's reading carry the <em>model</em> tag and do not count toward the
-verdict. The report prints no credential value and no file content. A credential appears only as
-its rule, a size band such as 17 to 32 bytes and a label such as <code>credential 1</code>. The
-band stands in for the exact length, and no hash of the value is written. The section
+<em>HTML</em> saves one self-contained page. <em>CSV</em> saves a table with one row per finding,
+one row per file and one row per search or listing. Each file and each finding has one of four
+levels. The level <em>critical</em> is for secrets, and <em>sensitive</em> is for files outside
+the project, network commands and personal data. A script whose effect the recording does not
+show is <em>unknown</em>, and a file inside the workspace is <em>project</em>. The verdict is the
+highest level. When nothing ranks above <em>project</em>, the report lists what it checked and
+says that it found none of it.</p>
+
+<p>A finding is one match of the report's rules in the recording. It can be a secret file such
+as <code>.env</code> or a key under <code>.ssh/</code>, or a credential in a tool result, a tool
+input or a prompt. In a network command, a value also counts as a credential by the place it
+stands in, whatever its shape. These places are a URL's user, password and query values, the
+values of <code>-u</code> and <code>--user</code>, and a cookie. They also include the value of an option
+whose name says password, token, secret or key, and of a header whose name says one of these or
+auth. The last place is the password of <code>sshpass -p</code>. A credential that a later call uses again is a finding of its own. So is
+a command that prints the environment or a stored secret. The one value that a command such as
+<code>gh auth token</code> printed is a credential as well. A network command is a finding too, shown with its host and the files it sends.
+One whose host is this machine stays at <em>project</em>. A search or a listing, such as a glob
+pattern, <code>ls</code>, <code>find</code> or <code>grep -r</code>, counts in no file row. The
+report lists it in a table of its own, with the level of the folder it starts in. It raises no
+finding about a file and does not count toward the verdict. Its result is checked like any other
+result. The remaining findings are a file outside the project, personal data
+such as email-shaped strings in tool results, and a script with unknown effect. Entries from a
+model's reading carry the <em>model</em> tag and do not count toward the verdict.</p>
+
+<p>The report prints no file content, and no credential that its rules or these places in a
+command found. A credential appears only as its rule, a size band such as 17 to 32 bytes and a
+label such as <code>credential 1</code>. The band stands in for the exact length, and no hash of
+the value is written. In a printed command, the report masks a password to the end of its word,
+and a URL's user and password from <code>://</code> to the last <code>@</code>. The section
 <em>Where the content went</em> lists each model the session called and says where it ran. The
 places are this machine, another machine on the local network, a cloud model behind a local
-server, and the cloud. The last two sections name the report's limits and its method. The report
-reads only the recording, so it misses a file that a script opened and a credential of a shape its
-rules do not know.</p>
+server, and the cloud. An imported Claude Code session that records its
+model names the provider <code>anthropic</code>, and an imported GitHub Copilot session names
+<code>copilot</code> with the model its file records. A session imported with an older version shows the provider as not
+recorded until you import its file again. The last two sections name the report's limits and its method.
+The report reads only the recording, so it misses a file that a script opened and a credential of
+a shape its rules do not know. Such a secret can still print in a command when it stands in a
+place the report does not read.</p>
 
 <h2 id="ch-tabs-text">The Text tab</h2>
 
