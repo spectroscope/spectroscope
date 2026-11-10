@@ -560,6 +560,7 @@ describe("the reading in the tab", () => {
     onStartHandled: () => {},
     onFocusEvent: () => {},
     onOpenPath: () => {},
+    title: null,
   };
 
   async function readAs(answer: string, meta = META): Promise<void> {

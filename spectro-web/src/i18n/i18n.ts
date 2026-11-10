@@ -6684,6 +6684,33 @@ export const dict: Record<string, { de: string; en: string }> = {
   },
   "filesTab.consent.cancel": { de: "abbrechen", en: "cancel" },
   "filesTab.consent.send": { de: "an {model} senden", en: "send to {model}" },
+  // Card 605: the Report button of the files tab and its sheet.
+  "filesTab.report.button": { de: "Report", en: "Report" },
+  "filesTab.report.title": { de: "Dateibericht", en: "Files report" },
+  "filesTab.report.building": {
+    de: "Der Bericht entsteht aus der ganzen Session.",
+    en: "Building the report from the whole session.",
+  },
+  "filesTab.report.failed": {
+    de: "Aus dieser Session ließ sich kein Bericht erstellen.",
+    en: "The report could not be built from this session.",
+  },
+  "filesTab.report.pdf": { de: "PDF", en: "PDF" },
+  "filesTab.report.html": { de: "HTML", en: "HTML" },
+  "filesTab.report.csv": { de: "CSV", en: "CSV" },
+  "filesTab.report.pdfNote": {
+    de: "Der Druckdialog bietet Als PDF sichern an.",
+    en: "The print dialog offers Save as PDF.",
+  },
+  "filesTab.report.scope": {
+    de: "Umfasst die ganze Session; die Filter dieses Tabs gelten nicht.",
+    en: "Covers the whole session; the filters of this tab do not apply.",
+  },
+  "filesTab.report.level.critical": { de: "kritisch", en: "critical" },
+  "filesTab.report.level.sensitive": { de: "sensibel", en: "sensitive" },
+  "filesTab.report.level.unknown": { de: "unbekannt", en: "unknown" },
+  "filesTab.report.level.project": { de: "Projekt", en: "project" },
+  "filesTab.report.frame": { de: "Druckfassung des Berichts", en: "print copy of the report" },
 };
 
 /** Chrome string for `key` in `lang`; `{var}` placeholders fill from `vars`.

@@ -12,6 +12,10 @@
 //
 // The cursor is the tab's own (C2): it never calls the session's stepper and
 // never changes the route.
+//
+// Card 605: a Report button after the model controls opens the report sheet
+// (FilesReportSheet.tsx) over the ledger the panes show; closing it returns
+// the focus to the button.
 
 import {
   useEffect,
@@ -35,6 +39,7 @@ import { FilesExplorer } from "./FilesExplorer";
 import { useShownLedger, type ReadingMode } from "./filesAnalysis";
 import { FilesModelControls } from "./FilesModelControls";
 import { FilesOperations, FilesOpList } from "./FilesOperations";
+import { FilesReportSheet } from "./FilesReportSheet";
 import { FilesTimeline, timelineAxis } from "./FilesTimeline";
 import {
   fileRows,
@@ -58,6 +63,8 @@ export interface FilesViewProps {
   onFocusEvent: (agentId: string, event: RunEvent) => void;
   /** Opens a path in the Files panel; null when the session has no folder. */
   onOpenPath: ((path: string) => void) | null;
+  /** The session's title, for the report; null when the session has none. */
+  title: string | null;
 }
 
 export type FilesViewName = "all" | "diff" | "created" | "operations";
@@ -110,7 +117,7 @@ function typing(target: unknown): boolean {
 }
 
 export function FilesView(props: FilesViewProps): JSX.Element {
-  const { viewKey, events, startAt, onStartHandled, onFocusEvent, onOpenPath } = props;
+  const { viewKey, events, startAt, onStartHandled, onFocusEvent, onOpenPath, title } = props;
   const lang = useLang();
   const heuristic = useMemo(() => foldFiles(events), [events]);
   // With a model's reading shown, the merged ledger replaces the heuristic one downstream.
@@ -131,8 +138,10 @@ export function FilesView(props: FilesViewProps): JSX.Element {
   const [selection, setSelection] = useState<FilesSelection>(NOTHING);
   const [cursor, setCursor] = useState<Cursor>(FOLLOW);
   const [playing, setPlaying] = useState(false);
-  // Another session on screen starts with nothing selected, every agent shown
-  // and the cursor at its end.
+  const [reportOpen, setReportOpen] = useState(false);
+  const reportButton = useRef<HTMLButtonElement>(null);
+  // Another session on screen starts with nothing selected, every agent shown,
+  // the cursor at its end and no report sheet.
   const [shownKey, setShownKey] = useState(viewKey);
   if (shownKey !== viewKey) {
     setShownKey(viewKey);
@@ -140,6 +149,7 @@ export function FilesView(props: FilesViewProps): JSX.Element {
     setHidden(NO_AGENTS);
     setCursor(FOLLOW);
     setPlaying(false);
+    setReportOpen(false);
   }
   // The event a route opened the tab at places the cursor, once per route.
   const [taken, setTaken] = useState<RunEvent | null>(null);
@@ -237,6 +247,11 @@ export function FilesView(props: FilesViewProps): JSX.Element {
     if (calls.length > 0 && (cursor.follow || stepCall(calls, cursor, events, 1) === cursor))
       pickCall(calls[0]);
     setPlaying(true);
+  };
+
+  const closeReport = (): void => {
+    setReportOpen(false);
+    reportButton.current?.focus();
   };
 
   const toggleAgent = (agent: string): void =>
@@ -351,6 +366,27 @@ export function FilesView(props: FilesViewProps): JSX.Element {
           ledger={heuristic}
           analysis={analysis}
         />
+        <button
+          type="button"
+          ref={reportButton}
+          className="files-report__open"
+          data-action="report"
+          aria-haspopup="dialog"
+          aria-expanded={reportOpen}
+          onClick={() => setReportOpen(true)}
+        >
+          {t(lang, "filesTab.report.button")}
+        </button>
+        {reportOpen && (
+          <FilesReportSheet
+            lang={lang}
+            events={events}
+            ledger={ledger}
+            sessionId={viewKey}
+            title={title}
+            onClose={closeReport}
+          />
+        )}
         <p className="files-summary">{summaryLine(lang, summary, modelShown)}</p>
       </section>
       <FilesTimeline

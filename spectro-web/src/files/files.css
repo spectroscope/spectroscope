@@ -135,6 +135,81 @@
   word-break: break-word;
 }
 
+/* Card 605: the Report button and its sheet. The sheet is the keymap panel
+   (km-*), narrowed, and lives under body, so it reads the global tokens and
+   not the tab's aliases. The level colours are the report document's: on the
+   line, never on the text. */
+.files-report__open,
+.files-report__btn {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: var(--surface-2);
+  color: var(--text);
+  padding: var(--sp-1) var(--sp-3);
+  font: inherit;
+  font-size: var(--fs-13);
+  cursor: pointer;
+}
+.files-report__btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.files-report {
+  width: min(520px, 100%);
+}
+.files-report__verdict {
+  margin: 0 0 var(--sp-4);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--text-faint);
+  border-radius: var(--radius-chip);
+  padding: var(--sp-3) var(--sp-4);
+}
+.files-report__verdict--critical {
+  border-left-color: var(--sp-red);
+}
+.files-report__verdict--sensitive {
+  border-left-color: var(--sp-amber);
+}
+.files-report__verdict--unknown {
+  border-left-color: var(--sp-violet);
+}
+.files-report__verdict--project {
+  border-left-color: var(--sp-teal);
+}
+.files-report__level {
+  display: block;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+}
+.files-report__line {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--fs-13);
+  line-height: 1.5;
+}
+.files-report__level + .files-report__line {
+  margin-top: var(--sp-1);
+}
+.files-report__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-3);
+}
+.files-report .ob-foot-note + .ob-foot-note {
+  margin-top: var(--sp-1);
+}
+.files-report__frame {
+  position: absolute;
+  width: 0;
+  height: 0;
+  border: 0;
+  visibility: hidden;
+}
+
 /* The stage: explorer and detail side by side, stacked below 720px. */
 .files-panes {
   display: grid;

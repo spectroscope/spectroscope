@@ -3520,6 +3520,7 @@ export function App() {
               onStartHandled={() => setFilesFocus(null)}
               onFocusEvent={focusInTrace}
               onOpenPath={onOpenFilesPath}
+              title={shownSessionId !== null ? sessionTitleOf(shownSessionId) : null}
             />
           ) : null}
         </ChunkBoundary>
