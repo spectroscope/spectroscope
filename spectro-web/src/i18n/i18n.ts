@@ -34,8 +34,8 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "Server unreachable · session list unavailable.",
   },
   "nav.importTitle": {
-    de: "Eine spectroscope-Session oder ein Claude-Code-Transkript als .jsonl laden, oder einen GitHub-Copilot-Session-Ordner",
-    en: "Load a spectroscope session or a Claude Code transcript as .jsonl, or a GitHub Copilot session folder",
+    de: "Eine spectroscope-Session oder ein Claude-Code-Transkript (.jsonl) oder einen GitHub-Copilot-Session-Ordner laden",
+    en: "Load a spectroscope session or a Claude Code transcript (.jsonl), or a GitHub Copilot session folder",
   },
   "nav.history": { de: "Verlauf", en: "History" },
   "nav.back": { de: "zurück (⌘←)", en: "back (⌘←)" },
@@ -416,8 +416,8 @@ export const dict: Record<string, { de: string; en: string }> = {
   // import dialog
   "imp.title": { de: "Session-Datei laden", en: "Load a session file" },
   "imp.hint": {
-    de: "Rohes spectroscope-JSONL wird wortwörtlich abgespielt. Ein Claude-Code-Transkript ({path}) wird adaptiert, seine Subagenten-Sidechains werden Kind-Agenten. Für eine GitHub-Copilot-Session wähle ihren Session-Ordner: Name, Arbeitsordner und Dateischnappschüsse kommen dann mit.",
-    en: "Raw spectroscope JSONL replays verbatim. A Claude Code transcript ({path}) is adapted, and its subagent sidechains become child agents. For a GitHub Copilot session, pick its session folder: its name, its workspace and its file snapshots then load with it.",
+    de: "Rohes spectroscope-JSONL wird wortwörtlich abgespielt. Ein Claude-Code-Transkript ({path}) wird adaptiert, seine Subagenten-Sidechains werden Kind-Agenten. Für eine GitHub-Copilot-Session wähle ihren Session-Ordner, um auch Namen, Arbeitsordner und Dateischnappschüsse zu laden.",
+    en: "Raw spectroscope JSONL replays verbatim. A Claude Code transcript ({path}) is adapted, and its subagent sidechains become child agents. For a GitHub Copilot session, pick its session folder to load its name, its workspace and its file snapshots as well.",
   },
   "imp.placeholder": { de: ".jsonl-Inhalt hier einfügen …", en: "Paste .jsonl content here …" },
   "imp.store": {
