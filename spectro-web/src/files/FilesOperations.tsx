@@ -1,0 +1,282 @@
+// Card 604: the operations of the files tab. The view `operations` draws every
+// call the agent chips leave on as a table row: when it ran (its time from the
+// start, or its number when the session has no clock), the prompt it belongs
+// to, its agent when there is more than one, what it did, its call line, the
+// files it touched with their sources, and its tool. The view `all` draws the
+// same rows as a compact list beside the detail, narrowed to the selected
+// file. A press selects the call; rows after the tab's cursor are dimmed. A
+// failed call names no file.
+
+import type { CSSProperties, JSX } from "react";
+import { agentAccent } from "../format";
+import { t, type Lang } from "../i18n/i18n";
+import { shortenPath } from "../lab/fileTree";
+import { whenLabel } from "./cursor";
+import { shownPath, sourceTags } from "./FilesExplorer";
+import { KIND_CLASS } from "./FilesTimeline";
+import type { FileCall, FileLedger, FileRow, FileTouch, PromptMark } from "./fold";
+import { clip } from "./label";
+import type { FilesSelection } from "./FilesView";
+import type { TouchKind } from "./shell";
+
+export interface FilesOperationsProps {
+  lang: Lang;
+  ledger: FileLedger;
+  /** The calls after the agent chips, in event order. */
+  calls: readonly FileCall[];
+  /** Each call's 1-based number in the ledger, by its event index. */
+  ordinals: ReadonlyMap<number, number>;
+  /** The cursor's last event index; a row after it is dimmed. */
+  limit: number;
+  selection: FilesSelection;
+  /** True when more than one agent made file calls: rows then name their agent. */
+  agents: boolean;
+  onPick: (callIndex: number) => void;
+}
+
+/** The compact list also names the selected file, and can let it go. */
+export interface FilesOpListProps extends FilesOperationsProps {
+  rows: readonly FileRow[];
+  /** Clears the selected file, so the list shows every call again. */
+  onShowAll: () => void;
+}
+
+/**
+ * The number of the prompt a call belongs to: the last prompt before the call,
+ * or null for a call before any prompt.
+ */
+export function promptOf(prompts: readonly PromptMark[], callIndex: number): number | null {
+  let lo = 0;
+  let hi = prompts.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (prompts[mid].eventIndex < callIndex) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo === 0 ? null : prompts[lo - 1].n;
+}
+
+export function FilesOperations(props: FilesOperationsProps): JSX.Element {
+  const { lang, ledger, agents } = props;
+  return (
+    <div className="files-panel files-ops">
+      <div className="files-panel__head">
+        {t(lang, "filesTab.ops.title")}
+        <span className="files-panel__meta">
+          {t(lang, ledger.timed ? "filesTab.ops.fromStart" : "filesTab.ops.calls")}
+        </span>
+      </div>
+      <div className="files-ops__wrap">
+        <table className="files-ops__table">
+          <colgroup>
+            <col className="files-ops__col--when" />
+            <col className="files-ops__col--prompt" />
+            {agents && <col className="files-ops__col--agent" />}
+            <col className="files-ops__col--op" />
+            <col className="files-ops__col--call" />
+            <col className="files-ops__col--files" />
+            <col className="files-ops__col--tool files-hide-narrow" />
+          </colgroup>
+          <thead>
+            <tr>
+              <th>{t(lang, ledger.timed ? "filesTab.ops.col.time" : "filesTab.ops.col.number")}</th>
+              <th>{t(lang, "filesTab.ops.col.prompt")}</th>
+              {agents && <th>{t(lang, "filesTab.ops.col.agent")}</th>}
+              <th>{t(lang, "filesTab.ops.col.operation")}</th>
+              <th>{t(lang, "filesTab.ops.col.call")}</th>
+              <th>{t(lang, "filesTab.ops.col.files")}</th>
+              <th className="files-hide-narrow">{t(lang, "filesTab.ops.col.tool")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {props.calls.map((call) => (
+              <tr
+                key={call.callIndex}
+                className={rowClass("files-ops__row", props, call)}
+                data-op={call.callIndex}
+                onClick={() => props.onPick(call.callIndex)}
+              >
+                <td className="files-ops__t">{when(props, call)}</td>
+                <td className="files-ops__p">{promptOf(ledger.prompts, call.callIndex) ?? ""}</td>
+                {agents && <td className="files-ops__agent">{agentTag(call.agentId)}</td>}
+                <td className="files-ops__op">{operation(lang, call)}</td>
+                <td className="files-ops__line" title={callLine(call)}>
+                  {clip(callLine(call), LINE_MAX)}
+                </td>
+                <td className="files-ops__files">{files(lang, call)}</td>
+                <td className="files-ops__tool files-hide-narrow">{call.tool}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+export function FilesOpList(props: FilesOpListProps): JSX.Element {
+  const { lang, ledger, selection } = props;
+  const path = selection.path;
+  const calls =
+    path === null
+      ? props.calls
+      : props.calls.filter((call) => call.touches.some((touch) => touch.path === path));
+  const row = path === null ? undefined : props.rows.find((one) => one.path === path);
+  const label =
+    path === null
+      ? t(lang, "filesTab.ops.allFiles")
+      : row !== undefined
+        ? shownPath(
+            row.label,
+            row.touches.some((touch) => touch.folder),
+          )
+        : shortenPath(path, ledger.workspace);
+  return (
+    <div className="files-panel files-oplist">
+      <div className="files-panel__head">
+        {t(lang, "filesTab.ops.title")}
+        <span className="files-panel__meta">{`${label} · ${calls.length}`}</span>
+        {path !== null && (
+          <button
+            type="button"
+            className="files-link files-panel__link"
+            data-action="all-calls"
+            onClick={props.onShowAll}
+          >
+            {t(lang, "filesTab.ops.allCalls")}
+          </button>
+        )}
+      </div>
+      <div className="files-panel__body">
+        {calls.length === 0 ? (
+          <p className="files-placeholder">{t(lang, "filesTab.ops.none")}</p>
+        ) : (
+          calls.map((call) => (
+            <button
+              key={call.callIndex}
+              type="button"
+              className={rowClass("files-op", props, call)}
+              data-op={call.callIndex}
+              onClick={() => props.onPick(call.callIndex)}
+            >
+              <span className="files-op__t">{when(props, call)}</span>
+              <span className="files-op__what">
+                {operation(lang, call)}
+                {props.agents && agentTag(call.agentId)}
+              </span>
+              <span className="files-op__line" title={callLine(call)}>
+                {clip(callLine(call), LINE_MAX)}
+              </span>
+            </button>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+// The cells both forms share.
+
+function rowClass(base: string, props: FilesOperationsProps, call: FileCall): string {
+  const classes = [base];
+  if (props.selection.call === call.callIndex) classes.push(`${base}--sel`);
+  if (call.callIndex > props.limit) classes.push(`${base}--after`);
+  if (call.status === "failed") classes.push(`${base}--failed`);
+  return classes.join(" ");
+}
+
+function when(props: FilesOperationsProps, call: FileCall): string {
+  return whenLabel(props.lang, props.ledger.timed ? call.t : null, props.ordinals.get(call.callIndex) ?? 0);
+}
+
+/** What a call did: its touch kinds in the order they first appear, or why it touched nothing. */
+function operation(lang: Lang, call: FileCall): JSX.Element[] {
+  if (call.status === "failed") {
+    return [
+      <span key="failed" className="files-kind files-kind--failed">
+        {t(lang, "filesTab.ops.failed")}
+      </span>,
+    ];
+  }
+  if (call.touches.length === 0) {
+    const key =
+      call.note === "no change"
+        ? "filesTab.ops.noChange"
+        : call.note === "no file named"
+          ? "filesTab.ops.noFileNamed"
+          : null;
+    return key === null
+      ? []
+      : [
+          <span key="note" className="files-kind files-kind--none">
+            {t(lang, key)}
+          </span>,
+        ];
+  }
+  const kinds: TouchKind[] = [];
+  for (const touch of call.touches) if (!kinds.includes(touch.kind)) kinds.push(touch.kind);
+  return kinds.map((kind) => (
+    <span key={kind} className={`files-kind files-kind--${KIND_CLASS[kind]}`}>
+      {t(lang, `filesTab.kind.${kind}`)}
+    </span>
+  ));
+}
+
+function agentTag(agentId: string): JSX.Element {
+  return (
+    <span className="files-agent" style={{ "--files-agent": agentAccent(agentId) } as CSSProperties}>
+      <span className="files-agent__dot" aria-hidden="true" />
+      {agentId}
+    </span>
+  );
+}
+
+/** A call line shows at most this many characters in the table and the list; its title holds the rest. */
+export const LINE_MAX = 200;
+
+const callLine = (call: FileCall): string => (call.shell ? `$ ${call.line}` : call.line);
+
+/**
+ * What the table's files cell names: the last segment of the path, a folder's
+ * with its slash, a pattern as the call wrote it. The explorer and the detail
+ * keep the path.
+ */
+export function fileNameOf(touch: FileTouch): string {
+  if (/[*?[\]{}]/.test(touch.path)) return touch.written;
+  const bare = touch.path.replace(/\/+$/, "");
+  const name = bare.slice(bare.lastIndexOf("/") + 1);
+  if (name === "") return touch.path;
+  return touch.folder ? `${name}/` : name;
+}
+
+/**
+ * The name's own mark of its source, so a name never looks recorded when the
+ * column cuts the tag after it: a model's reading wins over the heuristic's
+ * guess, and a recorded name has none.
+ */
+function nameClass(touch: FileTouch): string {
+  if (touch.sources.includes("model")) return "files-mono files-ops__path files-ops__path--model";
+  if (touch.sources.includes("probable")) return "files-mono files-ops__path files-ops__path--probable";
+  return "files-mono files-ops__path";
+}
+
+/**
+ * Each file a call touched, one line each: its name, its sources and what
+ * happened to it; a failed call has none. The name comes first, so a narrow
+ * column cuts the tag before the name, and the name carries its source as
+ * well. The title holds the whole path and the source.
+ */
+function files(lang: Lang, call: FileCall): JSX.Element[] {
+  if (call.status === "failed") return [];
+  return call.touches.map((touch, i) => {
+    const sources = touch.sources.map((source) => t(lang, `filesTab.source.${source}`)).join(" · ");
+    return (
+      <span key={i} className="files-ops__fx">
+        <span className={nameClass(touch)} title={`${shownPath(touch.path, touch.folder)} · ${sources}`}>
+          {fileNameOf(touch)}
+        </span>{" "}
+        {sourceTags(lang, touch.sources)} {t(lang, `filesTab.kind.${touch.kind}`)}
+      </span>
+    );
+  });
+}

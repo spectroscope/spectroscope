@@ -76,6 +76,19 @@ describe("labScene", () => {
     expect(s.activeFile).toBe("notes.md");
   });
 
+  // Card 604: edit_file changes a file, so it lights the disk as a write. It
+  // used to fall through to "unknown tool" and leave the packet at the agent.
+  it("aNativeEditLightsTheDiskAsAWrite", () => {
+    const s = play([
+      runStart("anthropic"),
+      toolCall("edit_file", { path: "src/main/notes.md", old_string: "a", new_string: "b" }),
+    ]);
+    expect(s.focus).toBe("disk");
+    expect(s.disk).toBe("write");
+    expect(s.activeTool).toBe("edit_file");
+    expect(s.activeFile).toBe("notes.md");
+  });
+
   it("read_file reads; list_dir reads and shows the directory's last segment", () => {
     const rd = play([runStart("anthropic"), toolCall("read_file", { path: "/Users/me/project/README.md" })]);
     expect(rd.disk).toBe("read");

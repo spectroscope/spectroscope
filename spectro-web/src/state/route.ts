@@ -14,7 +14,8 @@
 // real falls to the live default — landing wrong is worse than landing home.
 
 /**
- * The six view tabs a hash may name. The literals ARE the URL segments.
+ * The view tabs a hash may name, in the order the tab row draws them. The
+ * literals ARE the URL segments.
  *
  * `browser` was the seventh from card 218 until 2026-08-30, when the owner took
  * it back out — "hier oben den browser wegnehmen, der ist eh nicht lebensfähig".
@@ -30,7 +31,7 @@
  * know. That is a deliberate loss: the browser had exactly one address and it
  * was this tab, and no other surface in the app has one.
  */
-export const VIEW_TABS = ["chat", "spectrum", "graph", "trace", "text", "lab"] as const;
+export const VIEW_TABS = ["chat", "spectrum", "graph", "trace", "files", "text", "lab"] as const;
 export type ViewTab = (typeof VIEW_TABS)[number];
 
 /** The settings sections a hash may name. */

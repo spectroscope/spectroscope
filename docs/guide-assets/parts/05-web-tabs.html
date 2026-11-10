@@ -111,6 +111,61 @@ it, so unknown event types are visible too.</p>
       one is a store URL rather than bytes in the page, so it renders and does not open.</li>
 </ul>
 
+<h2 id="ch-tabs-files-tab">The Files tab</h2>
+
+<p>The <strong>files</strong> tab shows what a run did to files: which file was read, created
+or changed, by which agent, and when. A call's time counts from the start of the run and shows
+its seconds: <code>+7.4 s</code> under a minute, then <code>+12:05</code>, <code>+1:25:32</code>
+or <code>+3 d 04:12:05</code>. On the timeline a pause of more than two minutes shrinks to a
+short break mark, and pointing at the mark shows how long the pause was. For a recording
+without timestamps the tab counts calls instead. It reads only what the session recorded. The
+server records nothing extra for it, and nothing scans the working folder, so an imported
+session shows the files that its own calls named. A timeline draws one row per file and one row
+for shell commands. The tab has its own cursor, which you can drag or play, and the left and
+right arrow keys step through the calls. Moving it leaves chat, trace and lab where they are.
+When a session has more than one agent, a chip per agent filters the tab. Light mode leaves the
+tab out.</p>
+
+<!--SHOT:72-files-tab|The files tab on a run in the demo workspace. Each file has a row on the timeline, and the dashed lines numbered 1 to 4 mark the prompts. The explorer shows letters and source tags. The middle column lists the calls on src/spectra/lines.py, and the detail shows its edit_file call as a unified diff.-->
+
+<p>A switch at the top picks one of four views. The <em>all</em> view shows the explorer, the
+calls of the selected file and the detail of one call. The <em>diff</em> view keeps the explorer
+and gives the detail more room. For an <code>edit_file</code> call, the detail shows the text the
+tool replaced and what it put in its place, either <em>unified</em> or as
+<em>before | after</em>. Written content shows as added lines, and <em>open in trace</em> opens
+the trace at that call. The <em>created</em> view has one card per file the run created, with its
+content when the session holds it. The <em>operations</em> view is a table of every call with its
+time, prompt, operation, files and tool. In the explorer each file carries a letter:
+<code>A</code> created, <code>M</code> changed, <code>D</code> deleted, <code>R</code> read, and
+<code>?</code> when a script may have changed it.</p>
+
+<p>Next to the letter, each entry carries a source tag. An entry tagged <em>recorded</em> comes
+from a file tool that named the file. An entry tagged <em>probable</em> comes from the heuristic,
+which finds files in shell commands. It covers redirects (<code>echo text &gt; notes.txt</code>),
+file commands such as <code>cp</code>, <code>mv</code>, <code>rm</code> and <code>sed -i</code>,
+and commands that only read. An entry tagged <em>model</em> comes from a model's reading. The
+heuristic is the default. It runs in the browser and reads only the command line. When a command
+runs a script, such as <code>python3 run_checks.py</code>, the tab says that the script may have
+changed the files its arguments name. A link then opens the script in the
+<a href="#ch-tabs-files">Files panel</a>, if the session's folder is available. The tab draws
+probable and model entries differently from recorded ones: their letters are dashed, and their
+timeline marks are dashed or ringed.</p>
+
+<p>For a second reading of the shell commands, switch to <em>heuristic + model</em>. You pick the
+provider and the model for this reading. The picker starts empty, so nothing runs on the chat's
+model by accident, and later it offers the pair you used last. Local providers such as Ollama and
+LM Studio are on the list, so sensitive output can stay on this machine. The built-in model is not
+offered. Pressing <em>analyze with model</em> opens a sheet before anything is sent. It names the
+provider, the model and the address, says whether the text leaves this machine, and shows how many
+characters go out. You can open the exact text from the sheet. It starts with the workspace folder
+and then has one line per file call. A shell command also sends its output, cut to 2,000
+characters. The whole text holds 60,000 characters at most and leaves out what
+<code>write_file</code> and <code>edit_file</code> wrote. The tab sends nothing until you press
+send. The model's entries count for shell commands only. Where the model names a file that the
+heuristic found on the same call, the entry carries the <em>probable</em> tag and the
+<em>model</em> tag. The status line names the model whose reading is shown, and the reading is not
+saved with the session.</p>
+
 <h2 id="ch-tabs-text">The Text tab</h2>
 
 <p>Another lens on the same stream — where the trace shows frames, this shows the

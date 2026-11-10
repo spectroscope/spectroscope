@@ -5,7 +5,7 @@
 // state as it was.
 
 import type { RunEvent } from "../events";
-import { CC_DISK_WRITE, ROOT_AGENT, SHELL_TOOLS } from "../lab/labScene";
+import { CC_DISK_WRITE, NATIVE_DISK_WRITE, ROOT_AGENT, SHELL_TOOLS } from "../lab/labScene";
 
 type RunStepLine = Extract<RunEvent, { type: "run_step" }>;
 
@@ -94,8 +94,6 @@ export type RunOutcome = "running" | "done" | "stopped" | "failed";
 
 /** How much of the streamed text an entry keeps to find its live line. */
 const LIVE_TEXT_MAX = 2_000;
-/** The native file tools that write; the imported ones are the Lab's CC_DISK_WRITE. */
-const NATIVE_FILE_WRITES: ReadonlySet<string> = new Set(["write_file", "edit_file"]);
 
 const isOpen = (entry: RunEntry): boolean => entry.status === "running" || entry.status === "waiting";
 
@@ -300,7 +298,7 @@ function joinEvent(run: RunTrack, event: RunEvent): RunTrack {
         );
       }
       const path =
-        NATIVE_FILE_WRITES.has(event.name) || CC_DISK_WRITE.has(event.name) ? pathOf(event.input) : null;
+        NATIVE_DISK_WRITE.has(event.name) || CC_DISK_WRITE.has(event.name) ? pathOf(event.input) : null;
       if (path === null) return run;
       return patchOpen(run, (entry) =>
         entry.agents.includes(event.agentId) && entry.fileCalls[event.callId] !== path

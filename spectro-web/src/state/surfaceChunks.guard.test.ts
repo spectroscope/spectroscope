@@ -1,6 +1,6 @@
 // Card 430, criterion 9: spectrum, trace, graph, text, lab, the fleet surfaces
 // and the state graph view load from their own chunks, and the entry chunk
-// imports none of them statically.
+// imports none of them statically. Card 604 adds the files tab.
 //
 // The guard builds the app with the project's own vite.config.ts, in memory
 // (nothing is written, least of all the tracked bundle), reads the build
@@ -86,6 +86,7 @@ describe("the surfaces light closes load from their own chunks (criterion 9)", (
   it("reads its module list off the surface table, which names every one the card lists", () => {
     const ids = new Set(CHUNKED.map((c) => c.id));
     expect([...ids].sort()).toEqual([
+      "files",
       "fleets",
       "graph",
       "lab",

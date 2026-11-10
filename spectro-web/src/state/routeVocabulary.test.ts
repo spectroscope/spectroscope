@@ -71,7 +71,7 @@ describe("parsing a live tab", () => {
     );
   });
 
-  it("reads each of the six tab literals", () => {
+  it("reads each tab literal", () => {
     for (const tab of VIEW_TABS) {
       expect(parseAppRoute(`#/${tab}`)).toEqual({ kind: "live", tab });
     }

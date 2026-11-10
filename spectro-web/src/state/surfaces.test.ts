@@ -37,6 +37,7 @@ describe("the surface table (criterion 2)", () => {
       graph: ["open", "gone", "open"],
       text: ["open", "gone", "open"],
       lab: ["open", "gone", "open"],
+      files: ["open", "gone", "open"],
       newChat: ["open", "open", "open"],
       scenarios: ["open", "open", "open"],
       starters: ["open", "open", "open"],
@@ -100,7 +101,16 @@ describe("the surface table (criterion 2)", () => {
 
   it("closes a surface marked gone in light, whatever the tutorial says", () => {
     for (const tutorial of [false, true]) {
-      for (const id of ["spectrum", "trace", "graph", "text", "lab", "fleets", "stategraph"] as const) {
+      for (const id of [
+        "spectrum",
+        "trace",
+        "graph",
+        "files",
+        "text",
+        "lab",
+        "fleets",
+        "stategraph",
+      ] as const) {
         expect(isOpen(id, "light", tutorial), `${id} ${tutorial}`).toBe(false);
         expect(isOpen(id, "learn", tutorial), `${id} ${tutorial}`).toBe(true);
       }
@@ -117,13 +127,13 @@ describe("the surface table (criterion 2)", () => {
 });
 
 describe("the tab row", () => {
-  it("shows the six tabs in learn, in route order", () => {
+  it("shows every tab in learn, in route order", () => {
     expect(tabsShown("learn", false)).toEqual([...VIEW_TABS]);
     expect(tabsShown("learn", true)).toEqual([...VIEW_TABS]);
   });
 
   // Card 513: developer hides and returns the row exactly like light.
-  it("is gone in developer with the tutorial off, and holds the six tabs with it on", () => {
+  it("is gone in developer with the tutorial off, and holds every tab with it on", () => {
     expect(tabsShown("developer", false)).toEqual([]);
     expect(tabsShown("developer", true)).toEqual([...VIEW_TABS]);
   });

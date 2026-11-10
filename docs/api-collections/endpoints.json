@@ -5,7 +5,7 @@
     "collectionName": "spectroscope REST API",
     "measuredOn": "2026-08-04",
     "measuredAgainst": "the spectro-server built from this tree, on 127.0.0.1:8236, fresh throwaway home (card 74: one filter fences every /api path, /api/health excepted)",
-    "endpointCount": 89,
+    "endpointCount": 91,
     "wsEndpoints": [
       "/ws",
       "/ws/shell"
@@ -1724,6 +1724,52 @@
         "lang": "en"
       },
       "bodyNote": "AnalyzeBody(String digest, String lang) — digest required, max 60000 chars; lang en | de."
+    },
+    {
+      "id": "files-analyze-engine",
+      "method": "GET",
+      "path": "/api/files/analyze/engine",
+      "area": "analyze",
+      "name": "file-analysis pre-flight",
+      "description": "Whether the provider and model the person picked can run the files tab's model reading: {available:true,provider,model,address} or {available:false,reason,detail,provider?,model?} with reason missing-pair | builtin-model | needs-key. The consent sheet asks this before it offers its send button, so the button never fails after consent (card 604).",
+      "fence": "host+origin",
+      "writes": false,
+      "pathVars": [],
+      "query": [
+        {
+          "name": "provider",
+          "required": false,
+          "example": "ollama",
+          "note": "the provider picked for this analysis, never the chat's default; without it the answer is reason missing-pair"
+        },
+        {
+          "name": "model",
+          "required": false,
+          "example": "qwen2.5:7b",
+          "note": "the model picked for this analysis; without it the answer is reason missing-pair"
+        }
+      ],
+      "body": null
+    },
+    {
+      "id": "files-analyze-run",
+      "method": "POST",
+      "path": "/api/files/analyze",
+      "area": "analyze",
+      "name": "analyze a session's file calls (NDJSON stream)",
+      "description": "Opt-in one-shot LLM reading of the files tab's digest (one line per file call), on the provider and model named in the body, local providers included and the built-in model refused. Streamed as NDJSON ({meta:{provider,model,address}}, {delta}..., {done}|{error}). Reasoning is off; an empty answer is an error with a fixed sentence, not a done. The digest is never logged. 400 blank digest, missing pair or built-in model; 413 oversize; 503 pair cannot be built (card 604).",
+      "fence": "host+origin+json",
+      "writes": false,
+      "caution": "Spends the key of the picked provider on every call, unless that provider is local.",
+      "pathVars": [],
+      "query": [],
+      "body": {
+        "digest": "workspace: /tmp/demo\n#1 0.5s main run_command: echo hi > notes.txt",
+        "provider": "ollama",
+        "model": "qwen2.5:7b",
+        "lang": "en"
+      },
+      "bodyNote": "FilesAnalyzeBody(String digest, String provider, String model, String lang): digest required, max 60000 chars; provider and model required; lang en | de."
     },
     {
       "id": "transcribe",

@@ -53,7 +53,7 @@ describe("the ladder this test walks", () => {
         tab,
       ).toBe(true);
     }
-    expect(CLOSED_TABS).toEqual(["spectrum", "graph", "trace", "text", "lab"]);
+    expect(CLOSED_TABS).toEqual(["spectrum", "graph", "trace", "files", "text", "lab"]);
     expect(CLOSED).toEqual(
       expect.arrayContaining(["fleets", "stategraph", "liveTraceSwitch", "fleetSettings"]),
     );

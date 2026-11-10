@@ -4,6 +4,7 @@ import dev.spectroscope.core.events.RunEvent;
 import dev.spectroscope.core.session.SessionStore;
 import dev.spectroscope.server.llm.AnalyzeController;
 import dev.spectroscope.server.llm.ExplainController;
+import dev.spectroscope.server.llm.FilesAnalyzeController;
 import dev.spectroscope.server.llm.TranscribeController;
 import dev.spectroscope.server.localmodel.ModelCapabilityController;
 import dev.spectroscope.server.session.SessionsController;
@@ -310,5 +311,24 @@ class ApiLocalFenceTest {
                         .contentType("application/json")
                         .content(new byte[AnalyzeController.MAX_BODY_BYTES + 1]))
                 .andExpect(status().isPayloadTooLarge());
+    }
+
+    @Test
+    void capsTheFilesAnalyzeBody() throws Exception {
+        // Card 604's file analysis carries the same kind of client-built
+        // digest, so it gets the same refusal on the declared length.
+        MockMvc files = MockMvcBuilders.standaloneSetup(new FilesAnalyzeController())
+                .addFilters(new ApiLocalFence())
+                .build();
+        files.perform(post("http://127.0.0.1/api/files/analyze")
+                        .contentType("application/json")
+                        .content(new byte[FilesAnalyzeController.MAX_BODY_BYTES + 1]))
+                .andExpect(status().isPayloadTooLarge());
+        // At the cap the request travels on, and the handler refuses the
+        // zero bytes as JSON. So the 413 above is the cap, not a missing route.
+        files.perform(post("http://127.0.0.1/api/files/analyze")
+                        .contentType("application/json")
+                        .content(new byte[FilesAnalyzeController.MAX_BODY_BYTES]))
+                .andExpect(status().isBadRequest());
     }
 }

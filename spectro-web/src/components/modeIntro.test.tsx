@@ -9,6 +9,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it } from "vitest";
 import { ModeIntro, PICTURE_SKIPS } from "./ModeIntro";
+import { VIEW_TABS } from "../state/route";
 import { SURFACES, isOpen, type SurfaceId } from "../state/surfaces";
 import { VIEW_MODES } from "../state/viewMode";
 import { dict } from "../i18n/i18n";
@@ -94,6 +95,28 @@ describe("the mode screen", () => {
     // The settings page's fleet block and a row in the chat's menu have no
     // place in a picture of the window. Everything else in the table is drawn.
     expect([...PICTURE_SKIPS].sort()).toEqual(["fleetSettings", "liveTraceSwitch"]);
+  });
+
+  it("keeps every tab cell inside the tab row, apart from each other and clear of the level pill", () => {
+    // Card 604 added a tab, and a fixed pitch put the last cell under the pill.
+    const boxes = new Map(
+      [
+        ...choiceMarkup(markup(), "learn").matchAll(
+          /data-surface="([^"]+)" data-present="[^"]+" x="([\d.]+)" y="[\d.]+" width="([\d.]+)"/g,
+        ),
+      ].map((m) => [m[1], { x: Number(m[2]), end: Number(m[2]) + Number(m[3]) }]),
+    );
+    const row = boxes.get("tabRow")!;
+    const pill = boxes.get("leveling")!;
+    const tabs = VIEW_TABS.filter((tab) => tab !== "chat")
+      .map((tab) => ({ tab, ...boxes.get(tab)! }))
+      .sort((a, b) => a.x - b.x);
+    expect(tabs.map((c) => c.tab)).toContain("files");
+    for (const [i, cell] of tabs.entries()) {
+      expect(cell.x, cell.tab).toBeGreaterThanOrEqual(row.x);
+      expect(cell.end, cell.tab).toBeLessThanOrEqual(pill.x);
+      if (i > 0) expect(cell.x, cell.tab).toBeGreaterThan(tabs[i - 1].end);
+    }
   });
 
   it("colours the picture with design tokens only", () => {

@@ -181,6 +181,7 @@ import {
   FleetHome,
   FleetLab,
   FleetLobby,
+  FilesView,
   FleetSpawnForm,
   GraphView,
   LabView,
@@ -585,6 +586,10 @@ export function App() {
   const [traceAgent, setTraceAgent] = useState<string | null>(null);
   // A Spectrum-band click hands one exact event to the Trace (open + flash it).
   const [focusEvent, setFocusEvent] = useState<RunEvent | null>(null);
+  // Card 604: the event a route opened at, for the files tab. The trace clears
+  // focusEvent when it takes it, and it may do so while hidden, so the files
+  // tab keeps its own copy and clears it once its cursor has taken it.
+  const [filesFocus, setFilesFocus] = useState<RunEvent | null>(null);
   // chat-v2 (PROTOTYPE): which reading the chat is in, and which work item the
   // transcript's chip is pointing at.
   const chatView = useChatView();
@@ -1320,6 +1325,7 @@ export function App() {
         const target = events[atEvent];
         if (target) {
           setFocusEvent(target);
+          setFilesFocus(target);
           landedTab = opts?.tab ?? "trace";
         }
       }
@@ -2095,7 +2101,10 @@ export function App() {
         case "seek": {
           // Same session, new frame: the focus seam, never a refetch.
           const target = replayRef.current?.events[action.eventIndex];
-          if (target) setFocusEvent(target);
+          if (target) {
+            setFocusEvent(target);
+            setFilesFocus(target);
+          }
           break;
         }
         case "set-tab":
@@ -2358,6 +2367,19 @@ export function App() {
     openRightPanel();
     openDockPanel("files");
   };
+  // Card 604: the files tab opens a script in the Files panel. The panel sits
+  // beside the chat, so the press brings the chat back, and turns wide off as
+  // a run card's press does. Without a session folder there is nothing to open.
+  const onOpenFilesPath =
+    filesWorkspace === null
+      ? null
+      : (path: string): void => {
+          setRunWide(false);
+          requestOpenFile(path, undefined, filesWorkspace.sessionId ?? null);
+          openRightPanel();
+          openDockPanel("files");
+          changeTab("chat");
+        };
   // Card 554: the workspace and the playbook the header's chips draw. The
   // composer's playbook commands read the same workspace for its pin.
   const chipWorkspace = headerWorkspace({
@@ -2430,7 +2452,14 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [imageRequest.seq]);
   // A session change closes it — the picture that was open is not in this one.
-  useEffect(() => setLightboxAt(null), [replay?.id, enteredFleet]);
+  // Card 604: the files tab's start event goes the same way, unless it is an
+  // event of the session now shown (a route that opened this session at it).
+  useEffect(() => {
+    setLightboxAt(null);
+    setFilesFocus((focus) =>
+      focus !== null && enteredFleet === null && replayRef.current?.events.includes(focus) ? focus : null,
+    );
+  }, [replay?.id, enteredFleet]);
 
   const labReplay = useMemo(
     () =>
@@ -3483,6 +3512,15 @@ export function App() {
                 storedSessionId={canResume ? replay!.id : null}
               />
             )
+          ) : tab === "files" ? (
+            <FilesView
+              viewKey={viewKey}
+              events={shownEvents}
+              startAt={filesFocus}
+              onStartHandled={() => setFilesFocus(null)}
+              onFocusEvent={focusInTrace}
+              onOpenPath={onOpenFilesPath}
+            />
           ) : null}
         </ChunkBoundary>
         {/* The trace is MOUNTED and hidden rather than unmounted (card 175), so

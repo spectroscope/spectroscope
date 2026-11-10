@@ -62,7 +62,8 @@ function layout(): { id: SurfaceId; place: Place; box: Box }[] {
         box = { x: 152, y: 32, w: 42, h: 80 };
         break;
       case "tab":
-        box = { x: 60 + tab++ * 22, y: 19.5, w: 18, h: 5 };
+        // The cells end before the level pill at x 176 (modeIntro.test.tsx holds it).
+        box = { x: 58 + tab++ * 19, y: 19.5, w: 16, h: 5 };
         break;
       default:
         box = { x: 6, y: 20 + rail++ * 12, w: 40, h: 7 };

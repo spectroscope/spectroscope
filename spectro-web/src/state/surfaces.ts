@@ -57,6 +57,8 @@ export const SURFACES: Record<SurfaceId, SurfaceSpec> = {
   graph: { modes: LEARN_ONLY, chunks: ["graph/GraphView.tsx"] },
   text: { modes: LEARN_ONLY, chunks: ["components/TextView.tsx"] },
   lab: { modes: LEARN_ONLY, chunks: ["lab/LabView.tsx"] },
+  // Card 604: what the run did to files, read from the session's own events.
+  files: { modes: LEARN_ONLY, chunks: ["files/FilesView.tsx"] },
   // The rail's upper rows. The card names skills; new chat, scenarios and
   // starters open a chat, a picker and a picker, so light keeps them.
   newChat: { modes: EVERYWHERE },

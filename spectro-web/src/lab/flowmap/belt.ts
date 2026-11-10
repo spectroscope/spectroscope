@@ -143,8 +143,10 @@ export const CHIP_FOR_KIND: Record<ToolView["kind"], string | null> = {
  * A mapping of STATIONS — three sets, three chips — and deliberately not of
  * tool names: every name comes out of the sets `labScene` exports and folds
  * with, so a name added there is covered here the moment it is added. The
- * native disk verbs are absent because they ARE chip labels and are answered by
- * name; these three sets are the imported vocabulary the fold learnt.
+ * native disk sets are absent because each of their names is either a chip
+ * label, answered by name, or a name the classifier knows (card 604,
+ * `diskVocabulary.drift.test.ts`); these three sets are the imported
+ * vocabulary the fold learnt.
  *
  * What it carries today is exactly one name, and it is why this step exists:
  * the fold routes it to the disk, the classifier has never heard of it, and

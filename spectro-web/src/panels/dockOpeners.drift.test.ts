@@ -226,6 +226,9 @@ describe("the calls that open the dock (card 402)", () => {
         // Card 586: a press on a run's document or file opens it in the Files panel.
         "App.tsx onOpenRunPath openDockPanel",
         "App.tsx onOpenRunPath openRightPanel",
+        // Card 604: the files tab's "open <script>" opens the script in the Files panel.
+        "App.tsx onOpenFilesPath openDockPanel",
+        "App.tsx onOpenFilesPath openRightPanel",
         // Card 586: the Playbook segment's "Runs of this session: open" shows the run wide.
         "playbook/PlaybookPane.tsx onClick openDockPanel",
         "playbook/PlaybookPane.tsx onClick openRightPanel",
