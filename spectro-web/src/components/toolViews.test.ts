@@ -210,6 +210,142 @@ describe("VS Code agent-mode tool names", () => {
   });
 });
 
+describe("GitHub Copilot CLI tool names (card 605)", () => {
+  // The dotted session format of the Copilot CLI (import/vscodeAgent.ts) keeps
+  // the CLI's own names and argument keys: `view`, `create`, `edit`, `bash`.
+  const P = "/w/src/a/test/T.cpp";
+
+  it("reads view as a file read of its path", () => {
+    const v = describeTool("view", { path: P }, "", false);
+    expect(v.kind).toBe("file");
+    if (v.kind !== "file") throw new Error("kind");
+    expect(v.path).toBe(P);
+    expect(v.range).toBeNull();
+  });
+
+  it("names a view_range in the range style of every other read", () => {
+    const v = describeTool("view", { path: P, view_range: [320, 500] }, "", false);
+    const read = describeTool("Read", { file_path: P, offset: 320, limit: 181 }, "", false);
+    if (v.kind !== "file" || read.kind !== "file") throw new Error("kind");
+    expect(v.range).toMatch(/^lines 320\D500$/);
+    expect(v.range).toBe(read.range);
+  });
+
+  it("reads a view_range that runs to the end of the file, and the flat spelling of a range", () => {
+    const open = describeTool("view", { path: P, view_range: [320, -1] }, "", false);
+    if (open.kind !== "file") throw new Error("kind");
+    expect(open.range).toBe("from line 320");
+    const flat = describeTool("view", { path: P, "view_range[0]": 10, "view_range[1]": 20 }, "", false);
+    if (flat.kind !== "file") throw new Error("kind");
+    expect(flat.range).toMatch(/^lines 10\D20$/);
+  });
+
+  it("names no page for a view_range it cannot read", () => {
+    for (const range of [[500, 320], [0, 10], ["1", "2"], [1]]) {
+      const v = describeTool("view", { path: P, view_range: range }, "", false);
+      if (v.kind !== "file") throw new Error("kind");
+      expect(v.range, JSON.stringify(range)).toBeNull();
+    }
+  });
+
+  it("keeps a view without its path generic, and reads no other spelling of the path", () => {
+    expect(describeTool("view", { view_range: [1, 2] }, "", false).kind).toBe("generic");
+    expect(describeTool("view", { file_path: P }, "", false).kind).toBe("generic");
+    expect(describeTool("view", { filePath: P }, "", false).kind).toBe("generic");
+  });
+
+  it("reads create as a write of file_text", () => {
+    const v = describeTool(
+      "create",
+      { path: "/w/src/new.ts", file_text: "export const n = 1;\n" },
+      "",
+      false,
+    );
+    expect(v.kind).toBe("write");
+    if (v.kind !== "write") throw new Error("kind");
+    expect(v.path).toBe("/w/src/new.ts");
+    expect(v.content).toBe("export const n = 1;\n");
+    expect(v.changed).toBeNull();
+  });
+
+  it("keeps a create without file_text generic, and does not take content for it", () => {
+    expect(describeTool("create", { path: "/w/a.ts" }, "", false).kind).toBe("generic");
+    expect(describeTool("create", { path: "/w/a.ts", content: "x" }, "", false).kind).toBe("generic");
+    expect(describeTool("create", { file_text: "x" }, "", false).kind).toBe("generic");
+  });
+
+  it("reads edit as an edit of old_str into new_str", () => {
+    const v = describeTool("edit", { path: "/w/a.ts", old_str: "one", new_str: "two" }, "", false);
+    expect(v.kind).toBe("edit");
+    if (v.kind !== "edit") throw new Error("kind");
+    expect([v.path, v.before, v.after]).toEqual(["/w/a.ts", "one", "two"]);
+  });
+
+  it("keeps an edit without one of its three fields generic", () => {
+    expect(describeTool("edit", { path: "/w/a.ts", old_str: "one" }, "", false).kind).toBe("generic");
+    expect(describeTool("edit", { path: "/w/a.ts", new_str: "two" }, "", false).kind).toBe("generic");
+    expect(describeTool("edit", { old_str: "one", new_str: "two" }, "", false).kind).toBe("generic");
+    expect(
+      describeTool("edit", { path: "/w/a.ts", old_string: "one", new_string: "two" }, "", false).kind,
+    ).toBe("generic");
+  });
+
+  it("reads bash and powershell as commands", () => {
+    for (const name of ["bash", "powershell"]) {
+      const v = describeTool(name, { command: "ls src", description: "look", initial_wait: 30 }, "", false);
+      expect(v.kind, name).toBe("command");
+      if (v.kind === "command") expect(v.command).toBe("ls src");
+      expect(describeTool(name, { description: "no command" }, "", false).kind, name).toBe("generic");
+    }
+  });
+
+  it("keeps the shell session verbs generic: they name a session, not a file or a command", () => {
+    const input = { shellId: "s1", command: "ls", input: "y" };
+    for (const shell of ["bash", "powershell"]) {
+      // The positive twin: the same input under the shell's own name is a command.
+      expect(describeTool(shell, input, "", false).kind, shell).toBe("command");
+      for (const verb of ["write", "read", "stop", "list"]) {
+        const name = `${verb}_${shell}`;
+        expect(describeTool(name, input, "", false).kind, name).toBe("generic");
+      }
+    }
+  });
+
+  it("matches the names exactly, case included", () => {
+    expect(describeTool("View", { path: P }, "", false).kind).toBe("generic");
+    expect(describeTool("Create", { path: P, file_text: "x" }, "", false).kind).toBe("generic");
+    expect(describeTool("BASH", { command: "ls" }, "", false).kind).toBe("generic");
+  });
+
+  it("reads glob with its pattern and its path", () => {
+    const v = describeTool("glob", { pattern: "**/*Mock*", path: "/w/src" }, "", false);
+    if (v.kind !== "matches") throw new Error("kind");
+    expect([v.pattern, v.path]).toEqual(["**/*Mock*", "/w/src"]);
+  });
+
+  it("reads a grep's glob as the files it searched, under its path when it has one", () => {
+    const both = describeTool("grep", { pattern: "TODO", path: "/w/src", glob: "*.ts" }, "", false);
+    if (both.kind !== "matches") throw new Error("kind");
+    expect([both.pattern, both.path]).toEqual(["TODO", "/w/src/*.ts"]);
+    const alone = describeTool("grep", { pattern: "TODO", glob: "**/*.ts" }, "", false);
+    if (alone.kind !== "matches") throw new Error("kind");
+    expect(alone.path).toBe("**/*.ts");
+    // The twin: a grep without a glob keeps its path as it was.
+    const plain = describeTool("grep", { pattern: "TODO", path: "/w/src" }, "", false);
+    if (plain.kind !== "matches") throw new Error("kind");
+    expect(plain.path).toBe("/w/src");
+  });
+
+  it("reads the CLI's paths field when it names one place, and stays generic when it names more", () => {
+    for (const paths of ["/w/src", ["/w/src"]]) {
+      const v = describeTool("glob", { pattern: "*.ts", paths }, "", false);
+      if (v.kind !== "matches") throw new Error("kind");
+      expect(v.path, JSON.stringify(paths)).toBe("/w/src");
+    }
+    expect(describeTool("grep", { pattern: "x", paths: ["/w/a", "/w/b"] }, "", false).kind).toBe("generic");
+  });
+});
+
 describe("Claude Code tool names", () => {
   // A transcript is 402 Bash calls and 66 Edits; without these every one of
   // them renders as pretty-printed JSON next to a VS Code export that renders

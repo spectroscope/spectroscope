@@ -1460,6 +1460,40 @@ function patchAt(hunks: readonly PatchHunk[]): string | null {
   return `lines ${spans.join(", ")}`;
 }
 
+const isInt = (v: unknown): v is number => typeof v === "number" && Number.isInteger(v);
+
+/**
+ * A Copilot CLI `view_range` as the offset and limit of a read: [320, 500] is
+ * 320 and 181, [320, -1] runs to the end of the file. The CLI also reads the
+ * flat spelling `view_range[0]` and `view_range[1]`. Anything else names no page.
+ */
+function viewRange(input: unknown): [number | null, number | null] {
+  const listed = arr(input, "view_range");
+  const flat = [num(input, "view_range[0]"), num(input, "view_range[1]")];
+  const range = listed ?? flat;
+  if (range.length !== 2) return [null, null];
+  const [first, last] = range;
+  if (!isInt(first) || !isInt(last) || first < 1) return [null, null];
+  if (last === -1) return [first, null];
+  return last >= first ? [first, last - first + 1] : [null, null];
+}
+
+/**
+ * The one place a search names: `path`, VS Code's `includePattern`, or the
+ * Copilot CLI's `paths` as a string or a list of one.
+ *
+ * @return the place, null when the call names none, undefined when it names
+ *         more than one (a matches view holds one place)
+ */
+function searchPlace(input: unknown): string | null | undefined {
+  const one = firstStr(input, "path", "includePattern");
+  if (one !== null) return one;
+  const paths = str(input, "paths") ?? arr(input, "paths");
+  if (paths === null || typeof paths === "string") return paths;
+  if (paths.length === 0) return null;
+  return paths.length === 1 && typeof paths[0] === "string" ? paths[0] : undefined;
+}
+
 export function describeTool(
   name: string,
   input: unknown,
@@ -1489,11 +1523,14 @@ export function describeTool(
   switch (name) {
     case "Read":
     case "read_file":
-    case "view_file": {
-      const path = firstStr(input, "path", "filePath", "file_path");
+    case "view_file":
+    case "view": {
+      // The GitHub Copilot CLI's `view` names its file `path` only, and its
+      // page as `view_range` (card 605).
+      const copilot = name === "view";
+      const path = copilot ? str(input, "path") : firstStr(input, "path", "filePath", "file_path");
       if (path === null) return generic;
-      const offset = num(input, "offset");
-      const limit = num(input, "limit");
+      const [offset, limit] = copilot ? viewRange(input) : [num(input, "offset"), num(input, "limit")];
       const called =
         offset !== null
           ? limit !== null
@@ -1521,6 +1558,24 @@ export function describeTool(
       const content = str(input, "content");
       if (path === null || content === null) return generic;
       return { kind: "write", path, content, result: out, changed };
+    }
+
+    // The Copilot CLI's write: `path` and `file_text`.
+    case "create": {
+      const path = str(input, "path");
+      const content = str(input, "file_text");
+      if (path === null || content === null) return generic;
+      return { kind: "write", path, content, result: out, changed };
+    }
+
+    // The Copilot CLI's edit: `path`, `old_str` and `new_str`. Its schema marks
+    // `new_str` optional; without it the replacement is not in the record.
+    case "edit": {
+      const path = str(input, "path");
+      const before = str(input, "old_str");
+      const after = str(input, "new_str");
+      if (path === null || before === null || after === null) return generic;
+      return { kind: "edit", path, before, after, result: out, at: null, changed };
     }
 
     case "Edit":
@@ -1561,14 +1616,27 @@ export function describeTool(
       // never gave.
       const pattern = firstStr(input, "pattern", "query");
       if (pattern === null) return generic;
-      const path = firstStr(input, "path", "includePattern");
+      const where = searchPlace(input);
+      if (where === undefined) return generic;
+      // A grep narrowed by a file glob searched the files under its path that
+      // match it, so the glob stands as the call wrote it, under that path.
+      const glob = name === "grep" || name === "Grep" ? str(input, "glob") : null;
+      const filter = glob === "" ? null : glob;
+      const path =
+        filter === null
+          ? where
+          : where === null || where === ""
+            ? filter
+            : `${where.replace(/\/+$/, "")}/${filter}`;
       return { kind: "matches", pattern, path, lines: lines(out) };
     }
 
     case "Bash":
     case "run_in_terminal":
     case "run_command":
-    case "Monitor": {
+    case "Monitor":
+    case "bash":
+    case "powershell": {
       // Monitor waits on a shell loop, so its stop condition is inside the
       // command rather than beside it in a field of its own.
       const command = str(input, "command");

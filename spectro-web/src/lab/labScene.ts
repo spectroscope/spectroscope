@@ -107,13 +107,20 @@ export const NATIVE_DISK_WRITE: ReadonlySet<string> = new Set(["write_file", "ed
 // path to it would claim an MCP chain that never ran.
 export const CC_DISK_READ = new Set(["Read", "Glob"]);
 export const CC_DISK_WRITE = new Set(["Write", "Edit", "MultiEdit"]);
-/** The shell verbs, native and imported — the two that reach the cmd station
- *  and leave a command instead of a path. EXPORTED for the same reason the
- *  disk sets are (card 301): the file footprint counts exactly what the map
- *  lights here, and it can only be exactly that if there is one set. Both
- *  names used to be spelled out as literals in `advanceLoop` below AND copied
- *  into fileTree.ts, which is three declarations of one vocabulary. */
-export const SHELL_TOOLS = new Set(["run_command", "Bash"]);
+/** The GitHub Copilot CLI's file verbs (card 605). Each names its file `path`.
+ *  Its `glob` and `grep` are the native names above, its shell verbs are in
+ *  SHELL_TOOLS, and its shell session verbs (`write_bash` and the like) touch
+ *  no station. */
+export const COPILOT_DISK_READ: ReadonlySet<string> = new Set(["view"]);
+export const COPILOT_DISK_WRITE: ReadonlySet<string> = new Set(["create", "edit"]);
+/** The shell verbs, native and imported, that reach the cmd station and leave
+ *  a command instead of a path. EXPORTED for the same reason the disk sets are
+ *  (card 301): the file footprint counts exactly what the map lights here, and
+ *  it can only be exactly that if there is one set. Both native names used to
+ *  be spelled out as literals in `advanceLoop` below AND copied into
+ *  fileTree.ts, which is three declarations of one vocabulary. `bash` and
+ *  `powershell` are the Copilot CLI's (card 605). */
+export const SHELL_TOOLS = new Set(["run_command", "Bash", "bash", "powershell"]);
 /** The input field a shell call carries its command in — the ONE declaration of
  *  it (card 320). The fold below reads the command out of this key, and the
  *  station that draws it has to ask the classifier about the SAME key or the
@@ -234,6 +241,15 @@ export function advanceLoop(loop: Loop, event: RunEvent): Loop {
           ...base,
           focus: "disk",
           disk: NATIVE_DISK_WRITE.has(event.name) ? "write" : "read",
+          activeFile: path !== null ? fileLabel(path) : null,
+        };
+      }
+      if (COPILOT_DISK_READ.has(event.name) || COPILOT_DISK_WRITE.has(event.name)) {
+        const path = inputStr(event.input, "path");
+        return {
+          ...base,
+          focus: "disk",
+          disk: COPILOT_DISK_WRITE.has(event.name) ? "write" : "read",
           activeFile: path !== null ? fileLabel(path) : null,
         };
       }

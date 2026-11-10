@@ -6443,6 +6443,7 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "A erstellt · M geändert · D gelöscht · R gelesen · ? ein Skript hat sie vielleicht geändert. Ein gestrichelter Buchstabe ist eine Vermutung aus einem Shell-Befehl oder von einem Modell. Ein durchgezogener stammt von einem Dateiwerkzeug.",
     en: "A created · M changed · D deleted · R read · ? a script may have changed it. A dashed letter is a guess from a shell command or a model. A solid letter comes from a file tool.",
   },
+  "filesTab.explorer.pattern": { de: "Muster", en: "pattern" },
   "filesTab.source.recorded": { de: "aufgezeichnet", en: "recorded" },
   "filesTab.source.probable": { de: "wahrscheinlich", en: "probable" },
   "filesTab.source.model": { de: "Modell", en: "model" },

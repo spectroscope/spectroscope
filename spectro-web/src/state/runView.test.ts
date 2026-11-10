@@ -334,6 +334,36 @@ describe("the joins of a running entry (card 586)", () => {
     expect(e.shellCalls).toBe(1);
   });
 
+  it("reads the Copilot CLI's create and edit as writes and its bash as shell (card 605)", () => {
+    const runs = fold([
+      start,
+      step("step_start", "brainstorm", { performer: "chat" }),
+      ev({
+        type: "tool_call",
+        agentId: "main",
+        callId: "k1",
+        name: "create",
+        input: { path: "/w/n.md", file_text: "x" },
+      }),
+      ev({ type: "tool_result", agentId: "main", callId: "k1", output: "ok", isError: false }),
+      ev({
+        type: "tool_call",
+        agentId: "main",
+        callId: "k2",
+        name: "edit",
+        input: { path: "/w/e.md", old_str: "a", new_str: "b" },
+      }),
+      ev({ type: "tool_result", agentId: "main", callId: "k2", output: "ok", isError: false }),
+      ev({ type: "tool_call", agentId: "main", callId: "k3", name: "bash", input: { command: "ls" } }),
+    ]);
+    const e = runs[0].entries[0];
+    expect(e.files).toEqual([
+      { path: "/w/n.md", change: "unknown" },
+      { path: "/w/e.md", change: "unknown" },
+    ]);
+    expect(e.shellCalls).toBe(1);
+  });
+
   it("takes the last change word of a file that was not created in the step", () => {
     const runs = fold([
       start,

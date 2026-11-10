@@ -68,7 +68,9 @@ export interface BeltChip {
  *
  * These are FIELD names, not tool names — the thing this card exists to remove
  * is a second vocabulary of tools, and there is none here. One key per shape
- * the table below gives a chip to; the shapes it gives no chip to would answer
+ * the table below gives a chip to, and one more per spelling of it a
+ * vocabulary uses (the Copilot CLI's `file_text`, `old_str` and `new_str`,
+ * card 605); the shapes it gives no chip to would answer
  * `generic` with an unsatisfied probe and `generic` maps to no chip either, so
  * the two answers coincide and nothing hangs on them.
  * `beltCoverage.test.tsx` demands that every chip-bearing shape stay reachable
@@ -78,8 +80,11 @@ export interface BeltChip {
 const NAME_PROBE = {
   path: "p",
   content: "c",
+  file_text: "c",
   old_string: "a",
   new_string: "b",
+  old_str: "a",
+  new_str: "b",
   pattern: "*",
   command: "c",
   name: "n",

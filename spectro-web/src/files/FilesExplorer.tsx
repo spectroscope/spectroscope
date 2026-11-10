@@ -58,9 +58,17 @@ export function sourceTags(lang: Lang, sources: readonly Source[]): JSX.Element[
   ));
 }
 
+/** The glob characters: a folder touch whose path holds one names a pattern. */
+const GLOB = /[*?[\]{}]/;
+
 /** A path as the explorer and the detail name it: a folder ends in a slash, a pattern does not. */
 export function shownPath(label: string, folder: boolean): string {
-  return folder && !label.endsWith("/") && !/[*?[\]{}]/.test(label) ? `${label}/` : label;
+  return folder && !label.endsWith("/") && !GLOB.test(label) ? `${label}/` : label;
+}
+
+/** A row that names a pattern: a folder touch with a glob character in its path (card 605). */
+function isPattern(row: FileRow): boolean {
+  return row.touches.some((touch) => touch.folder) && GLOB.test(row.label);
 }
 
 export interface FilesExplorerProps {
@@ -106,18 +114,20 @@ interface Node {
   children: Map<string, Node>;
 }
 
-function segmentsOf(label: string): string[] {
+/** The tree's segments of a label. A pattern is one segment from its first glob segment on. */
+function segmentsOf(label: string, pattern: boolean): string[] {
   const parts = label.split("/").filter((part) => part !== "");
   if (parts.length === 0) return [label];
   if (label.startsWith("/")) parts[0] = `/${parts[0]}`;
-  return parts;
+  const at = pattern ? parts.findIndex((part) => GLOB.test(part)) : -1;
+  return at < 0 ? parts : [...parts.slice(0, at), parts.slice(at).join("/")];
 }
 
 function tree(rows: readonly FileRow[]): Node {
   const root: Node = { name: "", rows: [], children: new Map() };
   for (const row of rows) {
     let node = root;
-    for (const part of segmentsOf(row.label)) {
+    for (const part of segmentsOf(row.label, isPattern(row))) {
       let next = node.children.get(part);
       if (next === undefined) {
         next = { name: part, rows: [], children: new Map() };
@@ -186,6 +196,9 @@ function rowLine(
       onClick={() => props.onSelect(row)}
     >
       <span className="files-row__name">{shownPath(name, folder)}</span>
+      {isPattern(row) && (
+        <span className="files-row__pattern">{t(props.lang, "filesTab.explorer.pattern")}</span>
+      )}
       {later ? (
         <span className="files-row__right files-row__when">
           {t(props.lang, "filesTab.timeline.at", { when: props.firstSeen(row) })}

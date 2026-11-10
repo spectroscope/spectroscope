@@ -114,6 +114,24 @@ describe("fileFootprint — the imported Claude Code vocabulary", () => {
   });
 });
 
+describe("fileFootprint, the imported GitHub Copilot CLI vocabulary (card 605)", () => {
+  it("folds view as a read and create and edit as writes, and counts bash and powershell", () => {
+    const fp = fileFootprint([
+      call("main", "view", { path: "/w/r.ts", view_range: [1, 9] }, 10),
+      call("main", "create", { path: "/w/c.ts", file_text: "x" }, 20),
+      call("main", "edit", { path: "/w/e.ts", old_str: "a", new_str: "b" }, 30),
+      call("main", "bash", { command: "ls" }, 40),
+      call("main", "powershell", { command: "dir" }, 50),
+    ]);
+    expect(fp.touches.map((t) => t.path)).toEqual(["/w/r.ts", "/w/c.ts", "/w/e.ts"]);
+    expect([fp.touches[0].readers.size, fp.touches[0].writers.size]).toEqual([1, 0]);
+    for (const i of [1, 2]) {
+      expect([fp.touches[i].readers.size, fp.touches[i].writers.size], fp.touches[i].path).toEqual([0, 1]);
+    }
+    expect(fp.shellCalls).toBe(2);
+  });
+});
+
 describe("fileFootprint — the three spellings of the path key", () => {
   it("reads path, file_path and filePath onto the same entry", () => {
     const fp = fileFootprint([

@@ -19,7 +19,17 @@ import { fileURLToPath } from "node:url";
 import { relative } from "node:path";
 import { srcFiles, srcText } from "../testkit/tree";
 import { viewKindOf } from "./flowmap/belt";
-import { CC_DISK_READ, CC_DISK_WRITE, NATIVE_DISK_READ, NATIVE_DISK_WRITE, SHELL_TOOLS } from "./labScene";
+import { describeTool } from "../components/toolViews";
+import {
+  CC_DISK_READ,
+  CC_DISK_WRITE,
+  COPILOT_DISK_READ,
+  COPILOT_DISK_WRITE,
+  NATIVE_DISK_READ,
+  NATIVE_DISK_WRITE,
+  SHELL_COMMAND_KEY,
+  SHELL_TOOLS,
+} from "./labScene";
 
 const READ_KINDS = ["file", "listing", "matches"];
 const WRITE_KINDS = ["write", "edit"];
@@ -32,7 +42,7 @@ const NO_CASE_IN_TOOL_VIEWS = "MultiEdit";
 describe("the lab's disk names read as the same kind in the tool views (card 604)", () => {
   it("everyLabDiskNameReadsAsTheSameKindInToolViews", () => {
     let reads = 0;
-    for (const name of [...NATIVE_DISK_READ, ...CC_DISK_READ]) {
+    for (const name of [...NATIVE_DISK_READ, ...CC_DISK_READ, ...COPILOT_DISK_READ]) {
       expect(READ_KINDS, `${name} is a lab read, describeTool says ${viewKindOf(name)}`).toContain(
         viewKindOf(name),
       );
@@ -40,7 +50,7 @@ describe("the lab's disk names read as the same kind in the tool views (card 604
     }
 
     let writes = 0;
-    for (const name of [...NATIVE_DISK_WRITE, ...CC_DISK_WRITE]) {
+    for (const name of [...NATIVE_DISK_WRITE, ...CC_DISK_WRITE, ...COPILOT_DISK_WRITE]) {
       if (name === NO_CASE_IN_TOOL_VIEWS) {
         // The exception keeps its premise in view: once describeTool learns
         // the name, this goes red and the exception has to go.
@@ -56,14 +66,20 @@ describe("the lab's disk names read as the same kind in the tool views (card 604
     let shells = 0;
     for (const name of SHELL_TOOLS) {
       expect(viewKindOf(name), `${name} is a lab shell verb`).toBe("command");
+      // The lab reads the command out of SHELL_COMMAND_KEY; the card has to find it there too.
+      const call = describeTool(name, { [SHELL_COMMAND_KEY]: "ls" }, undefined, false);
+      expect(call.kind === "command" ? call.command : null, `${name} carries its command elsewhere`).toBe(
+        "ls",
+      );
       shells++;
     }
 
     // Floors, so an emptied set cannot turn the loops into a scan over nothing:
-    // 5 + 2 reads, 2 + 3 writes less MultiEdit, 2 shell verbs on 2026-11-09.
-    expect(reads).toBeGreaterThanOrEqual(7);
-    expect(writes).toBeGreaterThanOrEqual(4);
-    expect(shells).toBeGreaterThanOrEqual(2);
+    // 5 + 2 + 1 reads, 2 + 3 + 2 writes less MultiEdit, 4 shell verbs on
+    // 2026-11-10 (card 605 added the Copilot CLI's view, create, edit, bash, powershell).
+    expect(reads).toBeGreaterThanOrEqual(8);
+    expect(writes).toBeGreaterThanOrEqual(6);
+    expect(shells).toBeGreaterThanOrEqual(4);
   });
 });
 

@@ -595,6 +595,44 @@ describe("claude code tool aliases (imported transcripts light the stations)", (
   });
 });
 
+describe("GitHub Copilot CLI tool names light the stations (card 605)", () => {
+  it("routes view to the disk as a read of its path", () => {
+    const s = play([runStart(), toolCall("view", { path: "/w/src/a/test/T.cpp", view_range: [320, 500] })]);
+    expect(s.focus).toBe("disk");
+    expect(s.disk).toBe("read");
+    expect(s.activeFile).toBe("T.cpp");
+    expect(s.activeTool).toBe("view");
+  });
+
+  it("routes create and edit to the disk as writes", () => {
+    for (const [name, input] of [
+      ["create", { path: "/w/src/new.ts", file_text: "x" }],
+      ["edit", { path: "/w/src/new.ts", old_str: "x", new_str: "y" }],
+    ] as const) {
+      const s = play([runStart(), toolCall(name, input)]);
+      expect(s.focus, name).toBe("disk");
+      expect(s.disk, name).toBe("write");
+      expect(s.activeFile, name).toBe("new.ts");
+    }
+  });
+
+  it("routes bash and powershell to the shell with their command", () => {
+    for (const name of ["bash", "powershell"]) {
+      const s = play([runStart(), toolCall(name, { command: "ls src", description: "look" })]);
+      expect(s.focus, name).toBe("cmd");
+      expect(s.activeCommand, name).toBe("ls src");
+      expect(s.activeTool, name).toBe(name);
+    }
+  });
+
+  it("leaves the shell session verbs at the agent", () => {
+    for (const name of ["write_bash", "read_bash", "stop_bash", "list_bash", "write_powershell"]) {
+      const s = play([runStart(), toolCall(name, { shellId: "s1", input: "y" })]);
+      expect(s.focus, name).toBe("agent");
+    }
+  });
+});
+
 // Card 586: the playbook runner's own lines (run_step, playbook_progress and its
 // plan) carry the agent id "playbook". It is the runner, not an agent: the map
 // draws no card for it, and the main loop does not move.

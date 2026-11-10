@@ -26,7 +26,15 @@
 
 import type { RunEvent } from "../events";
 import { elapsedAt, stepBoundaries, stepOfEvent } from "../state/stepper";
-import { CC_DISK_READ, CC_DISK_WRITE, NATIVE_DISK_READ, NATIVE_DISK_WRITE, SHELL_TOOLS } from "./labScene";
+import {
+  CC_DISK_READ,
+  CC_DISK_WRITE,
+  COPILOT_DISK_READ,
+  COPILOT_DISK_WRITE,
+  NATIVE_DISK_READ,
+  NATIVE_DISK_WRITE,
+  SHELL_TOOLS,
+} from "./labScene";
 import { workspaceBasename } from "../workspace/paths";
 
 /** One path the run touched, and everyone who touched it. */
@@ -109,7 +117,9 @@ export function fileFootprint(events: readonly RunEvent[], upto?: number): FileF
 
     const nativeWrite = NATIVE_DISK_WRITE.has(name);
     const ccWrite = CC_DISK_WRITE.has(name);
-    if (!NATIVE_DISK_READ.has(name) && !nativeWrite && !CC_DISK_READ.has(name) && !ccWrite) return;
+    const copilotWrite = COPILOT_DISK_WRITE.has(name);
+    const read = NATIVE_DISK_READ.has(name) || CC_DISK_READ.has(name) || COPILOT_DISK_READ.has(name);
+    if (!read && !nativeWrite && !ccWrite && !copilotWrite) return;
 
     // A glob names a PATTERN and no file. Its pattern is still the only thing
     // it touched, so it goes on the tree marked as what it is. A native grep
@@ -122,7 +132,7 @@ export function fileFootprint(events: readonly RunEvent[], upto?: number): FileF
     if (key === null) return;
 
     // The set the name is in decides the direction, on both sides.
-    const writes = nativeWrite || ccWrite;
+    const writes = nativeWrite || ccWrite || copilotWrite;
 
     let entry = byPath.get(key);
     if (entry === undefined) {
