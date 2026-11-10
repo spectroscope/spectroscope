@@ -6,8 +6,7 @@
 // print frame a stand-in object. Every credential vector is joined at run
 // time, so no credential-shaped literal sits in this file.
 
-import { readdirSync, readFileSync } from "node:fs";
-import { join, sep } from "node:path";
+import { relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isValidElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -17,6 +16,7 @@ import { saveTextFile } from "../export/save";
 import { dict, t, type Lang } from "../i18n/i18n";
 import { drive, type El } from "../testkit/driveComponent";
 import { read, rules, stripComments } from "../testkit/source";
+import { srcFiles, srcText } from "../testkit/tree";
 import {
   fetchReportVersion,
   FilesReportSheet,
@@ -528,14 +528,13 @@ describe("the report sheet leaks no credential", () => {
 
   it("theFixtureIsImportedOnlyByTests", () => {
     // The fixture carries credential vectors; no shipped module may pull it into the bundle.
+    // The tree comes from the shared reader of card 460 (testkit/tree.ts), walked once per process.
     const root = fileURLToPath(new URL("..", import.meta.url));
-    const sources = (readdirSync(root, { recursive: true }) as string[])
-      .filter((f) => /\.tsx?$/.test(f))
-      .map((f) => f.split(sep).join("/"));
+    const sources = srcFiles().filter((f) => /\.tsx?$/.test(f));
     // Any mention in code counts (a static, bare or dynamic import); comments do not.
-    const importers = sources.filter((f) =>
-      stripComments(readFileSync(join(root, f), "utf8")).includes("reportLeakFixture"),
-    );
+    const importers = sources
+      .filter((f) => stripComments(srcText(f)).includes("reportLeakFixture"))
+      .map((f) => relative(root, f).split(sep).join("/"));
     expect(importers.sort()).toEqual(["files/FilesReportSheet.test.tsx", "files/reportLeak.test.ts"]);
   });
 
