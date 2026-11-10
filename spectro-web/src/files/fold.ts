@@ -311,17 +311,36 @@ function fileCall(open: Open): FileCall | null {
 
 type ReadTouch = ShellTouch & { sources: Source[] };
 
+/** The kinds that leave a file written: a delete before one of them does not stand. */
+const WRITE_LIKE: ReadonlySet<TouchKind> = new Set(["create", "overwrite", "write", "append", "change"]);
+
+/**
+ * The kind of one path's touches in one call, in their order. A delete stands
+ * only when it comes after every write-like touch, because a file written
+ * after its delete exists when the call ends; otherwise the most specific of
+ * the other kinds wins (KIND_ORDER).
+ */
+function callKind(kinds: readonly TouchKind[]): TouchKind {
+  let lastWrite = -1;
+  kinds.forEach((kind, i) => {
+    if (WRITE_LIKE.has(kind)) lastWrite = i;
+  });
+  if (kinds.lastIndexOf("delete") > lastWrite) return "delete";
+  const rest: TouchKind[] = kinds.filter((kind) => kind !== "delete");
+  return rest.reduce(moreSpecific);
+}
+
 /**
  * One touch per path of a call (C7). A command that names a path twice says
  * one thing about it: the first touch keeps its place and spelling, the kind
- * becomes the more specific one (KIND_ORDER, as in mergeModel), the reasons
- * join with "; " without repeats, the replacement pairs follow each other,
- * content and appended keep the first non-empty value, the sources unite and
- * a folder stays a folder.
+ * follows `callKind`, the reasons join with "; " without repeats, the
+ * replacement pairs follow each other, content and appended keep the first
+ * non-empty value, the sources unite and a folder stays a folder.
  */
 function onePerPath(touches: readonly ReadTouch[]): ReadTouch[] {
   const out: ReadTouch[] = [];
   const reasons: string[][] = [];
+  const kinds: TouchKind[][] = [];
   const at = new Map<string, number>();
   for (const touch of touches) {
     const i = at.get(touch.path);
@@ -329,13 +348,15 @@ function onePerPath(touches: readonly ReadTouch[]): ReadTouch[] {
       at.set(touch.path, out.length);
       out.push(touch);
       reasons.push([touch.reason]);
+      kinds.push([touch.kind]);
       continue;
     }
     const first = out[i];
     if (!reasons[i].includes(touch.reason)) reasons[i].push(touch.reason);
+    kinds[i].push(touch.kind);
     const merged: ReadTouch = {
       ...first,
-      kind: moreSpecific(first.kind, touch.kind),
+      kind: callKind(kinds[i]),
       reason: reasons[i].join("; "),
       folder: first.folder || touch.folder,
       sources: SOURCE_ORDER.filter((s) => first.sources.includes(s) || touch.sources.includes(s)),

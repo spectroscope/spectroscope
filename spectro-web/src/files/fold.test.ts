@@ -500,6 +500,22 @@ describe("one entry per call and file (C7)", () => {
     expect(fileRows(ledger, null).find((row) => row.path === "/ws/b")?.touches).toHaveLength(1);
   });
 
+  it("aDeleteCountsOnlyAfterTheLastWrite", () => {
+    const one = (command: string) => {
+      const ledger = foldFiles(new Rec().start(W).tool("Bash", { command }).events);
+      const rows = fileRows(ledger, null);
+      return {
+        kinds: ledger.calls[0].touches.map((t) => t.kind),
+        letter: rows.find((row) => row.path === "/ws/f")?.letter,
+      };
+    };
+    // Written again after its delete, the file exists when the call ends.
+    expect(one("rm f && echo x > f")).toEqual({ kinds: ["overwrite"], letter: "M" });
+    // Deleted after its last write, or after a read, it is gone.
+    expect(one("echo x > f && rm f")).toEqual({ kinds: ["delete"], letter: "D" });
+    expect(one("cat f && rm f")).toEqual({ kinds: ["delete"], letter: "D" });
+  });
+
   it("doublePairsOnOnePathStayOneTouchWithBothPairs", () => {
     const sed = touchesOf("sed -i 's/a/b/' f.txt && sed -i 's/c/d/' f.txt");
     expect(sed.map(brief)).toEqual([
