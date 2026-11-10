@@ -440,3 +440,25 @@ describe("a child's run does not end the run its parent's message opened (item 3
     ]);
   });
 });
+
+// ---- item 4: a live session ---------------------------------------------------------
+
+describe("a session folder in use says how much it held (item 4)", () => {
+  it("counts the records written up to the pick", () => {
+    const got = loadCopilotFolder({ events: FOLDER_EVENTS, workspace: null, snapshots: null, live: true });
+    expect(got.source.copilot?.live).toEqual({ records: 12 });
+    // Blank lines are no records.
+    const gappy = loadCopilotFolder({
+      events: FOLDER_EVENTS.replace("\n", "\n\n"),
+      workspace: null,
+      snapshots: null,
+      live: true,
+    });
+    expect(gappy.source.copilot?.live).toEqual({ records: 12 });
+  });
+
+  it("says nothing of the kind without the lock", () => {
+    const got = loadCopilotFolder({ events: FOLDER_EVENTS, workspace: null, snapshots: null, live: false });
+    expect(got.source.copilot?.live).toBeUndefined();
+  });
+});

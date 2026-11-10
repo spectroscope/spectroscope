@@ -219,7 +219,8 @@ function isoDate(time: string): string | null {
 
 /**
  * What the bar says about a GitHub Copilot session (card 605, task 12): who
- * recorded the folder and when, from its workspace.yaml.
+ * recorded the folder and when, from its workspace.yaml, and that the session
+ * was still running when it was picked, from the lock beside its events.
  *
  * @param lang the chrome language
  * @param side what the Copilot session carried beside its events
@@ -232,6 +233,10 @@ export function copilotNote(lang: Lang, side: CopilotSide | null | undefined): s
   const date = side.workspace?.createdAt == null ? null : isoDate(side.workspace.createdAt);
   // The client is filled last, so a client name that looks like a slot stays a name.
   if (client !== null && date !== null) parts.push(t(lang, "imp.copilot.recorded", { date, client }));
+  if (side.live !== undefined) {
+    const n = side.live.records;
+    parts.push(t(lang, n === 1 ? "imp.copilot.liveOne" : "imp.copilot.live", { n: grouped(n, lang) }));
+  }
   return parts.length > 0 ? parts.join(" ") : null;
 }
 

@@ -61,6 +61,9 @@ export interface CopilotSide {
   workspace?: CopilotWorkspace;
   /** The folder's recorded file snapshots; absent when it had none. */
   snapshots?: CopilotSnapshot[];
+  /** An inuse.*.lock sat beside events.jsonl (item 4): the session was still
+   *  running when it was picked, and the import holds this many records. */
+  live?: { records: number };
 }
 
 /** A picked file as far as this module reads it; a browser File is one. */
@@ -355,6 +358,9 @@ export function loadCopilotFolder(texts: CopilotFolderTexts): CopilotFolderLoad 
     ...side,
     ...(workspace !== null ? { workspace } : {}),
     ...(snapshots.length > 0 ? { snapshots } : {}),
+    ...(texts.live
+      ? { live: { records: loaded.source.lines.filter((line) => line.trim() !== "").length } }
+      : {}),
   };
   return {
     events,

@@ -465,6 +465,14 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Aufgezeichnet von {client} am {date}.",
     en: "Recorded by {client} on {date}.",
   },
+  "imp.copilot.live": {
+    de: "Diese Session lief noch, als sie gewählt wurde; der Import enthält die {n} Einträge, die bis dahin geschrieben waren.",
+    en: "This session was still running when it was picked; the import holds the {n} records written up to then.",
+  },
+  "imp.copilot.liveOne": {
+    de: "Diese Session lief noch, als sie gewählt wurde; der Import enthält den {n} Eintrag, der bis dahin geschrieben war.",
+    en: "This session was still running when it was picked; the import holds the {n} record written up to then.",
+  },
   "imp.err.read": {
     de: "Der Browser konnte „{name}“ nicht lesen. Liegt die Datei noch da, und darf er sie sehen?",
     en: "Could not read \u201C{name}\u201D. Is the file still there, and may the browser see it?",
