@@ -301,3 +301,38 @@ describe("everything that is not this layout keeps today's grouping", () => {
     });
   });
 });
+
+describe("a Copilot folder beside another session file is no silent load (fix round 1 item 8)", () => {
+  it("gives the several-session-files message with both counted", () => {
+    expect(
+      groupPickedFiles([
+        { name: "abc.jsonl", relativePath: "dl/abc.jsonl" },
+        { name: "events.jsonl", relativePath: "dl/s1/events.jsonl" },
+        { name: "workspace.yaml", relativePath: "dl/s1/workspace.yaml" },
+      ]),
+    ).toEqual({ kind: "many", count: 2 });
+  });
+
+  it("a store beside another session file counts every one", () => {
+    const files = [
+      ...pick("gh_copilot", IDE),
+      { name: "other.jsonl", relativePath: "gh_copilot/other.jsonl" },
+    ];
+    expect(groupPickedFiles(files)).toEqual({ kind: "many", count: 5 });
+  });
+
+  it("a .jsonl inside a session folder, or a sidecar, is not another session", () => {
+    const inside = pick("x", [["one", ["events.jsonl", "workspace.yaml", "files/notes.jsonl"]]]);
+    expect(groupPickedFiles(inside).kind).toBe("copilot");
+    const sidecar = [
+      ...pick("x", [["one", ["events.jsonl", "workspace.yaml"]]]),
+      { name: "agent-a.jsonl", relativePath: "x/subagents/agent-a.jsonl" },
+    ];
+    expect(groupPickedFiles(sidecar).kind).toBe("copilot");
+    const journal = [
+      ...pick("x", [["one", ["events.jsonl", "workspace.yaml"]]]),
+      { name: "journal.jsonl", relativePath: "x/s/subagents/workflows/wf_1/journal.jsonl" },
+    ];
+    expect(groupPickedFiles(journal).kind).toBe("copilot");
+  });
+});

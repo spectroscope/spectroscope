@@ -978,7 +978,8 @@ function folderOf(path: string, suffix: string): string | null {
  * folder is a session; several folders with events.jsonl beside at least one
  * of them are a store, in which a folder with the marks and no events.jsonl is
  * counted and not listed. A folder inside another candidate (a session's own
- * files/) is not a session of its own.
+ * files/) is not a session of its own. A session file outside every such
+ * folder makes the pick several sessions.
  */
 function copilotLayout(files: PickedFile[]): PickedGroup | null {
   const byFolder = new Map<string, CopilotCandidate>();
@@ -1048,6 +1049,20 @@ function copilotLayout(files: PickedFile[]): PickedGroup | null {
   const own = candidates.filter((c) => !candidates.some((outer) => inside(c, outer)));
   const listed = own.filter((c) => c.hasEvents);
   if (!listed.some((c) => c.marked)) return null;
+  // Another session file outside every Copilot folder makes the pick several
+  // sessions, as the Claude Code grouping says (fix round 1 item 8).
+  const within = (path: string): boolean =>
+    own.some((c) => c.folder === "" || path.startsWith(`${c.folder}/`));
+  const others = files.filter((f) => {
+    const path = f.relativePath !== "" ? f.relativePath : f.name;
+    return (
+      f.name.endsWith(".jsonl") &&
+      !SIDECAR_NAME.test(f.name) &&
+      !JOURNAL_PATH.test(f.relativePath) &&
+      !within(path)
+    );
+  }).length;
+  if (others > 0) return { kind: "many", count: listed.length + others };
   const pickOf = (c: CopilotCandidate): PickedCopilotFolder => ({
     folder: c.folder,
     events: c.events,
