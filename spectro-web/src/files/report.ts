@@ -21,7 +21,14 @@ import {
 } from "./destinations";
 import type { FileCall, FileLedger, Source } from "./fold";
 import { higher, LEVEL_ORDER, outsideWorkspace, pathLevel, type Level } from "./levels";
-import { countPersonalData, findCredentials, sizeBand, type CredentialHit } from "./secrets";
+import {
+  countPersonalData,
+  findCredentials,
+  keyBlockHits,
+  keyBlockLines,
+  sizeBand,
+  type CredentialHit,
+} from "./secrets";
 import type { TouchKind } from "./shell";
 import { shellRisk } from "./shellRisk";
 
@@ -267,7 +274,7 @@ export function buildReport(input: ReportInput): FilesReport {
 
   return {
     sessionId: input.sessionId,
-    title: input.title === null ? null : mask(input.title),
+    title: input.title === null ? null : creds.maskTitle(input.title),
     version: input.version,
     exportedAt: input.now,
     workspace: workspace === null ? null : mask(workspace),
@@ -327,26 +334,49 @@ function appearsAsWord(text: string, value: string): boolean {
 /** The label registry: one label per distinct secret part, in order of first sight (B2). */
 class Credentials {
   private readonly bySecret = new Map<string, Sighting>();
+  private labels = 0;
   private longest: Sighting[] | null = null;
 
   get(secret: string): Sighting | undefined {
     return this.bySecret.get(secret);
   }
 
-  /** The sighting of a hit's secret, registered at `event` when new. */
+  /**
+   * The sighting of a hit's secret, registered at `event` when new. A key block
+   * also registers, on its first sight, each base64 body line under its own
+   * label, because a body line can come back without its header. The
+   * credentials inside a block come as hits of their own (withInner).
+   */
   see(hit: CredentialHit, event: number, call: number | null): Sighting {
-    let s = this.bySecret.get(hit.secret);
-    if (s === undefined) {
-      const ref = {
-        label: `credential ${this.bySecret.size + 1}`,
-        rule: hit.rule,
-        band: sizeBand(hit.secret),
-      };
-      s = { secret: hit.secret, ref, event, call };
-      this.bySecret.set(hit.secret, s);
-      this.longest = null;
+    const known = this.bySecret.get(hit.secret);
+    if (known !== undefined) return known;
+    const ref = { label: `credential ${++this.labels}`, rule: hit.rule, band: sizeBand(hit.secret) };
+    const s: Sighting = { secret: hit.secret, ref, event, call };
+    this.bySecret.set(hit.secret, s);
+    this.longest = null;
+    for (const line of keyBlockLines(hit)) {
+      if (!this.bySecret.has(line)) this.bySecret.set(line, { secret: line, ref, event, call });
     }
     return s;
+  }
+
+  /**
+   * The title masked, and a word cut short in it: the title is cut upstream, so
+   * it can end in the start of a value. A whitespace-delimited word of eight or
+   * more characters (opening quotes or brackets and a closing ellipsis aside)
+   * that a known value starts with takes that value's label.
+   */
+  maskTitle(text: string): string {
+    return this.mask(text).replace(/\S+/g, (word) => {
+      const [, open = "", core = "", ellipsis = ""] = /^(["'`([{<]*)(.*?)(\u2026|\.\.\.)?$/.exec(word) ?? [];
+      if (core.length < 8) return word;
+      for (const s of this.bySecret.values()) {
+        if (s.secret.length > core.length && s.secret.startsWith(core)) {
+          return `${open}[${s.ref.label}: ${s.ref.rule}]${ellipsis}`;
+        }
+      }
+      return word;
+    });
   }
 
   /** The secrets seen before `event`, in label order. */
@@ -362,7 +392,7 @@ class Credentials {
   mask(text: string): string {
     if (text === "") return text;
     const spans: { start: number; end: number; ref: CredentialRef }[] = [];
-    for (const hit of findCredentials(text).hits) {
+    for (const hit of findCredentials(text).hits.flatMap(withInner)) {
       spans.push({ start: hit.start, end: hit.end, ref: this.see(hit, -1, null).ref });
     }
     this.longest ??= [...this.bySecret.values()].sort((a, b) => b.secret.length - a.secret.length);
@@ -398,16 +428,38 @@ class Credentials {
  * and hides a key behind `\b`, and a quote as `\"`, which ends a password value
  * before it starts. A space follows every `:` and `,` of the structure, so a
  * rule that stops at whitespace cannot run from one field into the next, while
- * `"password": "value"` still reads as an assignment.
+ * `"password": "value"` still reads as an assignment. `ends` holds where each
+ * string value ends: a key block found in one value never runs into the next,
+ * so the scan reads a block in a command as the mask of that command does.
  */
-function inputText(input: unknown): string {
-  if (typeof input === "string") return `"${input}"`;
-  if (Array.isArray(input)) return `[${input.map(inputText).join(", ")}]`;
-  if (typeof input === "object" && input !== null) {
-    const parts = Object.entries(input as Record<string, unknown>).map(([k, v]) => `"${k}": ${inputText(v)}`);
-    return `{${parts.join(", ")}}`;
-  }
-  return JSON.stringify(input) ?? "";
+function inputText(input: unknown): { text: string; ends: number[] } {
+  let text = "";
+  const ends: number[] = [];
+  const write = (v: unknown): void => {
+    if (typeof v === "string") {
+      text += `"${v}`;
+      ends.push(text.length);
+      text += `"`;
+    } else if (Array.isArray(v)) {
+      text += "[";
+      v.forEach((item, i) => {
+        if (i > 0) text += ", ";
+        write(item);
+      });
+      text += "]";
+    } else if (typeof v === "object" && v !== null) {
+      text += "{";
+      Object.entries(v as Record<string, unknown>).forEach(([k, item], i) => {
+        text += `${i > 0 ? ", " : ""}"${k}": `;
+        write(item);
+      });
+      text += "}";
+    } else {
+      text += JSON.stringify(v) ?? "";
+    }
+  };
+  write(input);
+  return { text, ends };
 }
 
 // ---- The scan of the event list --------------------------------------------------
@@ -450,7 +502,7 @@ function scanEvents(
     const found = findCredentials(text);
     placeholders += found.placeholders;
     const refs: CredentialRef[] = [];
-    for (const hit of found.hits) {
+    for (const hit of found.hits.flatMap(withInner)) {
       const ref = creds.see(hit, event, call).ref;
       if (!refs.includes(ref)) refs.push(ref);
     }
@@ -481,13 +533,18 @@ function scanEvents(
         if (stack === undefined) unpaired.set(key, [{ index: i, name }]);
         else stack.push({ index: i, name });
 
-        const text = inputText(e.input);
-        const found = findCredentials(text);
+        const { text, ends } = inputText(e.input);
+        const found = findCredentials(text, ends);
         placeholders += found.placeholders;
-        const inHits = new Set(found.hits.map((h) => h.secret));
+        const hits = found.hits.flatMap(withInner);
+        const inHits = new Set(hits.map((h) => h.secret));
         const base = { agentId: String(e.agentId), t: seconds(events, i), tool: name, callIndex: i };
+        // One finding per credential and call: a key's body lines share its label.
+        const used: CredentialRef[] = [];
         for (const s of creds.before(i)) {
+          if (used.includes(s.ref)) continue;
           if (!inHits.has(s.secret) && !appearsAsWord(text, s.secret)) continue;
+          used.push(s.ref);
           drafts.push({
             ...blank("credential-used", "critical", i, "recorded"),
             ...base,
@@ -496,7 +553,7 @@ function scanEvents(
           });
         }
         const fresh: CredentialRef[] = [];
-        for (const hit of found.hits) {
+        for (const hit of hits) {
           const known = creds.get(hit.secret);
           if (known !== undefined && known.event !== i) continue;
           const ref = creds.see(hit, i, i).ref;
@@ -556,6 +613,13 @@ function scanEvents(
 }
 
 // ---- Small builders and readers ---------------------------------------------------
+
+/**
+ * A hit and, for a key block, the credentials inside it, at any depth. The
+ * block's mask covers them in place; each is still registered under a label of
+ * its own and masked wherever it comes back.
+ */
+const withInner = (hit: CredentialHit): CredentialHit[] => [hit, ...keyBlockHits(hit).flatMap(withInner)];
 
 /** What one path saw in one call: a touch of the fold, or a file a network command sent. */
 interface Mark {

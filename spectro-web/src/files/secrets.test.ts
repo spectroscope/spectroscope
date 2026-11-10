@@ -10,6 +10,8 @@ import {
   countPersonalData,
   findCredentials,
   isPlaceholder,
+  keyBlockHits,
+  keyBlockLines,
   maskCredentials,
   ruleMatches,
   secretPart,
@@ -365,11 +367,79 @@ describe("private keys", () => {
     );
   });
 
-  it("a header without its END marker masks to the end of the text", () => {
+  it("a header without its END marker covers its PEM body", () => {
     const open = `x ${head("EC ")}\n${BODY_A}`;
     expect(maskCredentials(open, () => "credential 1")).toBe("x [credential 1: private-key]");
-    // An END marker of another kind does not close the block.
+    // An END marker of another kind does not close the block: it ends with the body.
     const crossed = `${head("RSA ")}\n${BODY_B}\n${tail("EC ")}\ntrailing`;
-    expect(findCredentials(crossed).hits.map((h) => h.secret)).toEqual([crossed]);
+    expect(findCredentials(crossed).hits.map((h) => h.secret)).toEqual([`${head("RSA ")}\n${BODY_B}`]);
+  });
+
+  it("an open block ends where the PEM body ends", () => {
+    const pw = "Hx7p" + "Lq2vZw";
+    const secretOf = (text: string) => findCredentials(text).hits.map((h) => [h.rule, h.secret]);
+    // Header fields, an empty line and base64 lines are the body; the text after it is not.
+    const fields = `${head("RSA ")}\nProc-Type: 4,ENCRYPTED\nDEK-Info: AES-128-CBC,00AA\n\n${BODY_B}`;
+    expect(secretOf(`${fields}\n\nThe ${"url"}: postgres://app:${pw}@db.internal/app`)).toEqual([
+      ["private-key", fields],
+      ["url-userinfo", pw],
+    ]);
+    // A line that goes on after its base64 start ends the block there.
+    expect(maskCredentials(`${head("RSA ")}\nMIIEowIBAAKCAQEA' > k.pem`, () => "credential 1")).toBe(
+      "[credential 1: private-key]' > k.pem",
+    );
+    // The escape a command or a JSON string writes for a line break is a line break.
+    const escaped = `printf '${head("RSA ")}\\nMIIEowIBAAKCAQEA\\nx9Ym4Qz7Rt2Lp8Wk' > k.pem`;
+    expect(maskCredentials(escaped, () => "credential 1")).toBe(
+      "printf '[credential 1: private-key]' > k.pem",
+    );
+    // Indented body lines, as in a YAML block, are body lines.
+    expect(maskCredentials(`  ${head("")}\n  ${BODY_B.replaceAll("\n", "\n  ")}\nnext: 1`, () => "c")).toBe(
+      "  [c: private-key]\nnext: 1",
+    );
+    // The header's own line is part of the block; a header field after the body is not.
+    expect(secretOf(`${head("RSA ")} '${BODY_B.slice(0, 16)}'\nnext line`)).toEqual([
+      ["private-key", `${head("RSA ")} '${BODY_B.slice(0, 16)}'`],
+    ]);
+    expect(secretOf(`${head("RSA ")}\n${BODY_B}\nHost: db`)[0][1]).toBe(`${head("RSA ")}\n${BODY_B}`);
+    // A line that only starts like base64 stays outside, so the match on it stands.
+    const token = "abcdefghij" + "0123456789KLMNOP";
+    for (const line of [`AWS_SECRET_ACCESS_KEY=${pw}`, `Bearer ${token}`]) {
+      const rules = findCredentials(`${head("RSA ")}\n${BODY_B}\n${line}`).hits.map((h) => h.rule);
+      expect(rules, line).toEqual([
+        "private-key",
+        line.startsWith("Bearer") ? "bearer" : "password-assignment",
+      ]);
+    }
+  });
+
+  it("a block names the credentials inside it and its body lines", () => {
+    const body = ["MIIEowIBAAKCAQEAx9Ym4Qz7Rt2Lp8WkNb3V", AKID, "c6Hs1Jd5Gf0A"].join("\n");
+    const text = `see ${pem("RSA ", body)}`;
+    const [block] = findCredentials(text).hits;
+    expect(keyBlockHits(block).map((h) => [h.rule, h.secret, text.slice(h.start, h.end)])).toEqual([
+      ["aws-akid", AKID, AKID],
+    ]);
+    // Twenty characters or more, base64 only; the 12-character line is too short to stand alone.
+    expect(keyBlockLines(block)).toEqual(["MIIEowIBAAKCAQEAx9Ym4Qz7Rt2Lp8WkNb3V", AKID]);
+    expect(keyBlockHits(findCredentials(`x ${AKID}`).hits[0])).toEqual([]);
+  });
+
+  it("a thousand headers in one text stay fast", () => {
+    // Open headers, each with a body line, and headers inside an earlier block.
+    const open = Array.from({ length: 1000 }, (_, i) => `${head("RSA ")}\nMIIEowIBAAKC${i}\nlog ${i}`).join(
+      "\n",
+    );
+    const inside = `${head("RSA ")}\n${Array.from({ length: 1000 }, () => head("EC ")).join("\n")}\n${tail("RSA ")}`;
+    for (const [name, text, count] of [
+      ["open", open, 1000],
+      ["inside", inside, 1],
+    ] as const) {
+      const t0 = performance.now();
+      const { hits } = findCredentials(text);
+      const ms = performance.now() - t0;
+      expect(hits, name).toHaveLength(count);
+      expect(ms, `${name} took ${ms.toFixed(0)} ms`).toBeLessThan(200);
+    }
   });
 });

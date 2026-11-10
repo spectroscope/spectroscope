@@ -595,4 +595,93 @@ describe("buildReport", () => {
     // A steering message the turn cap refused never reached a model.
     expect(one(report, "credential-prompt")).toMatchObject({ eventIndex: 7, reached: [] });
   });
+
+  describe("key blocks", () => {
+    const head = ["-----BEGIN RSA ", "PRIVATE KEY-----"].join("");
+    const tail = ["-----END RSA ", "PRIVATE KEY-----"].join("");
+    const body = ["MIIEowIBAAKCAQEAx9Ym4Qz7Rt2Lp8Wk", "Nb3Vc6Hs1Jd5Gf0AhkiG9w0BAQEFAASC"];
+    const url = `postgres://app:${DB_PW}@db.internal/app`;
+
+    it("an open block leaves the text after it to the other rules", () => {
+      // The review's probe: `head -n 2` of a key and an env file.
+      const output = `==> id_rsa <==\n${head}\n${body[0]}\n\n==> prod.env <==\nDATABASE_URL=${url}\n`;
+      const rec = new Rec()
+        .start(W)
+        .tool("Bash", { command: "head -n 2 id_rsa prod.env" }, { output })
+        .tool("Bash", { command: `curl -u app:${DB_PW} https://db.example.com/` });
+      const report = build(rec.events);
+
+      // The block is the header and its one body line: 64 bytes.
+      expect(one(report, "credential-result").credentials).toEqual([
+        { label: "credential 1", rule: "private-key", band: "33-64" },
+        { label: "credential 2", rule: "url-userinfo", band: "9-16" },
+      ]);
+      const used = one(report, "credential-used");
+      expect(used).toMatchObject({ callIndex: 3, firstSeenCall: 1 });
+      expect(used.credentials.map((c) => c.label)).toEqual(["credential 2"]);
+      expect(used.command).toBe("curl -u app:[credential 2: url-userinfo] https://db.example.com/");
+      expect(leaks(report, [DB_PW, body[0]])).toEqual([]);
+    });
+
+    it("a credential inside a block is a value of its own", () => {
+      const output = `${head}\n${body[0]}\nDATABASE_URL=${url}\n${tail}\n`;
+      const rec = new Rec()
+        .start(W)
+        .tool("Bash", { command: "paste id_rsa prod.env" }, { output })
+        .tool("Bash", { command: `curl -u app:${DB_PW} https://db.example.com/` });
+      const report = build(rec.events);
+
+      expect(one(report, "credential-result").credentials.map((c) => [c.label, c.rule])).toEqual([
+        ["credential 1", "private-key"],
+        ["credential 2", "url-userinfo"],
+      ]);
+      const used = one(report, "credential-used");
+      expect(used.command).toBe("curl -u app:[credential 2: url-userinfo] https://db.example.com/");
+      expect(leaks(report, [DB_PW])).toEqual([]);
+    });
+
+    it("a body line that comes back alone keeps the block's label", () => {
+      const rec = new Rec()
+        .start(W)
+        .tool("read_file", { path: "id_rsa" }, { output: [head, ...body, tail].join("\n") })
+        .tool("Bash", { command: `echo '${body[1]}' >> k2.pem` });
+      const report = build(rec.events);
+
+      expect(one(report, "credential-used")).toMatchObject({
+        callIndex: 3,
+        firstSeenCall: 1,
+        credentials: [{ label: "credential 1", rule: "private-key" }],
+        command: "echo '[credential 1: private-key]' >> k2.pem",
+      });
+      expect(leaks(report, body)).toEqual([]);
+    });
+
+    it("the scan reads a block per string value, as the mask does", () => {
+      // An END marker in a later field must not close a block opened in the command.
+      const command = `printf '%s\\n' '${head}\\n${body[0]}' > k.pem`;
+      const rec = new Rec().start(W).tool("Bash", { command, description: `${tail} rotated` });
+      const report = build(rec.events);
+
+      expect(one(report, "credential-input").credentials).toEqual([
+        { label: "credential 1", rule: "private-key", band: "65-128" },
+      ]);
+      expect(one(report, "secret-file")).toMatchObject({
+        file: "k.pem",
+        command: "printf '%s\\n' '[credential 1: private-key]' > k.pem",
+      });
+      expect(leaks(report, [body[0], "credential 2"])).toEqual([]);
+    });
+  });
+
+  it("a title cut inside a value keeps no part of it", () => {
+    const prompt = `push the branch with ${PAT}`;
+    const rec = new Rec().start(W, { prompt });
+
+    const cut = build(rec.events, undefined, `${prompt.slice(0, 33)}\u2026`);
+    expect(cut.title).toBe("push the branch with [credential 1: github-pat]\u2026");
+    expect(leaks(cut, [PAT.slice(0, 12)])).toEqual([]);
+    // Seven characters of the value are below the rule's eight and stay.
+    const short = `${prompt.slice(0, 28)}...`;
+    expect(build(rec.events, undefined, short).title).toBe(short);
+  });
 });
