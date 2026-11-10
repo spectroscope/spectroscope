@@ -17,6 +17,7 @@ import copilotIde from "./fixtures/copilot-ide.jsonl?raw";
 import { isWireEvent } from "../wire/nonWire";
 import { parseVscodeAgentExport, vscodeAgentToRunEvents, vscodeAgentWithOrigin } from "./vscodeAgent";
 import { advanceScene, initialScene } from "../lab/labScene";
+import { initialState, reduceAll } from "../state/reducer";
 
 const events = parseVscodeAgentExport(vscodeAgent);
 
@@ -771,5 +772,79 @@ describe("a Copilot error, abort or warning (card 605)", () => {
     expect(
       vscodeAgentToRunEvents([{ type: "session.error", data: { message: "boom" } }]).map((e) => e.type),
     ).toEqual(["error"]);
+  });
+});
+
+// Task 11 item 9 (review I1): before the first person's turn no record opens
+// a run. An error or an abort stands alone; a usage record or a spawn waits
+// for the run the person's message opens.
+describe("records before the first person's turn (task 11 item 9)", () => {
+  const START = { type: "session.start", data: { selectedModel: "auto", producer: "copilot-agent" } };
+  const TURN = [
+    { type: "user.message", data: { content: "go" } },
+    { type: "assistant.turn_start", data: {} },
+    { type: "assistant.message", data: { content: "hi" } },
+  ];
+  const LEAD: Record<string, object> = {
+    "session.error": { type: "session.error", data: { message: "boom" } },
+    abort: { type: "abort", data: { reason: "user initiated" } },
+    "session.usage_record": {
+      type: "session.usage_record",
+      data: { usage: { inputTokens: 100, outputTokens: 5, cacheReadTokens: 40 } },
+    },
+    "subagent.started": {
+      type: "subagent.started",
+      agentId: "c1",
+      data: { toolCallId: "t0", agentName: "explore", model: "auto" },
+    },
+  };
+  const turns = (records: object[]) =>
+    reduceAll(initialState, vscodeAgentToRunEvents(records)).turns.map((t) => [
+      t.kind,
+      (t as { text?: string }).text ?? null,
+    ]);
+
+  it("the review's input: the first user turn is the person's message", () => {
+    expect(turns([START, LEAD["session.error"], ...TURN])).toEqual([
+      ["error", "boom"],
+      ["user", "go"],
+      ["assistant", "hi"],
+    ]);
+  });
+
+  for (const [name, lead] of Object.entries(LEAD)) {
+    it(`a ${name} first opens no run of its own`, () => {
+      const events = vscodeAgentToRunEvents([START, lead, ...TURN]);
+      const roots = events.filter(
+        (e) => e.type === "run_start" && (e as { agentId: string }).agentId === "main",
+      );
+      expect(roots.map((e) => (e as { prompt: string }).prompt)).toEqual(["go"]);
+      expect(turns([START, lead, ...TURN]).find((t) => t[0] === "user")).toEqual(["user", "go"]);
+    });
+  }
+
+  it("a held usage counts toward the run, charged to its own record", () => {
+    const records = [START, LEAD["session.usage_record"], ...TURN];
+    const state = reduceAll(initialState, vscodeAgentToRunEvents(records));
+    expect(state.runUsage).toEqual({ inputTokens: 60, outputTokens: 5 });
+    const { events, origin } = vscodeAgentWithOrigin(records);
+    expect(origin[events.findIndex((e) => e.type === "usage")]).toBe(1);
+  });
+
+  it("a held frame follows the run's start, before the run's first turn", () => {
+    for (const name of ["session.usage_record", "subagent.started"]) {
+      const types = vscodeAgentToRunEvents([START, LEAD[name], ...TURN]).map((e) => e.type);
+      expect(types.slice(0, 4), name).toEqual(
+        name === "subagent.started"
+          ? ["run_start", "agent_spawn", "run_start", "turn_start"]
+          : ["run_start", "usage", "turn_start", "text_delta"],
+      );
+    }
+  });
+
+  it("a usage record with no run after it still gives its frame", () => {
+    expect(vscodeAgentToRunEvents([START, LEAD["session.usage_record"]]).map((e) => e.type)).toEqual([
+      "usage",
+    ]);
   });
 });

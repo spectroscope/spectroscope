@@ -16,7 +16,10 @@
 //   session.start            -> ground_info {cwd} (the GitHub Copilot CLI's own
 //                               file, card 605; import-only, as in claudeCode.ts)
 // so a recorded Copilot session replays through the same reducers as a
-// spectroscope run. Unrecognized records are skipped, never fatal.
+// spectroscope run. Unrecognized records are skipped, never fatal. A file that
+// opens on a turn or a tool record opens a run with an empty prompt; an error
+// or an abort before the first run stands alone, and a usage record or a spawn
+// waits for the first run (task 11 item 9).
 //
 // MODEL (card 605, task 10): every run_start names the provider copilot, so the
 // files report can say where the content went, and the model in force for that
@@ -272,14 +275,36 @@ export function vscodeAgentWithOrigin(records: unknown[], base = 1_783_500_000_0
     out.push({ type: "tool_call", agentId, callId, name, input, ts });
   };
 
+  /** Frames that wait for the first run, each charged to its own record's line
+   *  (task 11 item 9): a run_start resets the run's usage, and a spawn belongs
+   *  to the run that follows. */
+  const held: { events: RunEvent[]; line: number }[] = [];
+  const flushHeld = (): void => {
+    for (const h of held) {
+      out.push(...h.events);
+      while (origin.length < out.length) origin.push(h.line);
+    }
+    held.length = 0;
+  };
+  /** Pushes the frames now when a run is open, else holds them for the first one. */
+  const emitInRun = (events: RunEvent[], at: number): void => {
+    if (started) out.push(...events);
+    else held.push({ events, line: recLine[at] });
+  };
+
   /** An export can begin mid-session (the real one opens on a tool record).
-   *  Everything downstream hangs off a run, so open one — with an empty prompt,
-   *  because the request that started this slice is simply not in the file. */
+   *  Everything downstream hangs off a run, so open one, with an empty prompt,
+   *  because the request that started this slice is simply not in the file.
+   *  An error, an abort, a usage record or a spawn opens none (task 11 item 9). */
   const openRun = (prompt: string, ts: number, at: number): void => {
     started = true;
     roots.push({ index: out.length, at, selected });
     // The model is named after the pass, when the run's turns and choices are known.
     out.push({ type: "run_start", runId, agentId: MAIN, prompt, provider: "copilot", ts });
+    if (held.length > 0) {
+      chargeTo(recLine[at]);
+      flushHeld();
+    }
   };
 
   const handleRecord = (r: VsRecord, i: number): void => {
@@ -382,7 +407,6 @@ export function vscodeAgentWithOrigin(records: unknown[], base = 1_783_500_000_0
       }
 
       case "subagent.started": {
-        if (!started) openRun("", ts, i);
         // A start on the main lane names no child; a replayed one spawns it once.
         if (agentId === MAIN || childRuns.has(agentId)) break;
         const call = typeof d?.toolCallId === "string" ? calls.get(d.toolCallId) : undefined;
@@ -391,17 +415,22 @@ export function vscodeAgentWithOrigin(records: unknown[], base = 1_783_500_000_0
         const childRun = `vscode-${agentId}`;
         childRuns.set(agentId, childRun);
         const childModel = modelName(d?.model);
-        out.push({ type: "agent_spawn", agentId, parentId, task, ts });
-        out.push({
-          type: "run_start",
-          runId: childRun,
-          agentId,
-          parentId,
-          prompt: task,
-          provider: "copilot",
-          ...(childModel === null ? {} : { model: childModel }),
-          ts,
-        });
+        emitInRun(
+          [
+            { type: "agent_spawn", agentId, parentId, task, ts },
+            {
+              type: "run_start",
+              runId: childRun,
+              agentId,
+              parentId,
+              prompt: task,
+              provider: "copilot",
+              ...(childModel === null ? {} : { model: childModel }),
+              ts,
+            },
+          ],
+          i,
+        );
         break;
       }
 
@@ -410,18 +439,22 @@ export function vscodeAgentWithOrigin(records: unknown[], base = 1_783_500_000_0
         const input = count(u, "inputTokens");
         const output = count(u, "outputTokens");
         if (input === null && output === null) break;
-        if (!started) openRun("", ts, i);
         const read = count(u, "cacheReadTokens");
         const written = count(u, "cacheWriteTokens");
-        out.push({
-          type: "usage",
-          agentId,
-          inputTokens: Math.max(0, (input ?? 0) - (read ?? 0) - (written ?? 0)),
-          outputTokens: output ?? 0,
-          ...(read === null ? {} : { cacheReadTokens: read }),
-          ...(written === null ? {} : { cacheCreationTokens: written }),
-          ts,
-        });
+        emitInRun(
+          [
+            {
+              type: "usage",
+              agentId,
+              inputTokens: Math.max(0, (input ?? 0) - (read ?? 0) - (written ?? 0)),
+              outputTokens: output ?? 0,
+              ...(read === null ? {} : { cacheReadTokens: read }),
+              ...(written === null ? {} : { cacheCreationTokens: written }),
+              ts,
+            },
+          ],
+          i,
+        );
         break;
       }
 
@@ -435,7 +468,7 @@ export function vscodeAgentWithOrigin(records: unknown[], base = 1_783_500_000_0
       }
 
       case "abort": {
-        if (!started) openRun("", ts, i);
+        // Like session.error: no run opens for it.
         const reason = strField(d, "reason");
         out.push({ type: "error", agentId, message: reason ? `aborted: ${reason}` : "aborted", ts });
         break;
@@ -482,6 +515,8 @@ export function vscodeAgentWithOrigin(records: unknown[], base = 1_783_500_000_0
     if (model !== null) out[run.index] = { ...out[run.index], model } as RunEvent;
   });
 
+  // Held frames with no run after them stand alone.
+  flushHeld();
   if (started) out.push({ type: "run_end", runId, stopReason: "end_turn", ts: lastTs });
   chargeTo(-1); // the closing run_end is the importer's own
   return { events: out, origin: Int32Array.from(origin), toolOutputs };
