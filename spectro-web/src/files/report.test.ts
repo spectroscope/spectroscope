@@ -1300,3 +1300,93 @@ describe("key material in ordinary work", () => {
     ).toEqual([[3, ["key-body"]]]);
   });
 });
+
+// Final fix wave item 3: patterns, searches and listings name paths; they are
+// not reads of the files they match (review C4).
+describe("searches and listings", () => {
+  const verdictOf = (...calls: [string, unknown][]) => {
+    const rec = new Rec().start(W);
+    for (const [name, input] of calls) rec.tool(name, input, { output: "a\nb" });
+    return build(rec.events);
+  };
+
+  it("give no secret-file or outside finding and no critical verdict", () => {
+    for (const [name, input] of [
+      ["Glob", { pattern: "**/*.pem", path: W }],
+      ["Glob", { pattern: "**/.env*" }],
+      ["Bash", { command: "ls *.pem" }],
+      ["Bash", { command: "ls -la .env" }],
+      ["Bash", { command: "ls ~/.ssh" }],
+      ["Bash", { command: "ls /tmp" }],
+      ["Bash", { command: "find . -name '*.key'" }],
+      ["Bash", { command: "grep -rn password ~/.ssh" }],
+      ["Bash", { command: "rg -n token" }],
+      ["Bash", { command: "stat .env && test -f .env && file .env" }],
+      ["Grep", { pattern: "password" }],
+      ["Grep", { pattern: "password", path: "/w/src", glob: "*.ts" }],
+      ["list_dir", { path: "/w/.ssh" }],
+    ] as [string, unknown][]) {
+      const report = verdictOf([name, input]);
+      const what = JSON.stringify(input);
+      expect(ofKind(report, "secret-file"), what).toEqual([]);
+      expect(ofKind(report, "outside"), what).toEqual([]);
+      expect(report.files, what).toEqual([]);
+      expect(report.verdict, what).toBe("project");
+    }
+  });
+
+  it("are listed with their pattern and the level of their literal base folder", () => {
+    const report = verdictOf(
+      ["Glob", { pattern: "**/*.pem", path: W }],
+      ["Bash", { command: "ls -la .env" }],
+      ["Bash", { command: "ls ~/.ssh" }],
+      ["Glob", { pattern: "/Users/a/.aws/*" }],
+      ["Bash", { command: "find /tmp -name x" }],
+      ["Bash", { command: "find . -name x" }],
+      ["Grep", { pattern: "TODO" }],
+    );
+    expect(report.searches.map((s) => [s.level, s.label, s.what, s.tools, s.calls])).toEqual([
+      ["critical", ".env", "listed", ["Bash"], 1],
+      ["critical", "~/.ssh", "listed", ["Bash"], 1],
+      ["critical", "/Users/a/.aws/*", "searched", ["Glob"], 1],
+      ["sensitive", "/tmp", "searched", ["Bash"], 1],
+      ["project", "**/*.pem", "searched", ["Glob"], 1],
+      // The workspace folder itself, as the files tab shows it.
+      ["project", "w", "searched", ["Bash", "Grep"], 2],
+    ]);
+    // None of them counts: no file, no finding, the verdict stays at project.
+    expect(report.findings).toEqual([]);
+    expect(report.verdict).toBe("project");
+    // The workspace folder itself is no file either, whatever read it.
+    const copy = verdictOf(["Bash", { command: "cp -r . ../backup" }]);
+    expect(copy.searches.map((x) => x.label)).toEqual(["w"]);
+    expect(copy.files.map((f) => f.label)).toEqual(["/backup"]);
+  });
+
+  it("a read of the same file still counts, also in the same call as its listing", () => {
+    for (const command of ["cat .env", "ls -la .env && cat .env", "grep -q API .env"]) {
+      const report = verdictOf(["Bash", { command }]);
+      expect(one(report, "secret-file").what, command).toEqual(["read"]);
+      expect(report.verdict, command).toBe("critical");
+    }
+    // A content reader with a glob word reads the files it matches.
+    expect(one(verdictOf(["Bash", { command: "cat *.pem" }]), "secret-file").file).toBe("*.pem");
+  });
+
+  it("the review's Claude Code stream with Grep and Glob has no critical verdict", () => {
+    const rec = new Rec()
+      .push({ type: "run_start", runId: "r", agentId: "main", prompt: "x" })
+      .push({ type: "ground_info", cwd: W })
+      .tool("Glob", { pattern: "**/*.ts" }, { output: "/w/src/a.ts\n/w/src/b.ts" })
+      .tool("Glob", { pattern: "**/*.pem", path: W }, { output: "No files found" })
+      .tool("Glob", { pattern: "**/.env*" }, { output: "/w/.env.example" })
+      .tool("Grep", { pattern: "password", path: "/w/src", glob: "*.ts", output_mode: "content" })
+      .tool("Grep", { pattern: "TODO" }, { output: "src/a.ts:1: // TODO" })
+      .tool("Read", { file_path: "/w/src/a.ts" }, { output: "     1→export const a = 1;" })
+      .tool("Bash", { command: "ls -la" }, { output: "total 0" });
+    const report = build(rec.events);
+    expect(ofKind(report, "secret-file")).toEqual([]);
+    expect(report.verdict).toBe("project");
+    expect(report.files.map((f) => f.label)).toEqual(["src/a.ts"]);
+  });
+});

@@ -20,7 +20,7 @@ import {
   type ReachIndex,
 } from "./destinations";
 import { CommandReadings, type CommandReading } from "./commandSecrets";
-import type { FileCall, FileLedger, Source } from "./fold";
+import type { FileCall, FileLedger, FileTouch, Source } from "./fold";
 import { higher, LEVEL_ORDER, outsideWorkspace, pathLevel, type Level } from "./levels";
 import {
   countPersonalData,
@@ -90,6 +90,22 @@ export interface ReportFile {
 
 type Counted = "read" | "changed" | "created" | "deleted";
 
+/**
+ * A search or a listing (final wave item 3): a glob pattern, a grep or find
+ * over a folder, a listing, the workspace folder itself. It names paths, so it
+ * counts in no file row and raises no secret-file or outside finding.
+ */
+export interface ReportSearch {
+  label: string; // the pattern or path as the files tab shows it, masked
+  level: Level; // of its literal base folder; never counts toward the verdict
+  what: "listed" | "searched";
+  tools: string[]; // in order of first use
+  sources: Source[];
+  firstT: number | null;
+  firstCall: number;
+  calls: number;
+}
+
 export interface FilesReport {
   sessionId: string;
   title: string | null; // masked
@@ -106,6 +122,7 @@ export interface FilesReport {
   destinations: Destination[];
   findings: Finding[]; // by level, then time
   files: ReportFile[]; // by level, then first call
+  searches: ReportSearch[]; // by level, then first call
   /** Files per level under their most specific kind; a file only a model named is not counted. */
   counts: Record<Level, Record<Counted, number>>;
   placeholders: number;
@@ -184,8 +201,17 @@ export function buildReport(input: ReportInput): FilesReport {
     if (marks === undefined) rows.set(path, [mark]);
     else marks.push(mark);
   };
+  const found = new Map<string, { what: Set<ReportSearch["what"]>; marks: Mark[] }>();
+  const root = workspace === null ? null : workspace.replace(/\/+$/, "");
   for (const call of ledger.calls) {
     for (const touch of call.touches) {
+      if (isSearch(touch, root)) {
+        const entry = found.get(touch.path) ?? { what: new Set(), marks: [] };
+        entry.what.add(touch.listing === true ? "listed" : "searched");
+        entry.marks.push({ call, kind: touch.kind, sources: touch.sources });
+        found.set(touch.path, entry);
+        continue;
+      }
       addMark(touch.path, { call, kind: touch.kind, sources: touch.sources });
       if (pathLevel(touch.path, workspace) !== "critical") continue;
       drafts.push(
@@ -285,6 +311,18 @@ export function buildReport(input: ReportInput): FilesReport {
   files.sort((a, b) => rank(a.level) - rank(b.level) || a.firstCall - b.firstCall);
   for (const f of findings) if (f.source !== "model") verdict = higher(verdict, f.level);
 
+  const searches: ReportSearch[] = [...found].map(([path, { what, marks }]) => ({
+    label: label(path),
+    level: pathLevel(literalBase(path), workspace),
+    what: what.has("searched") ? "searched" : "listed",
+    tools: marks.map((m) => m.call.tool).filter((t, k, all) => all.indexOf(t) === k),
+    sources: SOURCE_ORDER.filter((s) => marks.some((m) => m.sources.includes(s))),
+    firstT: marks[0].call.t,
+    firstCall: marks[0].call.callIndex,
+    calls: new Set(marks.map((m) => m.call.callIndex)).size,
+  }));
+  searches.sort((a, b) => rank(a.level) - rank(b.level) || a.firstCall - b.firstCall);
+
   return {
     sessionId: input.sessionId,
     title: input.title === null ? null : creds.maskTitle(input.title),
@@ -299,6 +337,7 @@ export function buildReport(input: ReportInput): FilesReport {
     destinations: all,
     findings,
     files,
+    searches,
     counts: tally,
     placeholders: scan.placeholders,
     personal: scan.personal,
@@ -838,6 +877,22 @@ function commandOf(call: FileCall, events: readonly RunEvent[]): string | null {
   const e = events[call.callIndex] as unknown as Record<string, unknown> | undefined;
   const view = describeTool(call.tool, e?.input, undefined, false);
   return view.kind === "command" ? view.command : null;
+}
+
+/** A read that names paths and no content: a listing, a search over a folder, the workspace folder itself. */
+function isSearch(touch: FileTouch, root: string | null): boolean {
+  if (touch.kind !== "read") return false;
+  if (touch.listing === true || touch.search === true) return true;
+  return root !== null && touch.path.replace(/\/+$/, "") === root;
+}
+
+/** The folder a pattern starts in: its segments before the first that holds a glob character. */
+function literalBase(path: string): string {
+  const parts = path.split("/");
+  const cut = parts.findIndex((p) => /[*?[\]{}]/.test(p));
+  if (cut < 0) return path;
+  const base = parts.slice(0, cut).join("/");
+  return base === "" ? (path.startsWith("/") ? "/" : ".") : base;
 }
 
 /** True when a recorded or probable source stands behind it: a model's reading alone does not count (R6). */

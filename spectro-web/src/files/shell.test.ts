@@ -123,11 +123,12 @@ describe("shellTouches rules", () => {
   });
 
   it("aGrepWithoutAPathReadsItsFolder", () => {
+    // A search, not a read of the folder's files (card 605).
     expect(touches("rg needle")).toEqual([
-      { written: ".", path: "/w", folder: true, kind: "read", reason: 'rg "needle"' },
+      { written: ".", path: "/w", folder: true, kind: "read", reason: 'rg "needle"', search: true },
     ]);
     expect(touches("grep -rn needle")).toEqual([
-      { written: ".", path: "/w", folder: true, kind: "read", reason: 'grep "needle"' },
+      { written: ".", path: "/w", folder: true, kind: "read", reason: 'grep "needle"', search: true },
     ]);
     expect(touches("grep -r -e needle")[0].reason).toBe('grep "needle"');
     expect(shortAll("cd web && rg needle")).toEqual([{ path: "/w/web", kind: "read", folder: true }]);

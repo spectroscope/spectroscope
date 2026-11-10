@@ -15,7 +15,15 @@ import { clockText, timeText } from "./axis";
 import type { Destination } from "./destinations";
 import type { Source } from "./fold";
 import type { Level } from "./levels";
-import type { CredentialRef, FilesReport, Finding, FindingKind, ReportFile, What } from "./report";
+import type {
+  CredentialRef,
+  FilesReport,
+  Finding,
+  FindingKind,
+  ReportFile,
+  ReportSearch,
+  What,
+} from "./report";
 import { maskCredentials } from "./secrets";
 
 const esc = escapeHtml;
@@ -106,9 +114,13 @@ interface Words {
     findings: string;
     levels: string;
     files: string;
+    searches: string;
     limits: string;
     method: string;
   };
+  searchNote: string;
+  searchCols: [string, string, string, string, string, string];
+  searchWhat: Record<ReportSearch["what"], string>;
   destIntro: string;
   destNone: string;
   destCols: [string, string, string, string, string, string];
@@ -250,9 +262,14 @@ const EN: Words = {
     findings: "Findings",
     levels: "Files by level",
     files: "All files",
+    searches: "Searches and listings",
     limits: "What this report cannot see",
     method: "Method",
   },
+  searchNote:
+    "A search or a listing names paths. It counts in no file row and raises no finding about a file; what its result held is checked like any other result. The level is that of the folder it starts in, and it does not count toward the verdict.",
+  searchCols: ["level", "pattern or folder", "what", "tool", "first", "calls"],
+  searchWhat: { listed: "listed", searched: "searched" },
   destIntro:
     "Everything a tool returned became part of the conversation, and the conversation went to the model " +
     "with every turn. The table lists each model the session called, from the recorded exchanges.",
@@ -517,9 +534,14 @@ const DE: Words = {
     findings: "Befunde",
     levels: "Dateien nach Stufe",
     files: "Alle Dateien",
+    searches: "Suchen und Auflistungen",
     limits: "Was dieser Bericht nicht sieht",
     method: "Methode",
   },
+  searchNote:
+    "Eine Suche oder Auflistung nennt Pfade. Sie zählt in keiner Dateizeile und ergibt keinen Befund über eine Datei; was ihr Ergebnis enthielt, wird wie jedes andere Ergebnis geprüft. Die Stufe ist die des Ordners, in dem sie beginnt, und sie zählt nicht für das Urteil.",
+  searchCols: ["Stufe", "Muster oder Ordner", "was", "Werkzeug", "zuerst", "Aufrufe"],
+  searchWhat: { listed: "aufgelistet", searched: "durchsucht" },
   destIntro:
     "Alles, was ein Werkzeug zurückgab, wurde Teil des Gesprächs, und das Gespräch ging mit jedem Zug an das " +
     "Modell. Die Tabelle nennt jedes Modell, das die Session aufgerufen hat, aus den aufgezeichneten Austauschen.",
@@ -1121,6 +1143,29 @@ ${rows.join("\n")}
 </section>`;
 }
 
+/** The searches and listings, when the session made any. */
+function searchesSection(lang: Lang, report: FilesReport): string {
+  if (report.searches.length === 0) return "";
+  const w = W[lang];
+  const head = w.searchCols.map((c, i) => `<th${i === 5 ? ' class="num"' : ""}>${esc(c)}</th>`).join("");
+  const rows = report.searches.map((f) => {
+    const first = report.timed && f.firstT !== null ? `+${clockText(lang, f.firstT)}` : w.event(f.firstCall);
+    const tools = f.tools.map((t) => code(scrub(t))).join(", ");
+    return `<tr data-search><td>${levelBadge(lang, f.level)}</td><td class="path">${masked(f.label)}</td><td>${esc(w.searchWhat[f.what])}</td><td>${tools}</td><td>${esc(first)}</td><td class="num">${esc(f.calls.toLocaleString(lang))}</td></tr>`;
+  });
+  return `<section data-section="searches">
+<h2>${esc(w.headings.searches)}</h2>
+<p class="note">${esc(w.searchNote)}</p>
+<div class="wrap"><table>
+<thead><tr>${head}</tr></thead>
+<tbody>
+${rows.join("\n")}
+</tbody>
+</table></div>
+</section>
+`;
+}
+
 function limitsSection(lang: Lang, report: FilesReport): string {
   const w = W[lang];
   const anyModel =
@@ -1233,7 +1278,8 @@ const SWITCH = `
 /**
  * The files report as one self-contained HTML document in the report's
  * language: header, verdict, where the content went, findings, files by
- * level, all files, what the report cannot see, method. Light by default,
+ * level, all files, searches and listings (when any), what the report cannot
+ * see, method. Light by default,
  * with a switch to dark; print is light.
  */
 export function reportHtml(report: FilesReport, lang: Lang): string {
@@ -1257,7 +1303,7 @@ ${destinationsSection(lang, report)}
 ${findingsSection(lang, report)}
 ${levelsSection(lang, report)}
 ${filesSection(lang, report)}
-${limitsSection(lang, report)}
+${searchesSection(lang, report)}${limitsSection(lang, report)}
 ${methodSection(lang, report)}
 <footer>${esc(w.footer(version))}</footer>
 </main>

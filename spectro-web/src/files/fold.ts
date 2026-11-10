@@ -362,6 +362,9 @@ function onePerPath(touches: readonly ReadTouch[]): ReadTouch[] {
       sources: SOURCE_ORDER.filter((s) => first.sources.includes(s) || touch.sources.includes(s)),
     };
     if (touch.pattern === true) merged.pattern = true;
+    // A path both listed and read in one call was read.
+    if (first.listing !== true || touch.listing !== true) delete merged.listing;
+    if (first.search !== true || touch.search !== true) delete merged.search;
     if (first.replaced !== undefined || touch.replaced !== undefined)
       merged.replaced = [...(first.replaced ?? []), ...(touch.replaced ?? [])];
     const content = filled(first.content) ?? filled(touch.content);
@@ -393,7 +396,7 @@ function readCall(open: Open): Reading | null {
         ? recorded(view.source, base, "read", "viewed")
         : null;
     case "listing":
-      return recorded(view.path, base, "read", "listed", { folder: true });
+      return recorded(view.path, base, "read", "listed", { folder: true, listing: true });
     case "matches":
       return matches(open.name, view, base);
     case "write":
@@ -436,21 +439,33 @@ function matches(name: string, view: Extract<ToolView, { kind: "matches" }>, bas
   if (GLOB_TOOLS.has(name)) {
     // Not resolved against the base: the pattern stays as the tool matched it.
     const joined = path === null || isRooted(pattern) ? pattern : `${path.replace(/\/+$/, "")}/${pattern}`;
-    return recorded(joined, null, "read", `files matching ${pattern}`, { folder: true, pattern: true });
+    return recorded(joined, null, "read", `files matching ${pattern}`, {
+      folder: true,
+      pattern: true,
+      search: true,
+    });
   }
   if (path === null) {
     // A grep without a path searched the folder the call ran in; the call's line keeps the pattern.
-    return { ...recorded(".", base, "read", `${name} "${pattern}"`, { folder: true }), line: pattern };
+    return {
+      ...recorded(".", base, "read", `${name} "${pattern}"`, { folder: true, search: true }),
+      line: pattern,
+    };
   }
   // A grep narrowed by a glob filter searched a pattern (describeTool joined it into the path).
   if (view.filter !== null) {
     return recorded(path, base, "read", `search for ${pattern} in ${view.filter}`, {
       folder: true,
       pattern: true,
+      search: true,
     });
   }
   // A grep on a plain path searched that file or folder; only the path itself can say folder.
-  return recorded(path, base, "read", `search for ${pattern}`, { folder: saysFolder(path) });
+  const folder = saysFolder(path);
+  return recorded(path, base, "read", `search for ${pattern}`, {
+    folder,
+    ...(folder ? { search: true } : {}),
+  });
 }
 
 function shell(view: Extract<ToolView, { kind: "command" }>, open: Open): Reading {
@@ -494,7 +509,9 @@ function recorded(
   base: string | null,
   kind: TouchKind,
   reason: string,
-  extra: Partial<Pick<ShellTouch, "folder" | "pattern" | "replaced" | "content" | "appended">> = {},
+  extra: Partial<
+    Pick<ShellTouch, "folder" | "pattern" | "listing" | "search" | "replaced" | "content" | "appended">
+  > = {},
 ): Reading {
   const { folder = false, ...rest } = extra;
   return {

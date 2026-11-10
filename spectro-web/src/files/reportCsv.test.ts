@@ -275,3 +275,35 @@ describe("csvCell", () => {
     expect(csvCell('=HYPERLINK("x")')).toBe(`"'=HYPERLINK(""x"")"`);
   });
 });
+
+// Final fix wave item 3: one row per search or listing, after the files.
+describe("searches and listings in the CSV", () => {
+  it("each has a row with what it did, marked as not counted", () => {
+    const rec = new Rec()
+      .start()
+      .tool("read_file", { path: "src/a.ts" })
+      .tool("Bash", { command: "ls -la .env" }, "-rw------- .env")
+      .tool("Grep", { pattern: "TODO" }, "src/a.ts:1: // TODO");
+    for (const lang of ["en", "de"] as const) {
+      const rows = records(reportCsv(build(rec.events), lang).slice(1)).map(cells);
+      const searches = rows.filter((r) => r[6] === "listed" || r[6] === "searched");
+      expect(
+        searches.map((r) => [r[0], r[5], r[6], r[8]]),
+        lang,
+      ).toEqual([
+        ["critical", "Bash", "listed", ".env"],
+        ["project", "Grep", "searched", "w"],
+      ]);
+      const note = lang === "en" ? "names only, not counted" : "nur Namen, nicht gezählt";
+      expect(
+        searches.every((r) => r[10].includes(note)),
+        lang,
+      ).toBe(true);
+      // After the file rows.
+      expect(
+        rows.findIndex((r) => r[8] === "src/a.ts"),
+        lang,
+      ).toBeLessThan(rows.indexOf(searches[0]));
+    }
+  });
+});

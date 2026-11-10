@@ -1,8 +1,9 @@
 // Card 605: the files report as CSV (design section 5). UTF-8 with a byte
 // order mark so a spreadsheet reads the umlauts, comma separated, quoted as
-// RFC 4180 says, CRLF line ends. One row per finding, then one row per file:
-// the report model holds files, not single touches, so a file row carries what
-// happened to it over the session, its sources, its first time and its calls.
+// RFC 4180 says, CRLF line ends. One row per finding, one per file, then one
+// per search or listing. The report model holds files, not single touches, so
+// a file row carries what happened to it over the session, its sources, its
+// first time and its calls.
 //
 // The columns level, what, source and finding carry the report's tokens in
 // every language, for filtering; clock, detail and destination are written in
@@ -10,7 +11,7 @@
 
 import type { Lang } from "../i18n/i18n";
 import { clockText } from "./axis";
-import type { FilesReport, Finding, ReportFile } from "./report";
+import type { FilesReport, Finding, ReportFile, ReportSearch } from "./report";
 import { cutNote, destinationName, findingEvent, placeShort, reachedDestinations, scrub } from "./reportHtml";
 
 export const CSV_HEADER: readonly string[] = [
@@ -56,6 +57,7 @@ interface Words {
   iban: string;
   calls: (n: number) => string;
   modelOnly: string;
+  namesOnly: string;
 }
 
 const W: Record<Lang, Words> = {
@@ -72,6 +74,7 @@ const W: Record<Lang, Words> = {
     iban: "iban",
     calls: (n) => `${n} ${n === 1 ? "call" : "calls"}`,
     modelOnly: "only a model's reading names it, not counted",
+    namesOnly: "a search or listing: names only, not counted",
   },
   de: {
     lines: (n) => (n === 0 ? "keine Ausgabe aufgezeichnet" : `${n} ${n === 1 ? "Zeile" : "Zeilen"}`),
@@ -86,6 +89,7 @@ const W: Record<Lang, Words> = {
     iban: "IBAN",
     calls: (n) => `${n} ${n === 1 ? "Aufruf" : "Aufrufe"}`,
     modelOnly: "nur die Lesart eines Modells nennt sie, nicht gezählt",
+    namesOnly: "eine Suche oder Auflistung: nur Namen, nicht gezählt",
   },
 };
 
@@ -173,12 +177,32 @@ function fileRow(lang: Lang, report: FilesReport, f: ReportFile): string[] {
   ];
 }
 
-/** The files report as one CSV text: the byte order mark, the header, the findings, the files. */
+/** A search or listing: `what` says listed or searched, and it is not counted. */
+function searchRow(lang: Lang, report: FilesReport, f: ReportSearch): string[] {
+  const w = W[lang];
+  return [
+    f.level,
+    timeS(f.firstT),
+    clock(lang, report, f.firstT),
+    String(f.firstCall),
+    "",
+    f.tools.map(scrub).join(" "),
+    f.what,
+    f.sources.join(" "),
+    f.label,
+    "",
+    `${w.calls(f.calls)}; ${w.namesOnly}`,
+    "",
+  ];
+}
+
+/** The files report as one CSV text: the byte order mark, the header, the findings, the files, the searches. */
 export function reportCsv(report: FilesReport, lang: Lang): string {
   const rows = [
     [...CSV_HEADER],
     ...report.findings.map((f) => findingRow(lang, report, f)),
     ...report.files.map((f) => fileRow(lang, report, f)),
+    ...report.searches.map((f) => searchRow(lang, report, f)),
   ];
   return BOM + rows.map((row) => row.map(csvCell).join(",") + EOL).join("");
 }

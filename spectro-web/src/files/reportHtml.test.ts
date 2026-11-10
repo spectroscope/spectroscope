@@ -774,3 +774,38 @@ describe("reportFilename", () => {
     );
   });
 });
+
+// Final fix wave item 3: the searches and listings section.
+describe("searches and listings in the document", () => {
+  const rec = new Rec()
+    .start(W)
+    .tool("Glob", { pattern: "**/*.pem", path: W }, "No files found")
+    .tool("Bash", { command: "ls ~/.ssh" }, "id_ed25519\nconfig")
+    .tool("read_file", { path: "src/a.ts" });
+  const report = build(rec.events);
+
+  it("stands after all files and before the limits, in both languages", () => {
+    for (const [lang, heading, listed] of [
+      ["en", "Searches and listings", "listed"],
+      ["de", "Suchen und Auflistungen", "aufgelistet"],
+    ] as const) {
+      const html = reportHtml(report, lang);
+      const files = html.indexOf('data-section="files"');
+      const searches = html.indexOf('data-section="searches"');
+      const limits = html.indexOf('data-section="limits"');
+      expect(files < searches && searches < limits, lang).toBe(true);
+      expect(html, lang).toContain(`<h2>${heading}</h2>`);
+      const rows = html.match(/<tr data-search>[\s\S]*?<\/tr>/g) ?? [];
+      expect(rows, lang).toHaveLength(2);
+      expect(rows[0], lang).toContain('<td class="path">~/.ssh</td>');
+      expect(rows[0], lang).toContain('<span class="lv lv-critical">');
+      expect(rows[0], lang).toContain(`<td>${listed}</td>`);
+      expect(rows[1], lang).toContain('<td class="path">**/*.pem</td>');
+    }
+  });
+
+  it("is left out when the session made no search", () => {
+    const html = reportHtml(build(new Rec().start(W).tool("read_file", { path: "a.ts" }).events), "en");
+    expect(html).not.toContain('data-section="searches"');
+  });
+});

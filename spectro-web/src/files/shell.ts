@@ -31,6 +31,8 @@ export interface ShellTouch {
   path: string; // resolvePath(written, base at that point of the line)
   folder: boolean; // a folder or a pattern, not one file
   pattern?: true; // a glob pattern: a glob tool's, a grep filter's or an unquoted shell glob word (card 605)
+  listing?: true; // a listing (ls, tree, list_dir): it names entries, it reads no content (card 605)
+  search?: true; // a search over a folder (find, a recursive grep, a glob tool): it names matches (card 605)
   kind: TouchKind;
   reason: string; // rule name plus the matched fragment, e.g. "redirect > out.txt"
   replaced?: { old: string; new: string }[];
@@ -90,7 +92,9 @@ interface Ctx {
   seg: Segment;
   out: Reading;
 }
-type Extra = Pick<ShellTouch, "replaced" | "content" | "appended"> & { folder?: boolean };
+type Extra = Pick<ShellTouch, "replaced" | "content" | "appended" | "listing" | "search"> & {
+  folder?: boolean;
+};
 
 const RESERVED = new Set(["!", "{", "}", "if", "then", "else", "elif", "while", "until", "do"]);
 
@@ -558,6 +562,8 @@ function pip(args: Word[], c: Ctx): void {
 interface Reader extends OptSpec {
   pattern?: string[];
   folder?: true | string[];
+  listing?: true; // its operands are listed, not read
+  search?: true | string[]; // its operands are searched as folders (always, or with one of these options)
   files?: string[]; // options whose value is a file the verb reads
   base?: true | string[]; // without a path and without input on stdin, it searches the folder it runs in (always, or with one of these options)
 }
@@ -567,6 +573,7 @@ const GREP: Reader = {
   pattern: ["-e", "-f", "--regexp", "--file"],
   files: ["-f", "--file"],
   base: ["-r", "-R", "--recursive"],
+  search: ["-r", "-R", "--recursive"],
 };
 const READERS: Record<string, Reader> = {
   cat: {},
@@ -599,6 +606,7 @@ const READERS: Record<string, Reader> = {
     pattern: ["-e", "-f", "--regexp", "--file", "--files", "--type-list"],
     files: ["-f", "--file"],
     base: true,
+    search: true,
   },
   awk: { values: "Ffv", pattern: ["-f"], files: ["-f"] },
   jq: {
@@ -610,8 +618,8 @@ const READERS: Record<string, Reader> = {
   },
   // BSD ls on macOS has no option that takes a value. An operand is a folder
   // only when it says so (a trailing slash, `.` or `..`): `ls -la f.jsonl` is a file.
-  ls: {},
-  tree: { values: "LIPo", folder: true },
+  ls: { listing: true },
+  tree: { values: "LIPo", folder: true, listing: true },
 };
 
 function reader(name: string, spec: Reader, args: Word[], c: Ctx): void {
@@ -623,10 +631,16 @@ function reader(name: string, spec: Reader, args: Word[], c: Ctx): void {
     const v = o.flags.get(f);
     if (v) add(c, v, "read", `${name} ${v.text}`);
   }
-  for (const a of operands) if (!a.text.startsWith("+")) add(c, a, "read", `${name} ${a.text}`, { folder });
+  const search = spec.search === true || (spec.search !== undefined && has(o, ...spec.search));
+  const how = {
+    ...(spec.listing ? { listing: true as const } : {}),
+    ...(search ? { search: true as const } : {}),
+  };
+  for (const a of operands)
+    if (!a.text.startsWith("+")) add(c, a, "read", `${name} ${a.text}`, { folder, ...how });
   const base = spec.base === true || (spec.base !== undefined && has(o, ...spec.base));
   if (base && operands.length === 0 && !fedStdin(c.seg)) {
-    add(c, ".", "read", pattern ? `${name} "${pattern.text}"` : name, { folder: true });
+    add(c, ".", "read", pattern ? `${name} "${pattern.text}"` : name, { folder: true, search: true });
   }
 }
 
@@ -640,7 +654,7 @@ function find(args: Word[], c: Ctx): void {
   for (; k < args.length; k++) {
     const t = args[k].text;
     if (t.startsWith("-") || t === "(" || t === "!") break;
-    add(c, args[k], "read", `find ${t}`, { folder: true });
+    add(c, args[k], "read", `find ${t}`, { folder: true, search: true });
   }
 }
 

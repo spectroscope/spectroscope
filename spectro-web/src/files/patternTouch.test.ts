@@ -53,3 +53,36 @@ describe("a touch is a pattern by its source (card 605)", () => {
     expect(flags("Bash", { command: "cat 'src/*.ts' src/*.ts" })).toEqual([["/w/src/*.ts", true, true]]);
   });
 });
+
+// Final fix wave item 3: the listing and search flags the files report reads.
+const how = (name: string, input: unknown) =>
+  touchesOf(name, input).map((t) => [t.path, t.listing === true, t.search === true]);
+
+describe("a touch is a listing or a search by its source (card 605)", () => {
+  it("ls, tree and a listing tool list", () => {
+    expect(how("Bash", { command: "ls -la .env" })).toEqual([["/w/.env", true, false]]);
+    expect(how("Bash", { command: "tree -L 2 src" })).toEqual([["/w/src", true, false]]);
+    expect(how("list_dir", { path: "/w/.ssh" })).toEqual([["/w/.ssh", true, false]]);
+  });
+
+  it("find, a recursive grep, rg, a pathless grep and the glob tools search", () => {
+    expect(how("Bash", { command: "find src -name '*.ts'" })).toEqual([["/w/src", false, true]]);
+    expect(how("Bash", { command: "grep -rn TODO src" })).toEqual([["/w/src", false, true]]);
+    expect(how("Bash", { command: "rg TODO src" })).toEqual([["/w/src", false, true]]);
+    expect(how("Bash", { command: "rg TODO" })).toEqual([["/w", false, true]]);
+    expect(how("Grep", { pattern: "TODO" })).toEqual([["/w", false, true]]);
+    expect(how("Grep", { pattern: "TODO", path: "/w/src", glob: "*.ts" })).toEqual([
+      ["/w/src/**/*.ts", false, true],
+    ]);
+    expect(how("Glob", { pattern: "**/*.pem" })).toEqual([["**/*.pem", false, true]]);
+  });
+
+  it("a plain grep and a reader read; a path listed and read in one call was read", () => {
+    expect(how("Bash", { command: "grep -q API .env" })).toEqual([["/w/.env", false, false]]);
+    expect(how("Bash", { command: "cat *.pem" })).toEqual([["/w/*.pem", false, false]]);
+    expect(how("Bash", { command: "ls -la .env && cat .env" })).toEqual([["/w/.env", false, false]]);
+    expect(how("Grep", { pattern: "TODO", path: "/w/NEXT-SESSION.md" })).toEqual([
+      ["/w/NEXT-SESSION.md", false, false],
+    ]);
+  });
+});
