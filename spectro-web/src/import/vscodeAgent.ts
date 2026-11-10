@@ -64,9 +64,10 @@
 // error. A completion without either leaves `output` empty: a phrase like "(no
 // output recorded)" would read as a tool that really returned that text, so the
 // adapter counts them (ToolOutputCount) and the import says how many, once
-// (components/importBar.ts). Two fields have no wire field and stay unread: result.detailedContent (the file
-// diff of an edit or create) and shellExecution.exitCode. The counts are a
-// census of both local corpora on 2026-11-10 (task 10 report).
+// (components/importBar.ts). Two fields have no wire field and stay unread:
+// result.detailedContent (the file diff of an edit or create) and
+// shellExecution.exitCode. The counts are a census of both local corpora on
+// 2026-11-10 (task 10 report).
 
 import type { RunEvent } from "../events";
 import type { ImportedEvents } from "./claudeCode";
