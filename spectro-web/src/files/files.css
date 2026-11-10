@@ -582,10 +582,11 @@
   font-size: var(--fs-13);
 }
 /* The column widths. A fixed layout reads them from the col elements, so a
-   long path or command cannot take the call column's width; the files column
-   takes what is left, and below the table's min-width the panel scrolls
-   sideways instead of closing it. The time column holds "+16 d 00:00:00",
-   the prompt column its header. */
+   long path or command cannot take the call column's width; call and files
+   have none and share what is left equally, and below the table's min-width
+   the panel scrolls sideways instead of closing them. The time column holds
+   "+16 d 00:00:00", the prompt column its header, the operation column
+   "keine Datei genannt". */
 .files-ops__col--when {
   width: 9em;
 }
@@ -596,10 +597,7 @@
   width: 8em;
 }
 .files-ops__col--op {
-  width: 9em;
-}
-.files-ops__col--call {
-  width: 38%;
+  width: 12em;
 }
 .files-ops__col--tool {
   width: 8em;

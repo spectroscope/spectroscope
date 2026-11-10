@@ -385,12 +385,18 @@ describe("the operations view", () => {
     // The tool column leaves at narrow widths with its cells.
     const tool = one.find((el) => el.type === "col" && String(el.props.className).includes("--tool"));
     expect(String(tool?.props.className)).toContain("files-hide-narrow");
-    // Every column has a width except files, which takes the rest; call takes 38 %.
-    expect(blockOf(css, ".files-ops__col--call")).toMatch(/width:\s*38%/);
+    // Every column has a width except call and files, which share what is left equally.
     for (const name of ["when", "prompt", "agent", "op", "tool"]) {
       expect(blockOf(css, `.files-ops__col--${name}`), name).toMatch(/width:/);
     }
-    expect(rules("files.css", css).some((r) => r.subject === ".files-ops__col--files")).toBe(false);
+    for (const name of ["call", "files"]) {
+      expect(
+        rules("files.css", css).some((r) => r.subject === `.files-ops__col--${name}`),
+        name,
+      ).toBe(false);
+    }
+    // The operation column holds its longest German word, "keine Datei genannt" (130 px measured).
+    expect(blockOf(css, ".files-ops__col--op")).toMatch(/width:\s*12em/);
   });
 
   it("aLongPathKeepsItsFileNameWithTheWholePathInItsTitle", () => {
