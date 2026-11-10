@@ -33,4 +33,7 @@
 {"type":"subagent.completed","data":{"toolCallId":"t9","agentName":"explore","agentDisplayName":"lexer","durationMs":4000,"totalTokens":900,"totalToolCalls":1,"model":"claude-haiku-4.5","modelSelectionSource":"default","firstDispatchedModel":"claude-haiku-4.5"},"id":"e31","timestamp":"2026-11-10T09:00:30.000Z","parentId":"e30","agentId":"a-lex"}
 {"type":"tool.execution_start","data":{"toolCallId":"t10","toolName":"read_agent","arguments":{"agent_id":"a-lex"}},"id":"e32","timestamp":"2026-11-10T09:00:31.000Z","parentId":"e31"}
 {"type":"tool.execution_complete","data":{"toolCallId":"t10","success":true,"result":{"content":"The lexer skips empty lines."}},"id":"e33","timestamp":"2026-11-10T09:00:32.000Z","parentId":"e32"}
+{"type":"session.error","data":{"errorType":"model","message":"Request failed"},"id":"e33b","timestamp":"2026-11-10T09:00:32.250Z","parentId":"e33"}
+{"type":"session.warning","data":{"warningType":"quota","message":"Close to the limit"},"id":"e33c","timestamp":"2026-11-10T09:00:32.500Z","parentId":"e33b"}
+{"type":"abort","data":{"reason":"user initiated"},"id":"e33d","timestamp":"2026-11-10T09:00:32.750Z","parentId":"e33c"}
 {"type":"assistant.turn_end","data":{"turnId":"0"},"id":"e34","timestamp":"2026-11-10T09:00:33.000Z","parentId":"e33"}

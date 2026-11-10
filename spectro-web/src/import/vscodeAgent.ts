@@ -11,6 +11,8 @@
 //   subagent.started         -> agent_spawn + the child's run_start
 //   subagent.completed       -> the child's run_end
 //   session.usage_record     -> usage
+//   session.error            -> error {message}
+//   abort                    -> error "aborted: <reason>"
 //   session.start            -> ground_info {cwd} (the GitHub Copilot CLI's own
 //                               file, card 605; import-only, as in claudeCode.ts)
 // so a recorded Copilot session replays through the same reducers as a
@@ -36,6 +38,13 @@
 // turns; its run ends at subagent.completed, the child's own last record. Its
 // user.message is that same task (28 of 28 in the store) and gives no frame,
 // so it never reads as a prompt somebody typed.
+//
+// ERRORS (card 605, task 10): session.error gives an error with its message,
+// else its errorType. The wire's `abort` is a client command (ClientMessage in
+// events.ts), not a recorded event, so a recorded abort (8 in the CLI store,
+// each with a string reason) gives an error "aborted", plus ": <reason>" when
+// the reason is a string. session.warning stays unread: the wire has no
+// warning event.
 //
 // USAGE (card 605, task 10): the CLI store writes session.usage_record per
 // call, the IDE export none. Its data.usage.inputTokens counts the cache reads
@@ -412,6 +421,21 @@ export function vscodeAgentWithOrigin(records: unknown[], base = 1_783_500_000_0
           ...(written === null ? {} : { cacheCreationTokens: written }),
           ts,
         });
+        break;
+      }
+
+      case "session.error": {
+        const message = strField(d, "message") || strField(d, "errorType");
+        if (!message) break;
+        if (!started) openRun("", ts, i);
+        out.push({ type: "error", agentId, message, ts });
+        break;
+      }
+
+      case "abort": {
+        if (!started) openRun("", ts, i);
+        const reason = strField(d, "reason");
+        out.push({ type: "error", agentId, message: reason ? `aborted: ${reason}` : "aborted", ts });
         break;
       }
 

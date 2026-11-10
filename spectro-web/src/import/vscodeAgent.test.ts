@@ -718,3 +718,39 @@ describe("tool.execution_start arguments given as a string (card 605)", () => {
     expect((call.input as string).startsWith("*** Begin Patch")).toBe(true);
   });
 });
+
+// Task 10 item 8: errors. The wire's `abort` is a client command (ClientMessage
+// in events.ts), not a recorded event, so a recorded abort reads as an error.
+describe("a Copilot error, abort or warning (card 605)", () => {
+  const errors = (records: unknown[]) =>
+    vscodeAgentToRunEvents(records)
+      .filter((e) => e.type === "error")
+      .map((e) => [(e as { agentId?: string }).agentId, (e as { message: string }).message]);
+
+  it("gives session.error and abort an error frame each, in the file's order", () => {
+    const records = copilotCli
+      .split(/\r?\n/)
+      .filter((l) => l.trim())
+      .map((l) => JSON.parse(l));
+    expect(errors(records)).toEqual([
+      ["main", "Request failed"],
+      ["main", "aborted: user initiated"],
+    ]);
+    // session.warning gives no frame: the wire has no warning event.
+    const { origin } = vscodeAgentWithOrigin(records);
+    const warning = records.findIndex((r: { type: string }) => r.type === "session.warning");
+    expect(warning).toBeGreaterThan(-1);
+    expect([...origin]).not.toContain(warning);
+  });
+
+  it("names an abort's reason only when it is a string, and an error by its message, else its type", () => {
+    expect(errors([{ type: "abort", data: {} }])).toEqual([["main", "aborted"]]);
+    expect(errors([{ type: "abort", data: { reason: 7 } }])).toEqual([["main", "aborted"]]);
+    expect(errors([{ type: "abort" }])).toEqual([["main", "aborted"]]);
+    expect(errors([{ type: "session.error", data: { errorType: "quota" } }])).toEqual([["main", "quota"]]);
+    expect(errors([{ type: "session.error", data: { errorType: "", message: "" } }])).toEqual([]);
+    expect(errors([{ type: "session.error", data: { message: "boom" }, agentId: "c1" }])).toEqual([
+      ["c1", "boom"],
+    ]);
+  });
+});
