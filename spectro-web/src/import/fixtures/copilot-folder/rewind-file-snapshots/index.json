@@ -23,7 +23,7 @@
         },
         "k2": {
           "path": "/w/test/parser.test.ts",
-          "preimage": { "kind": "none" },
+          "preimage": { "kind": "absent" },
           "postimage": { "kind": "content", "contentHash": "h3", "resolvedPath": "/w/test/parser.test.ts" },
           "linesAdded": 12,
           "linesRemoved": 0
@@ -38,7 +38,7 @@
             "size": 4,
             "resolvedPath": "/w/old/notes.txt"
           },
-          "postimage": { "kind": "none" },
+          "postimage": { "kind": "absent" },
           "linesAdded": 0,
           "linesRemoved": 4
         }

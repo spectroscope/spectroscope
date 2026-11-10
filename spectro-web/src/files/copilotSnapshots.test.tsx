@@ -388,3 +388,58 @@ describe("a snapshot never stands on a tool event, listed or not (fix round 1 it
     expect(["tool_call", "tool_result"]).not.toContain(type);
   });
 });
+
+describe("the report names snapshot files of an unknown kind (fix round 1 item 9)", () => {
+  const odd = index.replace(
+    '"kind": "absent" },\n          "postimage": { "kind": "content", "contentHash": "h3"',
+    '"kind": "lorem" },\n          "postimage": { "kind": "content", "contentHash": "h3"',
+  );
+  const r = () => {
+    const got = loadCopilotFolder({ events, workspace, snapshots: odd, live: false });
+    return buildReport({
+      events: got.events,
+      ledger: foldFiles(got.events, got.source.copilot?.snapshots ?? []),
+      sessionId: "s",
+      title: null,
+      version: null,
+      now: 0,
+    });
+  };
+
+  it("counts it as changed, not created, and says so in the method", () => {
+    expect(odd).not.toBe(index);
+    const files = r().snapshots[0].files;
+    expect(files.map((f) => [f.label, f.what, f.unknownKind])).toEqual([
+      ["src/parser.ts", "changed", false],
+      ["test/parser.test.ts", "changed", true],
+      ["old/notes.txt", "deleted", false],
+    ]);
+    expect(reportHtml(r(), "en")).toContain(
+      "1 file of the Copilot snapshots names a kind this report does not know, so it counts as changed.",
+    );
+    expect(reportHtml(r(), "de")).toContain(
+      "1 Datei der Copilot-Schnappschüsse nennt eine Art, die dieser Bericht nicht kennt; sie zählt deshalb als geändert.",
+    );
+  });
+
+  it("names the count in the plural, and says nothing when every kind is known", () => {
+    expect(reportHtml(report(), "en")).not.toContain("names a kind this report does not know");
+    expect(reportHtml(report(), "en")).not.toContain("name a kind this report does not know");
+    const both = odd.replace('"kind": "absent" }', '"kind": "lorem" }');
+    const got = loadCopilotFolder({ events, workspace, snapshots: both, live: false });
+    const html = reportHtml(
+      buildReport({
+        events: got.events,
+        ledger: foldFiles(got.events, got.source.copilot?.snapshots ?? []),
+        sessionId: "s",
+        title: null,
+        version: null,
+        now: 0,
+      }),
+      "en",
+    );
+    expect(html).toContain(
+      "2 files of the Copilot snapshots name a kind this report does not know, so they count as changed.",
+    );
+  });
+});

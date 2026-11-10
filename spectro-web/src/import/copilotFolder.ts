@@ -31,6 +31,8 @@ export interface CopilotSnapshotFile {
   kind: "create" | "change" | "delete";
   added: number;
   removed: number;
+  /** An image named a kind other than content and absent: read as changed (fix round 1 item 9). */
+  unknownKind?: true;
 }
 
 /** A snapshot of rewind-file-snapshots/index.json, as the file records it. */
@@ -266,9 +268,24 @@ const nonEmpty = (v: unknown): string | null => (typeof v === "string" && v !== 
 /** A count of lines: a finite number not below zero, else 0. */
 const lineCount = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : 0);
 
-/** An image holds content when its kind says so: 7 of 8 preimages and 8 of 8
- *  postimages measured say "content"; the other kind is read as no content. */
-const holdsContent = (image: unknown): boolean => asObject(image)?.kind === "content";
+/** What an image says it holds. Measured on the originals (2026-11-10), the
+ *  kinds are "content" and "absent" only (preimages 8 and 20, postimages 27
+ *  and 1); a missing image holds nothing, any other kind is unknown (fix
+ *  round 1 item 9). */
+function imageKind(image: unknown): "content" | "absent" | "unknown" {
+  const o = asObject(image);
+  if (o === null || o.kind === "absent") return "absent";
+  return o.kind === "content" ? "content" : "unknown";
+}
+
+/** A file's kind: deleted when nothing stands after, created when nothing stood before, else changed;
+ *  an unknown image kind reads as changed and is marked, never as created or deleted. */
+function snapshotKind(pre: unknown, post: unknown): Pick<CopilotSnapshotFile, "kind" | "unknownKind"> {
+  const before = imageKind(pre);
+  const after = imageKind(post);
+  if (before === "unknown" || after === "unknown") return { kind: "change", unknownKind: true };
+  return { kind: after === "absent" ? "delete" : before === "absent" ? "create" : "change" };
+}
 
 /**
  * The snapshots of a rewind-file-snapshots/index.json, or null when the text
@@ -301,8 +318,12 @@ export function readSnapshotIndex(text: string): CopilotSnapshotRecord[] | null 
       const post = asObject(entry.postimage);
       const path = nonEmpty(entry.path) ?? nonEmpty(pre?.resolvedPath) ?? nonEmpty(post?.resolvedPath);
       if (path === null) continue;
-      const kind = !holdsContent(post) ? "delete" : !holdsContent(pre) ? "create" : "change";
-      files.push({ path, kind, added: lineCount(entry.linesAdded), removed: lineCount(entry.linesRemoved) });
+      files.push({
+        path,
+        ...snapshotKind(entry.preimage, entry.postimage),
+        added: lineCount(entry.linesAdded),
+        removed: lineCount(entry.linesRemoved),
+      });
     }
     out.push({
       eventId: nonEmpty(snapshot.eventId),

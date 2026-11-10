@@ -22,6 +22,7 @@ export interface FileTouch extends ShellTouch {
   agentId: string;
   t: number | null; // seconds from the first event (C12)
   lines?: { added: number; removed: number }; // a Copilot file snapshot's count for this file
+  unknownKind?: true; // a Copilot file snapshot named a kind the reader does not know: read as a change
 }
 
 export interface FileCall {
@@ -335,6 +336,7 @@ function addSnapshots(
         agentId: snap.agentId,
         t,
         lines: { added: file.added, removed: file.removed },
+        ...(file.unknownKind === true ? { unknownKind: true as const } : {}),
       });
     }
     calls.push({

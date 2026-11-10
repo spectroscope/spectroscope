@@ -115,7 +115,8 @@ export interface ReportSnapshot {
   agentId: string;
   added: number;
   removed: number;
-  files: { label: string; what: What; added: number; removed: number }[]; // labels shortened and masked
+  // labels shortened and masked; unknownKind: the snapshot named a kind the reader does not know
+  files: { label: string; what: What; added: number; removed: number; unknownKind: boolean }[];
 }
 
 export interface FilesReport {
@@ -357,6 +358,7 @@ export function buildReport(input: ReportInput): FilesReport {
               what: WHAT_OF[touch.kind] ?? "changed",
               added: touch.lines?.added ?? 0,
               removed: touch.lines?.removed ?? 0,
+              unknownKind: touch.unknownKind === true,
             })),
           },
         ],

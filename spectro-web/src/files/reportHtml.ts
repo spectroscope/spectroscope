@@ -187,6 +187,8 @@ interface Words {
     actor: string;
     cols: [string, string, string, string];
     method: string;
+    /** Files of a kind the reader does not know, counted as changed (fix round 1 item 9). */
+    unknown: (n: number) => string;
   };
 }
 
@@ -506,6 +508,10 @@ const EN: Words = {
     cols: ["when", "entry", "files", "lines"],
     method:
       "File snapshots of the Copilot folder were read for which files changed; their stored file contents were not read.",
+    unknown: (n) =>
+      n === 1
+        ? "1 file of the Copilot snapshots names a kind this report does not know, so it counts as changed."
+        : `${n} files of the Copilot snapshots name a kind this report does not know, so they count as changed.`,
   },
 };
 
@@ -801,6 +807,10 @@ const DE: Words = {
     cols: ["wann", "Eintrag", "Dateien", "Zeilen"],
     method:
       "Die Dateischnappschüsse des Copilot-Ordners wurden gelesen, um zu sehen, welche Dateien sich änderten; die gespeicherten Dateiinhalte wurden nicht gelesen.",
+    unknown: (n) =>
+      n === 1
+        ? "1 Datei der Copilot-Schnappschüsse nennt eine Art, die dieser Bericht nicht kennt; sie zählt deshalb als geändert."
+        : `${n} Dateien der Copilot-Schnappschüsse nennen eine Art, die dieser Bericht nicht kennt; sie zählen deshalb als geändert.`,
   },
 };
 
@@ -1287,9 +1297,11 @@ function methodSection(lang: Lang, report: FilesReport): string {
   const w = W[lang];
   // The method lines are this module's own markup; only the count is inserted.
   const count = esc(report.placeholders.toLocaleString(lang));
+  const unknown = report.snapshots.reduce((n, snap) => n + snap.files.filter((f) => f.unknownKind).length, 0);
   const said = [
     ...w.method(report.placeholders, count),
     ...(report.snapshots.length > 0 ? [esc(w.snapshot.method)] : []),
+    ...(unknown > 0 ? [esc(w.snapshot.unknown(unknown))] : []),
   ];
   const items = said.map((l) => `<li>${l}</li>`);
   return `<section data-section="method">

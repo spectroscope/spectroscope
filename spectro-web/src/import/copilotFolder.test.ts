@@ -312,23 +312,46 @@ describe("reading rewind-file-snapshots/index.json (item 3)", () => {
     ]);
   });
 
-  it("an image without content, or none at all, holds no content", () => {
+  it("an image of kind absent, or none at all, holds no content (fix round 1 item 9)", () => {
     const one = (pre: unknown, post: unknown) =>
       readSnapshotIndex(
         JSON.stringify({
           schema: 1,
           snapshots: [{ eventId: "e", files: { k: { path: "/w/a", preimage: pre, postimage: post } } }],
         }),
-      )?.[0].files[0].kind;
+      )?.[0].files[0];
     const content = { kind: "content", contentHash: "h" };
-    expect(one(content, content)).toBe("change");
-    expect(one(undefined, content)).toBe("create");
-    expect(one(null, content)).toBe("create");
-    expect(one({ kind: "lorem" }, content)).toBe("create");
-    expect(one(content, undefined)).toBe("delete");
-    expect(one(content, { kind: "lorem" })).toBe("delete");
+    const absent = { kind: "absent" };
+    expect(one(content, content)).toMatchObject({ kind: "change" });
+    expect(one(undefined, content)).toMatchObject({ kind: "create" });
+    expect(one(null, content)).toMatchObject({ kind: "create" });
+    expect(one(absent, content)).toMatchObject({ kind: "create" });
+    expect(one(content, undefined)).toMatchObject({ kind: "delete" });
+    expect(one(content, absent)).toMatchObject({ kind: "delete" });
     // Nothing before and nothing after: the file does not stand at the end.
-    expect(one({ kind: "lorem" }, { kind: "lorem" })).toBe("delete");
+    expect(one(absent, absent)).toMatchObject({ kind: "delete" });
+    for (const known of [one(content, content), one(absent, content), one(content, absent)]) {
+      expect(known?.unknownKind).toBeUndefined();
+    }
+  });
+
+  it("any other kind is read as changed and marked unknown, never as created or deleted", () => {
+    const one = (pre: unknown, post: unknown) =>
+      readSnapshotIndex(
+        JSON.stringify({
+          schema: 1,
+          snapshots: [{ eventId: "e", files: { k: { path: "/w/a", preimage: pre, postimage: post } } }],
+        }),
+      )?.[0].files[0];
+    const content = { kind: "content" };
+    for (const [pre, post] of [
+      [{ kind: "lorem" }, content],
+      [content, { kind: "binary" }],
+      [{ kind: "lorem" }, { kind: "absent" }],
+      [{ kind: 7 }, content],
+    ]) {
+      expect(one(pre, post)).toMatchObject({ kind: "change", unknownKind: true });
+    }
   });
 
   it("takes resolvedPath when path is missing, names the record's agent, and keeps lines finite", () => {
