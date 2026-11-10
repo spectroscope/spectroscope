@@ -229,7 +229,7 @@ describe("the dialog names a lone side file instead of calling it invalid (item 
 });
 
 describe("the dialog and the sidebar name the Copilot format (item 8)", () => {
-  const DASH = /[–—]/;
+  const DASH = /[\u2013\u2014]/;
 
   it("the dialog's description names all three and suggests the folder for Copilot", () => {
     for (const lang of ["en", "de"] as const) {
