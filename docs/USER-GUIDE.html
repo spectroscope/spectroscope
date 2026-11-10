@@ -1560,11 +1560,16 @@ the trace at that call. The <em>created</em> view has one card per file the run 
 content when the session holds it. The <em>operations</em> view is a table of every call with its
 time, prompt, operation, files and tool. In the explorer each file carries a letter:
 <code>A</code> created, <code>M</code> changed, <code>D</code> deleted, <code>R</code> read, and
-<code>?</code> when a script may have changed it.</p>
+<code>?</code> when a script may have changed it. A glob pattern from a search tool, such as
+<code>src/**/*.ts</code>, shows as one row marked <em>pattern</em>, under the folder before its
+first wildcard.</p>
 
 <p>Next to the letter, each entry carries a source tag. An entry tagged <em>recorded</em> comes
-from a file tool that named the file. An entry tagged <em>probable</em> comes from the heuristic,
-which finds files in shell commands. It covers redirects (<code>echo text &gt; notes.txt</code>),
+from a file tool that named the file. The tab reads the file tools of spectroscope, Claude Code
+and VS Code, and the GitHub Copilot CLI's <code>view</code>, <code>create</code> and
+<code>edit</code>. An entry tagged <em>probable</em> comes from the heuristic, which finds files in
+shell commands, including the Copilot CLI's <code>bash</code> and <code>powershell</code> calls.
+It covers redirects (<code>echo text &gt; notes.txt</code>),
 file commands such as <code>cp</code>, <code>mv</code>, <code>rm</code> and <code>sed -i</code>,
 and commands that only read. An entry tagged <em>model</em> comes from a model's reading. The
 heuristic is the default. It runs in the browser and reads only the command line. When a command
@@ -1588,6 +1593,33 @@ send. The model's entries count for shell commands only. Where the model names a
 heuristic found on the same call, the entry carries the <em>probable</em> tag and the
 <em>model</em> tag. The status line names the model whose reading is shown, and the reading is not
 saved with the session.</p>
+
+<p>The <em>Report</em> button sits in the tab's toolbar after the model controls. It writes a
+report on the session's files: it lists the files the session read, changed, created or deleted,
+sorted by level, and says whether secrets reached a model. The report covers the whole session,
+so the agent chips and the cursor do not change it. A sheet opens with the verdict line and three
+buttons. <em>PDF</em> opens the print dialog, where <em>Save as PDF</em> writes the file.
+<em>HTML</em> saves one self-contained page. <em>CSV</em> saves a table with one row per finding
+and one row per file. Each file and each finding has one of four levels. The level
+<em>critical</em> is for secrets, and <em>sensitive</em> is for files outside the project, network
+commands and personal data. A script whose effect the recording does not show is
+<em>unknown</em>, and a file inside the workspace is <em>project</em>. The verdict is the highest
+level. When nothing ranks above <em>project</em>, the report lists what it checked and says that
+it found none of it. A finding is one match of the report's rules in the recording. It can be a
+secret file such as <code>.env</code> or a key under <code>.ssh/</code>, or a credential in a tool
+result, a tool input or a prompt. A credential that a later call uses again is a finding of its
+own. So is a command that prints the environment or a stored secret. A network command is a
+finding too, shown with its host and the files it sends. The remaining findings are a file outside
+the project, personal data such as email addresses in tool results, and a script with unknown
+effect. Entries from a model's reading carry the <em>model</em> tag and do not count toward the
+verdict. The report prints no credential value and no file content. A credential appears only as
+its rule, a size band such as 17 to 32 bytes and a label such as <code>credential 1</code>. The
+band stands in for the exact length, and no hash of the value is written. The section
+<em>Where the content went</em> lists each model the session called and says where it ran. The
+places are this machine, another machine on the local network, a cloud model behind a local
+server, and the cloud. The last two sections name the report's limits and its method. The report
+reads only the recording, so it misses a file that a script opened and a credential of a shape its
+rules do not know.</p>
 
 <h2 id="ch-tabs-text">The Text tab</h2>
 
