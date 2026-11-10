@@ -469,6 +469,20 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Diese Session lief noch, als sie gewählt wurde; der Import enthält die {n} Einträge, die bis dahin geschrieben waren.",
     en: "This session was still running when it was picked; the import holds the {n} records written up to then.",
   },
+  "imp.copilot.store": {
+    de: "{n} Copilot-Sessions in diesem Ordner.",
+    en: "{n} Copilot sessions in this folder.",
+  },
+  "imp.copilot.storeSkipped": {
+    de: "{n} Ordner ohne events.jsonl sind nicht aufgeführt.",
+    en: "{n} folders without an events.jsonl are not listed.",
+  },
+  "imp.copilot.storeSkippedOne": {
+    de: "{n} Ordner ohne events.jsonl ist nicht aufgeführt.",
+    en: "{n} folder without an events.jsonl is not listed.",
+  },
+  "imp.copilot.unnamed": { de: "Session ohne Namen", en: "unnamed session" },
+  "imp.copilot.liveMark": { de: "lief noch", en: "still running" },
   "imp.copilot.liveOne": {
     de: "Diese Session lief noch, als sie gewählt wurde; der Import enthält den {n} Eintrag, der bis dahin geschrieben war.",
     en: "This session was still running when it was picked; the import holds the {n} record written up to then.",

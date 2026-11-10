@@ -371,6 +371,60 @@ export function loadCopilotFolder(texts: CopilotFolderTexts): CopilotFolderLoad 
   };
 }
 
+// ---- a store ----------------------------------------------------------------------
+
+/** A picked file as the store list reads it: its size and time come from the File, never from a read. */
+export interface PickedFileInfo extends PickedText {
+  size: number;
+  lastModified: number;
+}
+
+/** One row of a Copilot store's list (item 5). */
+export interface CopilotStoreRow {
+  /** The index of the session folder in the store group. */
+  session: number;
+  /** workspace.yaml's name, or null. */
+  name: string | null;
+  /** created_at in epoch ms, else the last-modified time of events.jsonl. */
+  created: number;
+  client: string | null;
+  /** The size of events.jsonl, from the File object. */
+  bytes: number;
+  live: boolean;
+}
+
+/**
+ * The rows of a store, newest first. Only the workspace.yaml files are read;
+ * a folder without one, or with one that cannot be read, is a row without a
+ * name, at the time its events.jsonl was last modified.
+ *
+ * @param files    the picked files the group's indices point into
+ * @param sessions the store group's session folders
+ * @return one row per session folder
+ */
+export async function copilotStoreRows(
+  files: readonly PickedFileInfo[],
+  sessions: readonly PickedCopilotFolder[],
+): Promise<CopilotStoreRow[]> {
+  const rows: CopilotStoreRow[] = [];
+  for (let i = 0; i < sessions.length; i++) {
+    const pick = sessions[i];
+    const events = files[pick.events];
+    const yaml = pick.workspace === null ? null : await files[pick.workspace].text().catch(() => null);
+    const ws = yaml === null ? null : copilotWorkspace(readWorkspaceYaml(yaml));
+    const created = ws?.createdAt == null ? NaN : Date.parse(ws.createdAt);
+    rows.push({
+      session: i,
+      name: ws?.name ?? null,
+      created: Number.isFinite(created) ? created : events.lastModified,
+      client: ws?.client ?? null,
+      bytes: events.size,
+      live: pick.live,
+    });
+  }
+  return rows.sort((a, b) => b.created - a.created);
+}
+
 const summary = (workspace: string | null): ImportedRunSummary => ({
   workspace,
   childrenMerged: 0,

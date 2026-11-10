@@ -26,12 +26,17 @@ import {
   type RunStateText,
   type SidecarText,
 } from "../import/claudeCodeRun";
-import { loadCopilotFolder, readCopilotFolder } from "../import/copilotFolder";
+import {
+  copilotStoreRows,
+  loadCopilotFolder,
+  readCopilotFolder,
+  type CopilotStoreRow,
+} from "../import/copilotFolder";
 import { reportBrowserError } from "../state/browserLog";
-import { t } from "../i18n/i18n";
+import { t, type Lang } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { relativeTime } from "../format";
-import { rowState, listingNotice } from "../import/rowState";
+import { formatBytes, rowState, listingNotice } from "../import/rowState";
 import { StoreRow } from "./StoreRow";
 import { toolOutputNote } from "./importBar";
 import type { TranscriptRow, StoreLimits } from "../import/rowState";
@@ -52,6 +57,58 @@ import {
 
 /** How long revealed rows are collected before one batched facts ask goes out. */
 const REVEAL_FLUSH_MS = 40;
+
+/**
+ * The list a folder of Copilot session folders opens (card 605, task 12):
+ * one button per session folder, newest first, each with its name, when it
+ * was created, its client, the size of its events.jsonl and a mark when it
+ * was still running. A press chooses the folder; nothing loads before that.
+ */
+export function CopilotStoreList(props: {
+  lang: Lang;
+  rows: readonly CopilotStoreRow[];
+  /** Folders with the layout and no events.jsonl, counted and not listed. */
+  skipped: number;
+  /** "now" for the relative time, passed so the list renders one clock. */
+  now: number;
+  /** A load is in flight: every row waits. */
+  busy: boolean;
+  onPick: (session: number) => void;
+}) {
+  const { lang, rows, skipped } = props;
+  const lead = [t(lang, "imp.copilot.store", { n: rows.length })];
+  if (skipped > 0)
+    lead.push(
+      t(lang, skipped === 1 ? "imp.copilot.storeSkippedOne" : "imp.copilot.storeSkipped", { n: skipped }),
+    );
+  return (
+    <div className="import-copilot-store">
+      <p className="import-store-note">{lead.join(" ")}</p>
+      <div className="import-store" role="list" aria-label={lead[0]}>
+        {rows.map((row) => (
+          <div key={row.session} className="import-store-line" role="listitem">
+            <button
+              type="button"
+              className="import-store-row"
+              title={new Date(row.created).toISOString()}
+              disabled={props.busy}
+              onClick={() => props.onPick(row.session)}
+            >
+              <span className="import-store-file">{row.name ?? t(lang, "imp.copilot.unnamed")}</span>
+              <span className="import-store-meta">
+                {row.client !== null && <span className="import-store-project mono">{row.client}</span>}
+                <span className="tabular">
+                  {relativeTime(row.created, props.now, lang)} · {formatBytes(row.bytes)}
+                </span>
+                {row.live && <span className="import-store-brings">{t(lang, "imp.copilot.liveMark")}</span>}
+              </span>
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export function ImportDialog(props: {
   onLoad: (
@@ -93,6 +150,13 @@ export function ImportDialog(props: {
   // rowState refuses nothing rather than guessing a number.
   const [limits, setLimits] = useState<StoreLimits | null>(null);
   const [filter, setFilter] = useState<FactsFilter>(emptyFilter());
+  /** A folder of Copilot session folders, listed and waiting for a choice (task 12 item 5). */
+  const [copilotStore, setCopilotStore] = useState<{
+    files: File[];
+    sessions: PickedCopilotFolder[];
+    skipped: number;
+    rows: CopilotStoreRow[];
+  } | null>(null);
   const lang = useLang();
   const fileRef = useRef<HTMLInputElement>(null);
   const dirRef = useRef<HTMLInputElement>(null);
@@ -315,6 +379,10 @@ export function ImportDialog(props: {
    * events.jsonl is not a Copilot session loads as whatever it is.
    */
   const loadCopilotPick = (list: File[], pick: PickedCopilotFolder): void => {
+    // One press, one load: a store row stays pressable while its folder reads.
+    if (loading !== null) return;
+    setError(null);
+    setLoading(`copilot:${pick.folder}`);
     void readCopilotFolder(list, pick)
       .then((texts) => {
         const got = loadCopilotFolder(texts);
@@ -324,12 +392,14 @@ export function ImportDialog(props: {
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : String(err));
         reportBrowserError("import", err);
-      });
+      })
+      .finally(() => setLoading(null));
   };
 
   const takeFiles = (list: File[]): void => {
     if (list.length === 0) return;
     setError(null);
+    setCopilotStore(null);
     // Card 473: a bundle, or a session with its wires beside it, goes first.
     // A pick with neither falls through to the grouping below, unchanged.
     if (list.some((f) => /\.(spectro\.zip|llm\.jsonl|browser\.jsonl)$/.test(f.name))) {
@@ -370,7 +440,15 @@ export function ImportDialog(props: {
       return;
     }
     if (group.kind === "copilot-store") {
-      setError(t(lang, "imp.err.manySessions", { n: group.sessions.length }));
+      // A list, not a load: only the workspace.yaml files are read to build it.
+      void copilotStoreRows(list, group.sessions)
+        .then((rows) =>
+          setCopilotStore({ files: list, sessions: group.sessions, skipped: group.skipped, rows }),
+        )
+        .catch((err: unknown) => {
+          setError(err instanceof Error ? err.message : String(err));
+          reportBrowserError("import", err);
+        });
       return;
     }
     if (group.kind === "single") {
@@ -483,6 +561,17 @@ export function ImportDialog(props: {
         </div>
         <h2 id="import-title">{t(lang, "imp.title")}</h2>
         <p className="import-hint">{t(lang, "imp.hint", { path: "~/.claude/projects/…/*.jsonl" })}</p>
+
+        {copilotStore !== null && (
+          <CopilotStoreList
+            lang={lang}
+            rows={copilotStore.rows}
+            skipped={copilotStore.skipped}
+            now={now}
+            busy={loading !== null}
+            onPick={(i) => loadCopilotPick(copilotStore.files, copilotStore.sessions[i])}
+          />
+        )}
 
         {transcripts.length > 0 && (
           <>

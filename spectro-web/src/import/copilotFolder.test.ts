@@ -8,6 +8,7 @@ import type { PickedCopilotFolder } from "./claudeCodeRun";
 import type { RunEvent } from "../events";
 import { detectAndLoad } from "./detect";
 import {
+  copilotStoreRows,
   copilotWorkspace,
   loadCopilotFolder,
   placeSnapshots,
@@ -460,5 +461,85 @@ describe("a session folder in use says how much it held (item 4)", () => {
   it("says nothing of the kind without the lock", () => {
     const got = loadCopilotFolder({ events: FOLDER_EVENTS, workspace: null, snapshots: null, live: false });
     expect(got.source.copilot?.live).toBeUndefined();
+  });
+});
+
+// ---- item 5: a store -----------------------------------------------------------------
+
+/** A picked file with a size and a time, that counts its reads. */
+function info(name: string, body: string, size = body.length, lastModified = 0) {
+  return Object.assign(file(name, body), { size, lastModified });
+}
+
+describe("the rows of a Copilot store (item 5)", () => {
+  const sessions: PickedCopilotFolder[] = [
+    { folder: "st/a", events: 0, workspace: 1, snapshots: null, live: false },
+    { folder: "st/b", events: 2, workspace: null, snapshots: null, live: true },
+    { folder: "st/c", events: 3, workspace: 4, snapshots: 5, live: false },
+  ];
+  const files = () => [
+    info("events.jsonl", "a", 2048, Date.parse("2026-11-01T00:00:00.000Z")),
+    info(
+      "workspace.yaml",
+      "name: Older one\nclient_name: github/cli\ncreated_at: 2026-11-02T10:00:00.000Z\n",
+    ),
+    info("events.jsonl", "b", 900, Date.parse("2026-11-05T00:00:00.000Z")),
+    info("events.jsonl", "c", 5000, Date.parse("2026-11-01T00:00:00.000Z")),
+    info("workspace.yaml", "name: ''\nclient_name: copilot-intellij\ncreated_at: 2026-11-04T09:00:00.000Z\n"),
+    info("index.json", '{"schema":1,"snapshots":[]}'),
+  ];
+
+  it("lists one row per session folder, newest first, from workspace.yaml and the File alone", async () => {
+    const picked = files();
+    const rows = await copilotStoreRows(picked, sessions);
+    expect(rows).toEqual([
+      {
+        session: 1,
+        name: null,
+        created: Date.parse("2026-11-05T00:00:00.000Z"),
+        client: null,
+        bytes: 900,
+        live: true,
+      },
+      {
+        session: 2,
+        name: null,
+        created: Date.parse("2026-11-04T09:00:00.000Z"),
+        client: "copilot-intellij",
+        bytes: 5000,
+        live: false,
+      },
+      {
+        session: 0,
+        name: "Older one",
+        created: Date.parse("2026-11-02T10:00:00.000Z"),
+        client: "github/cli",
+        bytes: 2048,
+        live: false,
+      },
+    ]);
+  });
+
+  it("reads only the workspace.yaml files to build the list", async () => {
+    const picked = files();
+    await copilotStoreRows(picked, sessions);
+    expect(picked.map((f) => f.reads)).toEqual([0, 1, 0, 0, 1, 0]);
+  });
+
+  it("a workspace.yaml that cannot be read or names no time falls back to the file's time", async () => {
+    const picked = [
+      info("events.jsonl", "a", 10, 1000),
+      Object.assign(file("workspace.yaml", new Error("gone")), { size: 0, lastModified: 0 }),
+      info("events.jsonl", "b", 10, 2000),
+      info("workspace.yaml", "name: B\ncreated_at: soon\n"),
+    ];
+    const rows = await copilotStoreRows(picked, [
+      { folder: "a", events: 0, workspace: 1, snapshots: null, live: false },
+      { folder: "b", events: 2, workspace: 3, snapshots: null, live: false },
+    ]);
+    expect(rows.map((r) => [r.session, r.name, r.created])).toEqual([
+      [1, "B", 2000],
+      [0, null, 1000],
+    ]);
   });
 });
