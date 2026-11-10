@@ -21,6 +21,7 @@ import {
   type ReachIndex,
 } from "./destinations";
 import { CommandReadings, type CommandReading, type MaskedRange } from "./commandSecrets";
+import { displayNet } from "./displayNet";
 import type { FileCall, FileLedger, FileTouch, Source } from "./fold";
 import { higher, LEVEL_ORDER, outsideWorkspace, pathLevel, type Level } from "./levels";
 import {
@@ -363,7 +364,7 @@ export function buildReport(input: ReportInput): FilesReport {
 
   return {
     sessionId: input.sessionId,
-    title: input.title === null ? null : creds.maskTitle(input.title),
+    title: input.title === null ? null : displayNet(creds.maskTitle(input.title)),
     version: input.version,
     exportedAt: input.now,
     workspace: workspace === null ? null : mask(workspace),
@@ -925,7 +926,11 @@ function finish(
   const raw =
     runner !== undefined ? runner : call?.shell ? (commands.get(call.callIndex) ?? call.line) : null;
   const mask = call === undefined ? null : maskCommand(call);
-  const printed = raw === null || mask === null ? null : printable(raw, (text) => oneLine(mask(text)));
+  // The rule masks first, then the display net (fix round 2 item 1), then the cut.
+  const printed =
+    raw === null || mask === null
+      ? null
+      : printable(raw, (text) => oneLine(displayNet(mask(text), { command: true })));
   return {
     ...rest,
     file: file === null ? null : label(file),

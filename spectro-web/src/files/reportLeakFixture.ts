@@ -8,7 +8,9 @@
 // (item 9) it holds three values in positions that say nothing of a
 // credential: they are masked in every output and make no finding. Since
 // task 11 (item 1) it holds one password per probe of the re-review, each
-// with fewer than six characters before its first terminator.
+// with fewer than six characters before its first terminator. Since fix
+// round 2 (item 1) it holds the Task 11 review's C1, C2 and I3 inputs, which
+// the display net hides where no rule counts them, and its title holds one.
 //
 // Test support only: no module outside a test imports it, which
 // FilesReportSheet.test.tsx pins, so it never reaches the shipped bundle.
@@ -190,6 +192,82 @@ const SHORT_HEAD: readonly [string, string, string, string, (v: string) => strin
   ],
 ];
 
+/**
+ * Fix round 2 item 1: the Task 11 review's C1 and C2 inputs, each with its
+ * tool and value. A rule counts some of them; the display net hides the rest.
+ */
+const NET_PROBES: readonly [string, string, string, (v: string) => string][] = [
+  ["ps env assignment", "powershell", ["Nk4Wq7", ",Rt2Yh8"].join(""), (v) => `$env:DB_PASSWORD = "${v}"`],
+  [
+    "ps env, then a web call",
+    "powershell",
+    ["Mx", ",Lp5Vb3Qz"].join(""),
+    (v) => `$env:DB_PASSWORD = "${v}"; Invoke-WebRequest https://a.example.com`,
+  ],
+  [
+    "ps variable, then a web call",
+    "powershell",
+    ["Jw", ",Hc6Nd2Rk"].join(""),
+    (v) => `$password = '${v}'; iwr https://a.example.com`,
+  ],
+  [
+    "ps hashtable body",
+    "powershell",
+    ["Gy", ",Ts9Fm4Xe"].join(""),
+    (v) => `Invoke-RestMethod -Method Post -Uri https://api.acme.io/login -Body @{ password = '${v}' }`,
+  ],
+  [
+    "sign of its own",
+    "Bash",
+    ["Fv", ",Ku3Zp7Wn"].join(""),
+    (v) => `echo password = ${v} >> config.ini && curl https://a.example.com`,
+  ],
+  [
+    "sign of its own, six head",
+    "Bash",
+    ["Dr8Qm2", ",Bx5Lc"].join(""),
+    (v) => `echo password = ${v} >> config.ini && curl https://a.example.com`,
+  ],
+  [
+    "comment, sign of its own",
+    "Bash",
+    ["Cz", ",Wj4Yt8Ps"].join(""),
+    (v) => `curl https://a.example.com # password = ${v}`,
+  ],
+  [
+    "JSON with an object after",
+    "Bash",
+    ["Bq", ",Ne7Rh3Kv"].join(""),
+    (v) => `curl -d '{"password":"${v}","opts":{"remember":true}}' https://api.acme.io/login`,
+  ],
+  [
+    "JSON with a list after",
+    "Bash",
+    ["Az", ",Mf6Sw2Jd"].join(""),
+    (v) => `curl -d '{"password":"${v}","scopes":["read"]}' https://api.acme.io/login`,
+  ],
+  [
+    "form with a substitution",
+    "Bash",
+    ["Yp", ",Gk9Vr5Ht"].join(""),
+    (v) => `curl -d "password=${v}&ts=$(date +%s)" https://api.acme.io/login`,
+  ],
+  [
+    "JSON with an email",
+    "Bash",
+    ["Xn", ",Dc3Pq8Lw"].join(""),
+    (v) => `curl -d '{"password":"${v}","email":"bob@example.com"}' https://api.acme.io/login`,
+  ],
+  [
+    "form with a placeholder word",
+    "Bash",
+    ["Wt", ",Bj7Zs4Mx"].join(""),
+    (v) => `curl -d 'password=${v}&scope=your_scope' https://app.acme.io/login`,
+  ],
+];
+/** The I3 input: a password in the title, its head shorter than six characters. */
+const TITLE_PW = ["Vk", ",Qh2Wd6Np"].join("");
+
 const MARKS: Record<string, string> = { comma: ",", quote: "'", semicolon: ";", "@": "@", "/": "/" };
 const terminated = (name: string, a: string, b: string) => `${a}${MARKS[name]}${b}`;
 
@@ -224,6 +302,9 @@ export const LEAK_RAW: readonly string[] = [
   ...MASKED_ONLY.map(([, v]) => v),
   ...TERMINATED.flatMap(([name, a, b]) => [a, b, terminated(name, a, b)]),
   ...SHORT_HEAD.flatMap(([, head, mark, rest]) => [head, rest, `${head}${mark}${rest}`]),
+  ...NET_PROBES.flatMap(([, , v]) => [v, ...v.split(",").filter((p) => p.length >= 4)]),
+  TITLE_PW,
+  ...TITLE_PW.split(",").filter((p) => p.length >= 4),
 ];
 
 /** A session written event by event, one second apart. */
@@ -270,10 +351,12 @@ function leakSession(): {
   events: RunEvent[];
   calls: { name: string; call: number }[];
   quiet: { name: string; call: number }[];
+  net: { name: string; call: number }[];
 } {
   const rec = new Rec();
   const calls: { name: string; call: number }[] = [];
   const quiet: { name: string; call: number }[] = [];
+  const net: { name: string; call: number }[] = [];
   rec
     .push({
       type: "run_start",
@@ -314,6 +397,10 @@ function leakSession(): {
     calls.push({ name, call: rec.events.length });
     rec.tool("Bash", { command: command(`${head}${mark}${rest}`) });
   }
+  for (const [name, tool, value, command] of NET_PROBES) {
+    net.push({ name, call: rec.events.length });
+    rec.tool(tool, { command: command(value) });
+  }
   for (const [name, value, command] of MASKED_ONLY) {
     quiet.push({ name, call: rec.events.length });
     rec.tool("Bash", { command: command(value) });
@@ -323,7 +410,7 @@ function leakSession(): {
     // A model name and an address that carry credentials: the report keeps
     // destinations as recorded, so the renderers mask them.
     .exchange(`m-${JWT}`, `https://u:${EXCHANGE_PW}@api.example.com/v1`);
-  return { events: rec.events, calls, quiet };
+  return { events: rec.events, calls, quiet, net };
 }
 
 /** The session's events, written fresh on every call. */
@@ -337,6 +424,9 @@ export const LEAK_CALLS: readonly { name: string; call: number }[] = leakSession
 /** The call of each masked-only value (task 10 item 9), by name. */
 export const LEAK_QUIET: readonly { name: string; call: number }[] = leakSession().quiet;
 
+/** The call of each C1 and C2 input of fix round 2, by name. */
+export const LEAK_NET: readonly { name: string; call: number }[] = leakSession().net;
+
 /** The report of the session, with a title that carries a key and version 0.16.1. */
 export function leakReport(): FilesReport {
   const events = leakEvents();
@@ -344,7 +434,7 @@ export function leakReport(): FilesReport {
     events,
     ledger: foldFiles(events),
     sessionId: "s-1",
-    title: `deploy with ${GOOGLE}`,
+    title: `deploy with ${GOOGLE}, use password=${TITLE_PW} for db`,
     version: "0.16.1",
     now: Date.UTC(2026, 10, 10, 9, 12),
   });

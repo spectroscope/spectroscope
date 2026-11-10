@@ -550,6 +550,38 @@ describe("reportHtml", () => {
     );
   });
 
+  it("prints the display net's marker in the reader's language and names what it hides (fix round 2 item 1)", () => {
+    // A JSON body: no rule counts the value, the net hides it.
+    const v = ["Ab", ",Cd2", "Ef3xQz"].join("");
+    const command = `curl -d '{"password":"${v}","opts":{"remember":true}}' https://api.acme.io/login`;
+    const report = build(new Rec().start(W).tool("Bash", { command }).events);
+    const en = reportHtml(report, "en");
+    expect(en).toContain('<span class="masked">[hidden]</span>');
+    expect(en).toContain(
+      "Printed commands and titles also hide every word that mixes letters and digits, or upper case, lower case " +
+        "and symbols, unless it is a path, an address, an option, a program or a version.",
+    );
+    const de = reportHtml(report, "de");
+    expect(de).toContain('<span class="masked">[verdeckt]</span>');
+    expect(de).not.toContain("[hidden]");
+    expect(de).toContain(
+      "Ausgegebene Befehle und Titel verdecken zusätzlich jedes Wort, das Buchstaben und Ziffern mischt oder " +
+        "Groß- und Kleinbuchstaben und Sonderzeichen, außer Pfaden, Adressen, Optionen, Programmen und Versionen.",
+    );
+    expect(reportCsv(report, "de")).toContain("[verdeckt]");
+    expect(reportCsv(report, "en")).toContain("[hidden]");
+    // The title, in the head and in the heading.
+    const titled = build(new Rec().start(W).events, `Use ${["Ab1", "Cd2Ef3"].join("")} for db`);
+    for (const [lang, marker] of [
+      ["en", "[hidden]"],
+      ["de", "[verdeckt]"],
+    ] as const) {
+      const html = reportHtml(titled, lang);
+      expect(html, lang).toContain(`<h1>Use <span class="masked">${marker}</span> for db</h1>`);
+      expect(html, lang).toContain(`· Use ${marker} for db</title>`);
+    }
+  });
+
   it("says when the workspace was not recorded", () => {
     const rec = new Rec().start(null).tool("read_file", { path: "/etc/hosts" });
     const html = reportHtml(build(rec.events), "en");

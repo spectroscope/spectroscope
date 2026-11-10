@@ -655,7 +655,8 @@ describe("buildReport", () => {
         callIndex: 3,
         firstSeenCall: 1,
         credentials: [{ label: "credential 1", rule: "private-key" }],
-        command: "echo '[credential 1: private-key]' >> k2.pem",
+        // The display net hides a bare file name with a digit (fix round 2 item 1).
+        command: "echo '[credential 1: private-key]' >> [hidden]",
       });
       expect(leaks(report, body)).toEqual([]);
     });
@@ -727,7 +728,8 @@ describe("buildReport", () => {
           line,
         ).toEqual(["credential 2"]);
         expect(used.command, line).toBe(
-          "curl -H 'X-Key: [credential 2: " + rule + "]' https://api.example.com/",
+          // The net hides a header name of upper case, lower case and a symbol (fix round 2 item 1).
+          "curl -H '[hidden]: [credential 2: " + rule + "]' https://api.example.com/",
         );
         expect(leaks(report, [value]), line).toEqual([]);
       }
@@ -751,11 +753,12 @@ describe("buildReport", () => {
       expect(one(report, "credential-used")).toMatchObject({
         callIndex: 3,
         credentials: [{ label: "credential 1", rule: "private-key" }],
-        command: "echo '[credential 1: private-key]' >> k2.pem",
+        // The display net hides a bare file name with a digit (fix round 2 item 1).
+        command: "echo '[credential 1: private-key]' >> [hidden]",
       });
-      // The hash is not a body line: it stays in the command and is no use of the key.
+      // The hash is not a body line and no use of the key; the display net hides it in print (fix round 2 item 1).
       expect(ofKind(report, "secret-file").find((f) => f.callIndex === 5)?.command).toBe(
-        `cat .env && git show ${sha}`,
+        "cat .env && git show [hidden]",
       );
       expect(leaks(report, body)).toEqual([]);
     });
@@ -856,7 +859,7 @@ describe("buildReport", () => {
 
       expect(one(report, "credential-used")).toMatchObject({
         credentials: [{ label: "credential 2", rule: "private-key" }],
-        command: "echo '[credential 2: private-key]' >> k2.pem",
+        command: "echo '[credential 2: private-key]' >> [hidden]",
       });
     });
 
@@ -879,7 +882,8 @@ describe("buildReport", () => {
         expect(one(report, "credential-used"), command).toMatchObject({
           callIndex: 3,
           credentials: [{ label: "credential 1", rule: "private-key" }],
-          command: "echo '[credential 1: private-key]' >> k2.pem",
+          // The display net hides a bare file name with a digit (fix round 2 item 1).
+          command: "echo '[credential 1: private-key]' >> [hidden]",
         });
         expect(leaks(report, body), command).toEqual([]);
       }
@@ -938,7 +942,8 @@ describe("buildReport", () => {
       );
 
       expect(ofKind(report, "credential-input")).toEqual([]);
-      expect(one(report, "secret-file").command).toBe(`cat .env && git show ${sha}`);
+      // No key body: the hash raises nothing. In print the display net hides it (fix round 2 item 1).
+      expect(one(report, "secret-file").command).toBe("cat .env && git show [hidden]");
     });
 
     it("paths, URLs and a data URL header in inputs stay visible", () => {
@@ -963,9 +968,10 @@ describe("buildReport", () => {
           pkg,
         ]),
       );
+      // In print the display net hides the URL path's mixed segments and the payload (fix round 2 item 1).
       expect(ofKind(report, "network").map((f) => f.command)).toEqual([
-        `curl ${api}`,
-        `curl -d 'img=data:image/png;base64,${lines[0]}' https://example.com/`,
+        "curl https://aiplatform.googleapis.com/v1/projects/[hidden]/locations/[hidden]/models",
+        "curl -d 'img=data:image/png;[hidden],[hidden]' https://example.com/",
       ]);
     });
 
@@ -1021,9 +1027,9 @@ describe("buildReport", () => {
       expect(report.title, title).toBe(masked);
       expect(leaks(report, [secret.slice(0, 8)]), title).toEqual([]);
     }
-    // Seven characters at the end are below the rule's eight and stay.
+    // Seven characters at the end are below the cut rule's eight; the display net hides them (fix round 2 item 1).
     const rec = new Rec().start(W, { prompt: `use ${PAT}` });
-    expect(build(rec.events, undefined, `push ${PAT.slice(0, 7)}`).title).toBe(`push ${PAT.slice(0, 7)}`);
+    expect(build(rec.events, undefined, `push ${PAT.slice(0, 7)}`).title).toBe("push [hidden]");
   });
 
   it("a title cut inside a value keeps no part of it", () => {
@@ -1033,9 +1039,9 @@ describe("buildReport", () => {
     const cut = build(rec.events, undefined, `${prompt.slice(0, 33)}\u2026`);
     expect(cut.title).toBe("push the branch with [credential 1: github-pat]\u2026");
     expect(leaks(cut, [PAT.slice(0, 12)])).toEqual([]);
-    // Seven characters of the value are below the rule's eight and stay.
+    // Seven characters of the value are below the cut rule's eight; the display net hides them (fix round 2 item 1).
     const short = `${prompt.slice(0, 28)}...`;
-    expect(build(rec.events, undefined, short).title).toBe(short);
+    expect(build(rec.events, undefined, short).title).toBe("push the branch with [hidden]");
   });
 
   it("a title keeps no prefix between quotes, brackets or commas", () => {
@@ -1052,9 +1058,9 @@ describe("buildReport", () => {
       expect(report.title, title).toBe(masked);
       expect(leaks(report, [PAT.slice(0, 8)]), title).toEqual([]);
     }
-    // Seven characters stay, as they do between blanks.
+    // Seven characters are below the cut rule's eight; the display net hides them (fix round 2 item 1).
     const seven = `push (${PAT.slice(0, 7)}) now`;
-    expect(build(rec.events, undefined, seven).title).toBe(seven);
+    expect(build(rec.events, undefined, seven).title).toBe("push ([hidden]) now");
   });
 
   describe("a title word also ends at", () => {
@@ -1519,6 +1525,105 @@ describe("dumps, getters and glued values (task 11 item 3)", () => {
     expect(used.map((f) => [f.callIndex, f.firstSeenCall])).toEqual([[3, 1]]);
     expect(used[0].command).toBe("mysql -u app -p[credential 1: password-assignment] -e 'select 1'");
     expect(leaks(report, [DB_PW])).toEqual([]);
+  });
+});
+
+// Task 11 fix round 2 item 1: the display net hides what no rule counts, in
+// commands and in the title. The probes are the Task 11 review's C1, C2 and I3.
+describe("the display net in the report (task 11 fix round 2 item 1)", () => {
+  const SHORT = ["Ab", ",Cd2", "Ef3xQz"].join("");
+  const HEAD6 = ["Ab1Cd2", ",Ef3xQz"].join("");
+  const parts = (v: string): string[] => {
+    const out: string[] = [];
+    for (let k = v.length; k >= 4; k--) out.push(v.slice(0, k), v.slice(v.length - k));
+    return out;
+  };
+  const probes: [string, string, (v: string) => string, string][] = [
+    ["powershell", "an env assignment", (v) => `$env:DB_PASSWORD = "${v}"`, HEAD6],
+    [
+      "powershell",
+      "an env assignment, then a web call",
+      (v) => `$env:DB_PASSWORD = "${v}"; Invoke-WebRequest https://a.example.com`,
+      SHORT,
+    ],
+    [
+      "powershell",
+      "a variable, then a web call",
+      (v) => `$password = '${v}'; iwr https://a.example.com`,
+      SHORT,
+    ],
+    [
+      "powershell",
+      "a hashtable body",
+      (v) => `Invoke-RestMethod -Method Post -Uri https://api.acme.io/login -Body @{ password = '${v}' }`,
+      SHORT,
+    ],
+    [
+      "Bash",
+      "a sign of its own, short head",
+      (v) => `echo password = ${v} >> config.ini && curl https://a.example.com`,
+      SHORT,
+    ],
+    [
+      "Bash",
+      "a sign of its own, six head",
+      (v) => `echo password = ${v} >> config.ini && curl https://a.example.com`,
+      HEAD6,
+    ],
+    ["Bash", "a comment, short head", (v) => `curl https://a.example.com # password = ${v}`, SHORT],
+    ["Bash", "a comment, six head", (v) => `curl https://a.example.com # password = ${v}`, HEAD6],
+    [
+      "Bash",
+      "a JSON body with an object after",
+      (v) => `curl -d '{"password":"${v}","opts":{"remember":true}}' https://api.acme.io/login`,
+      SHORT,
+    ],
+    [
+      "Bash",
+      "a JSON body with a list after",
+      (v) => `curl -d '{"password":"${v}","scopes":["read"]}' https://api.acme.io/login`,
+      SHORT,
+    ],
+    [
+      "Bash",
+      "a form body with a substitution",
+      (v) => `curl -d "password=${v}&ts=$(date +%s)" https://api.acme.io/login`,
+      SHORT,
+    ],
+    [
+      "Bash",
+      "a JSON body with an email",
+      (v) => `curl -d '{"password":"${v}","email":"bob@example.com"}' https://api.acme.io/login`,
+      SHORT,
+    ],
+    [
+      "Bash",
+      "a form body with a placeholder word",
+      (v) => `curl -d 'password=${v}&scope=your_scope' https://app.acme.io/login`,
+      SHORT,
+    ],
+  ];
+
+  for (const [tool, name, command, value] of probes) {
+    it(`prints no part of the value: ${tool}, ${name}`, () => {
+      const report = build(new Rec().start(W).tool(tool, { command: command(value) }).events);
+      expect(leaks(report, parts(value))).toEqual([]);
+      // Positive: the call printed its command, with a rule's label or the net's marker in it.
+      const shown = report.findings.filter((f) => f.command !== null).map((f) => f.command as string);
+      expect(shown.length, name).toBeGreaterThan(0);
+      expect(
+        shown.some((c) => c.includes("[hidden]") || c.includes("[credential")),
+        name,
+      ).toBe(true);
+    });
+  }
+
+  it("the title goes through the rules and the net (I3)", () => {
+    for (const value of [SHORT, HEAD6]) {
+      const report = build(new Rec().start(W).events, undefined, `Use password=${value} for db`);
+      expect(leaks(report, parts(value))).toEqual([]);
+      expect(report.title?.includes("[hidden]")).toBe(true);
+    }
   });
 });
 

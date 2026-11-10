@@ -12,6 +12,7 @@
 import { escapeHtml } from "../export/markup";
 import type { Lang } from "../i18n/i18n";
 import { clockText, timeText } from "./axis";
+import { inLanguage } from "./displayNet";
 import type { Destination } from "./destinations";
 import { COPILOT_SNAPSHOT_TOOL, type Source } from "./fold";
 import type { Level } from "./levels";
@@ -482,7 +483,7 @@ const EN: Words = {
     `Secret files by name: ${SECRET_NAMES}, ${code("id_rsa")} and the other SSH keys, ${SECRET_TAIL}, anything under ${code(".ssh/")}, ${code(".aws/")} or ${code(".gnupg/")}. Templates such as ${code(".env.example")} stay project files.`,
     `Credentials by shape: ten of the twelve redaction rules spectroscope applies to recorded state. One more rule finds assignments to names that say password, secret, token or key, such as ${code("DB_PASSWORD")}. The other two redaction rules count email-shaped strings and IBANs as personal data; one whose local part is ${code("git")} is a Git remote and does not count.`,
     `Credentials by position: in a network command, a value counts as a credential by where it stands, whatever its shape. These places are a URL's password, the password after the colon in ${code("-u")}, ${code("--user")} and the other user options, and the password of ${code("sshpass -p")}. They also include the value of an option whose name says password, token, secret or key. The options ${code("--key")}, ${code("--key-type")}, ${code("--pubkey")} and ${code("--pinnedpubkey")} are left out, because their values are paths or types. The headers Authorization, Proxy-Authorization and Cookie count, and so does a header whose name says token, key, secret, auth or pass. A query value counts only when a word of its name says credential. Those words are ${andList([...CREDENTIAL_NAME_WORDS], "and")}; joined forms such as ${code(CREDENTIAL_NAME_JOINED[0])} count too. A user name given alone does not count by its place. Such a value counts when a rule finds it; otherwise it is not counted and prints as ${code(QUIET_MASK)}, or as written when it is a variable or a placeholder. The one value that ${code("gh auth token")}, ${code("op read")}, ${code("pass show")}, ${code("security ... -w")} or ${code("aws configure get")} printed counts too. For ${code("aws configure get")}, that holds only for an access key, a secret key or a session token. In each case the command must have printed the value itself, not into a pipe or a substitution.`,
-    "The report prints no credential that its rules or these positions found, nor its exact length or a hash of it. In a command, a password assignment is masked to the end of its word, or to the end of the next word when its word ends in = or :. A URL's user and password are masked from :// to the last @. Each credential gets a label that counts up in this report, and the same value keeps its label; its size is given as a band of bytes. A secret of a shape the rules do not know, in a place of a command they do not read, can still print in a command. The values stay in the recording on the machine that made it.",
+    "The report prints no credential that its rules or these positions found, nor its exact length or a hash of it. In a command, a password assignment is masked to the end of its word, or to the end of the next word when its word ends in = or :. A URL's user and password are masked from :// to the last @. Printed commands and titles also hide every word that mixes letters and digits, or upper case, lower case and symbols, unless it is a path, an address, an option, a program or a version. Each credential gets a label that counts up in this report, and the same value keeps its label; its size is given as a band of bytes. A secret of a shape the rules do not know, in a place of a command they do not read, can still print in a command. The values stay in the recording on the machine that made it.",
     `Placeholders such as the AWS documentation key ending in ${code("EXAMPLE")}, ${code(DOLLAR_NAME)}, a value in angle brackets or ${code("changeme")} are not counted. This session held ${count} ${plural(placeholders, "placeholder", "placeholders")}.`,
     "Levels: critical for secrets, sensitive for files outside the project, network commands and personal data. A script whose effect the recording does not show is unknown, and files inside the workspace are project. The verdict is the highest level; a model's reading does not count.",
     "Sources: recorded when the tool reported the file, probable when the files tab's heuristic read it from a shell command, model when a model's reading named it.",
@@ -774,7 +775,7 @@ const DE: Words = {
     `Geheime Dateien nach Namen: ${SECRET_NAMES}, ${code("id_rsa")} und die anderen SSH-Schlüssel, ${SECRET_TAIL}, alles unter ${code(".ssh/")}, ${code(".aws/")} oder ${code(".gnupg/")}. Vorlagen wie ${code(".env.example")} bleiben Projektdateien.`,
     `Zugangsdaten nach Form: zehn der zwölf Schwärzungsregeln, die spectroscope auf aufgezeichneten Zustand anwendet. Eine weitere Regel findet Zuweisungen an Namen, die Passwort, Geheimnis, Token oder Schlüssel sagen (englisch geschrieben), etwa ${code("DB_PASSWORD")}. Die zwei übrigen Schwärzungsregeln zählen E-Mail-förmige Zeichenketten und IBANs als personenbezogene Daten; eine mit dem lokalen Teil ${code("git")} ist ein Git-Remote und zählt nicht.`,
     `Zugangsdaten nach Stelle: in einem Netzwerkbefehl zählt ein Wert durch die Stelle, an der er steht, als Zugangsdaten, gleich welche Form er hat. Diese Stellen sind das Passwort einer URL, das Passwort nach dem Doppelpunkt bei ${code("-u")}, ${code("--user")} und den anderen Benutzeroptionen und das Passwort von ${code("sshpass -p")}. Dazu kommt der Wert einer Option, deren Name Passwort, Token, Geheimnis oder Schlüssel sagt (englisch geschrieben). Die Optionen ${code("--key")}, ${code("--key-type")}, ${code("--pubkey")} und ${code("--pinnedpubkey")} zählen nicht, weil ihre Werte Pfade oder Typen sind. Die Header Authorization, Proxy-Authorization und Cookie zählen, ebenso ein Header, dessen Name token, key, secret, auth oder pass enthält. Ein Wert einer Abfrage zählt nur, wenn ein Wort seines Namens Zugangsdaten nennt. Diese Wörter sind ${andList([...CREDENTIAL_NAME_WORDS], "und")}; zusammengeschriebene Formen wie ${code(CREDENTIAL_NAME_JOINED[0])} zählen ebenso. Ein Benutzername allein zählt nicht durch seine Stelle. Findet eine Regel einen solchen Wert, zählt er; sonst zählt er nicht und steht als ${code(QUIET_MASK)} im Befehl, eine Variable oder ein Platzhalter so, wie sie geschrieben wurden. Der eine Wert, den ${code("gh auth token")}, ${code("op read")}, ${code("pass show")}, ${code("security ... -w")} oder ${code("aws configure get")} ausgab, zählt ebenso. Bei ${code("aws configure get")} gilt das nur für einen Zugriffsschlüssel, einen geheimen Schlüssel oder ein Sitzungstoken. In jedem Fall muss der Befehl den Wert selbst ausgegeben haben, nicht in eine Pipe oder eine Befehlsersetzung.`,
-    "Keine Zugangsdaten werden ausgegeben, auch nicht ihre genaue Länge oder ein Hash davon. Das gilt für alle Zugangsdaten, die die Regeln oder diese Stellen gefunden haben. In einem Befehl wird eine Passwortzuweisung bis zum Ende ihres Worts geschwärzt, und wenn ihr Wort auf = oder : endet, bis zum Ende des nächsten Worts. Benutzer und Passwort einer URL werden von :// bis zum letzten @ geschwärzt. Jeder Wert bekommt ein Etikett, das in diesem Bericht hochzählt, und derselbe Wert behält sein Etikett; seine Größe steht als Spanne in Byte da. Ein Geheimnis in einer Form, die die Regeln nicht kennen, an einer Stelle eines Befehls, die sie nicht lesen, kann in einem Befehl trotzdem erscheinen. Die Werte bleiben in der Aufzeichnung auf dem Rechner, der sie gemacht hat.",
+    "Keine Zugangsdaten werden ausgegeben, auch nicht ihre genaue Länge oder ein Hash davon. Das gilt für alle Zugangsdaten, die die Regeln oder diese Stellen gefunden haben. In einem Befehl wird eine Passwortzuweisung bis zum Ende ihres Worts geschwärzt, und wenn ihr Wort auf = oder : endet, bis zum Ende des nächsten Worts. Benutzer und Passwort einer URL werden von :// bis zum letzten @ geschwärzt. Ausgegebene Befehle und Titel verdecken zusätzlich jedes Wort, das Buchstaben und Ziffern mischt oder Groß- und Kleinbuchstaben und Sonderzeichen, außer Pfaden, Adressen, Optionen, Programmen und Versionen. Jeder Wert bekommt ein Etikett, das in diesem Bericht hochzählt, und derselbe Wert behält sein Etikett; seine Größe steht als Spanne in Byte da. Ein Geheimnis in einer Form, die die Regeln nicht kennen, an einer Stelle eines Befehls, die sie nicht lesen, kann in einem Befehl trotzdem erscheinen. Die Werte bleiben in der Aufzeichnung auf dem Rechner, der sie gemacht hat.",
     `Platzhalter wie der AWS-Dokumentationsschlüssel mit der Endung ${code("EXAMPLE")}, ${code(DOLLAR_NAME)}, ein Wert in spitzen Klammern oder ${code("changeme")} zählen nicht. Diese Session enthielt ${count} Platzhalter.`,
     "Stufen: kritisch für Geheimnisse, sensibel für Dateien außerhalb des Projekts, Netzwerkbefehle und personenbezogene Daten. Ein Skript, dessen Wirkung die Aufzeichnung nicht zeigt, ist unbekannt, Dateien im Arbeitsordner sind Projekt. Das Urteil ist die höchste Stufe; die Lesart eines Modells zählt nicht.",
     "Quellen: aufgezeichnet, wenn das Werkzeug die Datei gemeldet hat, wahrscheinlich, wenn die Heuristik des Tabs files sie aus einem Shell-Befehl gelesen hat, Modell, wenn die Lesart eines Modells sie nennt.",
@@ -821,7 +822,10 @@ const forFile = (c: Ctx, word: string): string => (c.file === "" ? "" : ` ${word
 
 /** Escaped text with each mask label set off: `[credential 1: aws-akid]` and the scrub's `[credential: rule]`. */
 function masked(text: string): string {
-  return esc(text).replace(/\[credential(?: \d+)?: [a-z-]+\]/g, (m) => `<span class="masked">${m}</span>`);
+  return esc(text).replace(
+    /\[credential(?: \d+)?: [a-z-]+\]|\[hidden\]|\[verdeckt\]/g,
+    (m) => `<span class="masked">${m}</span>`,
+  );
 }
 
 const pad2 = (n: number): string => String(n).padStart(2, "0");
@@ -872,7 +876,7 @@ function credentialsText(lang: Lang, refs: readonly CredentialRef[]): string {
 function commandBlock(lang: Lang, f: Finding): string {
   if (f.command === null) return "";
   const cut = f.commandCut > 0 ? ` <span class="cut">${esc(cutNote(lang, f.commandCut))}</span>` : "";
-  return `<pre class="cmd">${masked(f.command)}${cut}</pre>\n`;
+  return `<pre class="cmd">${masked(inLanguage(f.command, lang))}${cut}</pre>\n`;
 }
 
 function reachedList(lang: Lang, report: FilesReport, f: Finding): string {
@@ -892,7 +896,7 @@ function destinationMarkup(lang: Lang, d: Destination): string {
 
 function headerSection(lang: Lang, report: FilesReport): string {
   const w = W[lang];
-  const title = report.title ?? scrub(report.sessionId);
+  const title = inLanguage(report.title ?? scrub(report.sessionId), lang);
   let recorded = w.noTimes;
   if (report.firstTs !== null && report.lastTs !== null) {
     const first = new Date(report.firstTs);
@@ -1375,7 +1379,7 @@ const SWITCH = `
  */
 export function reportHtml(report: FilesReport, lang: Lang): string {
   const w = W[lang];
-  const title = report.title ?? scrub(report.sessionId);
+  const title = inLanguage(report.title ?? scrub(report.sessionId), lang);
   const version = report.version === null ? null : scrub(report.version);
   return `<!doctype html>
 <html lang="${lang}" data-design="light">

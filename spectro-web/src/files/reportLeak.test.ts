@@ -8,7 +8,7 @@
 import { describe, expect, it } from "vitest";
 import { reportCsv } from "./reportCsv";
 import { reportFilename, reportHtml } from "./reportHtml";
-import { LEAK_CALLS, LEAK_QUIET, LEAK_RAW, leakReport } from "./reportLeakFixture";
+import { LEAK_CALLS, LEAK_NET, LEAK_QUIET, LEAK_RAW, leakReport } from "./reportLeakFixture";
 import { findCredentials } from "./secrets";
 
 const CREDENTIAL_KINDS = new Set([
@@ -71,6 +71,21 @@ describe("the files report leaks no credential", () => {
       const network = report.findings.find((f) => f.callIndex === call && f.kind === "network");
       expect(network?.command?.includes("[value]"), name).toBe(true);
     }
+  });
+
+  it("every C1 and C2 input of fix round 2 is counted by a rule or hidden by the net at its call", () => {
+    // Positive guard for the raw-secret check below (fix round 2 item 1).
+    expect(LEAK_NET.length).toBe(12);
+    const missing = LEAK_NET.filter(
+      ({ call }) =>
+        !report.findings.some(
+          (f) =>
+            f.callIndex === call &&
+            (f.kind.startsWith("credential-") || (f.command ?? "").includes("[hidden]")),
+        ),
+    ).map((c) => c.name);
+    expect(missing).toEqual([]);
+    expect(report.title?.includes("[hidden]"), "title").toBe(true);
   });
 
   it("no rule matches anywhere in the HTML or the CSV", () => {

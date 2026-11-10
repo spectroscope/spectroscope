@@ -11,6 +11,7 @@
 
 import type { Lang } from "../i18n/i18n";
 import { clockText } from "./axis";
+import { inLanguage } from "./displayNet";
 import { COPILOT_SNAPSHOT_TOOL } from "./fold";
 import type { FilesReport, Finding, ReportFile, ReportSearch, ReportSnapshot } from "./report";
 import {
@@ -140,8 +141,10 @@ function detail(lang: Lang, report: FilesReport, f: Finding): string {
     case "outside":
       break;
   }
-  if (f.command !== null)
-    parts.push(f.commandCut > 0 ? `${f.command} ${cutNote(lang, f.commandCut)}` : f.command);
+  if (f.command !== null) {
+    const command = inLanguage(f.command, lang);
+    parts.push(f.commandCut > 0 ? `${command} ${cutNote(lang, f.commandCut)}` : command);
+  }
   return parts.join("\n");
 }
 
