@@ -15,7 +15,7 @@
 //
 // Card 605: a Report button after the model controls opens the report sheet
 // (FilesReportSheet.tsx) over the ledger the panes show. Closing the sheet
-// returns the focus to the button.
+// returns the focus to the button. The empty state shows the button too.
 
 import {
   useEffect,
@@ -184,9 +184,43 @@ export function FilesView(props: FilesViewProps): JSX.Element {
     return () => clearInterval(timer);
   }, [playing]);
 
+  const closeReport = (): void => {
+    setReportOpen(false);
+    reportButton.current?.focus();
+  };
+
+  // The Report button and its sheet. A session without file calls has them
+  // too: prompts, steering messages and tool results can hold findings.
+  const report = (
+    <>
+      <button
+        type="button"
+        ref={reportButton}
+        className="files-report__open"
+        data-action="report"
+        aria-haspopup="dialog"
+        aria-expanded={reportOpen}
+        onClick={() => setReportOpen(true)}
+      >
+        {t(lang, "filesTab.report.button")}
+      </button>
+      {reportOpen && (
+        <FilesReportSheet
+          lang={lang}
+          events={events}
+          ledger={ledger}
+          sessionId={viewKey}
+          title={title}
+          onClose={closeReport}
+        />
+      )}
+    </>
+  );
+
   if (ledger.calls.length === 0) {
     return (
       <div className="files-tab">
+        {events.length > 0 && <section className="files-toolbar">{report}</section>}
         <p className="files-empty">{t(lang, "filesTab.empty")}</p>
       </div>
     );
@@ -247,11 +281,6 @@ export function FilesView(props: FilesViewProps): JSX.Element {
     if (calls.length > 0 && (cursor.follow || stepCall(calls, cursor, events, 1) === cursor))
       pickCall(calls[0]);
     setPlaying(true);
-  };
-
-  const closeReport = (): void => {
-    setReportOpen(false);
-    reportButton.current?.focus();
   };
 
   const toggleAgent = (agent: string): void =>
@@ -366,27 +395,7 @@ export function FilesView(props: FilesViewProps): JSX.Element {
           ledger={heuristic}
           analysis={analysis}
         />
-        <button
-          type="button"
-          ref={reportButton}
-          className="files-report__open"
-          data-action="report"
-          aria-haspopup="dialog"
-          aria-expanded={reportOpen}
-          onClick={() => setReportOpen(true)}
-        >
-          {t(lang, "filesTab.report.button")}
-        </button>
-        {reportOpen && (
-          <FilesReportSheet
-            lang={lang}
-            events={events}
-            ledger={ledger}
-            sessionId={viewKey}
-            title={title}
-            onClose={closeReport}
-          />
-        )}
+        {report}
         <p className="files-summary">{summaryLine(lang, summary, modelShown)}</p>
       </section>
       <FilesTimeline

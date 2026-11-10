@@ -149,6 +149,7 @@ export interface ReportSheetPanelProps {
 export function ReportSheetPanel(props: ReportSheetPanelProps): JSX.Element {
   const { lang, report, onClose } = props;
   const frame = useRef<HTMLIFrameElement>(null);
+  const pdfButton = useRef<HTMLButtonElement>(null);
   const ready = report === null || report === "failed" ? null : report;
 
   const save = (ext: "html" | "csv"): void => {
@@ -159,12 +160,15 @@ export function ReportSheetPanel(props: ReportSheetPanelProps): JSX.Element {
   };
 
   // As ExportDialog prints: the document into a sandboxed frame, the dialog once it loaded.
+  // The frame takes the focus for the dialog; once print returns, the PDF button
+  // takes it back, so Escape and Tab work in the sheet again.
   const print = (): void => {
     const el = frame.current;
     if (ready === null || el === null) return;
     el.onload = () => {
       el.contentWindow?.focus();
       el.contentWindow?.print();
+      pdfButton.current?.focus();
     };
     el.srcdoc = reportHtml(ready, lang);
   };
@@ -216,7 +220,14 @@ export function ReportSheetPanel(props: ReportSheetPanelProps): JSX.Element {
   }
 
   return (
-    <div className="km-backdrop" onClick={onClose} role="presentation">
+    <div
+      className="km-backdrop"
+      role="presentation"
+      onMouseDown={(e) => {
+        // Only a press that starts on the backdrop: a text drag out of the panel closes nothing.
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
       <div
         className="km-panel files-report"
         role="dialog"
@@ -224,7 +235,6 @@ export function ReportSheetPanel(props: ReportSheetPanelProps): JSX.Element {
         aria-label={t(lang, "filesTab.report.title")}
         tabIndex={-1}
         ref={props.dialogRef}
-        onClick={(e) => e.stopPropagation()}
         onKeyDown={onKeyDown}
       >
         <div className="km-head">
@@ -244,6 +254,7 @@ export function ReportSheetPanel(props: ReportSheetPanelProps): JSX.Element {
           {OUTPUTS.map((kind) => (
             <button
               key={kind}
+              ref={kind === "pdf" ? pdfButton : undefined}
               type="button"
               className="files-report__btn"
               data-action={`report-${kind}`}

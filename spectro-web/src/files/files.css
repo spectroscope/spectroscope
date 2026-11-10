@@ -154,7 +154,8 @@
   opacity: 0.45;
   cursor: default;
 }
-.files-report {
+/* Both classes: keymap.css loads after this file and sets .km-panel's width. */
+.km-panel.files-report {
   width: min(520px, 100%);
 }
 .files-report__verdict {
@@ -1129,4 +1130,15 @@
 .files-ops__row--after,
 .files-card--after {
   opacity: 0.45;
+}
+
+/* Card 605: the note on an explorer row that names a glob pattern, not a file. */
+.files-row__pattern {
+  flex-shrink: 0;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-chip);
+  padding: 0 var(--sp-1);
+  color: var(--text-dim);
+  font-size: var(--fs-11);
+  white-space: nowrap;
 }

@@ -6,6 +6,9 @@
 // print frame a stand-in object. Every credential vector is joined at run
 // time, so no credential-shaped literal sits in this file.
 
+import { readdirSync, readFileSync } from "node:fs";
+import { join, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 import { isValidElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -13,6 +16,7 @@ import type { RunEvent } from "../events";
 import { saveTextFile } from "../export/save";
 import { dict, t, type Lang } from "../i18n/i18n";
 import { drive, type El } from "../testkit/driveComponent";
+import { read, rules, stripComments } from "../testkit/source";
 import {
   fetchReportVersion,
   FilesReportSheet,
@@ -25,6 +29,7 @@ import { foldFiles } from "./fold";
 import { buildReport, type FilesReport } from "./report";
 import { reportCsv } from "./reportCsv";
 import { reportFilename, reportHtml, verdictLine } from "./reportHtml";
+import { LEAK_RAW, leakReport } from "./reportLeakFixture";
 import { findCredentials } from "./secrets";
 
 vi.mock("../export/save", () => ({ saveTextFile: vi.fn() }));
@@ -241,6 +246,32 @@ describe("the report sheet", () => {
     expect(saved).not.toHaveBeenCalled();
   });
 
+  it("afterPrintTheFocusComesBackToThePdfButton", () => {
+    const report = reportOf(ENV_READ);
+    const log: string[] = [];
+    const frame = {
+      srcdoc: "",
+      onload: null as null | (() => void),
+      contentWindow: { focus: () => log.push("frame"), print: () => log.push("print") },
+    };
+    drive(
+      <ReportSheetPanel lang="en" report={report} onClose={() => {}} />,
+      [ReportSheetPanel],
+      [
+        (t) => {
+          const iframe = t.find((el) => el.type === "iframe");
+          (iframe?.props.ref as { current: unknown }).current = frame;
+          const pdf = action(t, "report-pdf");
+          (pdf.props.ref as { current: unknown }).current = { focus: () => log.push("pdf button") };
+          pdf.props.onClick?.();
+        },
+      ],
+    );
+    frame.onload?.();
+    // The frame takes the focus for the dialog; once print returns, the sheet has it again.
+    expect(log).toEqual(["frame", "print", "pdf button"]);
+  });
+
   it("escapeClosesTheSheet", () => {
     const onClose = vi.fn();
     const tree = panel("en", reportOf(ENV_READ), onClose);
@@ -253,15 +284,26 @@ describe("the report sheet", () => {
     pressKey(tree, escape);
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(escape.stopPropagation).toHaveBeenCalledTimes(1);
-    // The close button and a press on the backdrop close it too; a press inside does not.
+    // The close button closes it too.
     action(tree, "report-close").props.onClick?.();
     expect(onClose).toHaveBeenCalledTimes(2);
-    tree.find((el) => el.props.role === "presentation")?.props.onClick?.();
-    expect(onClose).toHaveBeenCalledTimes(3);
-    const inside = { stopPropagation: vi.fn() };
-    (dialogOf(tree).props.onClick as (e: unknown) => void)(inside);
-    expect(inside.stopPropagation).toHaveBeenCalledTimes(1);
-    expect(onClose).toHaveBeenCalledTimes(3);
+  });
+
+  it("onlyAPressThatStartsOnTheBackdropClosesTheSheet", () => {
+    const onClose = vi.fn();
+    const tree = panel("en", reportOf(ENV_READ), onClose);
+    const backdrop = tree.find((el) => el.props.role === "presentation");
+    expect(backdrop).toBeDefined();
+    const down = backdrop!.props.onMouseDown as (e: unknown) => void;
+    // A press that starts inside the panel bubbles up with the panel as target.
+    const panelEl = {};
+    const backdropEl = {};
+    down({ target: panelEl, currentTarget: backdropEl });
+    expect(onClose).not.toHaveBeenCalled();
+    down({ target: backdropEl, currentTarget: backdropEl });
+    expect(onClose).toHaveBeenCalledTimes(1);
+    // No click handler: a text drag from the panel that ends over the backdrop closes nothing.
+    expect(backdrop!.props.onClick).toBeUndefined();
   });
 
   it("tabAndShiftTabCycleTheSheetsButtons", () => {
@@ -397,6 +439,54 @@ describe("opening the sheet", () => {
 });
 
 describe("the sheet's words", () => {
+  it("theLevelWordsAreTheReportDocumentsWords", () => {
+    // One fixture per level, so each verdict word of the document is read off a rendered page.
+    const byLevel: Record<string, RunEvent[]> = {
+      critical: ENV_READ,
+      sensitive: stamp([
+        { type: "run_start", runId: "r1", agentId: "main", prompt: "go", workspace: "/ws" },
+        call("c1", "read_file", { path: "/etc/hosts" }),
+        result("c1"),
+      ]),
+      unknown: stamp([
+        { type: "run_start", runId: "r1", agentId: "main", prompt: "go", workspace: "/ws" },
+        call("c1", "run_command", { command: "python3 gen.py out/" }),
+        result("c1", { output: "done" }),
+      ]),
+      project: PROJECT,
+    };
+    for (const [level, events] of Object.entries(byLevel)) {
+      const report = reportOf(events);
+      expect(report.verdict, level).toBe(level);
+      for (const lang of ["en", "de"] as const) {
+        const verdict = /data-section="verdict"[^>]*>\s*<p class="level">([^<]*)<\/p>/.exec(
+          reportHtml(report, lang),
+        );
+        expect(verdict, `${level} ${lang}`).not.toBeNull();
+        const mark = panel(lang, report).find((el) => hasClass(el, "files-report__level"));
+        expect(textOf(mark?.props.children), `${level} ${lang}`).toBe(verdict![1]);
+        expect(t(lang, `filesTab.report.level.${level}`)).toBe(verdict![1]);
+      }
+    }
+  });
+
+  it("theSheetIsNarrowerThanTheKeymapPanel", () => {
+    // keymap.css loads after files.css and gives .km-panel its width, so the
+    // sheet's width needs both classes to win.
+    const widthOf = (css: string, rel: string) =>
+      rules(rel, css).filter((r) => /(^|[;\s])width\s*:/.test(r.body));
+    const keymap = widthOf(read("../styles/keymap.css", import.meta.url), "keymap.css");
+    expect(keymap.filter((r) => r.selector === ".km-panel")).toHaveLength(1);
+    const sheetRules = widthOf(read("./files.css", import.meta.url), "files.css").filter(
+      (r) =>
+        r.selector.includes(".files-report") &&
+        r.subject.includes("files-report") &&
+        !r.subject.includes("__"),
+    );
+    expect(sheetRules.map((r) => r.selector)).toEqual([".km-panel.files-report"]);
+    expect(sheetRules[0].body).toMatch(/width:\s*min\(520px,\s*100%\)/);
+  });
+
   it("everyReportKeyHasEnglishAndGerman", () => {
     const keys = Object.keys(dict).filter((k) => k.startsWith("filesTab.report."));
     const families = [
@@ -420,137 +510,12 @@ describe("the sheet's words", () => {
 
 // ---- The leak guard over the sheet ------------------------------------------------
 //
-// The session of reportLeak.test.ts, written out again here: credentials in
+// The session of reportLeak.test.ts, from the shared fixture: credentials in
 // tool results, tool inputs, prompts, a steering message, the title, a file
 // path, commands, private key blocks and a model name.
 
-const W = "/w";
-const AKID = ["AK", "IA", "Z7Q3M2X9", "K4W8P1N6"].join("");
-const AKID_IN_PATH = ["AS", "IA", "Q8R2T5V7", "W1X4Y6Z3"].join("");
-const DB_PW = ["Hx7p", "Lq2vZw"].join("");
-const PAT = ["gh", "p_", "Zq4Lm8Rt2Vx6Bn0Ck3Hs7Jd1Wf5Gy9Pa2Ue6"].join("");
-const ANT = ["sk", "-ant-", "api03-", "Tg5Kp9Wd2Lr7Qz4N"].join("");
-const OPENAI = ["sk-", "proj-", "Ab3dEf6hIj9kLm2nOp5qRs8t"].join("");
-const SLACK = ["xo", "xb-", "1234567890-", "AbCdEfGhIj"].join("");
-const GOOGLE = ["AI", "za", "Sy", "B1c2D3e4F5g6H7i8J9k0L1m2N3o4P5q6R"].join("");
-const JWT = [
-  "ey",
-  "JhbGciOiJIUzI1NiJ9",
-  ".",
-  "eyJzdWIiOiIxMjM0NTY3ODkwIn0",
-  ".",
-  "dozjgNryP4J3jVmNHl0w5N",
-].join("");
-const URL_PW = ["Pq9", "Wm4zXk"].join("");
-const BEARER = ["Rk7", "Tq2Vw9Xz4Lm8Pn3Hs6"].join("");
-const EXCHANGE_PW = ["Zt5", "Bn8cQr"].join("");
-
-function keyBlock(kind: string, body: string[]): string {
-  const dashes = "-".repeat(5);
-  const head = `${dashes}BEGIN ${kind} ${["PRIVATE", "KEY"].join(" ")}${dashes}`;
-  const tail = `${dashes}END ${kind} ${["PRIVATE", "KEY"].join(" ")}${dashes}`;
-  return [head, ...body, tail].join("\n");
-}
-const RSA_BODY = ["MIIEowIBAAKCAQEA", "x9Ym4Qz7Rt2Lp8Wk", "Vb3Nc6Hd1Jf5Gs0Q"];
-const EC_BODY = ["MHcCAQEEIBq8Zk3", "Lw7Pm2Xr5Tn9Vc4H"];
-
-const RAW = [
-  AKID,
-  AKID_IN_PATH,
-  DB_PW,
-  PAT,
-  ANT,
-  OPENAI,
-  SLACK,
-  GOOGLE,
-  JWT,
-  URL_PW,
-  BEARER,
-  EXCHANGE_PW,
-  ...RSA_BODY,
-  ...EC_BODY,
-];
-
-class Rec {
-  readonly events: RunEvent[] = [];
-  private ids = 0;
-
-  push(e: object): this {
-    this.events.push({ ts: T0 + this.events.length * 1000, ...e } as unknown as RunEvent);
-    return this;
-  }
-
-  tool(name: string, input: unknown, output = "ok", fileChange?: string): this {
-    const callId = `c${++this.ids}`;
-    this.push({ type: "tool_call", agentId: "main", callId, name, input });
-    return this.push({
-      type: "tool_result",
-      agentId: "main",
-      callId,
-      output,
-      isError: false,
-      durationMs: 5,
-      ...(fileChange === undefined ? {} : { fileChange }),
-    });
-  }
-
-  exchange(model = "claude-sonnet-4-5", url = "https://api.anthropic.com/v1/messages"): this {
-    return this.push({
-      type: "llm_exchange",
-      xid: "x",
-      agentId: "main",
-      kind: "chat",
-      provider: "anthropic",
-      model,
-      url,
-      requestBytes: 1000,
-    });
-  }
-}
-
-function leakEvents(): RunEvent[] {
-  return new Rec()
-    .push({
-      type: "run_start",
-      runId: "r1",
-      agentId: "main",
-      prompt: `use ${PAT} for the push`,
-      workspace: W,
-      provider: "anthropic",
-      model: "claude-sonnet-4-5",
-    })
-    .exchange()
-    .push({ type: "user_message", text: `the openai key is ${OPENAI}` })
-    .push({ type: "steering_message", agentId: "main", text: `slack: ${SLACK}`, taken: true, turn: 1 })
-    .tool("read_file", { path: ".env" }, `AWS_ACCESS_KEY_ID=${AKID}\nDB_PASSWORD=${DB_PW}\n`)
-    .tool("read_file", { path: "deploy.txt" }, `postgres://app:${URL_PW}@db.internal/x`)
-    .tool("read_file", { path: "keys/id_rsa" }, keyBlock("RSA", RSA_BODY))
-    .tool("read_file", { path: `backup-${AKID_IN_PATH}.txt` })
-    .tool("write_file", { path: "notes.txt", content: `token ${ANT}` }, "ok", "created")
-    .tool("db_connect", { host: "db", password: DB_PW })
-    .tool("Bash", { command: `mysql -u app -p'${DB_PW}' -e 'select 1'` })
-    .tool("Bash", { command: `export GITHUB_TOKEN=${PAT} && git push` })
-    .tool("Bash", {
-      command: `curl -H "Authorization: Bearer ${BEARER}" https://api.example.com/x -d @payload.json`,
-    })
-    .tool("Bash", { command: `printf '%s\\n' '${keyBlock("EC", EC_BODY)}' > k.pem` })
-    .tool("Bash", { command: "cat ~/.aws/credentials" }, `aws_access_key_id = ${AKID}\n`)
-    .tool("Bash", { command: `echo "${JWT}" | base64 -d` })
-    .tool("Bash", { command: "printenv" }, `GITHUB_TOKEN=${PAT}\nHOME=/Users/a\n`)
-    .exchange()
-    .exchange(`m-${JWT}`, `https://u:${EXCHANGE_PW}@api.example.com/v1`).events;
-}
-
 describe("the report sheet leaks no credential", () => {
-  const events = leakEvents();
-  const report = buildReport({
-    events,
-    ledger: foldFiles(events),
-    sessionId: "s-1",
-    title: `deploy with ${GOOGLE}`,
-    version: "0.16.1",
-    now: NOW,
-  });
+  const report = leakReport();
   const outputs: [string, string][] = (["en", "de"] as const).flatMap((lang): [string, string][] => [
     [
       `markup ${lang}`,
@@ -558,6 +523,19 @@ describe("the report sheet leaks no credential", () => {
     ],
     [`text ${lang}`, texts(panel(lang, report)).join("\n")],
   ]);
+
+  it("theFixtureIsImportedOnlyByTests", () => {
+    // The fixture carries credential vectors; no shipped module may pull it into the bundle.
+    const root = fileURLToPath(new URL("..", import.meta.url));
+    const sources = (readdirSync(root, { recursive: true }) as string[])
+      .filter((f) => /\.tsx?$/.test(f))
+      .map((f) => f.split(sep).join("/"));
+    // Any mention in code counts (a static, bare or dynamic import); comments do not.
+    const importers = sources.filter((f) =>
+      stripComments(readFileSync(join(root, f), "utf8")).includes("reportLeakFixture"),
+    );
+    expect(importers.sort()).toEqual(["files/FilesReportSheet.test.tsx", "files/reportLeak.test.ts"]);
+  });
 
   it("theSheetShowsTheVerdictOfTheSession", () => {
     expect(report.verdict).toBe("critical");
@@ -578,9 +556,9 @@ describe("the report sheet leaks no credential", () => {
   });
 
   it("noRawSecretIsPartOfTheSheet", () => {
-    // A failure names the index into RAW, never the value.
+    // A failure names the index into LEAK_RAW, never the value.
     const leaked = (text: string, fold: (s: string) => string) =>
-      RAW.flatMap((v, i) => (fold(text).includes(fold(v)) ? [i] : []));
+      LEAK_RAW.flatMap((v, i) => (fold(text).includes(fold(v)) ? [i] : []));
     for (const [name, text] of outputs) {
       expect(
         leaked(text, (s) => s),

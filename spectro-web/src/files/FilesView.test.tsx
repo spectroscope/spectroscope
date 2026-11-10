@@ -459,6 +459,39 @@ describe("the report button", () => {
     expect(focus).toHaveBeenCalledTimes(1);
   });
 
+  it("aSessionWithoutFileCallsStillHasTheReport", () => {
+    // Prompts, steering messages and tool results can hold findings of their own.
+    const quiet = stamp([
+      { type: "run_start", runId: "r1", agentId: "main", prompt: "go", workspace: "/ws" },
+      call("w1", "web_fetch", { url: "https://example.com" }),
+      result("w1"),
+    ]);
+    const closed = run(props({ events: quiet, title: "Look around" }));
+    expect(closed.some((el) => textOf(el.props.children) === dict["filesTab.empty"]?.en)).toBe(true);
+    expect(textOf(action(closed, "report").props.children)).toBe("Report");
+    const focus = vi.fn();
+    let sheet: El | undefined;
+    const after = run(props({ events: quiet, title: "Look around" }), [
+      (t) => {
+        (action(t, "report").props.ref as { current: unknown }).current = { focus };
+        action(t, "report").props.onClick?.();
+      },
+      (t) => {
+        sheet = sheetOf(t);
+        (sheet?.props.onClose as () => void)();
+      },
+    ]);
+    expect(sheet).toBeDefined();
+    expect(sheet!.props.events).toBe(quiet);
+    expect((sheet!.props.ledger as FileLedger).calls).toEqual([]);
+    expect(sheet!.props.title).toBe("Look around");
+    expect(sheet!.props.sessionId).toBe("s-1");
+    expect(sheetOf(after)).toBeUndefined();
+    expect(focus).toHaveBeenCalledTimes(1);
+    // A tab with no events at all has nothing to report.
+    expect(run(props({ events: [] })).some((el) => el.props["data-action"] === "report")).toBe(false);
+  });
+
   it("theSheetGetsTheLedgerTheTabShows", async () => {
     const heuristic = foldFiles(EVENTS);
     const shell = heuristic.calls.find((c) => c.shell);
