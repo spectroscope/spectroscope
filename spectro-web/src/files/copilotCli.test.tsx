@@ -213,6 +213,34 @@ function textOf(node: ReactNode): string {
 const hasClass = (el: El, name: string): boolean =>
   typeof el.props.className === "string" && el.props.className.split(/\s+/).includes(name);
 
+// Task 11 item 6: the IDE export's rg and glob name their places in a paths
+// list; each entry is a touch, a folder searched and a file read.
+describe("a Copilot IDE session's searches in the files tab (card 605)", () => {
+  it("reads every entry of a paths list: a folder is searched, a file is read", () => {
+    const calls = foldFiles(parseVscodeAgentExport(copilotIde)).calls;
+    const touches = calls
+      .filter((c) => c.tool === "rg" || c.tool === "glob")
+      .map((c) => [c.tool, c.touches.map((t) => [t.path, t.search === true])]);
+    expect(touches).toEqual([
+      ["glob", [["/w/src/**/*.test.ts", true]]],
+      [
+        "rg",
+        [
+          ["/w/src/config", true],
+          ["/w/README.md", false],
+        ],
+      ],
+      [
+        "glob",
+        [
+          ["/w/src/*.json", true],
+          ["/w/test/*.json", true],
+        ],
+      ],
+    ]);
+  });
+});
+
 // Task 10 item 7: the IDE export's apply_patch carries the patch text, and its
 // headers name the files, so the touches are recorded.
 describe("a Copilot IDE session's patch in the files tab (card 605)", () => {
@@ -223,6 +251,10 @@ describe("a Copilot IDE session's patch in the files tab (card 605)", () => {
       ["src/config/loader.ts", "M", ["recorded"]],
       ["src/**/*.test.ts", "R", ["recorded"]],
       ["src/config/loader.test.ts", "A", ["recorded"]],
+      ["src/config", "R", ["recorded"]],
+      ["README.md", "R", ["recorded"]],
+      ["src/*.json", "R", ["recorded"]],
+      ["test/*.json", "R", ["recorded"]],
     ]);
     expect(ideRows[0].touches.map((t) => [t.kind, t.reason])).toEqual([
       ["read", "read"],

@@ -52,6 +52,9 @@ export type ToolView =
       pattern: string;
       /** Where it searched; a grep's glob filter is joined into it (card 605). */
       path: string | null;
+      /** Every place, when the call names more than one (a `paths` list, task 11
+       *  item 6), each joined with the filter like `path`; `path` is the first. */
+      paths?: string[];
       /** The glob filter a grep was narrowed by, as the call wrote it, or null. */
       filter: string | null;
       lines: string[];
@@ -1543,19 +1546,20 @@ function viewRange(input: unknown): [number | null, number | null] {
 }
 
 /**
- * The one place a search names: `path`, VS Code's `includePattern`, or the
- * Copilot CLI's `paths` as a string or a list of one.
+ * The places a search names: `path`, VS Code's `includePattern`, or the
+ * Copilot `paths` as a string or a list (task 11 item 6: each entry).
  *
- * @return the place, null when the call names none, undefined when it names
- *         more than one (a matches view holds one place)
+ * @return the places, null when the call names none, undefined when a list
+ *         holds an entry that is not a string
  */
-function searchPlace(input: unknown): string | null | undefined {
+function searchPlaces(input: unknown): string[] | null | undefined {
   const one = firstStr(input, "path", "includePattern");
-  if (one !== null) return one;
+  if (one !== null) return [one];
   const paths = str(input, "paths") ?? arr(input, "paths");
-  if (paths === null || typeof paths === "string") return paths;
+  if (paths === null) return null;
+  if (typeof paths === "string") return [paths];
   if (paths.length === 0) return null;
-  return paths.length === 1 && typeof paths[0] === "string" ? paths[0] : undefined;
+  return paths.every((p) => typeof p === "string") ? (paths as string[]) : undefined;
 }
 
 export function describeTool(
@@ -1672,6 +1676,9 @@ export function describeTool(
     case "Grep":
     case "glob":
     case "grep":
+    // The GitHub Copilot IDE export's search (task 11 item 6): `pattern`, a
+    // `paths` list, and an optional `glob`, like grep.
+    case "rg":
     case "grep_search":
     case "file_search": {
       // A VS Code export says `query` and `includePattern` for the same two
@@ -1680,21 +1687,29 @@ export function describeTool(
       // never gave.
       const pattern = firstStr(input, "pattern", "query");
       if (pattern === null) return generic;
-      const where = searchPlace(input);
-      if (where === undefined) return generic;
+      const places = searchPlaces(input);
+      if (places === undefined) return generic;
       // A grep narrowed by a file glob searched the files under its path that
       // match it. Ripgrep matches a glob without a slash at any depth, so that
       // one stands under `**/`; a glob with a slash is joined as written.
-      const glob = name === "grep" || name === "Grep" ? str(input, "glob") : null;
+      const glob = name === "grep" || name === "Grep" || name === "rg" ? str(input, "glob") : null;
       const filter = glob === "" ? null : glob;
       const under = filter === null || filter.includes("/") ? filter : `**/${filter}`;
-      const path =
+      const join = (where: string | null): string | null =>
         under === null
           ? where
           : where === null || where === ""
             ? under
             : `${where.replace(/\/+$/, "")}/${under}`;
-      return { kind: "matches", pattern, path, filter, lines: lines(out) };
+      const joined = (places ?? [null]).map(join);
+      return {
+        kind: "matches",
+        pattern,
+        path: joined[0],
+        ...(joined.length > 1 ? { paths: joined as string[] } : {}),
+        filter,
+        lines: lines(out),
+      };
     }
 
     // The patch tool of the GitHub Copilot IDE export (card 605, task 10): its

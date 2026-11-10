@@ -1386,6 +1386,12 @@ describe("searches and listings", () => {
     expect(ofKind(outside, "outside").map((f) => f.file)).toEqual(["/Users/a/other-project/notes.md"]);
   });
 
+  it("the IDE export's rg on a secret file is a read of it (task 11 item 6)", () => {
+    const report = verdictOf(["rg", { pattern: "API_KEY", paths: ["/w/src/", "/w/.env"] }]);
+    expect(ofKind(report, "secret-file").map((f) => f.file)).toEqual([".env"]);
+    expect(report.searches.map((x) => x.label)).toEqual(["src"]);
+  });
+
   it("are listed with their pattern and the level of their literal base folder", () => {
     const report = verdictOf(
       ["Glob", { pattern: "**/*.pem", path: W }],

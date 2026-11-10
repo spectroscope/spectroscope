@@ -365,13 +365,48 @@ describe("GitHub Copilot CLI tool names (card 605)", () => {
     expect(searched("glob", { pattern: "*.ts", path: "/w/src", glob: "*.md" })).toEqual(["/w/src", null]);
   });
 
-  it("reads the CLI's paths field when it names one place, and stays generic when it names more", () => {
+  it("reads the CLI's paths field when it names one place", () => {
     for (const paths of ["/w/src", ["/w/src"]]) {
       const v = describeTool("glob", { pattern: "*.ts", paths }, "", false);
       if (v.kind !== "matches") throw new Error("kind");
       expect(v.path, JSON.stringify(paths)).toBe("/w/src");
+      expect(v.paths, JSON.stringify(paths)).toBeUndefined();
     }
-    expect(describeTool("grep", { pattern: "x", paths: ["/w/a", "/w/b"] }, "", false).kind).toBe("generic");
+  });
+
+  // Task 11 item 6: the IDE export's rg, and a paths list of several places.
+  it("reads every entry of a paths list, the glob filter joined into each", () => {
+    const places = (name: string, input: object) => {
+      const v = describeTool(name, input, "", false);
+      if (v.kind !== "matches") throw new Error(`${name}: ${v.kind}`);
+      return [v.path, v.paths ?? null, v.filter];
+    };
+    expect(places("grep", { pattern: "x", paths: ["/w/a", "/w/b"] })).toEqual([
+      "/w/a",
+      ["/w/a", "/w/b"],
+      null,
+    ]);
+    expect(places("glob", { pattern: "*.json", paths: ["/w/src", "/w/test"] })).toEqual([
+      "/w/src",
+      ["/w/src", "/w/test"],
+      null,
+    ]);
+    expect(places("rg", { pattern: "x", paths: ["/w/src/", "/w/README.md"], glob: "*.ts" })).toEqual([
+      "/w/src/**/*.ts",
+      ["/w/src/**/*.ts", "/w/README.md/**/*.ts"],
+      "*.ts",
+    ]);
+    // A list with an entry that is not a string names no place the card can show.
+    expect(describeTool("rg", { pattern: "x", paths: ["/w/a", 7] }, "", false).kind).toBe("generic");
+  });
+
+  it("draws the IDE export's rg as a search, like grep", () => {
+    expect(searched("rg", { pattern: "TODO", paths: "/w/src" })).toEqual(["/w/src", null]);
+    expect(searched("rg", { pattern: "TODO", paths: ["/w/src"], glob: "*.ts" })).toEqual([
+      "/w/src/**/*.ts",
+      "*.ts",
+    ]);
+    expect(searched("rg", { pattern: "TODO" })).toEqual([null, null]);
   });
 
   it("colours the CLI's file bodies by the file's name", () => {

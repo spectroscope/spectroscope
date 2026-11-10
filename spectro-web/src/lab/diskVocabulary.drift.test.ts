@@ -81,11 +81,11 @@ describe("the lab's disk names read as the same kind in the tool views (card 604
     }
 
     // Floors, so an emptied set cannot turn the loops into a scan over nothing:
-    // 5 + 3 + 1 reads, 2 + 3 + 3 writes less MultiEdit and apply_patch, 5 shell
+    // 5 + 3 + 2 reads, 2 + 3 + 3 writes less MultiEdit and apply_patch, 5 shell
     // verbs on 2026-11-10 (card 605 added the Copilot CLI's view, create, edit,
-    // bash, powershell, apply_patch, and Claude Code's Grep and VS Code's
-    // run_in_terminal).
-    expect(reads).toBeGreaterThanOrEqual(9);
+    // bash, powershell, apply_patch, the IDE export's rg, and Claude Code's
+    // Grep and VS Code's run_in_terminal).
+    expect(reads).toBeGreaterThanOrEqual(10);
     expect(writes).toBeGreaterThanOrEqual(6);
     expect(shells).toBeGreaterThanOrEqual(5);
   });
@@ -154,8 +154,8 @@ describe("every name the tool views draw as disk or shell work has a lab entry (
       ).toBe(true);
       checked++;
     }
-    // A floor: 25 names of a station kind among describeTool's labels on 2026-11-10.
-    expect(checked).toBeGreaterThanOrEqual(25);
+    // A floor: 26 names of a station kind among describeTool's labels on 2026-11-10.
+    expect(checked).toBeGreaterThanOrEqual(26);
 
     // The list cannot go stale: each name is a label of a station kind and in no lab set.
     for (const name of Object.keys(LAB_LEAVES_OUT)) {

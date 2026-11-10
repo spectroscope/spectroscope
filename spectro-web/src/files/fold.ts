@@ -463,9 +463,20 @@ function write(view: Extract<ToolView, { kind: "write" }>, base: string | null):
 /** describeTool folds globs and greps into one shape; a glob's pattern is a path pattern. */
 const GLOB_TOOLS: ReadonlySet<string> = new Set(["glob", "Glob", "file_search"]);
 
+/** A search's touches: one per place it names (a `paths` list holds several, task 11 item 6). */
 function matches(name: string, view: Extract<ToolView, { kind: "matches" }>, base: string | null): Reading {
+  const readings = (view.paths ?? [view.path]).map((place) => matchesAt(name, view, place, base));
+  return { ...readings[0], touches: readings.flatMap((r) => r.touches) };
+}
+
+function matchesAt(
+  name: string,
+  view: Extract<ToolView, { kind: "matches" }>,
+  place: string | null,
+  base: string | null,
+): Reading {
   const pattern = view.pattern;
-  const path = view.path === "" ? null : view.path;
+  const path = place === "" ? null : place;
   if (GLOB_TOOLS.has(name)) {
     // Not resolved against the base: the pattern stays as the tool matched it.
     const joined = path === null || isRooted(pattern) ? pattern : `${path.replace(/\/+$/, "")}/${pattern}`;

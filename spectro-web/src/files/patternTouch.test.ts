@@ -78,6 +78,19 @@ describe("a touch is a listing or a search by its source (card 605)", () => {
     expect(how("Glob", { pattern: "**/*.pem" })).toEqual([["**/*.pem", false, true]]);
   });
 
+  it("the IDE export's rg reads a file and searches a folder, one touch per entry of paths (task 11 item 6)", () => {
+    expect(how("rg", { pattern: "KEY", paths: ["/w/.env"] })).toEqual([["/w/.env", false, false]]);
+    expect(how("rg", { pattern: "TODO", paths: ["/w/src/", "/w/README.md"] })).toEqual([
+      ["/w/src", false, true],
+      ["/w/README.md", false, false],
+    ]);
+    expect(how("rg", { pattern: "TODO" })).toEqual([["/w", false, true]]);
+    expect(how("glob", { pattern: "*.json", paths: ["/w/src", "/w/test"] })).toEqual([
+      ["/w/src/*.json", false, true],
+      ["/w/test/*.json", false, true],
+    ]);
+  });
+
   it("a plain grep and a reader read; a path listed and read in one call was read", () => {
     expect(how("Bash", { command: "grep -q API .env" })).toEqual([["/w/.env", false, false]]);
     expect(how("Bash", { command: "rg TODO src" })).toEqual([["/w/src", false, false]]);
