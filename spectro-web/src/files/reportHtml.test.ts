@@ -497,6 +497,26 @@ describe("reportHtml", () => {
     );
   });
 
+  it("the method states the option, header and getter rules of task 11 item 3", () => {
+    const report = build(new Rec().start().tool("read_file", { path: "README.md" }).events);
+    const en = reportHtml(report, "en");
+    for (const part of [
+      "except <code>--key</code>, <code>--key-type</code>, <code>--pubkey</code> and <code>--pinnedpubkey</code>, whose values are paths or types,",
+      "of a header whose name says token, key, secret, auth or pass,",
+      "<code>aws configure get</code> of an access key, a secret key or a session token printed counts too, " +
+        "when the command printed it itself, not into a pipe or a substitution.",
+    ])
+      expect(en, part).toContain(part);
+    const de = reportHtml(report, "de");
+    for (const part of [
+      "außer <code>--key</code>, <code>--key-type</code>, <code>--pubkey</code> und <code>--pinnedpubkey</code>, deren Werte Pfade oder Typen sind,",
+      "eines Headers, dessen Name token, key, secret, auth oder pass enthält,",
+      "<code>aws configure get</code> für einen Zugriffsschlüssel, einen geheimen Schlüssel oder ein Sitzungstoken " +
+        "ausgab, zählt ebenso, wenn der Befehl ihn selbst ausgab, nicht in eine Pipe oder eine Befehlsersetzung.",
+    ])
+      expect(de, part).toContain(part);
+  });
+
   it("says when the workspace was not recorded", () => {
     const rec = new Rec().start(null).tool("read_file", { path: "/etc/hosts" });
     const html = reportHtml(build(rec.events), "en");
