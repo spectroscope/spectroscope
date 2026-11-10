@@ -457,19 +457,25 @@ const isRemote = (w: Word) => {
 /**
  * The shape a host is read from. When a dynamic piece stands before an `@` in
  * the authority, the userinfo up to that `@` is dropped: `https://u:$P@h/x`
- * names `h`. A word without a scheme gets this only from a tool that takes a
- * URL (`urlish`); in scp `h:$D@x/y` the `:` ends the host.
+ * names `h`. In a URL the authority ends at `/`, `?` or `#`. A word without a
+ * scheme is a URL only for a tool that takes one (`urlish`), and there it must
+ * start with a literal: `$CDN` can hold `scheme://host/` itself. Otherwise it is
+ * a remote spec or an ssh destination, whose user sits before the first `:` and
+ * holds no `/`: in scp `h:$D@x/y` the `:` ends the host.
  */
 function hostShape(w: Word, urlish: boolean): string | null {
   const s = shapeOf(w);
   if (s === null) return null;
   const scheme = SCHEME.exec(s)?.[0] ?? "";
-  if (scheme === "" && !urlish) return s;
   const rest = s.slice(scheme.length);
-  const end = rest.search(/[/?#]/);
+  const url = scheme !== "" || urlish;
+  if (scheme === "" && urlish && rest.startsWith(DYN)) return null;
+  const end = url ? rest.search(/[/?#]/) : rest.indexOf(":");
   const authority = end < 0 ? rest : rest.slice(0, end);
   const at = authority.lastIndexOf("@");
-  return at >= 0 && authority.slice(0, at).includes(DYN) ? scheme + rest.slice(at + 1) : s;
+  const user = authority.slice(0, Math.max(at, 0));
+  if (at < 0 || !user.includes(DYN) || (!url && user.includes("/"))) return s;
+  return scheme + rest.slice(at + 1);
 }
 
 function hostOf(w: Word | null | undefined, urlish = false, bare = false): string | null {
@@ -500,9 +506,18 @@ function firstHost(words: Word[], bare = false): string | null {
   return null;
 }
 
-/** The host of an ssh destination: `[user@]host`, `[user@]host:path` or `ssh://...`. */
+/**
+ * The host of an ssh destination: `[user@]host`, `[user@]host:path` or `ssh://...`.
+ * Of a dynamic word only a dynamic user is dropped (`"$U@h"` names `h`), and
+ * the host after it must be literal; any other dynamic word names no host.
+ */
 function destination(w: Word | undefined): string | null {
-  if (!w || w.dynamic) return null;
+  if (!w) return null;
+  if (w.dynamic) {
+    const s = hostShape(w, false);
+    if (s === null || s === shapeOf(w) || SCHEME.test(s)) return null;
+    return /^(\[[^\]\uE002]*\]|[^:@/\s\uE002]+)(?=$|[:/])/.exec(s)?.[1] ?? null;
+  }
   const url = URL_HOST.exec(w.text);
   if (url) return url[1] || null;
   return /^(?:[^@]*@)?(\[[^\]]*\]|[^:@/\s]+)/.exec(w.text)?.[1] ?? null;
@@ -640,10 +655,19 @@ const PRINTERS = new Map<string, (args: Word[]) => Word[]>([
   ["strings", (a) => parse(a, { short: "nte" }).operands],
 ]);
 
-// xxd reads each word as one option: `-ps` is a flag, `-s16` carries its value,
-// `-s 16`, `-seek 16` and `-cols 8` take the next word.
-const XXD_VALUES = "cglsonR";
-const XXD_LONG = new Set(["cols", "groupsize", "len", "seek", "skip", "name"]);
+// xxd reads each word as one option, `--x` as `-x`, and knows an option by its
+// letter. `-s 16`, `-seek 16`, `--seek 16`, `-seekx 16` and `-group 2` take the
+// next word: the word is the letter alone or starts with the long name. `-s16`
+// and `-co` carry their value, `-ps` is a flag (as /usr/bin/xxd 2025-08-24 does).
+const XXD_NEXT = new Map<string, string[]>([
+  ["c", ["ols"]],
+  ["g", ["roup"]],
+  ["l", ["en"]],
+  ["n", ["ame"]],
+  ["o", ["ffset"]],
+  ["s", ["eek", "kip"]],
+  ["R", []],
+]);
 
 function xxdInput(args: Word[]): Word[] {
   const operands: Word[] = [];
@@ -653,8 +677,13 @@ function xxdInput(args: Word[]): Word[] {
       operands.push(...args.slice(k + 1));
       break;
     }
-    if (!s.startsWith("-") || s === "-") operands.push(args[k]);
-    else if (XXD_VALUES.includes(s[1]) && (s.length === 2 || XXD_LONG.has(s.slice(1)))) k++;
+    if (!s.startsWith("-") || s === "-") {
+      operands.push(args[k]);
+      continue;
+    }
+    const o = s.startsWith("--") ? s.slice(1) : s;
+    const tails = XXD_NEXT.get(o[1]);
+    if (tails && (o.length === 2 || tails.some((t) => o.startsWith(t, 2)))) k++;
   }
   return operands.slice(0, 1); // the second operand is the output
 }
@@ -737,6 +766,7 @@ const CURL: Spec = {
     "request-target",
     "noproxy",
     "etag-save",
+    "etag-compare",
   ],
 };
 const CURL_DATA = ["-d", "--data", "--data-ascii", "--data-binary", "--json"];
@@ -772,7 +802,9 @@ function curl(args: Word[], seg: Segment, cwd: string | null): NetworkUse {
       const m = /^[^=@]*@(.*)$/s.exec(w.text); // `@file` and `name@file`, as --data-urlencode
       if (m) file(w, m[1]);
       else if (w.dynamic && !literalPart(shapeOf(w) ?? "").includes("=")) u.sendsNamed = false;
-    } else if ((name === "-b" || name === "--cookie") && !w.text.includes("=")) file(w, w.text); // a cookie file
+    } else if ((name === "-b" || name === "--cookie") && !w.text.includes("="))
+      file(w, w.text); // a cookie file
+    else if (name === "--etag-compare") send(u, w, cwd); // the ETag it reads goes out as a header
   }
   if (stdin) sendStdin(u, seg, cwd);
   if (has(p, "-K", "--config")) u.sendsNamed = false; // a config file can hold more data and uploads
@@ -831,7 +863,7 @@ const WGET: Spec = {
 function wget(args: Word[], _seg: Segment, cwd: string | null): NetworkUse {
   const p = parse(args, WGET);
   const u = networkUse("wget", firstHost(p.operands, true));
-  for (const w of values(p, "--post-file", "--body-file")) send(u, w, cwd);
+  for (const w of values(p, "--post-file", "--body-file", "--load-cookies")) send(u, w, cwd);
   if (has(p, "-i", "--input-file")) u.sendsNamed = false; // the requests are named in a file
   if (has(p, "--config")) u.sendsNamed = false; // a wgetrc can name uploads too
   // `-e` runs a wgetrc command; wgetrc ignores case, `-` and `_` in its names.
