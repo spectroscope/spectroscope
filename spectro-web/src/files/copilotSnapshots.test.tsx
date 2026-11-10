@@ -268,3 +268,123 @@ describe("the snapshots are neither saved nor exported (item 3)", () => {
     }
   });
 });
+
+// ---- fix round 1, item 1 (review I1) ------------------------------------------------
+
+describe("a snapshot never stands on a tool event, listed or not (fix round 1 item 1)", () => {
+  // The review's input: a web_fetch with a credential in its query whose turn
+  // stopped before it completed, then the next prompt. The token is joined at
+  // run time so no credential-shaped literal sits in this file.
+  const token = "ghp" + "_" + "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8";
+  const rec = (r: object) => JSON.stringify(r);
+  const at = (s: number) => `2026-11-10T09:00:0${s}.000Z`;
+  const lines = [
+    rec({
+      type: "session.start",
+      data: { sessionId: "s-stop", producer: "copilot-agent", context: { cwd: "/w" } },
+      id: "a0",
+      timestamp: at(0),
+    }),
+    rec({ type: "user.message", data: { content: "fetch it" }, id: "u1", timestamp: at(1) }),
+    rec({
+      type: "tool.execution_start",
+      data: {
+        toolCallId: "f1",
+        toolName: "web_fetch",
+        arguments: { url: `https://example.com/x?access_token=${token}` },
+      },
+      id: "a2",
+      timestamp: at(2),
+    }),
+    rec({ type: "user.message", data: { content: "go on" }, id: "u2", timestamp: at(3) }),
+  ].join("\n");
+  const snapIndex = JSON.stringify({
+    schema: 1,
+    snapshots: [
+      {
+        eventId: "u1",
+        files: {
+          k: {
+            path: "/w/src/a.ts",
+            preimage: { kind: "content" },
+            postimage: { kind: "content" },
+            linesAdded: 1,
+          },
+        },
+      },
+    ],
+  });
+  const got = loadCopilotFolder({ events: lines, workspace: null, snapshots: snapIndex, live: false });
+  const ledger2 = foldFiles(got.events, got.source.copilot?.snapshots ?? []);
+  const shot = ledger2.calls.find((c) => c.snapshot !== undefined);
+
+  it("steps past the stopped web_fetch call to a free event of its run", () => {
+    expect(shot).toBeDefined();
+    const type = (got.events[shot?.callIndex ?? -1] as { type: string }).type;
+    expect(type).not.toBe("tool_call");
+    expect(type).not.toBe("tool_result");
+    // Still inside the run the first message opened.
+    expect(got.source.copilot?.snapshots?.[0].from).toBeLessThanOrEqual(shot?.callIndex ?? -1);
+  });
+
+  it("the web_fetch finding names no file of the snapshot", () => {
+    const r = buildReport({
+      events: got.events,
+      ledger: ledger2,
+      sessionId: "import:vscode-agent:events.jsonl",
+      title: null,
+      version: null,
+      now: 0,
+    });
+    const input = r.findings.find((f) => f.kind === "credential-input");
+    expect(input?.tool).toBe("web_fetch");
+    expect(input?.file).toBeNull();
+  });
+
+  it("a finding takes no file from another call at its index", () => {
+    // A ledger where a snapshot sat on the web_fetch's index, as before the fix.
+    const fetchAt = got.events.findIndex((e) => e.type === "tool_call");
+    const moved = {
+      ...ledger2,
+      calls: ledger2.calls.map((c) =>
+        c.snapshot === undefined
+          ? c
+          : { ...c, callIndex: fetchAt, touches: c.touches.map((t) => ({ ...t, callIndex: fetchAt })) },
+      ),
+    };
+    const r = buildReport({
+      events: got.events,
+      ledger: moved,
+      sessionId: "import:vscode-agent:events.jsonl",
+      title: null,
+      version: null,
+      now: 0,
+    });
+    expect(r.findings.find((f) => f.kind === "credential-input")?.file).toBeNull();
+  });
+
+  it("steps past a completed unlisted call's result too", () => {
+    const done = JSON.stringify({
+      type: "tool.execution_complete",
+      data: { toolCallId: "f1", success: true, result: { content: "ok" } },
+      id: "a3",
+      timestamp: "2026-11-10T09:00:02.500Z",
+    });
+    const withResult = lines.replace(
+      '\n{"type":"user.message","data":{"content":"go on"}',
+      `\n${done}\n{"type":"user.message","data":{"content":"go on"}`,
+    );
+    expect(withResult).not.toBe(lines);
+    const loaded2 = loadCopilotFolder({
+      events: withResult,
+      workspace: null,
+      snapshots: snapIndex,
+      live: false,
+    });
+    const call = foldFiles(loaded2.events, loaded2.source.copilot?.snapshots ?? []).calls.find(
+      (c) => c.snapshot !== undefined,
+    );
+    const type = (loaded2.events[call?.callIndex ?? -1] as { type: string }).type;
+    expect(["tool_call", "tool_result"]).not.toContain(type);
+  });
+});

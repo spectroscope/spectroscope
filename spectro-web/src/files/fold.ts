@@ -122,8 +122,8 @@ interface Reading {
  *
  * A Copilot session folder's file snapshots (card 605, task 12) arrive beside
  * the events. Each becomes a recorded call of its own at the end of its run
- * (its `at`), or at the latest free event of that run when a file call stands
- * there, so no two calls share an index.
+ * (its `at`), or at the latest event of that run that is no tool call or tool
+ * result and no other snapshot, so no call shares its index.
  */
 export function foldFiles(
   events: readonly RunEvent[],
@@ -302,7 +302,11 @@ function addSnapshots(
   workspace: string | null,
 ): void {
   if (events.length === 0) return;
+  // Every tool event is taken, listed or not: the report keys calls by index (fix round 1 item 1).
   const taken = new Set(calls.map((c) => c.callIndex));
+  events.forEach((e, i) => {
+    if (e.type === "tool_call" || e.type === "tool_result") taken.add(i);
+  });
   let added = false;
   for (const snap of snapshots) {
     if (snap.files.length === 0) continue;

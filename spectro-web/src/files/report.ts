@@ -921,7 +921,11 @@ function finish(
 ): Finding {
   const { path, printed: runner, ...rest } = d;
   const call = d.callIndex === null ? undefined : callAt.get(d.callIndex);
-  const own = call !== undefined && !call.shell && call.touches.length > 0 ? call.touches[0].path : null;
+  // The file of the call at the index, only when that call is the finding's own (fix round 1 item 1).
+  const own =
+    call !== undefined && call.tool === d.tool && !call.shell && call.touches.length > 0
+      ? call.touches[0].path
+      : null;
   const file = path ?? own;
   const raw =
     runner !== undefined ? runner : call?.shell ? (commands.get(call.callIndex) ?? call.line) : null;
