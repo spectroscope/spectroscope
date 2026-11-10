@@ -2,7 +2,9 @@
 // the report's outputs (reportLeak.test.ts) and of the tab's report sheet
 // (FilesReportSheet.test.tsx). The session holds credentials in tool results,
 // tool inputs, prompts, a steering message, the title, a file path, commands,
-// private key blocks and a model name.
+// private key blocks and a model name. Since the final fix wave it also holds
+// one value in each credential position of a network command (item 1b) and
+// one password with each terminator a rule stops at (item 1a).
 //
 // Test support only: no module outside a test imports it, which
 // FilesReportSheet.test.tsx pins, so it never reaches the shipped bundle.
@@ -36,6 +38,71 @@ const URL_PW = ["Pq9", "Wm4zXk"].join("");
 const BEARER = ["Rk7", "Tq2Vw9Xz4Lm8Pn3Hs6"].join("");
 const EXCHANGE_PW = ["Zt5", "Bn8cQr"].join("");
 
+/** One value per credential position of item 1b, each with the command that holds it. */
+const POSITIONS: readonly [string, string, (v: string) => string][] = [
+  ["url user and password", ["Ur1", "Pw7kQx"].join(""), (v) => `curl https://bob:${v}@api.example.com/x`],
+  ["url user only", ["Ut4", "Kw9pZr2m"].join(""), (v) => `git push https://${v}@github.com/o/r.git main`],
+  ["query value", ["Qv3", "Lm8nTs"].join(""), (v) => `curl "https://api.example.com/x?key=${v}&page=20"`],
+  ["-u", ["Uo5", "Rt2wXc"].join(""), (v) => `curl -u bob:${v} https://a.example.com`],
+  ["--user", ["Us6", "Np3vBd"].join(""), (v) => `curl --user=bob:${v} https://a.example.com`],
+  ["--proxy-user", ["Px8", "Hq4mJf"].join(""), (v) => `curl --proxy-user px:${v} https://a.example.com`],
+  ["sshpass -p", ["Sp2", "Gz7cWk"].join(""), (v) => `sshpass -p ${v} scp out.tar deploy@10.0.0.5:/srv/`],
+  [
+    "--password with a space",
+    ["Op9", "Dk5rYs"].join(""),
+    (v) => `curl --password ${v} https://a.example.com`,
+  ],
+  ["--password=", ["Oe4", "Mj8tLq"].join(""), (v) => `wget --password=${v} https://a.example.com/f`],
+  [
+    "Authorization",
+    ["Az7", "Fb3nWp"].join(""),
+    (v) => `curl -H "Authorization: Basic ${v}" https://a.example.com`,
+  ],
+  [
+    "Proxy-Authorization",
+    ["Pa5", "Ck9xVr"].join(""),
+    (v) => `curl -H "Proxy-Authorization: Bearer ${v}" https://a.example.com`,
+  ],
+  ["Cookie", ["Ck2", "Wd6sTn"].join(""), (v) => `curl -H "Cookie: sid=${v}" https://a.example.com`],
+  ["a key header", ["Hk8", "Ry4bMz"].join(""), (v) => `curl -H "X-Api-Key: ${v}" https://a.example.com`],
+];
+
+/** One password per terminator of item 1a: the two halves around the mark, and the command. */
+const TERMINATED: readonly [string, string, string, (v: string) => string][] = [
+  [
+    "comma",
+    ["Ta1", "Qw5zXc"].join(""),
+    ["Tb2", "Er6yUv"].join(""),
+    (v) => `curl -d 'password=${v}' https://a.example.com`,
+  ],
+  [
+    "quote",
+    ["Tc3", "Ty7iOp"].join(""),
+    ["Td4", "As8dFg"].join(""),
+    (v) => `curl -d "password=${v}" https://a.example.com`,
+  ],
+  [
+    "semicolon",
+    ["Te5", "Hj9kLz"].join(""),
+    ["Tf6", "Xc1vBn"].join(""),
+    (v) => `curl -d 'secret=${v}' https://a.example.com`,
+  ],
+  [
+    "@",
+    ["Tg7", "Mq2wEr"].join(""),
+    ["Th8", "Ty3uIo"].join(""),
+    (v) => `psql postgres://app:${v}@db.internal/x -c 'select 1'`,
+  ],
+  [
+    "/",
+    ["Ti9", "Pa4sDf"].join(""),
+    ["Tj1", "Gh5jKl"].join(""),
+    (v) => `curl -d 'password=${v}' https://a.example.com`,
+  ],
+];
+const MARKS: Record<string, string> = { comma: ",", quote: "'", semicolon: ";", "@": "@", "/": "/" };
+const terminated = (name: string, a: string, b: string) => `${a}${MARKS[name]}${b}`;
+
 function keyBlock(kind: string, body: string[]): string {
   const dashes = "-".repeat(5);
   const head = `${dashes}BEGIN ${kind} ${["PRIVATE", "KEY"].join(" ")}${dashes}`;
@@ -63,6 +130,8 @@ export const LEAK_RAW: readonly string[] = [
   EXCHANGE_PW,
   ...RSA_BODY,
   ...EC_BODY,
+  ...POSITIONS.map(([, v]) => v),
+  ...TERMINATED.flatMap(([name, a, b]) => [a, b, terminated(name, a, b)]),
 ];
 
 /** A session written event by event, one second apart. */
@@ -103,43 +172,61 @@ class Rec {
   }
 }
 
+/** The session's events and, for each value of POSITIONS and TERMINATED, the event index of the call that holds it. */
+function leakSession(): { events: RunEvent[]; calls: { name: string; call: number }[] } {
+  const rec = new Rec();
+  const calls: { name: string; call: number }[] = [];
+  rec
+    .push({
+      type: "run_start",
+      runId: "r1",
+      agentId: "main",
+      prompt: `use ${PAT} for the push`,
+      workspace: W,
+      provider: "anthropic",
+      model: "claude-sonnet-4-5",
+    })
+    .exchange()
+    .push({ type: "user_message", text: `the openai key is ${OPENAI}` })
+    .push({ type: "steering_message", agentId: "main", text: `slack: ${SLACK}`, taken: true, turn: 1 })
+    .tool("read_file", { path: ".env" }, `AWS_ACCESS_KEY_ID=${AKID}\nDB_PASSWORD=${DB_PW}\n`)
+    .tool("read_file", { path: "deploy.txt" }, `postgres://app:${URL_PW}@db.internal/x`)
+    .tool("read_file", { path: "keys/id_rsa" }, RSA_KEY)
+    .tool("read_file", { path: `backup-${AKID_IN_PATH}.txt` })
+    .tool("write_file", { path: "notes.txt", content: `token ${ANT}` }, "ok", "created")
+    .tool("db_connect", { host: "db", password: DB_PW })
+    .tool("Bash", { command: `mysql -u app -p'${DB_PW}' -e 'select 1'` })
+    .tool("Bash", { command: `export GITHUB_TOKEN=${PAT} && git push` })
+    .tool("Bash", {
+      command: `curl -H "Authorization: Bearer ${BEARER}" https://api.example.com/x -d @payload.json`,
+    })
+    .tool("Bash", { command: `printf '%s\\n' '${EC_KEY}' > k.pem` })
+    .tool("Bash", { command: "cat ~/.aws/credentials" }, `aws_access_key_id = ${AKID}\n`)
+    .tool("Bash", { command: `echo "${JWT}" | base64 -d` })
+    .tool("Bash", { command: "printenv" }, `GITHUB_TOKEN=${PAT}\nHOME=/Users/a\n`);
+  for (const [name, value, command] of POSITIONS) {
+    calls.push({ name, call: rec.events.length });
+    rec.tool("Bash", { command: command(value) });
+  }
+  for (const [name, a, b, command] of TERMINATED) {
+    calls.push({ name: `terminator ${name}`, call: rec.events.length });
+    rec.tool("Bash", { command: command(terminated(name, a, b)) });
+  }
+  rec
+    .exchange()
+    // A model name and an address that carry credentials: the report keeps
+    // destinations as recorded, so the renderers mask them.
+    .exchange(`m-${JWT}`, `https://u:${EXCHANGE_PW}@api.example.com/v1`);
+  return { events: rec.events, calls };
+}
+
 /** The session's events, written fresh on every call. */
 export function leakEvents(): RunEvent[] {
-  return (
-    new Rec()
-      .push({
-        type: "run_start",
-        runId: "r1",
-        agentId: "main",
-        prompt: `use ${PAT} for the push`,
-        workspace: W,
-        provider: "anthropic",
-        model: "claude-sonnet-4-5",
-      })
-      .exchange()
-      .push({ type: "user_message", text: `the openai key is ${OPENAI}` })
-      .push({ type: "steering_message", agentId: "main", text: `slack: ${SLACK}`, taken: true, turn: 1 })
-      .tool("read_file", { path: ".env" }, `AWS_ACCESS_KEY_ID=${AKID}\nDB_PASSWORD=${DB_PW}\n`)
-      .tool("read_file", { path: "deploy.txt" }, `postgres://app:${URL_PW}@db.internal/x`)
-      .tool("read_file", { path: "keys/id_rsa" }, RSA_KEY)
-      .tool("read_file", { path: `backup-${AKID_IN_PATH}.txt` })
-      .tool("write_file", { path: "notes.txt", content: `token ${ANT}` }, "ok", "created")
-      .tool("db_connect", { host: "db", password: DB_PW })
-      .tool("Bash", { command: `mysql -u app -p'${DB_PW}' -e 'select 1'` })
-      .tool("Bash", { command: `export GITHUB_TOKEN=${PAT} && git push` })
-      .tool("Bash", {
-        command: `curl -H "Authorization: Bearer ${BEARER}" https://api.example.com/x -d @payload.json`,
-      })
-      .tool("Bash", { command: `printf '%s\\n' '${EC_KEY}' > k.pem` })
-      .tool("Bash", { command: "cat ~/.aws/credentials" }, `aws_access_key_id = ${AKID}\n`)
-      .tool("Bash", { command: `echo "${JWT}" | base64 -d` })
-      .tool("Bash", { command: "printenv" }, `GITHUB_TOKEN=${PAT}\nHOME=/Users/a\n`)
-      .exchange()
-      // A model name and an address that carry credentials: the report keeps
-      // destinations as recorded, so the renderers mask them.
-      .exchange(`m-${JWT}`, `https://u:${EXCHANGE_PW}@api.example.com/v1`).events
-  );
+  return leakSession().events;
 }
+
+/** The call of each position and terminator value, by name: a guard names the case, never the value. */
+export const LEAK_CALLS: readonly { name: string; call: number }[] = leakSession().calls;
 
 /** The report of the session, with a title that carries a key and version 0.16.1. */
 export function leakReport(): FilesReport {

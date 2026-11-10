@@ -8,7 +8,7 @@
 import { describe, expect, it } from "vitest";
 import { reportCsv } from "./reportCsv";
 import { reportFilename, reportHtml } from "./reportHtml";
-import { LEAK_RAW, leakReport } from "./reportLeakFixture";
+import { LEAK_CALLS, LEAK_RAW, leakReport } from "./reportLeakFixture";
 import { findCredentials } from "./secrets";
 
 const CREDENTIAL_KINDS = new Set([
@@ -43,6 +43,19 @@ describe("the files report leaks no credential", () => {
     // assertion on the text itself would print the output into the log.
     expect(outputs[0][1].includes("[credential 1: github-pat]"), "html").toBe(true);
     expect(outputs[2][1].includes("credential 1 github-pat"), "csv").toBe(true);
+  });
+
+  it("every position and terminator value made a credential finding at its call", () => {
+    // Positive guard for the index check below: a value that no rule and no
+    // position found would also be absent from the outputs, and pass it.
+    expect(LEAK_CALLS.length).toBe(18);
+    const missing = LEAK_CALLS.filter(
+      ({ call }) =>
+        !report.findings.some(
+          (f) => f.callIndex === call && (f.kind === "credential-input" || f.kind === "credential-used"),
+        ),
+    ).map((c) => c.name);
+    expect(missing).toEqual([]);
   });
 
   it("no rule matches anywhere in the HTML or the CSV", () => {

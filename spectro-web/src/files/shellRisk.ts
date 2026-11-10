@@ -6,6 +6,7 @@
 // followed: every path resolves against `cwd`.
 
 import { resolvePath } from "./paths";
+import { isPlaceholder } from "./secrets";
 import { shellTouches } from "./shell";
 import { segments, type Heredoc, type Segment, type Word } from "./shellTokens";
 
@@ -16,38 +17,80 @@ export interface NetworkUse {
   sendsNamed: boolean; // false when it also sends files the line does not name (B7)
 }
 
+/**
+ * A value in a credential position of a network command (card 605): a URL's
+ * userinfo or query value, the value of `-u` and its kin, of an option whose
+ * name says password, token, secret or key, of an auth or cookie header, and
+ * the `-p` of sshpass. `start` and `end` bound it in the command string; a
+ * value the line does not spell exactly is the whole word. `value` is what the
+ * shell reads, dynamic pieces left out; `secret` is its credential part: the
+ * password of `user:password`, the token after a header's scheme word, else
+ * the value.
+ */
+export interface CommandValue {
+  start: number;
+  end: number;
+  value: string;
+  secret: string;
+}
+
 export interface ShellRisk {
   envDump: string | null; // the first command that printed the environment or a stored secret
   network: NetworkUse[];
+  /** True when a getter printed one stored secret: gh auth token, op read, pass show, aws configure get, security ... -w. */
+  secretOutput: boolean;
+  values: CommandValue[];
+  /** Values in credential positions that are placeholders or that the line does not spell. */
+  placeholders: number;
 }
 
 export function shellRisk(command: string, cwd: string | null): ShellRisk {
-  const out: ShellRisk = { envDump: null, network: [] };
-  readLine(command, cwd, out, 0);
+  const out: ShellRisk = { envDump: null, network: [], secretOutput: false, values: [], placeholders: 0 };
+  readLine(command, cwd, out, 0, { at: 0 });
   return out;
 }
 
 // How deep substitutions, wrappers and `sh -c` lines are followed.
 const MAX_DEPTH = 4;
 
-function readLine(line: string, cwd: string | null, out: ShellRisk, depth: number): void {
+/**
+ * Where a line read from inside the command sits in the command: at an offset,
+ * or, when its text is not a plain slice of the command (an escaped `sh -c`
+ * script), only somewhere inside a span. A value found there is the span.
+ */
+type Place = { at: number } | { span: [number, number] };
+
+/** What a command and its arguments are read against: the line's text and its place. */
+interface Ctx {
+  line: string;
+  place: Place;
+}
+
+const shift = (p: Place, by: number): Place => ("at" in p ? { at: p.at + by } : p);
+const within = (p: Place, start: number, end: number): Place =>
+  "at" in p ? { span: [p.at + start, p.at + end] } : p;
+
+function readLine(line: string, cwd: string | null, out: ShellRisk, depth: number, place: Place): void {
   if (depth > MAX_DEPTH) return;
+  const ctx: Ctx = { line, place };
   for (const item of riskSegments(line)) {
     if (item === "(" || item === ")") continue;
-    readSubs(item, cwd, out, depth); // a substitution runs before the command that holds it
-    run(item.words, item, cwd, out, depth);
+    readSubs(item, cwd, out, depth, place); // a substitution runs before the command that holds it
+    run(item.words, item, cwd, out, depth, ctx);
   }
 }
 
 /** Reads the substitutions of a segment as lines; an arithmetic body only for the substitutions in it. */
-function readSubs(item: Segment, cwd: string | null, out: ShellRisk, depth: number): void {
+function readSubs(item: Segment, cwd: string | null, out: ShellRisk, depth: number, place: Place): void {
   for (const w of wordsOf(item)) {
-    for (const body of subsOf(w)) readLine(body, cwd, out, depth + 1);
-    for (const body of arithOf(w)) {
-      if (depth + 1 > MAX_DEPTH) continue;
-      for (const inner of riskSegments(body))
-        if (typeof inner !== "string") readSubs(inner, cwd, out, depth + 1);
-    }
+    const s = w as SWord;
+    subsOf(w).forEach((body, k) => readLine(body, cwd, out, depth + 1, shift(place, s.subAt?.[k] ?? 0)));
+    arithOf(w).forEach((body, k) => {
+      if (depth + 1 > MAX_DEPTH) return;
+      const inner = shift(place, s.arithAt?.[k] ?? 0);
+      for (const seg of riskSegments(body))
+        if (typeof seg !== "string") readSubs(seg, cwd, out, depth + 1, inner);
+    });
   }
 }
 
@@ -67,7 +110,14 @@ const wordsOf = (s: Segment): Word[] => [
  * substitutions, `arith` of its `$((...))`, `vars` is true for a variable or
  * parameter, `shape` is its text with each dynamic piece as one DYN character.
  */
-type SWord = Word & { subs?: string[]; arith?: string[]; vars?: boolean; shape?: string };
+type SWord = Word & {
+  subs?: string[];
+  subAt?: number[]; // where each body starts in the line
+  arith?: string[];
+  arithAt?: number[];
+  vars?: boolean;
+  shape?: string;
+};
 const subsOf = (w: Word): string[] => (w as SWord).subs ?? [];
 const arithOf = (w: Word): string[] => (w as SWord).arith ?? [];
 const varsOf = (w: Word): boolean => (w as SWord).vars ?? w.dynamic;
@@ -83,26 +133,69 @@ const HAS_DYNAMIC = /[`$]|[<>]\(/;
 const META = " \t\r\n;&|()<>";
 const OPERATORS = ["<<<", "<<-", "&>>", ">>", "<<", "<>", "<&", ">&", ">|", "&>"];
 
-/** segments() with what made each word dynamic kept on it (see SWord). */
+/** A substitution body, where it starts in the line, and whether it is arithmetic. */
+interface Body {
+  text: string;
+  at: number;
+  arith: boolean;
+}
+
+/** The masked line, and for each of its characters the source range it stands for. */
+interface Masked {
+  text: string;
+  from: number[];
+  to: number[];
+}
+
+/**
+ * segments() with what made each word dynamic kept on it (see SWord). Word
+ * positions are those of `command`, as segments() gives them.
+ */
 export function riskSegments(command: string): (Segment | "(" | ")")[] {
   if (!HAS_DYNAMIC.test(command) || /[\uE000-\uE002]/.test(command)) return segments(command);
   const docs = segments(command).flatMap((s) => (typeof s === "string" ? [] : s.docs));
-  const bodies: { text: string; arith: boolean }[] = [];
-  const unmask = (w: Word): Word => {
+  const bodies: Body[] = [];
+  const masked = mask(command, docs, bodies);
+  // An unclosed quote reads past the end, in the masked line as in the line itself.
+  const { from, to } = masked;
+  const endOf = (k: number) => (k - 1 < to.length ? to[k - 1] : to[to.length - 1] + (k - to.length));
+  const unmask = (raw: Word): Word => {
+    const w: Word =
+      raw.start === undefined || raw.end === undefined || raw.end <= raw.start || from.length === 0
+        ? raw
+        : { ...raw, start: from[Math.min(raw.start, from.length - 1)], end: endOf(raw.end) };
     if (!/[\uE000\uE002]/.test(w.text)) return w;
     const subs: string[] = [];
+    const subAt: number[] = [];
     const arith: string[] = [];
+    const arithAt: number[] = [];
     let vars = w.dynamic;
     const text = w.text.replace(MARK, (m, n?: string) => {
+      const body = bodies[Number(n)];
       if (m === VAR) vars = true;
-      else if (bodies[Number(n)].arith) arith.push(bodies[Number(n)].text);
-      else subs.push(bodies[Number(n)].text);
+      else if (body.arith) {
+        arith.push(body.text);
+        arithAt.push(body.at);
+      } else {
+        subs.push(body.text);
+        subAt.push(body.at);
+      }
       return "";
     });
-    const out: SWord = { ...w, text, dynamic: true, vars, subs, arith, shape: w.text.replace(MARK, DYN) };
+    const out: SWord = {
+      ...w,
+      text,
+      dynamic: true,
+      vars,
+      subs,
+      subAt,
+      arith,
+      arithAt,
+      shape: w.text.replace(MARK, DYN),
+    };
     return out;
   };
-  return segments(mask(command, docs, bodies)).map((s) =>
+  return segments(masked.text).map((s) =>
     typeof s === "string"
       ? s
       : {
@@ -113,24 +206,34 @@ export function riskSegments(command: string): (Segment | "(" | ")")[] {
   );
 }
 
-function mask(src: string, docs: Heredoc[], bodies: { text: string; arith: boolean }[]): string {
+function mask(src: string, docs: Heredoc[], bodies: Body[]): Masked {
   let out = "";
+  const from: number[] = [];
+  const to: number[] = [];
   let i = 0;
   let pending = 0; // heredocs whose body starts after the next newline
   let next = 0; // the next of `docs`, in the tokenizer's order
   let delimiter = false; // inside a heredoc delimiter word, which stays as written
+  /** Appends `text`, standing for src[start, end): copied character by character, or as one marker. */
+  const put = (text: string, start: number, end: number, copied: boolean) => {
+    for (let k = 0; k < text.length; k++) {
+      from.push(copied ? start + k : start);
+      to.push(copied ? start + k + 1 : end);
+    }
+    out += text;
+  };
   const copy = (end: number) => {
-    out += src.slice(i, end);
+    put(src.slice(i, end), i, end, true);
     i = end;
   };
-  const sub = (end: number, body: string, arith = false) => {
+  const sub = (end: number, body: string, at: number, arith = false) => {
     if (delimiter) return copy(end);
-    out += OPEN + String(bodies.push({ text: body, arith }) - 1) + CLOSE;
+    put(OPEN + String(bodies.push({ text: body, at, arith }) - 1) + CLOSE, i, end, false);
     i = end;
   };
   const variable = (end: number) => {
     if (delimiter) return copy(end);
-    out += VAR;
+    put(VAR, i, end, false);
     i = end;
   };
   const dollar = (inDouble: boolean) => {
@@ -138,7 +241,7 @@ function mask(src: string, docs: Heredoc[], bodies: { text: string; arith: boole
     if (n === "(") {
       // `$((...))` is arithmetic: kept apart, never read as a command line.
       const b = balanced(src, i + 1);
-      sub(b.end, src.slice(i + 2, b.closed ? b.end - 1 : src.length), src[i + 2] === "(");
+      sub(b.end, src.slice(i + 2, b.closed ? b.end - 1 : src.length), i + 2, src[i + 2] === "(");
     } else if (n === "{") variable(balanced(src, i + 1).end);
     else if (/[A-Za-z_]/.test(n ?? "")) {
       let j = i + 2;
@@ -155,7 +258,7 @@ function mask(src: string, docs: Heredoc[], bodies: { text: string; arith: boole
   const tick = () => {
     let j = i + 1;
     while (j < src.length && src[j] !== "`") j += src[j] === "\\" ? 2 : 1;
-    sub(j + 1, src.slice(i + 1, Math.min(j, src.length)));
+    sub(j + 1, src.slice(i + 1, Math.min(j, src.length)), i + 1);
   };
   let delimiterAt = -1;
   let tokenStart = true; // where the tokenizer's main loop stands: `#` starts a comment only here
@@ -191,9 +294,9 @@ function mask(src: string, docs: Heredoc[], bodies: { text: string; arith: boole
     else if (c === "`") tick();
     else if (procSub) {
       // `<` and `>` end a word, so the marker of `<(...)` must start one: `a>(b)` and `\|<(b)` are two words.
-      if (!delimiter) out += " ";
+      if (!delimiter) put(" ", i, i, false);
       const b = balanced(src, i + 1);
-      sub(b.end, src.slice(i + 2, b.closed ? b.end - 1 : src.length));
+      sub(b.end, src.slice(i + 2, b.closed ? b.end - 1 : src.length), i + 2);
     } else if (c === "(" && src[i + 1] === "(") copy(balanced(src, i).end);
     else {
       const op = OPERATORS.find((o) => src.startsWith(o, i));
@@ -207,7 +310,7 @@ function mask(src: string, docs: Heredoc[], bodies: { text: string; arith: boole
       } else copy(i + (op?.length ?? 1));
     }
   }
-  return out;
+  return { text: out, from, to };
 }
 
 // The tokenizer's skipBalanced, telling also whether the closing bracket came.
@@ -258,7 +361,7 @@ function commandName(text: string): string | null {
   return text.startsWith("/") ? (text.split("/").pop() ?? null) : null;
 }
 
-function run(words: Word[], seg: Segment, cwd: string | null, out: ShellRisk, depth: number): void {
+function run(words: Word[], seg: Segment, cwd: string | null, out: ShellRisk, depth: number, ctx: Ctx): void {
   const [head, ...args] = commandWords(words);
   if (!head || head.dynamic || depth > MAX_DEPTH) return;
   const name = commandName(head.text);
@@ -266,27 +369,40 @@ function run(words: Word[], seg: Segment, cwd: string | null, out: ShellRisk, de
   if (name === "env") {
     const rest = parse(args, ENV).operands;
     if (commandWords(rest).length === 0) dumped(out, "env");
-    else run(rest, seg, cwd, out, depth + 1);
+    else run(rest, seg, cwd, out, depth + 1, ctx);
     return;
+  }
+  if (name === "sshpass") {
+    const p = parse(args, SSHPASS);
+    for (const o of p.options) {
+      if (o.name !== "-p" || !o.value) continue;
+      const holder = o.inline ? o.from : o.value;
+      const from = o.inline ? o.from.text.length - o.value.text.length : 0;
+      secretValue(out, ctx, holder, from, holder.text.length, shapeText(o.value), "plain");
+    }
+    return run(p.operands, seg, cwd, out, depth + 1, ctx);
   }
   const wrapper = WRAPPERS.get(name);
   if (wrapper) {
     const p = parse(args, wrapper);
     if (name === "command" && has(p, "-v", "-V")) return; // a lookup, not a run
-    return run(p.operands.slice(wrapper.skip ?? 0), seg, cwd, out, depth + 1);
+    return run(p.operands.slice(wrapper.skip ?? 0), seg, cwd, out, depth + 1, ctx);
   }
   if (SHELLS.has(name)) {
     const p = parse(args, SHELL);
     const script = p.operands[0];
-    if (has(p, "-c") && script && !script.dynamic) readLine(script.text, cwd, out, depth + 1);
+    if (has(p, "-c") && script && !script.dynamic)
+      readLine(script.text, cwd, out, depth + 1, placeOf(script, ctx));
     return;
   }
   const dump = dumpOf(name, args);
   if (dump !== null) dumped(out, dump);
+  if (dump !== null && printsOneSecret(dump, args)) out.secretOutput = true;
   const found = NETWORK.get(name)?.(args, seg, cwd);
   if (found) {
     subSends(found, name, args, seg, cwd);
     out.network.push(found);
+    positionValues(name, args, ctx, out);
   }
 }
 
@@ -383,6 +499,15 @@ const WRAPPERS = new Map<string, Spec>([
 ]);
 const SHELLS = new Set(["sh", "bash", "zsh", "dash", "ksh"]);
 const SHELL: Spec = { short: "o", long: ["rcfile", "init-file"], posix: true };
+const SSHPASS: Spec = { short: "fdpP", posix: true };
+
+/** The place of a line read from the text of `w`: exact when the line spells the text plainly or in one pair of quotes. */
+function placeOf(w: Word, ctx: Ctx): Place {
+  const r = textRange(w, ctx, 0, w.text.length);
+  if (r === null || w.start === undefined || w.end === undefined)
+    return within(ctx.place, 0, ctx.line.length);
+  return r.exact ? shift(ctx.place, r.start) : within(ctx.place, w.start, w.end);
+}
 
 // Environment and keychain dumps (design section 3): the command printed
 // variables or a stored secret to its output, which the model reads.
@@ -403,6 +528,14 @@ const AWS: Spec = {
   ],
 };
 const OP: Spec = { long: ["account", "config", "encoding", "format", "session", "vault", "fields"] };
+
+/** The dumps that print one stored secret and nothing else: `security` only with `-w`. */
+const ONE_SECRET = new Set(["gh auth token", "op read", "pass show", "aws configure get"]);
+
+function printsOneSecret(dump: string, args: Word[]): boolean {
+  if (ONE_SECRET.has(dump)) return true;
+  return dump.startsWith("security find-") && args.some((w) => /^-[A-Za-z]*w[A-Za-z]*$/.test(w.text));
+}
 
 function dumpOf(name: string, args: Word[]): string | null {
   const ops = (spec: Spec = {}) => parse(args, spec).operands.map((w) => w.text);
@@ -1094,6 +1227,227 @@ const NETWORK = new Map<string, NetRule>([
   ["git", git],
   ["npm", npm],
 ]);
+
+// Values in credential positions (card 605, final wave item 1b). The report
+// masks them by position, because a value of any shape can stand there.
+
+/**
+ * For each character of a literal word's text, its index in `src`, the word's
+ * source: quotes and backslashes taken out as the tokenizer takes them out.
+ * Null for a form this does not follow (`$'...'`), or when the result does
+ * not spell `text`.
+ */
+function sourceIndex(src: string, text: string): number[] | null {
+  const map: number[] = [];
+  for (let i = 0; i < src.length;) {
+    const c = src[i];
+    if (c === "\\") {
+      if (src[i + 1] !== "\n" && i + 1 < src.length) map.push(i + 1);
+      i += 2;
+    } else if (c === "'") {
+      const close = src.indexOf("'", i + 1);
+      const stop = close < 0 ? src.length : close;
+      for (let k = i + 1; k < stop; k++) map.push(k);
+      i = stop + 1;
+    } else if (c === '"') {
+      i++;
+      while (i < src.length && src[i] !== '"') {
+        if (src[i] === "\\" && '$`"\\\n'.includes(src[i + 1] ?? "")) {
+          if (src[i + 1] !== "\n") map.push(i + 1);
+          i += 2;
+        } else map.push(i++);
+      }
+      i++;
+    } else if (c === "$") return null;
+    else map.push(i++);
+  }
+  if (map.length !== text.length) return null;
+  for (let k = 0; k < map.length; k++) if (src[map[k]] !== text[k]) return null;
+  return map;
+}
+
+/**
+ * The range of `w`'s text [from, to) in the line. `exact` when the line spells
+ * that text as one run (plainly or inside one pair of quotes). A range the
+ * quoting splits runs on over the quote that closes it; a dynamic word, or one
+ * whose quoting this does not follow, is the whole word.
+ */
+function textRange(
+  w: Word,
+  ctx: Ctx,
+  from: number,
+  to: number,
+): { start: number; end: number; exact: boolean } | null {
+  if (w.start === undefined || w.end === undefined) return null;
+  const whole = { start: w.start, end: w.end, exact: false };
+  if (w.dynamic) return whole;
+  const map = sourceIndex(ctx.line.slice(w.start, w.end), w.text);
+  if (map === null) return whole;
+  if (from >= to)
+    return {
+      start: w.start + (map[from] ?? w.end - w.start),
+      end: w.start + (map[from] ?? w.end - w.start),
+      exact: true,
+    };
+  let exact = true;
+  for (let k = from + 1; k < to; k++) if (map[k] !== map[k - 1] + 1) exact = false;
+  let end = w.start + map[to - 1] + 1;
+  if (!exact) while (end < w.end && !map.includes(end - w.start)) end++;
+  return { start: w.start + map[from], end, exact };
+}
+
+function addValue(out: ShellRisk, ctx: Ctx, start: number, end: number, value: string, secret: string): void {
+  const [s, e] = "at" in ctx.place ? [ctx.place.at + start, ctx.place.at + end] : ctx.place.span;
+  if (!out.values.some((v) => v.start === s && v.end === e))
+    out.values.push({ start: s, end: e, value, secret });
+}
+
+const AUTH_SCHEME = /^\s*(?:bearer|basic|token|digest|negotiate|bot)\s+/i;
+
+/**
+ * Records the text [from, to) of `holder` as a credential value, or counts it
+ * as a placeholder: a value the line does not spell (a variable), and a B4
+ * placeholder. `shape` is the value with each dynamic piece as DYN (the text
+ * itself for a literal word). `kind` says where the secret part is: after the
+ * first `:` of a `user:password`, after the scheme word of a header, or the
+ * whole value. A dynamic holder is masked as a whole word.
+ */
+function secretValue(
+  out: ShellRisk,
+  ctx: Ctx,
+  holder: Word,
+  from: number,
+  to: number,
+  shape: string,
+  kind: "user" | "header" | "plain",
+): void {
+  let secret = shape;
+  const colon = shape.indexOf(":");
+  if (kind === "user" && colon >= 0) secret = shape.slice(colon + 1);
+  if (kind === "header") secret = secret.replace(AUTH_SCHEME, "");
+  const literal = secret.split(DYN).join("").trim();
+  const value = shape.split(DYN).join("");
+  if (literal === "" || isPlaceholder("position", value) || isPlaceholder("position", literal)) {
+    out.placeholders++;
+    return;
+  }
+  const r = textRange(holder, ctx, from, to);
+  if (r !== null) addValue(out, ctx, r.start, r.end, value, secret.split(DYN).join("").trim());
+}
+
+/** A word's shape, or its text when it is literal; DYN for a dynamic word of unknown pieces. */
+const shapeText = (w: Word): string => shapeOf(w) ?? DYN;
+
+/** An option whose name says it holds a secret: password, passwd, passphrase, token, secret, key, or `pass`. */
+const SECRET_OPTION = /password|passwd|passphrase|token|secret|key|^pass$|-pass$/i;
+/** Authorization, Proxy-Authorization, Cookie, and a header whose name says token, key, secret or auth. */
+const SECRET_HEADER = /^cookie$|token|key|secret|auth/i;
+const HEADER_NAME = /^\s*([A-Za-z0-9!#$%&'*+.^_`|~-]+)\s*:\s*/;
+
+const VALUE_SPECS = new Map<string, Spec>([
+  ["curl", CURL],
+  ["wget", WGET],
+  ["http", HTTPIE],
+  ["https", HTTPIE],
+  ["scp", SCP],
+  ["rsync", RSYNC],
+  ["sftp", SFTP],
+  ["ssh", SSH],
+  ["nc", NC],
+  ["ncat", NC],
+  ["telnet", TELNET],
+  ["npm", NPM],
+]);
+const USER_OPTIONS = new Map<string, string[]>([
+  ["curl", ["-u", "--user", "-U", "--proxy-user", "--oauth2-bearer"]],
+  ["wget", ["--user", "--http-user", "--proxy-user"]],
+  ["http", ["-a", "--auth"]],
+  ["https", ["-a", "--auth"]],
+]);
+const HEADER_OPTIONS = new Map<string, string[]>([
+  ["curl", ["-H", "--header", "--proxy-header"]],
+  ["wget", ["--header"]],
+]);
+
+/** The values in credential positions of one network command. */
+function positionValues(name: string, args: Word[], ctx: Ctx, out: ShellRisk): void {
+  let words = args;
+  let spec = VALUE_SPECS.get(name);
+  if (name === "git") {
+    words = parse(args, GIT).operands.slice(1);
+    spec = PUSH;
+  }
+  if (spec === undefined) return;
+  const p = parse(words, spec);
+  const user = USER_OPTIONS.get(name) ?? [];
+  const header = HEADER_OPTIONS.get(name) ?? [];
+  for (const o of p.options) {
+    if (!o.value) continue;
+    const holder = o.inline ? o.from : o.value;
+    const from = o.inline ? o.from.text.length - o.value.text.length : 0;
+    const to = holder.text.length;
+    const shape = shapeText(o.value);
+    if (user.includes(o.name)) secretValue(out, ctx, holder, from, to, shape, "user");
+    else if (header.includes(o.name)) headerValue(out, ctx, holder, from, shape);
+    else if (name === "curl" && (o.name === "-b" || o.name === "--cookie") && shape.includes("="))
+      secretValue(out, ctx, holder, from, to, shape, "plain");
+    else if (name === "curl" && o.name === "--url-query") {
+      const eq = shape.indexOf("=");
+      if (eq >= 0 && shape[eq + 1] !== "@" && eq + 1 < shape.length)
+        secretValue(out, ctx, holder, from + eq + 1, to, shape.slice(eq + 1), "plain");
+    } else if (o.name.startsWith("--") && SECRET_OPTION.test(o.name.slice(2)))
+      secretValue(out, ctx, holder, from, to, shape, "plain");
+  }
+  // A long option the tool's table does not list still takes the next word when its name says secret.
+  for (let k = 0; k + 1 < words.length; k++) {
+    const t = words[k].text;
+    if (!t.startsWith("--") || t.includes("=") || !SECRET_OPTION.test(t.slice(2))) continue;
+    if (spec.long?.includes(t.slice(2))) continue;
+    const next = words[k + 1];
+    if (next.text.startsWith("-") || SCHEME.test(next.text)) continue;
+    secretValue(out, ctx, next, 0, next.text.length, shapeText(next), "plain");
+  }
+  for (const w of words) urlValues(out, ctx, w);
+  if (name === "http" || name === "https") {
+    for (const w of p.operands) {
+      const t = shapeText(w);
+      const h = /^([A-Za-z0-9!#$%&'*+.^_`|~-]+):(?![=@])/.exec(t);
+      if (h && SECRET_HEADER.test(h[1])) headerValue(out, ctx, w, 0, t);
+      const q = /^[^=:@]+==/.exec(t);
+      if (q) secretValue(out, ctx, w, q[0].length, w.text.length, t.slice(q[0].length), "plain");
+    }
+  }
+}
+
+/** The value of a header with a secret name, after `Name:`. `shape` is the holder's shape from `from` on. */
+function headerValue(out: ShellRisk, ctx: Ctx, holder: Word, from: number, shape: string): void {
+  const m = HEADER_NAME.exec(shape);
+  if (!m || !SECRET_HEADER.test(m[1]) || shape.length === m[0].length) return;
+  secretValue(out, ctx, holder, from + m[0].length, holder.text.length, shape.slice(m[0].length), "header");
+}
+
+/** A URL's userinfo (a user without a colon too) and each query value. */
+function urlValues(out: ShellRisk, ctx: Ctx, w: Word): void {
+  const t = shapeText(w);
+  const scheme = SCHEME.exec(t);
+  if (!scheme) return;
+  const authStart = scheme[0].length;
+  const tail = t.slice(authStart).search(/[/?#]/);
+  const authEnd = tail < 0 ? t.length : authStart + tail;
+  const at = t.lastIndexOf("@", authEnd - 1);
+  if (at > authStart) secretValue(out, ctx, w, authStart, at, t.slice(authStart, at), "user");
+  const q = t.indexOf("?", authEnd);
+  if (q < 0) return;
+  const hash = t.indexOf("#", q);
+  const end = hash < 0 ? t.length : hash;
+  for (let start = q + 1; start < end;) {
+    const amp = t.indexOf("&", start);
+    const stop = amp < 0 || amp > end ? end : amp;
+    const eq = t.indexOf("=", start);
+    if (eq >= 0 && eq + 1 < stop) secretValue(out, ctx, w, eq + 1, stop, t.slice(eq + 1, stop), "plain");
+    start = stop + 1;
+  }
+}
 
 // Options that name where the output goes; a substitution there sends nothing (subSends).
 const CURL_OUT = new Set([

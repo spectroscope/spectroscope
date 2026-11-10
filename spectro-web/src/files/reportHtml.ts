@@ -305,6 +305,8 @@ const EN: Words = {
     "url-userinfo": "password in a URL",
     "password-assignment": "password assignment",
     "key-body": "key material",
+    position: "value in a credential position of a command",
+    "stored-secret": "stored secret a command printed",
   },
   band: (band) => (band === "129+" ? "more than 128 bytes" : `${band.replace("-", " to ")} bytes`),
   title: (f) => {
@@ -364,7 +366,8 @@ const EN: Words = {
           f.count > 0
             ? `Its output had ${f.count.toLocaleString("en")} ${plural(f.count, "line", "lines")}.`
             : "No output was recorded.";
-        return `The command prints the environment or a stored secret into its result. ${lines} Variables often carry tokens.`;
+        const value = c.creds === "" ? "" : ` The output was one value, ${c.creds}.`;
+        return `The command prints the environment or a stored secret into its result. ${lines}${value} Variables often carry tokens.`;
       }
       case "network": {
         const host =
@@ -429,7 +432,8 @@ const EN: Words = {
   method: (placeholders, count) => [
     `Secret files by name: ${SECRET_NAMES}, ${code("id_rsa")} and the other SSH keys, ${SECRET_TAIL}, anything under ${code(".ssh/")}, ${code(".aws/")} or ${code(".gnupg/")}. Templates such as ${code(".env.example")} stay project files.`,
     `Credentials by shape: ten of the twelve redaction rules spectroscope applies to recorded state. One more rule finds assignments to names that say password, secret, token or key, such as ${code("DB_PASSWORD")}. The other two redaction rules count email addresses and IBANs as personal data.`,
-    "No credential is printed, nor its exact length or a hash of it. Each one gets a label that counts up in this report, and the same value keeps its label; its size is given as a band of bytes. The values stay in the recording on the machine that made it.",
+    `Credentials by position: in a network command, a value counts as a credential by where it stands, whatever its shape. That is a URL's user and password, every query value, the value of ${code("-u")}, ${code("--user")} and ${code("--proxy-user")}, of an option whose name says password, token, secret or key, of the headers Authorization, Proxy-Authorization and Cookie and of a header whose name says token, key, secret or auth, and the password of ${code("sshpass -p")}. The one value that ${code("gh auth token")}, ${code("op read")}, ${code("pass show")}, ${code("security ... -w")} or ${code("aws configure get")} printed counts too.`,
+    "The report prints no credential that its rules or these positions found, nor its exact length or a hash of it. In a command, a password assignment is masked to the end of its word and a URL's user and password from :// to the last @. Each credential gets a label that counts up in this report, and the same value keeps its label; its size is given as a band of bytes. A secret of a shape the rules do not know, in a place of a command they do not read, can still print in a command. The values stay in the recording on the machine that made it.",
     `Placeholders such as the AWS documentation key ending in ${code("EXAMPLE")}, ${code(DOLLAR_NAME)}, a value in angle brackets or ${code("changeme")} are not counted. This session held ${count} ${plural(placeholders, "placeholder", "placeholders")}.`,
     "Levels: critical for secrets, sensitive for files outside the project, network commands and personal data. A script whose effect the recording does not show is unknown, and files inside the workspace are project. The verdict is the highest level; a model's reading does not count.",
     "Sources: recorded when the tool reported the file, probable when the files tab's heuristic read it from a shell command, model when a model's reading named it.",
@@ -568,6 +572,8 @@ const DE: Words = {
     "url-userinfo": "Passwort in einer URL",
     "password-assignment": "Passwortzuweisung",
     "key-body": "Schlüsselmaterial",
+    position: "Wert an einer Stelle eines Befehls für Zugangsdaten",
+    "stored-secret": "gespeichertes Geheimnis, das ein Befehl ausgab",
   },
   band: (band) => (band === "129+" ? "mehr als 128 Byte" : `${band.replace("-", " bis ")} Byte`),
   title: (f) => {
@@ -626,7 +632,8 @@ const DE: Words = {
           f.count > 0
             ? `Die Ausgabe hatte ${f.count.toLocaleString("de")} ${plural(f.count, "Zeile", "Zeilen")}.`
             : "Es wurde keine Ausgabe aufgezeichnet.";
-        return `Der Befehl gibt die Umgebung oder ein gespeichertes Geheimnis in sein Ergebnis aus. ${lines} Variablen tragen oft Tokens.`;
+        const value = c.creds === "" ? "" : ` Die Ausgabe war ein einzelner Wert, ${c.creds}.`;
+        return `Der Befehl gibt die Umgebung oder ein gespeichertes Geheimnis in sein Ergebnis aus. ${lines}${value} Variablen tragen oft Tokens.`;
       }
       case "network": {
         // A relative clause in the middle of the sentence closes with a comma.
@@ -698,7 +705,8 @@ const DE: Words = {
   method: (_placeholders, count) => [
     `Geheime Dateien nach Namen: ${SECRET_NAMES}, ${code("id_rsa")} und die anderen SSH-Schlüssel, ${SECRET_TAIL}, alles unter ${code(".ssh/")}, ${code(".aws/")} oder ${code(".gnupg/")}. Vorlagen wie ${code(".env.example")} bleiben Projektdateien.`,
     `Zugangsdaten nach Form: zehn der zwölf Schwärzungsregeln, die spectroscope auf aufgezeichneten Zustand anwendet. Eine weitere Regel findet Zuweisungen an Namen, die Passwort, Geheimnis, Token oder Schlüssel sagen (englisch geschrieben), etwa ${code("DB_PASSWORD")}. Die zwei übrigen Schwärzungsregeln zählen E-Mail-Adressen und IBANs als personenbezogene Daten.`,
-    "Keine Zugangsdaten werden ausgegeben, weder ihre genaue Länge noch ein Hash davon. Jeder Wert bekommt ein Etikett, das in diesem Bericht hochzählt, und derselbe Wert behält sein Etikett; seine Größe steht als Spanne in Byte da. Die Werte bleiben in der Aufzeichnung auf dem Rechner, der sie gemacht hat.",
+    `Zugangsdaten nach Stelle: in einem Netzwerkbefehl zählt ein Wert durch die Stelle, an der er steht, als Zugangsdaten, gleich welche Form er hat. Das sind Benutzer und Passwort einer URL, jeder Wert einer Abfrage, der Wert von ${code("-u")}, ${code("--user")} und ${code("--proxy-user")}, einer Option, deren Name Passwort, Token, Geheimnis oder Schlüssel sagt (englisch geschrieben), der Header Authorization, Proxy-Authorization und Cookie und eines Headers, dessen Name token, key, secret oder auth enthält, und das Passwort von ${code("sshpass -p")}. Der eine Wert, den ${code("gh auth token")}, ${code("op read")}, ${code("pass show")}, ${code("security ... -w")} oder ${code("aws configure get")} ausgab, zählt ebenso.`,
+    "Keine Zugangsdaten werden ausgegeben, weder ihre genaue Länge noch ein Hash davon. Das gilt für alle Zugangsdaten, die die Regeln oder diese Stellen gefunden haben. In einem Befehl wird eine Passwortzuweisung bis zum Ende ihres Worts geschwärzt und Benutzer und Passwort einer URL von :// bis zum letzten @. Jeder Wert bekommt ein Etikett, das in diesem Bericht hochzählt, und derselbe Wert behält sein Etikett; seine Größe steht als Spanne in Byte da. Ein Geheimnis in einer Form, die die Regeln nicht kennen, an einer Stelle eines Befehls, die sie nicht lesen, kann in einem Befehl trotzdem erscheinen. Die Werte bleiben in der Aufzeichnung auf dem Rechner, der sie gemacht hat.",
     `Platzhalter wie der AWS-Dokumentationsschlüssel mit der Endung ${code("EXAMPLE")}, ${code(DOLLAR_NAME)}, ein Wert in spitzen Klammern oder ${code("changeme")} zählen nicht. Diese Session enthielt ${count} Platzhalter.`,
     "Stufen: kritisch für Geheimnisse, sensibel für Dateien außerhalb des Projekts, Netzwerkbefehle und personenbezogene Daten. Ein Skript, dessen Wirkung die Aufzeichnung nicht zeigt, ist unbekannt, Dateien im Arbeitsordner sind Projekt. Das Urteil ist die höchste Stufe; die Lesart eines Modells zählt nicht.",
     "Quellen: aufgezeichnet, wenn das Werkzeug die Datei gemeldet hat, wahrscheinlich, wenn die Heuristik des Tabs files sie aus einem Shell-Befehl gelesen hat, Modell, wenn die Lesart eines Modells sie nennt.",

@@ -45,7 +45,24 @@ export interface ShellReading {
 }
 
 export function shellTouches(command: string, cwd: string | null): ShellReading {
-  const out: ShellReading = { touches: [], script: null, inline: false };
+  const out = read(command, cwd);
+  delete out.runner;
+  return out;
+}
+
+/**
+ * What ran the first script or inline code of a command, as the line spells it,
+ * without the arguments: `python3 build.py`, `./gradlew`, `node -e` (card 605).
+ */
+export function scriptRunner(command: string, cwd: string | null): string | null {
+  return read(command, cwd).runner ?? null;
+}
+
+/** A reading with what ran its script, kept apart from ShellReading. */
+type Reading = ShellReading & { runner?: string };
+
+function read(command: string, cwd: string | null): Reading {
+  const out: Reading = { touches: [], script: null, inline: false };
   const outer: Base[] = [];
   let base: Base = cwd;
   for (const item of segments(command)) {
@@ -71,7 +88,7 @@ function locate(text: string, base: Base): string | null {
 interface Ctx {
   base: Base;
   seg: Segment;
-  out: ShellReading;
+  out: Reading;
 }
 type Extra = Pick<ShellTouch, "replaced" | "content" | "appended"> & { folder?: boolean };
 
@@ -661,7 +678,8 @@ const INTERPRETERS: Record<string, Interpreter> = {
 
 function interpreter(label: string, spec: Interpreter, args: Word[], c: Ctx, depth: number): void {
   const o = getopt(args, { ...spec, posix: true });
-  if (has(o, ...spec.inline)) return inlineScript(c);
+  const flag = spec.inline.find((f) => o.flags.has(f));
+  if (flag !== undefined) return inlineScript(c, `${label} ${flag}`);
   const mod = spec.module ? value(o, "-m") : null;
   if (mod) {
     if (RULES.has(mod.text)) return dispatch([mod, ...o.operands], c, depth + 1);
@@ -671,15 +689,21 @@ function interpreter(label: string, spec: Interpreter, args: Word[], c: Ctx, dep
   const [script, ...rest] = o.operands;
   if (script && script.text !== "-") return runScript(script, rest, label, c);
   const fed = c.seg.docs.length > 0 || c.seg.piped || c.seg.redirects.some((r) => r.op === "<<<");
-  if (fed || script) return inlineScript(c);
+  if (fed || script) return inlineScript(c, label);
   const from = c.seg.redirects.find((r) => r.op === "<" && r.target && !r.target.dynamic)?.target;
   const path = from ? locate(from.text, c.base) : null;
-  if (path !== null && c.out.script === null) c.out.script = path;
+  if (path !== null && c.out.script === null && from) {
+    c.out.script = path;
+    c.out.runner ??= `${label} < ${from.text}`;
+  }
 }
 
 function runScript(script: Word, rest: Word[], label: string, c: Ctx): void {
   const t = add(c, script, "read", `script ${label}`);
-  if (t && c.out.script === null) c.out.script = t.path;
+  if (t && c.out.script === null) {
+    c.out.script = t.path;
+    c.out.runner ??= label === script.text ? label : `${label} ${script.text}`;
+  }
   for (const a of rest) {
     const eq = a.text.indexOf("=");
     const v = a.text.startsWith("-") && eq > 0 ? part(a, a.text.slice(eq + 1)) : a;
@@ -687,8 +711,9 @@ function runScript(script: Word, rest: Word[], label: string, c: Ctx): void {
   }
 }
 
-function inlineScript(c: Ctx): void {
+function inlineScript(c: Ctx, runner: string): void {
   c.out.inline = true;
+  c.out.runner ??= runner;
   const here = locate(".", c.base);
   if (here !== null && !c.out.touches.some((t) => t.reason === "inline script" && t.path === here)) {
     add(c, ".", "unknown", "inline script", { folder: true });

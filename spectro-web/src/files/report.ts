@@ -19,6 +19,7 @@ import {
   type Destination,
   type ReachIndex,
 } from "./destinations";
+import { CommandReadings, type CommandReading } from "./commandSecrets";
 import type { FileCall, FileLedger, Source } from "./fold";
 import { higher, LEVEL_ORDER, outsideWorkspace, pathLevel, type Level } from "./levels";
 import {
@@ -32,8 +33,7 @@ import {
   sizeBand,
   type CredentialHit,
 } from "./secrets";
-import type { TouchKind } from "./shell";
-import { shellRisk } from "./shellRisk";
+import { scriptRunner, type TouchKind } from "./shell";
 
 export type FindingKind =
   | "secret-file"
@@ -168,8 +168,12 @@ export function buildReport(input: ReportInput): FilesReport {
   const label = (path: string) => mask(shortenPath(path, workspace));
   const callAt = new Map<number, FileCall>(ledger.calls.map((c) => [c.callIndex, c]));
   const commands = new Map<number, string>();
+  const readings = new CommandReadings();
+  // A command prints through its own reading: the rules, its words and its positions.
+  const maskCommand = (call: FileCall) => (text: string) =>
+    creds.maskWith(text, readings.of(text, call.base).hits);
 
-  const scan = scanEvents(events, ledger, creds, all, reach);
+  const scan = scanEvents(events, ledger, creds, all, reach, callAt, readings);
   const drafts = scan.drafts;
   const reachedFrom = (call: FileCall) =>
     reachedBy(reach, call.agentId, scan.resultAt.get(call.callIndex) ?? call.callIndex, all);
@@ -197,12 +201,14 @@ export function buildReport(input: ReportInput): FilesReport {
     const command = commandOf(call, events);
     if (command !== null) {
       commands.set(call.callIndex, command);
-      const risk = shellRisk(command, call.base);
+      const risk = readings.of(command, call.base).risk;
       if (risk.envDump !== null) {
+        const printed = scan.secretOutputs.get(call.callIndex);
         drafts.push(
           draft("env-dump", "critical", call, call.callIndex, "probable", {
             reached: reachedFrom(call),
             count: call.output === null ? 0 : lineCount(call.output),
+            credentials: printed === undefined ? [] : [printed],
           }),
         );
       }
@@ -222,9 +228,14 @@ export function buildReport(input: ReportInput): FilesReport {
       }
     }
     // The files tab's own rule: a failed call ran no script worth naming.
+    // It prints what ran the script, never the arguments (final wave item 1c).
     if (call.status !== "failed" && (call.script !== null || call.inline)) {
+      const runner = command === null ? null : scriptRunner(command, call.base);
       drafts.push(
-        draft("unknown-script", "unknown", call, call.callIndex, "probable", { path: call.script }),
+        draft("unknown-script", "unknown", call, call.callIndex, "probable", {
+          path: call.script,
+          printed: runner,
+        }),
       );
     }
   }
@@ -246,7 +257,7 @@ export function buildReport(input: ReportInput): FilesReport {
     );
   }
 
-  const findings = drafts.map((d) => finish(d, callAt, commands, label, mask));
+  const findings = drafts.map((d) => finish(d, callAt, commands, label, maskCommand));
   findings.sort(
     (a, b) => rank(a.level) - rank(b.level) || timeOrder(a.t, b.t) || a.eventIndex - b.eventIndex,
   );
@@ -369,6 +380,10 @@ class Credentials {
     const s: Sighting = { secret: hit.secret, ref, event, call };
     this.bySecret.set(hit.secret, s);
     this.longest = null;
+    for (const alias of hit.aliases ?? []) {
+      if (alias !== "" && !this.bySecret.has(alias))
+        this.bySecret.set(alias, { secret: alias, ref, event, call });
+    }
     for (const line of keyBlockLines(hit)) {
       const prev = this.bySecret.get(line);
       if (prev === undefined || prev.deep === true)
@@ -456,9 +471,14 @@ class Credentials {
    * when it has six or more characters).
    */
   mask(text: string): string {
+    return text === "" ? text : this.maskWith(text, findCredentials(text).hits);
+  }
+
+  /** mask() with the hits a reader found in `text` (a command's reading) in place of the rules alone. */
+  maskWith(text: string, hits: readonly CredentialHit[]): string {
     if (text === "") return text;
     const spans: { start: number; end: number; ref: CredentialRef }[] = [];
-    for (const hit of findCredentials(text).hits.flatMap(withInner)) {
+    for (const hit of hits.flatMap(withInner)) {
       spans.push({ start: hit.start, end: hit.end, ref: this.see(hit, -1, null).ref });
     }
     this.longest ??= [...this.bySecret.values()].sort((a, b) => b.secret.length - a.secret.length);
@@ -533,6 +553,7 @@ function inputText(input: unknown): { text: string; ends: number[] } {
 /** A finding before its file label and command are filled in. */
 interface Draft extends Omit<Finding, "file" | "command" | "commandCut"> {
   path: string | null; // the path the finding is about; the call's own file otherwise
+  printed?: string | null; // printed in place of the call's command (a script's runner)
 }
 
 interface Scan {
@@ -540,6 +561,30 @@ interface Scan {
   resultAt: Map<number, number>; // call index to its result's event index
   placeholders: number;
   personal: { email: number; iban: number };
+  /** The stored secret a getter printed (gh auth token, op read, ...), by call index. */
+  secretOutputs: Map<number, CredentialRef>;
+}
+
+/** The command of a tool call as describeTool reads it, or null for a call that is not a shell command. */
+function commandIn(name: string, input: unknown): string | null {
+  const view = describeTool(name, input, undefined, false);
+  return view.kind === "command" ? view.command : null;
+}
+
+/** The input without its command: the command is read on its own (commandSecrets.ts). */
+function withoutCommand(input: unknown): unknown {
+  return typeof input === "object" && input !== null && !Array.isArray(input)
+    ? { ...(input as Record<string, unknown>), command: "" }
+    : input;
+}
+
+/** The rule name of the one value a secret getter printed (final wave item 1e). */
+const STORED_SECRET = "stored-secret";
+
+/** A getter's output that is one value: one line of eight or more characters without blanks. */
+function oneValue(output: string): string | null {
+  const value = output.trim();
+  return value.length >= 8 && !/\s/.test(value) ? value : null;
 }
 
 /**
@@ -554,11 +599,14 @@ function scanEvents(
   creds: Credentials,
   all: readonly Destination[],
   reach: ReachIndex,
+  callAt: ReadonlyMap<number, FileCall>,
+  readings: CommandReadings,
 ): Scan {
   const drafts: Draft[] = [];
   const resultAt = new Map<number, number>();
+  const secretOutputs = new Map<number, CredentialRef>();
   const prompts = new Map(ledger.prompts.map((p) => [p.eventIndex, p]));
-  const unpaired = new Map<string, { index: number; name: string }[]>();
+  const unpaired = new Map<string, { index: number; name: string; shell: CommandReading | null }[]>();
   const everywhere = all.map((d) => d.key);
   let placeholders = 0;
   const personal = { email: 0, iban: 0 };
@@ -595,15 +643,19 @@ function scanEvents(
     switch (e.type) {
       case "tool_call": {
         const name = String(e.name);
+        const command = commandIn(name, e.input);
+        const shell = command === null ? null : readings.of(command, callAt.get(i)?.base ?? null);
         const key = pairKey(e.agentId, e.callId);
         const stack = unpaired.get(key);
-        if (stack === undefined) unpaired.set(key, [{ index: i, name }]);
-        else stack.push({ index: i, name });
+        if (stack === undefined) unpaired.set(key, [{ index: i, name, shell }]);
+        else stack.push({ index: i, name, shell });
 
+        // A command is read on its own (commandSecrets.ts); the other fields as written.
         const { text, ends } = inputText(e.input);
-        const found = findCredentials(text, ends, INPUT_RULES);
-        placeholders += found.placeholders;
-        const hits = found.hits.flatMap(withInner);
+        const rest = shell === null ? { text, ends } : inputText(withoutCommand(e.input));
+        const found = findCredentials(rest.text, rest.ends, INPUT_RULES);
+        placeholders += found.placeholders + (shell?.placeholders ?? 0);
+        const hits = [...found.hits, ...(shell?.hits ?? [])].flatMap(withInner);
         const inHits = new Set(hits.map((h) => h.secret));
         const base = { agentId: String(e.agentId), t: seconds(events, i), tool: name, callIndex: i };
         // One finding per credential and call: a key's body lines share its label.
@@ -640,6 +692,11 @@ function scanEvents(
         if (call !== null) resultAt.set(call.index, i);
         if (typeof e.output !== "string") break;
         const agentId = String(e.agentId);
+        const printed = call?.shell?.risk.secretOutput === true ? oneValue(e.output) : null;
+        if (call !== null && printed !== null && e.isError !== true) {
+          const hit = { rule: STORED_SECRET, match: printed, secret: printed, start: 0, end: 0 };
+          secretOutputs.set(call.index, creds.see(hit, i, call.index).ref);
+        }
         const credentials = refsOf(e.output, i, call?.index ?? null);
         if (credentials.length > 0) {
           // The result's content reached the agent's model after the result.
@@ -676,7 +733,7 @@ function scanEvents(
       count: personal.email + personal.iban,
     });
   }
-  return { drafts, resultAt, placeholders, personal };
+  return { drafts, resultAt, placeholders, personal, secretOutputs };
 }
 
 // ---- Small builders and readers ---------------------------------------------------
@@ -758,14 +815,16 @@ function finish(
   callAt: ReadonlyMap<number, FileCall>,
   commands: ReadonlyMap<number, string>,
   label: (path: string) => string,
-  mask: (text: string) => string,
+  maskCommand: (call: FileCall) => (text: string) => string,
 ): Finding {
-  const { path, ...rest } = d;
+  const { path, printed: runner, ...rest } = d;
   const call = d.callIndex === null ? undefined : callAt.get(d.callIndex);
   const own = call !== undefined && !call.shell && call.touches.length > 0 ? call.touches[0].path : null;
   const file = path ?? own;
-  const raw = call?.shell ? (commands.get(call.callIndex) ?? call.line) : null;
-  const printed = raw === null ? null : printable(raw, (text) => oneLine(mask(text)));
+  const raw =
+    runner !== undefined ? runner : call?.shell ? (commands.get(call.callIndex) ?? call.line) : null;
+  const mask = call === undefined ? null : maskCommand(call);
+  const printed = raw === null || mask === null ? null : printable(raw, (text) => oneLine(mask(text)));
   return {
     ...rest,
     file: file === null ? null : label(file),

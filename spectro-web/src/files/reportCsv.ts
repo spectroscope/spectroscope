@@ -110,7 +110,7 @@ function detail(lang: Lang, report: FilesReport, f: Finding): string {
       parts.push(f.agentId !== null && f.reached.length === 0 ? `${creds}; ${w.notDelivered}` : creds);
       break;
     case "env-dump":
-      parts.push(w.lines(f.count));
+      parts.push(creds === "" ? w.lines(f.count) : `${w.lines(f.count)}; ${creds}`);
       break;
     case "network":
       parts.push([f.host ?? w.noHost, ...(f.sendsNamed ? [] : [w.unnamed])].join("; "));

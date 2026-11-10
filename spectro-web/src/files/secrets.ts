@@ -71,6 +71,8 @@ export interface CredentialHit {
   secret: string;
   start: number;
   end: number;
+  /** Other spellings of the same credential that share its label (a command's position value, the rule's own shorter value). */
+  aliases?: string[];
 }
 
 const ruleNamed = (name: string): CredentialRule => {
@@ -423,11 +425,14 @@ export function innerKeyLines(hit: CredentialHit): string[] {
  * still reads the header alone. `stops`, ascending, are offsets a block never
  * runs past: the end of each string value of a text built from several.
  * `rules` defaults to CREDENTIAL_RULES; a tool input is read with INPUT_RULES.
+ * `identifiers: false` drops the plain-identifier skip: a shell command reads
+ * `-d password=hunterpass` as a password (final wave item 1d).
  */
 export function findCredentials(
   text: string,
   stops: readonly number[] = [],
   rules: readonly CredentialRule[] = CREDENTIAL_RULES,
+  { identifiers = true }: { identifiers?: boolean } = {},
 ): { hits: CredentialHit[]; placeholders: number } {
   const hits: CredentialHit[] = [];
   const taken: [number, number][] = [];
@@ -453,7 +458,7 @@ export function findCredentials(
       const secret = isPassword ? (m[1] ?? m[0]) : secretPart(rule.name, match);
       if (isPassword && isCode(secret)) continue;
       const placeholder = isPlaceholder(rule.name, isKey ? m[0] : secret);
-      if (isPassword && !placeholder && isIdentifier(secret)) continue;
+      if (isPassword && !placeholder && identifiers && isIdentifier(secret)) continue;
       taken.push([start, end]);
       if (placeholder) placeholders++;
       else hits.push({ rule: rule.name, match, secret, start, end });

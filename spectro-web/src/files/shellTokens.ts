@@ -13,6 +13,8 @@ export interface Word {
   dynamic: boolean; // holds a variable or a substitution, so the value is unknown
   glob: boolean; // holds an unquoted pattern character
   quoted?: boolean;
+  start?: number; // where the word starts in the command, quotes included (card 605)
+  end?: number; // where it ends, exclusive
 }
 export interface Heredoc {
   strip: boolean;
@@ -61,7 +63,7 @@ function lex(src: string): Tok[] {
           op = after;
           i = j;
         } else {
-          toks.push({ k: "word", w });
+          toks.push({ k: "word", w: { ...w, start: i, end: j } });
           i = j;
           continue;
         }
