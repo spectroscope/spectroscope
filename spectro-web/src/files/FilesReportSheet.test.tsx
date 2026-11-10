@@ -498,10 +498,12 @@ describe("the sheet's words", () => {
     );
     const thin = keys.filter((k) => !(dict[k].en?.trim() && dict[k].de?.trim()));
     expect(thin).toEqual([]);
+    // Final wave item 6d: the German button says Bericht, the sheet's title Dateibericht.
     expect([t("en", "filesTab.report.button"), t("de", "filesTab.report.button")]).toEqual([
       "Report",
-      "Report",
+      "Bericht",
     ]);
+    expect(t("de", "filesTab.report.title")).toBe("Dateibericht");
     // No dash of either kind in the sheet's words.
     const dashed = keys.filter((k) => /[\u2013\u2014]/.test(dict[k].en + dict[k].de));
     expect(dashed).toEqual([]);

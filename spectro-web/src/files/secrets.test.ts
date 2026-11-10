@@ -304,6 +304,12 @@ describe("isPlaceholder", () => {
 });
 
 describe("countPersonalData", () => {
+  it("a git remote's git@ is no email-shaped string (final wave item 6d)", () => {
+    expect(countPersonalData("origin\tgit@github.com:acme/app.git (fetch)").email).toBe(0);
+    expect(countPersonalData("Author: Ada <ada@example.org>").email).toBe(1);
+    expect(countPersonalData("legit@example.org").email).toBe(1);
+  });
+
   it("personal data is counted separately", () => {
     const text =
       "Write to ada" + "@example.com or bob" + "@example.com, account DE89" + "370400440532013000.";
@@ -532,6 +538,10 @@ describe("private keys", () => {
       ["blanks before a bar", (n) => `   ${n} | `],
       ["bat", (n) => `   ${n}   │ `],
       ["less -N", (n) => `${String(n).padStart(7)} `],
+      // Final wave item 6a: grep -A context lines with a path, git grep with a revision, nl -s.
+      ["grep -rn -A", (n) => (n === 1 ? "keys/id_rsa:1:" : `keys/id_rsa-${n}-`)],
+      ["git grep -n", (n) => `HEAD:keys/id_rsa:${n}:`],
+      ["nl -s.", (n) => `${String(n).padStart(6)}.`],
     ];
     for (const [name, mark] of listed) {
       const text = [head("RSA "), ...lines].map((l, i) => mark(i + 1) + l).join("\n");

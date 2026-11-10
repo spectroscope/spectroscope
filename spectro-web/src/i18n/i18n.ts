@@ -6686,7 +6686,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   "filesTab.consent.cancel": { de: "abbrechen", en: "cancel" },
   "filesTab.consent.send": { de: "an {model} senden", en: "send to {model}" },
   // Card 605: the Report button of the files tab and its sheet.
-  "filesTab.report.button": { de: "Report", en: "Report" },
+  "filesTab.report.button": { de: "Bericht", en: "Report" },
   "filesTab.report.title": { de: "Dateibericht", en: "Files report" },
   "filesTab.report.building": {
     de: "Der Bericht entsteht aus der ganzen Session.",

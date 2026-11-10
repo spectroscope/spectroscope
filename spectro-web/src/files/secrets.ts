@@ -305,11 +305,12 @@ const BASE64 = charTable(/[A-Za-z0-9+/=]/);
 const PEM_FIELD = /^[A-Za-z][A-Za-z0-9-]*: /;
 const BODY_LINE = /^[A-Za-z0-9+/=]{20,}$/;
 /**
- * The line number a listing puts before a line: blanks, a `path:` right before
- * the digits (`grep -rn`), digits, then blanks and a tab, arrow, colon, bar, box
- * bar (bat) or `-` (a `grep -A` context line), or blanks alone (`less -N`).
+ * The line number a listing puts before a line: blanks, a path right before the
+ * digits (`path:` of `grep -rn`, `path-` of a `grep -A` context line, and
+ * `HEAD:path:` of `git grep`), digits, then blanks and a tab, arrow, colon, bar,
+ * box bar (bat), `-` or `.` (`nl -s.`), or blanks alone (`less -N`).
  */
-const LINE_NUMBER_SOURCE = String.raw`[ \t]*(?:[^\s:]+:(?=\d))?\d+(?:[ \t]*[\t\u2192:|\u2502-]|[ \t]+)`;
+const LINE_NUMBER_SOURCE = String.raw`[ \t]*(?:(?:[^\s:]+:)*[^\s:]+[:-](?=\d))?\d+(?:[ \t]*[\t\u2192:|\u2502.-]|[ \t]+)`;
 const LINE_NUMBER = new RegExp(LINE_NUMBER_SOURCE, "y");
 const LEADING_LINE_NUMBER = new RegExp(`^${LINE_NUMBER_SOURCE}`);
 /** What may follow the base64 start of a body line that ends a block: the end of a quoted or bracketed value. */
@@ -522,9 +523,14 @@ export function findCredentials(
   return { hits, placeholders };
 }
 
-/** How many matches of the email and iban rules a text holds. */
+/**
+ * How many matches of the email and iban rules a text holds. An email-shaped
+ * match whose local part is `git` is a Git remote (`git@github.com:o/r`), not
+ * a person (final wave item 6d).
+ */
 export function countPersonalData(text: string): { email: number; iban: number } {
-  return { email: ruleMatches(EMAIL, text).length, iban: ruleMatches(IBAN, text).length };
+  const email = ruleMatches(EMAIL, text).filter((m) => !m[0].startsWith("git@")).length;
+  return { email, iban: ruleMatches(IBAN, text).length };
 }
 
 const utf8 = new TextEncoder();

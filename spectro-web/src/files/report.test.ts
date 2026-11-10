@@ -1415,3 +1415,16 @@ describe("network commands to this machine and PowerShell", () => {
     expect(build(new Rec().start(W).tool("Bash", { command: "ls" }).events).powershell).toBe(false);
   });
 });
+
+// Final fix wave item 6b: a title word ends at any character that is not a letter or digit.
+describe("title words", () => {
+  it("start after any mark", () => {
+    const rec = new Rec().start(W, { prompt: `use ${PAT}` });
+    const cut = PAT.slice(0, 14);
+    for (const mark of ["-", "_", ".", "+", "#", "!", "~", "*"]) {
+      const report = build(rec.events, undefined, `push x${mark}${cut} now`);
+      expect(report.title, mark).toBe(`push x${mark}[credential 1: github-pat] now`);
+      expect(leaks(report, [PAT.slice(0, 8)]), mark).toEqual([]);
+    }
+  });
+});

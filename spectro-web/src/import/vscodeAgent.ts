@@ -125,6 +125,8 @@ export function vscodeAgentWithOrigin(records: unknown[], base = 1_783_500_000_0
 
   const emittedCalls = new Set<string>();
   const callStartTs = new Map<string, number>();
+  /** The tool of each call id, for the completion: a successful create made its file. */
+  const callTool = new Map<string, string>();
   let started = false;
   let turn = 0;
   let lastTs = base;
@@ -134,6 +136,7 @@ export function vscodeAgentWithOrigin(records: unknown[], base = 1_783_500_000_0
   const emitCall = (callId: string, name: string, input: unknown, ts: number): void => {
     if (emittedCalls.has(callId)) return;
     emittedCalls.add(callId);
+    callTool.set(callId, name);
     out.push({ type: "tool_call", agentId, callId, name, input, ts });
   };
 
@@ -230,6 +233,8 @@ export function vscodeAgentWithOrigin(records: unknown[], base = 1_783_500_000_0
           output: "", // the export records no tool output; see the file header
           isError: d?.success === false,
           durationMs: startTs === undefined ? 0 : Math.max(0, ts - startTs),
+          // The CLI's create writes a new file: 17 of 17 local creates answer "Created file" (card 605).
+          ...(callTool.get(callId) === "create" && d?.success === true ? { fileChange: "created" } : {}),
           ts,
         });
         break;

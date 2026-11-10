@@ -819,3 +819,46 @@ describe("the PowerShell limit", () => {
     expect(reportHtml(plain, "en")).not.toContain("PowerShell");
   });
 });
+
+// Final fix wave items 6c and 6d.
+describe("unrecorded destinations and the German words", () => {
+  it("a finding's destination that records nothing reads as the verdict says it", () => {
+    // A run without provider and model, and no exchange: one row that records nothing.
+    const rec = new Rec().start(W).tool("read_file", { path: ".env" }, "A=1");
+    const report = build(rec.events);
+    for (const [lang, words] of [
+      ["en", "a destination that was not recorded"],
+      ["de", "ein Ziel, das nicht aufgezeichnet wurde"],
+    ] as const) {
+      const html = reportHtml(report, lang);
+      expect(article(html, "secret-file"), lang).toContain(words);
+      expect(article(html, "secret-file"), lang).not.toContain("(place not recorded)");
+      expect(reportCsv(report, lang), lang).toContain(words);
+    }
+  });
+
+  it("a destination with a host is named by its host, not as unrecorded", () => {
+    const rec = new Rec()
+      .start(W)
+      .exchange({ provider: undefined, model: undefined, url: "http://10.0.0.5:1234/v1/chat" })
+      .tool("read_file", { path: ".env" }, "A=1")
+      .exchange({ provider: undefined, model: undefined, url: "http://10.0.0.5:1234/v1/chat" });
+    const html = reportHtml(build(rec.events), "en");
+    expect(verdictOf(html)).not.toContain("a destination that was not recorded");
+    expect(article(html, "secret-file")).not.toContain("a destination that was not recorded");
+  });
+
+  it("the method line says no credential is printed, in the owner's German", () => {
+    const html = reportHtml(build(busy().events), "de");
+    expect(html).toContain(
+      "Keine Zugangsdaten werden ausgegeben, auch nicht ihre genaue Länge oder ein Hash davon.",
+    );
+  });
+
+  it("personal data is named as email-shaped strings", () => {
+    const rec = new Rec().start(W).tool("Bash", { command: "git log -1" }, "Author: Ada <ada@example.org>");
+    const report = build(rec.events);
+    expect(article(reportHtml(report, "en"), "personal-data")).toContain("1 email-shaped string");
+    expect(article(reportHtml(report, "de"), "personal-data")).toContain("1 E-Mail-förmige Zeichenkette");
+  });
+});

@@ -29,12 +29,12 @@ describe("a Copilot CLI session in the files tab (card 605)", () => {
     expect(test.touches[0].folder).toBe(false);
   });
 
-  it("draws the file create wrote as a recorded write", () => {
-    // The dotted format keeps no word for what a write did to the file, so the
-    // fold claims no creation: the letter is the one any unreported write gets.
+  it("draws the file a successful create wrote as created", () => {
+    // Final wave item 6e: the importer marks a successful create's result as
+    // created (17 of 17 local creates answer "Created file"), so the row is A.
     const created = row("/w/src/parser/test/EmptyLineTest.cpp");
-    expect([created.letter, created.group, created.sources]).toEqual(["M", "changed", ["recorded"]]);
-    expect(created.touches[0].kind).toBe("write");
+    expect([created.letter, created.group, created.sources]).toEqual(["A", "changed", ["recorded"]]);
+    expect(created.touches[0].kind).toBe("create");
     expect(created.touches[0].content).toBe("// empty line cases\n");
   });
 

@@ -12,7 +12,7 @@
 import type { Lang } from "../i18n/i18n";
 import { clockText } from "./axis";
 import type { FilesReport, Finding, ReportFile, ReportSearch } from "./report";
-import { cutNote, destinationName, findingEvent, placeShort, reachedDestinations, scrub } from "./reportHtml";
+import { cutNote, destinationText, findingEvent, reachedDestinations, scrub } from "./reportHtml";
 
 export const CSV_HEADER: readonly string[] = [
   "level",
@@ -136,7 +136,7 @@ function detail(lang: Lang, report: FilesReport, f: Finding): string {
 
 function destination(lang: Lang, report: FilesReport, f: Finding): string {
   return reachedDestinations(report, f)
-    .map((d) => `${destinationName(lang, d)} (${placeShort(lang, d)})`)
+    .map((d) => destinationText(lang, d))
     .join("; ");
 }
 

@@ -380,8 +380,8 @@ const MIN_CUT = 8;
 const MAX_NESTING = 4;
 /** A label the mask wrote; the title rule passes over it. */
 const MASK_LABEL = /\[credential \d+: [a-z-]+\]/y;
-/** What ends a title word: a blank, quote, bracket, parenthesis, comma, `:`, `=`, `/` or `@`. */
-const WORD_END = /[\s"'`()[\]{}<>,:=/@]/;
+/** What ends a title word: any character that is not a letter or a digit (final wave item 6b). */
+const WORD_END = /[^\p{L}\p{N}]/u;
 
 /** The start of every occurrence of `value` in `text`; with `asWord`, only those with no word character beside them. */
 function occurrences(text: string, value: string, asWord: boolean): number[] {

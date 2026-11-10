@@ -313,3 +313,30 @@ describe("the Copilot importer names its provider and model (card 605)", () => {
     expect(runStarts(late).map((e) => e.model)).toEqual([undefined, "gpt-5"]);
   });
 });
+
+// Final fix wave item 6e: a successful Copilot CLI create made the file.
+describe("a Copilot CLI create records the file as created (card 605)", () => {
+  const call = (name: string, success: boolean) => [
+    {
+      type: "tool.execution_start",
+      data: { toolCallId: "t1", toolName: name, arguments: { path: "/w/a.txt" } },
+      id: "a",
+    },
+    { type: "tool.execution_complete", data: { toolCallId: "t1", success }, id: "b" },
+  ];
+  const results = (records: unknown[]) =>
+    vscodeAgentToRunEvents(records).filter((e) => (e as { type: string }).type === "tool_result") as {
+      fileChange?: string;
+    }[];
+
+  it("on success, and on success only, and for create only", () => {
+    expect(results(call("create", true)).map((r) => r.fileChange)).toEqual(["created"]);
+    expect(results(call("create", false)).map((r) => r.fileChange)).toEqual([undefined]);
+    expect(results(call("edit", true)).map((r) => r.fileChange)).toEqual([undefined]);
+    // The fixture's create.
+    const cli = parseVscodeAgentExport(copilotCli).filter(
+      (e) => (e as { type: string }).type === "tool_result",
+    );
+    expect(cli.filter((e) => (e as { fileChange?: string }).fileChange === "created")).toHaveLength(1);
+  });
+});
