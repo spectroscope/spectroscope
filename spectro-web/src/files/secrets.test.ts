@@ -323,3 +323,53 @@ describe("ruleMatches", () => {
     }
   });
 });
+
+describe("private keys", () => {
+  // The twin's pattern matches only the BEGIN header; findCredentials extends a hit
+  // to its END marker, so the key body is part of the match and of the secret.
+  const head = (kind: string) => "-----BEGIN " + kind + "PRIVATE" + " KEY-----";
+  const tail = (kind: string) => "-----END " + kind + "PRIVATE" + " KEY-----";
+  const BODY_A = ["MIIEowIBAAKCAQEA", AKID, "Nb3Vc6Hs1Jd5Gf0A"].join("\n");
+  const BODY_B = ["MIIBVQIBADANBgkq", "hkiG9w0BAQEFAASC", "AT8wggE7AgEAAkEA"].join("\n");
+  const pem = (kind: string, body: string) => `${head(kind)}\n${body}\n${tail(kind)}`;
+
+  it("a key block is one hit from its header to its END marker, masked whole", () => {
+    const block = pem("RSA ", BODY_A);
+    const text = `key:\n${block}\nafter`;
+    const start = text.indexOf(block);
+    // The key id inside the body is part of the block, not a second hit.
+    expect(findCredentials(text)).toEqual({
+      hits: [{ rule: "private-key", match: block, secret: block, start, end: start + block.length }],
+      placeholders: 0,
+    });
+    const masked = maskCredentials(text, () => "credential 1");
+    expect(masked).toBe("key:\n[credential 1: private-key]\nafter");
+    for (const line of BODY_A.split("\n")) expect(masked).not.toContain(line);
+  });
+
+  it("two different keys get two labels", () => {
+    const a = pem("RSA ", BODY_A);
+    const b = pem("", BODY_B);
+    const { hits } = findCredentials(`${a}\n\n${b}\n`);
+    expect(hits.map((h) => [h.rule, h.secret])).toEqual([
+      ["private-key", a],
+      ["private-key", b],
+    ]);
+    const labels = new Map<string, string>();
+    const label = (h: { secret: string }) => {
+      if (!labels.has(h.secret)) labels.set(h.secret, `credential ${labels.size + 1}`);
+      return labels.get(h.secret) ?? "";
+    };
+    expect(maskCredentials(`${a} and ${b}`, label)).toBe(
+      "[credential 1: private-key] and [credential 2: private-key]",
+    );
+  });
+
+  it("a header without its END marker masks to the end of the text", () => {
+    const open = `x ${head("EC ")}\n${BODY_A}`;
+    expect(maskCredentials(open, () => "credential 1")).toBe("x [credential 1: private-key]");
+    // An END marker of another kind does not close the block.
+    const crossed = `${head("RSA ")}\n${BODY_B}\n${tail("EC ")}\ntrailing`;
+    expect(findCredentials(crossed).hits.map((h) => h.secret)).toEqual([crossed]);
+  });
+});

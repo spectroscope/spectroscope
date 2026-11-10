@@ -54,7 +54,9 @@ export interface Finding {
   source: Source;
   tool: string | null;
   file: string | null; // shortened and masked
-  command: string | null; // printableCommand output, masked; shell calls only
+  what: What[]; // secret-file and outside: what happened to the file, in WHAT_ORDER; else []
+  command: string | null; // printableCommand output, masked and cut; shell calls only
+  commandCut: number; // characters of the command not printed; 0 when none were cut
   credentials: CredentialRef[];
   host: string | null; // network: as the command wrote it, masked
   sends: string[]; // network: shortened and masked
@@ -81,10 +83,10 @@ type Counted = "read" | "changed" | "created" | "deleted";
 
 export interface FilesReport {
   sessionId: string;
-  title: string | null;
+  title: string | null; // masked
   version: string | null;
   exportedAt: number;
-  workspace: string | null;
+  workspace: string | null; // masked
   firstTs: number | null; // the first readable event time
   lastTs: number | null; // the last readable event time
   events: number;
@@ -126,20 +128,25 @@ const MAX_COMMAND = 300;
 
 /**
  * A command as the report prints it: masked first, then cut at the first `<<`
- * (a heredoc body is file content, B6) and at 300 characters, with the count of
- * the characters not printed.
+ * (a heredoc body is file content, B6) and at 300 characters. The renderers
+ * say how much was cut (Finding.commandCut), in the report's language.
  */
 export function printableCommand(line: string, mask: (text: string) => string): string {
+  return printable(line, mask).text;
+}
+
+/** printableCommand with the count of the characters it did not print. */
+function printable(line: string, mask: (text: string) => string): { text: string; cut: number } {
   const masked = mask(line);
   const heredoc = masked.indexOf("<<");
-  let kept = heredoc < 0 ? masked : masked.slice(0, heredoc).trimEnd();
-  const chars = Array.from(kept);
-  if (chars.length > MAX_COMMAND) kept = chars.slice(0, MAX_COMMAND).join("");
-  const cut = Array.from(masked).length - Array.from(kept).length;
-  if (cut === 0) return kept;
-  const note = `(${cut} more ${cut === 1 ? "character" : "characters"})`;
-  return kept === "" ? note : `${kept} ${note}`;
+  let text = heredoc < 0 ? masked : masked.slice(0, heredoc).trimEnd();
+  const chars = Array.from(text);
+  if (chars.length > MAX_COMMAND) text = chars.slice(0, MAX_COMMAND).join("");
+  return { text, cut: Array.from(masked).length - Array.from(text).length };
 }
+
+/** The files tab's one-line form of a command: each line break becomes a visible return mark. */
+const oneLine = (command: string) => command.trim().replace(/\r\n|\r|\n/g, " ⏎ ");
 
 export function buildReport(input: ReportInput): FilesReport {
   const { events, ledger } = input;
@@ -150,6 +157,7 @@ export function buildReport(input: ReportInput): FilesReport {
   const mask = (text: string) => creds.mask(text);
   const label = (path: string) => mask(shortenPath(path, workspace));
   const callAt = new Map<number, FileCall>(ledger.calls.map((c) => [c.callIndex, c]));
+  const commands = new Map<number, string>();
 
   const scan = scanEvents(events, ledger, creds, all, reach);
   const drafts = scan.drafts;
@@ -170,6 +178,7 @@ export function buildReport(input: ReportInput): FilesReport {
       drafts.push(
         draft("secret-file", "critical", call, call.callIndex, sourceOf(touch.sources), {
           path: touch.path,
+          what: whatList([touch.kind]),
           reached: touch.kind === "read" ? reachedFrom(call) : [],
         }),
       );
@@ -177,12 +186,13 @@ export function buildReport(input: ReportInput): FilesReport {
     if (!call.shell) continue;
     const command = commandOf(call, events);
     if (command !== null) {
+      commands.set(call.callIndex, command);
       const risk = shellRisk(command, call.base);
       if (risk.envDump !== null) {
         drafts.push(
           draft("env-dump", "critical", call, call.callIndex, "probable", {
             reached: reachedFrom(call),
-            count: call.output === null ? 1 : lineCount(call.output),
+            count: call.output === null ? 0 : lineCount(call.output),
           }),
         );
       }
@@ -209,19 +219,24 @@ export function buildReport(input: ReportInput): FilesReport {
     }
   }
 
-  // One finding per path outside the workspace; a secret path has its own.
+  // One finding per path outside the workspace; a secret path has its own. It is
+  // placed at the path's first mark a recorded or probable source stands behind,
+  // and only a read reached a model, from the first read on.
   for (const [path, marks] of rows) {
     if (!outsideWorkspace(path, workspace) || pathLevel(path, workspace) === "critical") continue;
-    const first = marks.find((m) => counts(m.sources)) ?? marks[0];
+    const real = marks.filter((m) => counts(m.sources));
+    const seen = real.length > 0 ? real : marks;
+    const read = seen.find((m) => m.kind === "read");
     drafts.push(
-      draft("outside", "sensitive", first.call, first.call.callIndex, sourceOf(first.sources), {
+      draft("outside", "sensitive", seen[0].call, seen[0].call.callIndex, sourceOf(seen[0].sources), {
         path,
-        reached: reachedFrom(first.call),
+        what: whatList(seen.map((m) => m.kind)),
+        reached: read === undefined ? [] : reachedFrom(read.call),
       }),
     );
   }
 
-  const findings = drafts.map((d) => finish(d, callAt, label, mask));
+  const findings = drafts.map((d) => finish(d, callAt, commands, label, mask));
   findings.sort(
     (a, b) => rank(a.level) - rank(b.level) || timeOrder(a.t, b.t) || a.eventIndex - b.eventIndex,
   );
@@ -231,7 +246,7 @@ export function buildReport(input: ReportInput): FilesReport {
   let verdict: Level = "project";
   for (const [path, marks] of rows) {
     const level = pathLevel(path, workspace);
-    const what = WHAT_ORDER.filter((w) => marks.some((m) => whatOf(m.kind) === w));
+    const what = whatList(marks.map((m) => m.kind));
     const sources = SOURCE_ORDER.filter((s) => marks.some((m) => m.sources.includes(s)));
     files.push({
       path: mask(path),
@@ -252,10 +267,10 @@ export function buildReport(input: ReportInput): FilesReport {
 
   return {
     sessionId: input.sessionId,
-    title: input.title,
+    title: input.title === null ? null : mask(input.title),
     version: input.version,
     exportedAt: input.now,
-    workspace,
+    workspace: workspace === null ? null : mask(workspace),
     ...span(events),
     events: events.length,
     agents: agentsOf(events),
@@ -347,24 +362,31 @@ class Credentials {
   mask(text: string): string {
     if (text === "") return text;
     const spans: { start: number; end: number; ref: CredentialRef }[] = [];
-    const free = (start: number, end: number) => !spans.some((s) => start < s.end && s.start < end);
     for (const hit of findCredentials(text).hits) {
       spans.push({ start: hit.start, end: hit.end, ref: this.see(hit, -1, null).ref });
     }
     this.longest ??= [...this.bySecret.values()].sort((a, b) => b.secret.length - a.secret.length);
     for (const s of this.longest) {
       for (const at of occurrences(text, s.secret, s.secret.length < MASK_INSIDE_WORDS)) {
-        const end = at + s.secret.length;
-        if (free(at, end)) spans.push({ start: at, end, ref: s.ref });
+        spans.push({ start: at, end: at + s.secret.length, ref: s.ref });
       }
     }
     if (spans.length === 0) return text;
-    spans.sort((a, b) => a.start - b.start);
+    // Overlapping spans join into their union, which prints the label of each
+    // credential it holds: skipping one would print the part that sticks out.
+    spans.sort((a, b) => a.start - b.start || b.end - a.end);
     let out = "";
     let at = 0;
-    for (const s of spans) {
-      out += `${text.slice(at, s.start)}[${s.ref.label}: ${s.ref.rule}]`;
-      at = s.end;
+    for (let i = 0; i < spans.length;) {
+      const start = spans[i].start;
+      let end = spans[i].end;
+      const refs: CredentialRef[] = [];
+      for (; i < spans.length && spans[i].start < end; i++) {
+        end = Math.max(end, spans[i].end);
+        if (!refs.includes(spans[i].ref)) refs.push(spans[i].ref);
+      }
+      out += text.slice(at, start) + refs.map((r) => `[${r.label}: ${r.rule}]`).join("");
+      at = end;
     }
     return out + text.slice(at);
   }
@@ -374,14 +396,16 @@ class Credentials {
  * The input as text with its keys, but strings written as they are: the JSON
  * form would write a line break as `\n`, which joins the next word to the `n`
  * and hides a key behind `\b`, and a quote as `\"`, which ends a password value
- * before it starts.
+ * before it starts. A space follows every `:` and `,` of the structure, so a
+ * rule that stops at whitespace cannot run from one field into the next, while
+ * `"password": "value"` still reads as an assignment.
  */
 function inputText(input: unknown): string {
   if (typeof input === "string") return `"${input}"`;
-  if (Array.isArray(input)) return `[${input.map(inputText).join(",")}]`;
+  if (Array.isArray(input)) return `[${input.map(inputText).join(", ")}]`;
   if (typeof input === "object" && input !== null) {
-    const parts = Object.entries(input as Record<string, unknown>).map(([k, v]) => `"${k}":${inputText(v)}`);
-    return `{${parts.join(",")}}`;
+    const parts = Object.entries(input as Record<string, unknown>).map(([k, v]) => `"${k}": ${inputText(v)}`);
+    return `{${parts.join(", ")}}`;
   }
   return JSON.stringify(input) ?? "";
 }
@@ -389,7 +413,7 @@ function inputText(input: unknown): string {
 // ---- The scan of the event list --------------------------------------------------
 
 /** A finding before its file label and command are filled in. */
-interface Draft extends Omit<Finding, "file" | "command"> {
+interface Draft extends Omit<Finding, "file" | "command" | "commandCut"> {
   path: string | null; // the path the finding is about; the call's own file otherwise
 }
 
@@ -433,7 +457,7 @@ function scanEvents(
     return refs;
   };
 
-  const person = (text: string, event: number, agentId: string | null) => {
+  const person = (text: string, event: number, agentId: string | null, delivered: boolean) => {
     const credentials = refsOf(text, event, null);
     if (credentials.length === 0) return;
     drafts.push({
@@ -441,14 +465,14 @@ function scanEvents(
       agentId,
       t: seconds(events, event),
       credentials,
-      reached: everywhere,
+      reached: delivered ? everywhere : [],
     });
   };
 
   for (let i = 0; i < events.length; i++) {
     const e = events[i] as unknown as Record<string, unknown>;
     const prompt = prompts.get(i);
-    if (prompt !== undefined) person(prompt.text, i, null);
+    if (prompt !== undefined) person(prompt.text, i, null, true);
     switch (e.type) {
       case "tool_call": {
         const name = String(e.name);
@@ -512,7 +536,10 @@ function scanEvents(
         break;
       }
       case "steering_message":
-        if (typeof e.text === "string") person(e.text, i, typeof e.agentId === "string" ? e.agentId : null);
+        // `taken: false`: the turn cap refused it, so it was recorded and never delivered.
+        if (typeof e.text === "string") {
+          person(e.text, i, typeof e.agentId === "string" ? e.agentId : null, e.taken !== false);
+        }
         break;
     }
   }
@@ -548,6 +575,7 @@ function blank(kind: FindingKind, level: Level, eventIndex: number, source: Sour
     source,
     tool: null,
     path: null,
+    what: [],
     credentials: [],
     host: null,
     sends: [],
@@ -577,10 +605,16 @@ function draft(
   };
 }
 
-/** The draft with its file label and command: a shell call prints its command, a file tool its path. */
+/**
+ * The draft with its file label and command: a shell call prints its command, a
+ * file tool its path. The command is masked as the tool_call wrote it and put on
+ * one line after, so a value that spans lines (a key block) is masked as the
+ * scan saw it and keeps its label.
+ */
 function finish(
   d: Draft,
   callAt: ReadonlyMap<number, FileCall>,
+  commands: ReadonlyMap<number, string>,
   label: (path: string) => string,
   mask: (text: string) => string,
 ): Finding {
@@ -588,10 +622,13 @@ function finish(
   const call = d.callIndex === null ? undefined : callAt.get(d.callIndex);
   const own = call !== undefined && !call.shell && call.touches.length > 0 ? call.touches[0].path : null;
   const file = path ?? own;
+  const raw = call?.shell ? (commands.get(call.callIndex) ?? call.line) : null;
+  const printed = raw === null ? null : printable(raw, (text) => oneLine(mask(text)));
   return {
     ...rest,
     file: file === null ? null : label(file),
-    command: call?.shell ? printableCommand(call.line, mask) : null,
+    command: printed?.text ?? null,
+    commandCut: printed?.cut ?? 0,
   };
 }
 
@@ -608,6 +645,10 @@ const counts = (sources: readonly Source[]) => sources.some((s) => s !== "model"
 const sourceOf = (sources: readonly Source[]): Source => sources[0] ?? "probable";
 
 const whatOf = (kind: TouchKind | "sent"): What | null => (kind === "sent" ? "sent" : WHAT_OF[kind]);
+
+/** What a list of touch kinds says happened, in WHAT_ORDER; an unknown touch says nothing. */
+const whatList = (kinds: readonly (TouchKind | "sent")[]): What[] =>
+  WHAT_ORDER.filter((w) => kinds.some((k) => whatOf(k) === w));
 
 /** The most specific kind a file is counted under: created, deleted, changed, else read. */
 function countedAs(what: readonly What[]): Counted {

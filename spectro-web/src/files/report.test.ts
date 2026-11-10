@@ -91,13 +91,17 @@ class Rec {
     return this.push({ type: "user_message", text });
   }
 
-  steer(text: string, agentId = "main"): this {
-    return this.push({ type: "steering_message", agentId, text, taken: true, turn: 1 });
+  steer(text: string, taken = true): this {
+    return this.push({ type: "steering_message", agentId: "main", text, taken, turn: 1 });
   }
 }
 
-function build(events: readonly RunEvent[], ledger: FileLedger = foldFiles(events)): FilesReport {
-  return buildReport({ events, ledger, sessionId: "s-1", title: "a title", version: "0.16.1", now: 42 });
+function build(
+  events: readonly RunEvent[],
+  ledger: FileLedger = foldFiles(events),
+  title: string | null = "a title",
+): FilesReport {
+  return buildReport({ events, ledger, sessionId: "s-1", title, version: "0.16.1", now: 42 });
 }
 
 const ofKind = (report: FilesReport, kind: Finding["kind"]): Finding[] =>
@@ -133,7 +137,9 @@ describe("buildReport", () => {
       source: "recorded",
       tool: "read_file",
       file: ".env",
+      what: ["read"],
       command: null,
+      commandCut: 0,
       reached: [ANTHROPIC],
     });
     const cred = one(report, "credential-result");
@@ -245,6 +251,7 @@ describe("buildReport", () => {
       source: "probable",
       tool: "Bash",
       command: "printenv | sort",
+      commandCut: 0,
       count: 3,
     });
     expect(one(report, "network")).toMatchObject({
@@ -262,6 +269,7 @@ describe("buildReport", () => {
       level: "sensitive",
       callIndex: 5,
       file: "/etc/hosts",
+      what: ["read"],
       source: "probable",
     });
     // The key file outside the workspace is a secret file, not a second "outside" finding.
@@ -321,14 +329,12 @@ describe("buildReport", () => {
   });
 
   it("printableCommand cuts heredocs and long lines", () => {
+    // The cut text only: the renderers write how much was cut, in the report's language.
     const same = (text: string) => text;
-    const heredoc = "cat > a <<'EOF'\nsecret body\nEOF";
-    expect(printableCommand(heredoc, same)).toBe(
-      `cat > a (${heredoc.length - "cat > a".length} more characters)`,
-    );
-    expect(printableCommand("x".repeat(400), same)).toBe(`${"x".repeat(300)} (100 more characters)`);
+    expect(printableCommand("cat > a <<'EOF'\nsecret body\nEOF", same)).toBe("cat > a");
+    expect(printableCommand("x".repeat(400), same)).toBe("x".repeat(300));
     expect(printableCommand("ls -la", same)).toBe("ls -la");
-    // The mask runs first, so the count is of masked text.
+    // The mask runs first, so the cut is of masked text.
     const seen: string[] = [];
     const masked = printableCommand(`echo ${"k".repeat(350)}`, (text) => {
       seen.push(text);
@@ -488,8 +494,105 @@ describe("buildReport", () => {
       .exchange();
     const report = build(rec.events);
 
-    expect(one(report, "secret-file")).toMatchObject({ file: ".env", reached: [] });
+    expect(one(report, "secret-file")).toMatchObject({ file: ".env", what: ["created"], reached: [] });
     expect(report.files[0].what).toEqual(["created"]);
     expect(report.counts.critical.created).toBe(1);
+  });
+
+  it("the title and the workspace are masked", () => {
+    // The title is often the opening prompt itself.
+    const prompt = `push the branch with ${PAT}`;
+    const rec = new Rec().start(`/tmp/${PAT}/w`, { prompt });
+    const report = build(rec.events, undefined, prompt);
+
+    expect(report.title).toBe("push the branch with [credential 1: github-pat]");
+    expect(report.workspace).toBe("/tmp/[credential 1: github-pat]/w");
+    expect(one(report, "credential-prompt").credentials).toEqual([
+      { label: "credential 1", rule: "github-pat", band: "33-64" },
+    ]);
+    expect(leaks(report, [PAT])).toEqual([]);
+  });
+
+  it("a private key in a command prints no part of it", () => {
+    const head = ["-----BEGIN RSA ", "PRIVATE KEY-----"].join("");
+    const tail = ["-----END RSA ", "PRIVATE KEY-----"].join("");
+    const body = ["MIIEowIBAAKCAQEA", "x9Ym4Qz7Rt2Lp8Wk"];
+    const pem = [head, ...body, tail].join("\n");
+    const rec = new Rec().start(W).tool("Bash", { command: `printf '%s\\n' '${pem}' > k.pem` });
+    const report = build(rec.events);
+
+    expect(one(report, "credential-input").credentials).toEqual([
+      { label: "credential 1", rule: "private-key", band: "65-128" },
+    ]);
+    // Masked on the command as written, before its line breaks become marks,
+    // so the printed block keeps the label the scan gave it.
+    expect(one(report, "secret-file")).toMatchObject({
+      file: "k.pem",
+      command: "printf '%s\\n' '[credential 1: private-key]' > k.pem",
+    });
+    expect(leaks(report, [...body, head, "credential 2"])).toEqual([]);
+  });
+
+  it("overlapping masks join into one", () => {
+    // A known value that starts inside a rule hit and runs past it.
+    const userinfo = DB_PW.slice(4) + ",ghT9";
+    const rec = new Rec()
+      .start(W)
+      .tool("read_file", { path: "deploy.txt" }, { output: `postgres://app:${userinfo}@db.internal/x` })
+      .tool("Bash", { command: `export DB_PASSWORD=${DB_PW},ghT9` });
+    const report = build(rec.events);
+
+    const input = one(report, "credential-input");
+    expect(input.credentials).toEqual([{ label: "credential 2", rule: "password-assignment", band: "9-16" }]);
+    expect(input.command).toBe("export [credential 2: password-assignment][credential 1: url-userinfo]");
+    expect(input.command).not.toContain(",gh");
+    expect(leaks(report, [DB_PW, userinfo])).toEqual([]);
+  });
+
+  it("the fields of an input stay apart", () => {
+    const rec = new Rec()
+      .start(W)
+      .tool("send_mail", { server: "smtp://mail.example.org", to: "bob@example.org" })
+      .tool("db_connect", { host: "db", password: DB_PW });
+    const report = build(rec.events);
+
+    // A rule that stops at a space cannot run from one field into the next.
+    expect(report.findings.filter((f) => f.callIndex === 1)).toEqual([]);
+    expect(one(report, "credential-input")).toMatchObject({
+      callIndex: 3,
+      credentials: [{ label: "credential 1", rule: "password-assignment", band: "9-16" }],
+    });
+  });
+
+  it("a cut command says how much was cut", () => {
+    const rec = new Rec().start(W).tool("Bash", { command: "cat > .env <<'EOF'\nA=1\nEOF" });
+    const report = build(rec.events);
+
+    const shown = "cat > .env <<'EOF' ⏎ A=1 ⏎ EOF";
+    expect(one(report, "secret-file")).toMatchObject({
+      command: "cat > .env",
+      commandCut: shown.length - "cat > .env".length,
+    });
+  });
+
+  it("reached follows what happened", () => {
+    const rec = new Rec()
+      .start(W)
+      .tool("write_file", { path: "/etc/app.conf", content: "x" }, { fileChange: "created" })
+      .tool("Bash", { command: "cat /etc/hosts" }, { output: "127.0.0.1 localhost" })
+      .exchange()
+      .tool("Bash", { command: "env" }, { none: true })
+      .steer(`not delivered ${PAT}`, false);
+    const report = build(rec.events);
+
+    const outside = ofKind(report, "outside");
+    expect(outside).toMatchObject([
+      { file: "/etc/app.conf", what: ["created"], reached: [] },
+      { file: "/etc/hosts", what: ["read"], reached: [ANTHROPIC] },
+    ]);
+    // A call without a recorded result printed no line the recording holds.
+    expect(one(report, "env-dump").count).toBe(0);
+    // A steering message the turn cap refused never reached a model.
+    expect(one(report, "credential-prompt")).toMatchObject({ eventIndex: 7, reached: [] });
   });
 });

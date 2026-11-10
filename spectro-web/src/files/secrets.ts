@@ -216,30 +216,48 @@ function isCode(value: string): boolean {
  */
 const isIdentifier = (value: string): boolean => /^[A-Za-z_.]+$/.test(value);
 
+const KEY_HEADER = "-----BEGIN ";
+const DASHES = "-----";
+
+/**
+ * Where a private key ends: after the END marker of the header's own kind, or
+ * at the end of the text when none follows. The twin's pattern matches only the
+ * BEGIN header, which would leave the key body in plain text.
+ */
+function keyBlockEnd(text: string, header: string, headerEnd: number): number {
+  const marker = `${DASHES}END ${header.slice(KEY_HEADER.length, -DASHES.length)}${DASHES}`;
+  const at = text.indexOf(marker, headerEnd);
+  return at < 0 ? text.length : at + marker.length;
+}
+
 /**
  * Every credential in a text, in text order. The rules are asked in the order of
  * CREDENTIAL_RULES, and a match that overlaps an earlier hit or placeholder is
  * skipped, so an earlier rule wins. A placeholder is counted, not returned. A
  * password-assignment value that is code or a plain identifier is skipped without
- * counting.
+ * counting. A private-key match runs from its header to its END marker (or to the
+ * end of the text), and that whole block is the match and the secret; the
+ * placeholder test still reads the header alone, as before.
  */
 export function findCredentials(text: string): { hits: CredentialHit[]; placeholders: number } {
   const hits: CredentialHit[] = [];
   const taken: [number, number][] = [];
   let placeholders = 0;
   for (const rule of CREDENTIAL_RULES) {
+    const isKey = rule.name === "private-key";
     for (const m of ruleMatches(rule, text)) {
       const start = m.index;
-      const end = start + m[0].length;
+      const end = isKey ? keyBlockEnd(text, m[0], start + m[0].length) : start + m[0].length;
       if (taken.some(([s, e]) => start < e && s < end)) continue;
+      const match = isKey ? text.slice(start, end) : m[0];
       const isPassword = rule === PASSWORD_RULE;
-      const secret = isPassword ? (m[1] ?? m[0]) : secretPart(rule.name, m[0]);
+      const secret = isPassword ? (m[1] ?? m[0]) : secretPart(rule.name, match);
       if (isPassword && isCode(secret)) continue;
-      const placeholder = isPlaceholder(rule.name, secret);
+      const placeholder = isPlaceholder(rule.name, isKey ? m[0] : secret);
       if (isPassword && !placeholder && isIdentifier(secret)) continue;
       taken.push([start, end]);
       if (placeholder) placeholders++;
-      else hits.push({ rule: rule.name, match: m[0], secret, start, end });
+      else hits.push({ rule: rule.name, match, secret, start, end });
     }
   }
   hits.sort((a, b) => a.start - b.start);
