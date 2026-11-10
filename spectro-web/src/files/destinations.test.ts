@@ -46,10 +46,10 @@ describe("hostWhere", () => {
     expect(hostWhere("localhost", "minimax-m3:cloud")).toBe("local-cloud");
     expect(hostWhere("localhost", "glm-5-cloud")).toBe("local-cloud");
     for (const host of [
-      "10.1.2.3",
-      "172.20.0.4",
-      "192.168.1.9",
-      "100.64.10.20",
+      "10.0.0.5",
+      "172.16.4.4",
+      "192.168.1.50",
+      "100.64.0.2",
       "nas.local",
       "box.tail1234.ts.net",
     ]) {
@@ -77,9 +77,9 @@ describe("hostWhere", () => {
   it("a cloud model behind a loopback or private-network host is a local cloud", () => {
     expect(hostWhere("127.0.0.1", " minimax-m3:CLOUD ")).toBe("local-cloud");
     for (const host of [
-      "10.1.2.3",
-      "192.168.1.9",
-      "100.64.10.20",
+      "10.0.0.5",
+      "192.168.1.50",
+      "100.64.0.2",
       "nas.local",
       "box.tail1234.ts.net",
       "fd12::1",
@@ -90,7 +90,7 @@ describe("hostWhere", () => {
     expect(hostWhere("api.example.com", "minimax-m3:cloud")).toBe("cloud");
     expect(hostWhere("172.32.0.1", "minimax-m3:cloud")).toBe("cloud");
     expect(hostWhere("localhost", "cloudy")).toBe("this-machine");
-    expect(hostWhere("10.1.2.3", "cloudy")).toBe("network");
+    expect(hostWhere("10.0.0.5", "cloudy")).toBe("network");
   });
 
   it("IPv6 unique-local and link-local are the network, IPv4-mapped addresses read as IPv4", () => {
@@ -169,12 +169,12 @@ describe("destinations", () => {
       exchange({ provider: "ollama", model: "a", url: "http://localhost:11434/api/chat" }),
       exchange(),
       exchange({ provider: "ollama", model: "a", url: "http://localhost:11434/api/chat" }),
-      exchange({ provider: "lmstudio", model: "b", url: "http://100.64.10.20:1234/v1/chat/completions" }),
+      exchange({ provider: "lmstudio", model: "b", url: "http://100.64.0.2:1234/v1/chat/completions" }),
     ]);
     expect(out.map((d) => d.key)).toEqual([
       "ollama|a|localhost",
       "anthropic|claude-sonnet-4-5|api.anthropic.com",
-      "lmstudio|b|100.64.10.20",
+      "lmstudio|b|100.64.0.2",
     ]);
     expect(out[2].where).toBe("network");
   });

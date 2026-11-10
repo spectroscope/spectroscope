@@ -405,7 +405,7 @@ describe("reportHtml", () => {
       .start()
       .exchange({ provider: "ollama", model: "glm-5.3:cloud", url: "http://localhost:11434/api/chat" })
       .exchange({ provider: "ollama", model: "qwen2.5:7b", url: "http://localhost:11434/api/chat" })
-      .exchange({ provider: "lmstudio", model: "m", url: "http://192.168.1.20:1234/v1" });
+      .exchange({ provider: "lmstudio", model: "m", url: "http://192.168.1.10:1234/v1" });
     const html = reportHtml(build(rec.events), "en");
     const rows = html.match(/<tr data-destination>[\s\S]*?<\/tr>/g) ?? [];
     expect(rows).toHaveLength(3);
@@ -413,7 +413,7 @@ describe("reportHtml", () => {
     expect(rows[0]).toContain('<td class="num">1</td>');
     expect(rows[1]).toContain("this machine");
     expect(rows[2]).toContain("another machine on the local network");
-    expect(rows[2]).toContain('<td class="path">192.168.1.20</td>');
+    expect(rows[2]).toContain('<td class="path">192.168.1.10</td>');
     expect(reportHtml(build(rec.events), "de")).toContain("an ein Cloud-Modell weitergeleitet");
   });
 
