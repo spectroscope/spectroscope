@@ -2,8 +2,8 @@
 // files report (design section 3 and call B7). It reads the simple commands of
 // the shell heuristic's tokenizer (shellTokens.ts), so quoted text and heredoc
 // bodies are never commands. The body of a `$(...)`, backtick or `<(...)`
-// substitution is read as a line of its own. A `cd` inside the line is not
-// followed: every path resolves against `cwd`.
+// substitution is read as a line of its own. A `cd` inside the line moves the
+// base of the line's later commands (fix round 2 item 5).
 
 import { resolvePath } from "./paths";
 import { isPlaceholder } from "./secrets";
@@ -104,10 +104,20 @@ function readLine(
   if (depth > MAX_DEPTH) return;
   const ctx: Ctx = { line, place, mode };
   const items = riskSegments(line);
+  let base = cwd;
+  const outer: (string | null)[] = [];
   items.forEach((item, at) => {
+    if (item === "(") outer.push(base);
+    else if (item === ")") base = outer.length > 0 ? (outer.pop() ?? null) : base;
     if (item === "(" || item === ")") return;
-    readSubs(item, cwd, out, depth, place, mode); // a substitution runs before the command that holds it
-    run(item.words, item, cwd, out, depth, ctx, { items, at });
+    readSubs(item, base, out, depth, place, mode); // a substitution runs before the command that holds it
+    const [head, ...args] = commandWords(item.words);
+    if (head?.text === "cd" && !head.dynamic) {
+      const dir = args.find((a) => !a.text.startsWith("-"));
+      if (dir !== undefined && !dir.dynamic) base = resolvePath(dir.text, base);
+      return;
+    }
+    run(item.words, item, base, out, depth, ctx, { items, at });
   });
 }
 
@@ -242,6 +252,8 @@ export function riskSegments(command: string): (Segment | "(" | ")")[] {
     };
     return out;
   };
+  // The heredocs of the masked line are those of the line, in order: their places are the line's.
+  let doc = 0;
   return segments(masked.text).map((s) =>
     typeof s === "string"
       ? s
@@ -249,6 +261,7 @@ export function riskSegments(command: string): (Segment | "(" | ")")[] {
           ...s,
           words: s.words.map(unmask),
           redirects: s.redirects.map((r) => ({ ...r, target: r.target && unmask(r.target) })),
+          docs: s.docs.map((d) => docs[doc++] ?? d),
         },
   );
 }
@@ -801,13 +814,20 @@ const ONE_SECRET = new Set(["gh auth token", "op read", "pass show"]);
 /** The keys `aws configure get` prints a secret for, alone or after a profile (`prod.aws_session_token`). */
 const AWS_SECRET_KEYS = new Set(["aws_access_key_id", "aws_secret_access_key", "aws_session_token"]);
 
-/** True when the next command of the line reads this one's output from a pipe. */
+/** Commands a getter's output may pass through and stay the line's own output (fix round 2 item 5). */
+const PASS_THROUGH = new Set(["head", "tail", "tr", "cut"]);
+
+/** True when a later command of the line takes this one's output from a pipe, other than head, tail, tr or cut. */
 function pipedOn(next: Next | null): boolean {
   if (next === null) return false;
-  let k = next.at + 1;
-  while (next.items[k] === ")") k++;
-  const after = next.items[k];
-  return after !== undefined && typeof after !== "string" && after.piped;
+  for (let k = next.at + 1; ; k++) {
+    while (next.items[k] === ")") k++;
+    const after = next.items[k];
+    if (after === undefined || typeof after === "string" || !after.piped) return false;
+    const head = commandWords(after.words)[0];
+    const name = head === undefined || head.dynamic ? null : commandName(head.text);
+    if (name === null || !PASS_THROUGH.has(name)) return true;
+  }
 }
 
 function printsOneSecret(dump: string, args: Word[]): boolean {
@@ -1696,7 +1716,9 @@ function secretValue(
 ): void {
   let secret = shape;
   const colon = shape.indexOf(":");
-  if (kind === "user" && colon >= 0) secret = shape.slice(colon + 1);
+  // A user before an empty password is the credential: a token given as the user (fix round 2 item 5).
+  if (kind === "user" && colon >= 0)
+    secret = colon + 1 < shape.length ? shape.slice(colon + 1) : shape.slice(0, colon);
   // A query value counts by its name, a user value by the password after its colon (task 11 item 11).
   const named =
     kind === "query" ? name !== null && saysCredential(name) : kind === "user" ? colon >= 0 : true;

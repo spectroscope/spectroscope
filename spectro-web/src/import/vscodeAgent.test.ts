@@ -883,3 +883,27 @@ describe("a Copilot child's readable name (task 11 item 13)", () => {
     });
   });
 });
+
+// Fix round 2 item 5 (Task 11 review M6): a child's completion before the first run waits for it too.
+describe("a completion before the first run (fix round 2 item 5)", () => {
+  it("follows its spawn and the child's run_start, and the child ends", () => {
+    const records = [
+      { type: "session.start", data: { selectedModel: "auto", producer: "copilot-agent" } },
+      { type: "subagent.started", agentId: "c1", data: { toolCallId: "t0", agentName: "explore" } },
+      { type: "subagent.completed", agentId: "c1", data: { toolCallId: "t0" } },
+      { type: "user.message", data: { content: "go" } },
+      { type: "assistant.turn_start", data: {} },
+    ];
+    const events = vscodeAgentToRunEvents(records);
+    const types = events.map((e) => [e.type, (e as { runId?: string }).runId ?? null]);
+    expect(types.slice(0, 5)).toEqual([
+      ["run_start", "vscode-import"],
+      ["agent_spawn", null],
+      ["agent_message", null],
+      ["run_start", "vscode-c1"],
+      ["run_end", "vscode-c1"],
+    ]);
+    const child = reduceAll(initialState, events).agents.find((a) => a.id === "c1");
+    expect(child?.state).not.toBe("working");
+  });
+});

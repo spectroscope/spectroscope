@@ -144,6 +144,25 @@ describe("a password value however short its head (task 11 item 1)", () => {
   });
 });
 
+// Fix round 2 item 5: a quoted value after a name and sign in a comment (M5),
+// and a heredoc body read for credentials (M9).
+describe("quoted values in comments and heredoc bodies (fix round 2 item 5)", () => {
+  const V = ["Ab1 ", "Cd2Ef3xQz"].join("");
+  const ranged = (command: string) =>
+    read(command).hits.map((h) => [h.rule, command.slice(h.start, h.end), h.secret]);
+
+  it("a quoted value in a comment runs to its closing quote (M5)", () => {
+    const command = `curl https://a.example.com # password="${V}" done`;
+    expect(ranged(command)).toEqual([["password-assignment", `password="${V}`, V]]);
+  });
+
+  it("a heredoc body is read for password assignments (M9)", () => {
+    const value = ["Ab", ",Cd2Ef3xQz"].join("");
+    const command = `cat > config.txt <<EOF\nDB_PASSWORD="${value}"\nmode=fast\nEOF`;
+    expect(read(command).hits.map((h) => [h.rule, h.secret])).toEqual([["password-assignment", value]]);
+  });
+});
+
 describe("a URL's userinfo in a command", () => {
   it("masks from after :// to the last @ of the authority, the host stays", () => {
     const at = `${HEAD}@${TAIL}`;

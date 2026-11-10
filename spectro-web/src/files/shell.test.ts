@@ -454,13 +454,20 @@ describe("shellTouches review fixes", () => {
     expect(shortAll("git checkout .")).toEqual([{ path: "/w", kind: "change", folder: true }]);
   });
 
+  it("a cd under the home folder moves the base too (fix round 2 item 5)", () => {
+    expect(shortAll("cd ~/.ssh && cat id_rsa")).toEqual([
+      { path: "~/.ssh/id_rsa", kind: "read", folder: false },
+    ]);
+    expect(shortAll("cd ~ && touch a")).toEqual([{ path: "~/a", kind: "create", folder: false }]);
+    expect(shortAll("cd /w/app; cat .env")).toEqual([{ path: "/w/app/.env", kind: "read", folder: false }]);
+  });
+
   it("a lost base drops relative paths and keeps absolute ones", () => {
     expect(touches("cd $DIR && touch a && touch /tmp/b")).toEqual([
       { written: "/tmp/b", path: "/tmp/b", folder: false, kind: "create", reason: "touch /tmp/b" },
     ]);
     expect(touches("cd - && touch a")).toEqual([]);
     expect(touches("cd && touch a")).toEqual([]);
-    expect(touches("cd ~ && touch a")).toEqual([]);
     expect(shortAll("cd $DIR && cat ~/notes.md")).toEqual([
       { path: "~/notes.md", kind: "read", folder: false },
     ]);

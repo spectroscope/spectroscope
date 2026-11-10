@@ -527,6 +527,8 @@ describe("reportHtml", () => {
         "<code>--proxy-tlspassword</code>, count too.",
       "the password after the colon in <code>-u</code>, <code>--user</code> and the other user options",
       "A user name given alone, and a query value whose name says nothing of a credential, do not count by their place.",
+      // Fix round 2 item 5 (M1).
+      "and the other user options, or the user when that password is empty, and the password of <code>sshpass -p</code>.",
     ])
       expect(en, part).toContain(part);
     expect(en).not.toContain("their name holds");
@@ -540,6 +542,7 @@ describe("reportHtml", () => {
         "verification, access, refresh, device oder oauth.",
       "dazu curls <code>--tlspassword</code> und <code>--proxy-tlspassword</code>.",
       "Ein Benutzername allein und ein Wert einer Abfrage, deren Name nichts von Zugangsdaten sagt, zählen nicht durch ihre Stelle.",
+      "und den anderen Benutzeroptionen, oder der Benutzer, wenn dieses Passwort leer ist, und das Passwort von <code>sshpass -p</code>.",
     ])
       expect(de, part).toContain(part);
   });

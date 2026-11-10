@@ -81,10 +81,12 @@ export function commandCredentials(
   const found = findCredentials(command, [], COMMAND_RULES, { identifiers: false });
   const words = wordsOf(command);
   const hits = found.hits.map((h) => (h.rule === "url-userinfo" ? widen(command, h, words) : h));
-  const comments = commentsOf(command, words);
+  const bodies = heredocsOf(command);
+  const comments = commentsOf(command, words, bodies);
   const units = [
     ...words.map((w) => ({ start: w.start ?? 0, end: w.end ?? 0, comment: false })),
     ...comments,
+    ...bodies.flatMap(([from, to]) => tokensOf(command, from, to)),
   ];
   units.sort((a, b) => a.start - b.start);
   const placeholders = found.placeholders + assignments(command, units, hits);
@@ -200,11 +202,13 @@ function contentEnd(command: string, w: Word): number {
 
 // ---- Password values (task 11 item 1) -------------------------------------------
 
-/** A stretch a value is read from: a shell word, or a token of a comment. */
+/** A stretch a value is read from: a shell word, or a token of a comment or a heredoc body. */
 interface Unit {
   start: number;
   end: number;
   comment: boolean;
+  /** A token's line end: a quoted value runs to its closing quote before it (fix round 2 item 5). */
+  lineEnd?: number;
 }
 
 const BLANK = /[ \t\r\n]/;
@@ -212,23 +216,46 @@ const BLANK = /[ \t\r\n]/;
 const PATH_OR_OPTION = /^[./~-]|\//;
 const META = " \t\r\n;&|()<>";
 
+/** The body of each heredoc of a command, as a range (fix round 2 item 5): file content, read for credentials. */
+function heredocsOf(command: string): [number, number][] {
+  const out: [number, number][] = [];
+  for (const s of segments(command)) {
+    if (typeof s === "string") continue;
+    for (const d of s.docs) {
+      if (d.start !== undefined && d.end !== undefined && d.end > d.start) out.push([d.start, d.end]);
+    }
+  }
+  return out;
+}
+
+/** The tokens between blanks of [from, to), each with the end of its line. */
+function tokensOf(command: string, from: number, to: number): Unit[] {
+  const out: Unit[] = [];
+  for (let at = from; at < to;) {
+    while (at < to && BLANK.test(command[at])) at++;
+    const start = at;
+    while (at < to && !BLANK.test(command[at])) at++;
+    if (at <= start) continue;
+    const eol = command.indexOf("\n", start);
+    out.push({ start, end: at, comment: true, lineEnd: eol < 0 || eol > to ? to : eol });
+  }
+  return out;
+}
+
 /**
- * The tokens of the comments of a command: a `#` outside every word, at the
- * start or after a blank or an operator, opens a comment to the end of its line.
+ * The tokens of the comments of a command: a `#` outside every word and every
+ * heredoc body, at the start or after a blank or an operator, opens a comment
+ * to the end of its line.
  */
-function commentsOf(command: string, words: readonly Word[]): Unit[] {
+function commentsOf(command: string, words: readonly Word[], bodies: readonly [number, number][]): Unit[] {
   const out: Unit[] = [];
   const inWord = (i: number) => words.some((w) => (w.start ?? 0) <= i && i < (w.end ?? 0));
+  const inBody = (i: number) => bodies.some(([from, to]) => from <= i && i < to);
   for (let i = 0; i < command.length; i++) {
-    if (command[i] !== "#" || (i > 0 && !META.includes(command[i - 1])) || inWord(i)) continue;
+    if (command[i] !== "#" || (i > 0 && !META.includes(command[i - 1])) || inWord(i) || inBody(i)) continue;
     const eol = command.indexOf("\n", i);
     const end = eol < 0 ? command.length : eol;
-    for (let at = i + 1; at < end;) {
-      while (at < end && BLANK.test(command[at])) at++;
-      const start = at;
-      while (at < end && !BLANK.test(command[at])) at++;
-      if (at > start) out.push({ start, end: at, comment: true });
-    }
+    out.push(...tokensOf(command, i + 1, end));
     i = end;
   }
   return out;
@@ -327,6 +354,15 @@ function assignments(command: string, units: readonly Unit[], hits: CredentialHi
       const sign = unit.start + m.index + m[0].length - 1;
       let v = valueFrom(command, sign + 1, unit.end, quoteAt(command, unit.start, sign), unit.comment);
       let end = unit.comment ? unit.end : v.end;
+      // In a comment or a heredoc body a quoted value runs to its closing quote, blanks and all (fix round 2 item 5).
+      const open = command[sign + 1];
+      if (unit.lineEnd !== undefined && (open === '"' || open === "'")) {
+        const close = command.indexOf(open, sign + 2);
+        if (close > sign + 1 && close < unit.lineEnd) {
+          v = { text: command.slice(sign + 2, close), first: sign + 2, end: close, stop: close + 1 };
+          end = close;
+        }
+      }
       if (v.text === "") {
         // The word ends in the sign: the value is the next word, when the name's
         // word is not quoted (a search pattern is) and the next word is no path

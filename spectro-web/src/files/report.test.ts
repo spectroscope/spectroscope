@@ -1600,6 +1600,28 @@ describe("a quoted pattern before a file (fix round 2 item 3)", () => {
   });
 });
 
+// Fix round 2 item 5 at the report: M1 and M9.
+describe("a user before an empty password and a heredoc body (fix round 2 item 5)", () => {
+  it("counts the user and prints neither part (M1)", () => {
+    const tok = ["sk", "_test_", "Zk9wQ4tLm2xRt7"].join("");
+    const report = build(
+      new Rec().start(W).tool("Bash", { command: `curl -u ${tok}: https://a.example.com` }).events,
+    );
+    expect(one(report, "credential-input").credentials.map((c) => c.rule)).toEqual(["position"]);
+    expect(leaks(report, [tok, tok.slice(0, 6), tok.slice(-6)])).toEqual([]);
+    expect(report.placeholders).toBe(0);
+  });
+
+  it("finds a password in a heredoc body and still prints the command up to << (M9)", () => {
+    const value = ["Ab", ",Cd2Ef3xQz"].join("");
+    const command = `cat > config.txt <<EOF\nDB_PASSWORD="${value}"\nEOF`;
+    const report = build(new Rec().start(W).tool("Bash", { command }).events);
+    const input = one(report, "credential-input");
+    expect(input.command).toBe("cat > config.txt");
+    expect(leaks(report, [value, value.slice(3)])).toEqual([]);
+  });
+});
+
 // Task 11 fix round 2 item 1: the display net hides what no rule counts, in
 // commands and in the title. The probes are the Task 11 review's C1, C2 and I3.
 describe("the display net in the report (task 11 fix round 2 item 1)", () => {

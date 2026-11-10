@@ -20,6 +20,9 @@ export interface Heredoc {
   strip: boolean;
   delimiter: string;
   body: string;
+  /** Where the body starts and ends in the command, its terminator line left out (card 605). */
+  start?: number;
+  end?: number;
 }
 type Tok =
   | { k: "word"; w: Word }
@@ -86,6 +89,8 @@ function lex(src: string): Tok[] {
 function readBodies(src: string, i: number, docs: Heredoc[]): number {
   for (const doc of docs) {
     let body = "";
+    doc.start = i;
+    doc.end = i;
     while (i < src.length) {
       const nl = src.indexOf("\n", i);
       const end = nl === -1 ? src.length : nl;
@@ -93,6 +98,7 @@ function readBodies(src: string, i: number, docs: Heredoc[]): number {
       i = nl === -1 ? src.length : nl + 1;
       if (line === doc.delimiter) break;
       body += line + "\n";
+      doc.end = end;
     }
     doc.body = body;
   }

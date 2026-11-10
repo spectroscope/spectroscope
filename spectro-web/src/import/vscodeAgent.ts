@@ -499,7 +499,8 @@ export function vscodeAgentWithOrigin(records: unknown[], base = 1_783_500_000_0
         const childRun = childRuns.get(agentId);
         if (childRun === undefined || ended.has(agentId)) break;
         ended.add(agentId);
-        out.push({ type: "run_end", runId: childRun, stopReason: "end_turn", ts });
+        // Before the first run it waits with the spawn it ends (fix round 2 item 5).
+        emitInRun([{ type: "run_end", runId: childRun, stopReason: "end_turn", ts }], i);
         break;
       }
 

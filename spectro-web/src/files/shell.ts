@@ -77,8 +77,9 @@ function read(command: string, cwd: string | null): Reading {
 
 // Rules.
 
-// The base after a `cd` the heuristic cannot follow (`cd $DIR`, `cd -`, `cd ~`:
-// the home is not known). Relative paths after it name no file; absolute ones do.
+// The base after a `cd` the heuristic cannot follow (`cd $DIR`, `cd -`, a bare
+// `cd`). Relative paths after it name no file; absolute ones do. `cd ~/x` is
+// followed: its paths stay under `~` (fix round 2 item 5).
 const LOST = Symbol("lost base");
 type Base = string | null | typeof LOST;
 
@@ -128,7 +129,8 @@ function segment(seg: Segment, base: Base, out: ShellReading): Base {
 
 function cdTarget(args: Word[], base: Base): Base {
   const dir = args.find((a) => !/^-[LPe@]+$/.test(a.text));
-  if (!dir || dir.dynamic || dir.text === "-" || dir.text === "~" || dir.text.startsWith("~/")) return LOST;
+  // A folder under the home folder is followed as `~/...`, the way the files tab shows it (fix round 2 item 5).
+  if (!dir || dir.dynamic || dir.text === "-") return LOST;
   return locate(dir.text, base) ?? LOST;
 }
 
