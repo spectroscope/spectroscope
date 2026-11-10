@@ -4,7 +4,9 @@
 // tool inputs, prompts, a steering message, the title, a file path, commands,
 // private key blocks and a model name. Since the final fix wave it also holds
 // one value in each credential position of a network command (item 1b) and
-// one password with each terminator a rule stops at (item 1a).
+// one password with each terminator a rule stops at (item 1a). Since task 10
+// (item 9) it holds three values in positions that say nothing of a
+// credential: they are masked in every output and make no finding.
 //
 // Test support only: no module outside a test imports it, which
 // FilesReportSheet.test.tsx pins, so it never reaches the shipped bundle.
@@ -41,7 +43,11 @@ const EXCHANGE_PW = ["Zt5", "Bn8cQr"].join("");
 /** One value per credential position of item 1b, each with the command that holds it. */
 const POSITIONS: readonly [string, string, (v: string) => string][] = [
   ["url user and password", ["Ur1", "Pw7kQx"].join(""), (v) => `curl https://bob:${v}@api.example.com/x`],
-  ["url user only", ["Ut4", "Kw9pZr2m"].join(""), (v) => `git push https://${v}@github.com/o/r.git main`],
+  [
+    "url user only, a token",
+    ["gh", "p_", "Ut4Kw9pZr2mQx7Lb3Nc8Vd1Hs5Jf2Gk6Wq0Y"].join(""),
+    (v) => `git push https://${v}@github.com/o/r.git main`,
+  ],
   ["query value", ["Qv3", "Lm8nTs"].join(""), (v) => `curl "https://api.example.com/x?key=${v}&page=20"`],
   ["-u", ["Uo5", "Rt2wXc"].join(""), (v) => `curl -u bob:${v} https://a.example.com`],
   ["--user", ["Us6", "Np3vBd"].join(""), (v) => `curl --user=bob:${v} https://a.example.com`],
@@ -65,6 +71,17 @@ const POSITIONS: readonly [string, string, (v: string) => string][] = [
   ],
   ["Cookie", ["Ck2", "Wd6sTn"].join(""), (v) => `curl -H "Cookie: sid=${v}" https://a.example.com`],
   ["a key header", ["Hk8", "Ry4bMz"].join(""), (v) => `curl -H "X-Api-Key: ${v}" https://a.example.com`],
+];
+
+/** Values in a position that says nothing of a credential (task 10 item 9): masked, never counted. */
+const MASKED_ONLY: readonly [string, string, (v: string) => string][] = [
+  ["url user only", ["Ut4", "Kw9pZr2m"].join(""), (v) => `git push https://${v}@github.com/o/r.git main`],
+  [
+    "query value under a plain name",
+    ["Qp5", "Rn2vXw"].join(""),
+    (v) => `curl "https://api.example.com/x?page=${v}"`,
+  ],
+  ["a user alone", ["Ua7", "Lm3kQz"].join(""), (v) => `curl -u ${v} https://a.example.com`],
 ];
 
 /** One password per terminator of item 1a: the two halves around the mark, and the command. */
@@ -131,6 +148,7 @@ export const LEAK_RAW: readonly string[] = [
   ...RSA_BODY,
   ...EC_BODY,
   ...POSITIONS.map(([, v]) => v),
+  ...MASKED_ONLY.map(([, v]) => v),
   ...TERMINATED.flatMap(([name, a, b]) => [a, b, terminated(name, a, b)]),
 ];
 
@@ -172,10 +190,16 @@ class Rec {
   }
 }
 
-/** The session's events and, for each value of POSITIONS and TERMINATED, the event index of the call that holds it. */
-function leakSession(): { events: RunEvent[]; calls: { name: string; call: number }[] } {
+/** The session's events and, for each value of POSITIONS and TERMINATED, the event index of the call that
+ *  holds it; `quiet` the same for MASKED_ONLY. */
+function leakSession(): {
+  events: RunEvent[];
+  calls: { name: string; call: number }[];
+  quiet: { name: string; call: number }[];
+} {
   const rec = new Rec();
   const calls: { name: string; call: number }[] = [];
+  const quiet: { name: string; call: number }[] = [];
   rec
     .push({
       type: "run_start",
@@ -212,12 +236,16 @@ function leakSession(): { events: RunEvent[]; calls: { name: string; call: numbe
     calls.push({ name: `terminator ${name}`, call: rec.events.length });
     rec.tool("Bash", { command: command(terminated(name, a, b)) });
   }
+  for (const [name, value, command] of MASKED_ONLY) {
+    quiet.push({ name, call: rec.events.length });
+    rec.tool("Bash", { command: command(value) });
+  }
   rec
     .exchange()
     // A model name and an address that carry credentials: the report keeps
     // destinations as recorded, so the renderers mask them.
     .exchange(`m-${JWT}`, `https://u:${EXCHANGE_PW}@api.example.com/v1`);
-  return { events: rec.events, calls };
+  return { events: rec.events, calls, quiet };
 }
 
 /** The session's events, written fresh on every call. */
@@ -227,6 +255,9 @@ export function leakEvents(): RunEvent[] {
 
 /** The call of each position and terminator value, by name: a guard names the case, never the value. */
 export const LEAK_CALLS: readonly { name: string; call: number }[] = leakSession().calls;
+
+/** The call of each masked-only value (task 10 item 9), by name. */
+export const LEAK_QUIET: readonly { name: string; call: number }[] = leakSession().quiet;
 
 /** The report of the session, with a title that carries a key and version 0.16.1. */
 export function leakReport(): FilesReport {

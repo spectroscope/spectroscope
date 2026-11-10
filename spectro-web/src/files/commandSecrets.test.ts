@@ -98,3 +98,42 @@ describe("values in credential positions", () => {
     expect(read('curl -u "bob:$PASS" -d token=$TOKEN https://a.example.com').placeholders).toBe(2);
   });
 });
+
+// Task 10 item 9: a query value or a user name alone is masked but counts as a
+// credential only when its name says so or a rule matches it.
+describe("position values that are masked but not counted", () => {
+  const masked = (command: string) => read(command).masked.map((m) => command.slice(m.start, m.end));
+  const TOK = ["Rk7", "Tq2Vw9", "Xz4Lm8"].join("");
+  const PAT = ["gh", "p_", "Zq4Lm8Rt2Vx6Bn0Ck3Hs7Jd1Wf5Gy9Pa2Ue6"].join("");
+
+  it("a query value under a plain name and a user alone are masked, not counted", () => {
+    const page = 'curl "https://api.example.com/x?page=20"';
+    expect([read(page).hits, masked(page)]).toEqual([[], ["20"]]);
+    const user = "curl -u bob https://a.example.com";
+    expect([read(user).hits, masked(user)]).toEqual([[], ["bob"]]);
+    const userinfo = `git push https://${TOK}@github.com/o/r.git main`;
+    expect([read(userinfo).hits, masked(userinfo)]).toEqual([[], [TOK]]);
+  });
+
+  it("a name that says credential counts the value, and so does a rule that matches it", () => {
+    // api_key is a password name to the rules as well, so the rule's hit holds the value.
+    for (const [param, rule, range] of [
+      ["api_key", "password-assignment", `api_key=${TOK}`],
+      ["sig", POSITION_RULE, TOK],
+    ]) {
+      const command = `curl "https://api.example.com/x?${param}=${TOK}"`;
+      expect(ranges(command), param).toEqual([[rule, range]]);
+      expect(masked(command), param).toEqual([]);
+    }
+    const token = `git push https://${PAT}@github.com/o/r.git main`;
+    expect(read(token).hits.map((h) => [h.rule, token.slice(h.start, h.end)])).toEqual([["github-pat", PAT]]);
+    expect(masked(token)).toEqual([]);
+    const query = `curl "https://api.example.com/x?q=${PAT}"`;
+    expect(read(query).hits.map((h) => h.rule)).toEqual(["github-pat"]);
+    // The shell joins quoted pieces the command text keeps apart, so only the
+    // value as the shell reads it matches the rule; it counts as a position.
+    const split = `curl "https://api.example.com/x?q=${PAT.slice(0, 2)}"'${PAT.slice(2)}'`;
+    expect(read(split).hits.map((h) => h.rule)).toEqual([POSITION_RULE]);
+    expect(masked(split)).toEqual([]);
+  });
+});

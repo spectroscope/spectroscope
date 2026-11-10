@@ -1131,3 +1131,76 @@ describe("detection gaps", () => {
       expect(dump(line), line).toBeNull();
   });
 });
+
+// Task 10 item 9: a query value and a user name given alone say they are a
+// credential only by their parameter or option name.
+describe("which position values name a credential", () => {
+  const PW = ["Zk9", "wQ4", "tLm2x"].join("");
+  const TOK = ["Rk7", "Tq2Vw9", "Xz4Lm8"].join("");
+  const named = (line: string) => shellRisk(line, W).values.map((v) => [line.slice(v.start, v.end), v.named]);
+
+  it("a query value by its parameter's name", () => {
+    expect(named(`curl "https://a.example.com/x?key=${TOK}&page=20#top"`)).toEqual([
+      [TOK, true],
+      ["20", false],
+    ]);
+    for (const [param, says] of [
+      ["sig", true],
+      ["Signature", true],
+      ["session_id", true],
+      ["sid", true],
+      ["code", true],
+      ["client_credential", true],
+      ["access_token", true],
+      ["api_key", true],
+      ["passwd", true],
+      ["auth", true],
+      ["bearer", true],
+      ["client_secret", true],
+      ["q", false],
+      ["page", false],
+      ["limit", false],
+    ] as const) {
+      expect(named(`curl "https://a.example.com/x?${param}=${TOK}"`), param).toEqual([[TOK, says]]);
+    }
+    expect(named(`curl --url-query "page=20" https://a.example.com`)).toEqual([["20", false]]);
+    expect(named(`curl --url-query "api_token=${TOK}" https://a.example.com`)).toEqual([[TOK, true]]);
+    expect(named(`http POST a.example.com q==${PW} api_key==${TOK}`)).toEqual([
+      [PW, false],
+      [TOK, true],
+    ]);
+  });
+
+  it("a user given alone by its option's name, and a user with a password always", () => {
+    expect(named("curl -u bob https://a.example.com")).toEqual([["bob", false]]);
+    expect(named("curl --user bob https://a.example.com")).toEqual([["bob", false]]);
+    expect(named("wget --user=bob https://a.example.com/f")).toEqual([["bob", false]]);
+    expect(named(`curl -u bob:${PW} https://a.example.com`)).toEqual([[`bob:${PW}`, true]]);
+    expect(named(`curl --oauth2-bearer ${TOK} https://a.example.com`)).toEqual([[TOK, true]]);
+    // httpie's -a is its --auth.
+    expect(named(`http -a ${TOK} https://a.example.com`)).toEqual([[TOK, true]]);
+    expect(named(`git push https://${TOK}@github.com/o/r.git main`)).toEqual([[TOK, false]]);
+    expect(named(`curl https://bob:${PW}@a.example.com/x`)).toEqual([[`bob:${PW}`, true]]);
+  });
+
+  it("a script the line does not spell plainly names a credential when any value in it does", () => {
+    // Both values map to the whole script word; the named one decides.
+    const escaped = `bash -c "curl \\"https://a.example.com/x?page=20&key=${TOK}\\""`;
+    expect(named(escaped)).toEqual([[escaped.slice("bash -c ".length), true]]);
+  });
+
+  it("every other position names a credential", () => {
+    for (const line of [
+      `curl -H "Authorization: Bearer ${TOK}" https://a.example.com`,
+      `curl -H "Cookie: page=${TOK}" https://a.example.com`,
+      `curl -b "page=${TOK}" https://a.example.com`,
+      `curl --password ${PW} https://a.example.com`,
+      `sshpass -p ${PW} ssh deploy@10.0.0.5`,
+    ]) {
+      expect(
+        shellRisk(line, W).values.map((v) => v.named),
+        line,
+      ).toEqual([true]);
+    }
+  });
+});

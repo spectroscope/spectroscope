@@ -32,6 +32,10 @@ export interface CommandValue {
   end: number;
   value: string;
   secret: string;
+  /** False for a query value or a user name given alone whose parameter or
+   *  option name says nothing of a credential (card 605, task 10 item 9): the
+   *  report masks it and counts it only when a credential rule matches it. */
+  named: boolean;
 }
 
 export interface ShellRisk {
@@ -1521,11 +1525,31 @@ function textRange(
   return { start: w.start + map[from], end, exact };
 }
 
-function addValue(out: ShellRisk, ctx: Ctx, start: number, end: number, value: string, secret: string): void {
+function addValue(
+  out: ShellRisk,
+  ctx: Ctx,
+  start: number,
+  end: number,
+  value: string,
+  secret: string,
+  named: boolean,
+): void {
   const [s, e] = "at" in ctx.place ? [ctx.place.at + start, ctx.place.at + end] : ctx.place.span;
-  if (!out.values.some((v) => v.start === s && v.end === e))
-    out.values.push({ start: s, end: e, value, secret });
+  const known = out.values.find((v) => v.start === s && v.end === e);
+  if (known === undefined) out.values.push({ start: s, end: e, value, secret, named });
+  else if (named) known.named = true;
 }
+
+/** A parameter or option name that says it holds a credential (task 10 item 9). */
+const SAYS_CREDENTIAL = /key|token|secret|pass|auth|sig|session|sid|code|credential|bearer/i;
+
+/** A short user option by its long name, where the tool has one: httpie's -a is --auth. */
+const LONG_USER_OPTION = new Map<string, string>([
+  ["curl -u", "user"],
+  ["curl -U", "proxy-user"],
+  ["http -a", "auth"],
+  ["https -a", "auth"],
+]);
 
 const AUTH_SCHEME = /^\s*(?:bearer|basic|token|digest|negotiate|bot)\s+/i;
 
@@ -1535,7 +1559,9 @@ const AUTH_SCHEME = /^\s*(?:bearer|basic|token|digest|negotiate|bot)\s+/i;
  * placeholder. `shape` is the value with each dynamic piece as DYN (the text
  * itself for a literal word). `kind` says where the secret part is: after the
  * first `:` of a `user:password`, after the scheme word of a header, or the
- * whole value. A dynamic holder is masked as a whole word.
+ * whole value (a `query` value too). A dynamic holder is masked as a whole
+ * word. A query value, and a user without a password, name a credential only
+ * when `name` (the parameter or option name) says so.
  */
 function secretValue(
   out: ShellRisk,
@@ -1544,11 +1570,14 @@ function secretValue(
   from: number,
   to: number,
   shape: string,
-  kind: "user" | "header" | "plain",
+  kind: "user" | "header" | "plain" | "query",
+  name: string | null = null,
 ): void {
   let secret = shape;
   const colon = shape.indexOf(":");
   if (kind === "user" && colon >= 0) secret = shape.slice(colon + 1);
+  const says = name !== null && SAYS_CREDENTIAL.test(name);
+  const named = kind === "query" ? says : kind === "user" ? colon >= 0 || says : true;
   if (kind === "header") secret = secret.replace(AUTH_SCHEME, "");
   const literal = secret.split(DYN).join("").trim();
   const value = shape.split(DYN).join("");
@@ -1557,7 +1586,7 @@ function secretValue(
     return;
   }
   const r = textRange(holder, ctx, from, to);
-  if (r !== null) addValue(out, ctx, r.start, r.end, value, secret.split(DYN).join("").trim());
+  if (r !== null) addValue(out, ctx, r.start, r.end, value, secret.split(DYN).join("").trim(), named);
 }
 
 /** A word's shape, or its text when it is literal; DYN for a dynamic word of unknown pieces. */
@@ -1612,14 +1641,24 @@ function positionValues(name: string, args: Word[], ctx: Ctx, out: ShellRisk): v
     const from = o.inline ? o.from.text.length - o.value.text.length : 0;
     const to = holder.text.length;
     const shape = shapeText(o.value);
-    if (user.includes(o.name)) secretValue(out, ctx, holder, from, to, shape, "user");
+    if (user.includes(o.name))
+      secretValue(
+        out,
+        ctx,
+        holder,
+        from,
+        to,
+        shape,
+        "user",
+        LONG_USER_OPTION.get(`${name} ${o.name}`) ?? o.name,
+      );
     else if (header.includes(o.name)) headerValue(out, ctx, holder, from, shape);
     else if (name === "curl" && (o.name === "-b" || o.name === "--cookie") && shape.includes("="))
       secretValue(out, ctx, holder, from, to, shape, "plain");
     else if (name === "curl" && o.name === "--url-query") {
       const eq = shape.indexOf("=");
       if (eq >= 0 && shape[eq + 1] !== "@" && eq + 1 < shape.length)
-        secretValue(out, ctx, holder, from + eq + 1, to, shape.slice(eq + 1), "plain");
+        secretValue(out, ctx, holder, from + eq + 1, to, shape.slice(eq + 1), "query", shape.slice(0, eq));
     } else if (o.name.startsWith("--") && SECRET_OPTION.test(o.name.slice(2)))
       secretValue(out, ctx, holder, from, to, shape, "plain");
   }
@@ -1639,7 +1678,17 @@ function positionValues(name: string, args: Word[], ctx: Ctx, out: ShellRisk): v
       const h = /^([A-Za-z0-9!#$%&'*+.^_`|~-]+):(?![=@])/.exec(t);
       if (h && SECRET_HEADER.test(h[1])) headerValue(out, ctx, w, 0, t);
       const q = /^[^=:@]+==/.exec(t);
-      if (q) secretValue(out, ctx, w, q[0].length, w.text.length, t.slice(q[0].length), "plain");
+      if (q)
+        secretValue(
+          out,
+          ctx,
+          w,
+          q[0].length,
+          w.text.length,
+          t.slice(q[0].length),
+          "query",
+          q[0].slice(0, -2),
+        );
     }
   }
 }
@@ -1669,7 +1718,8 @@ function urlValues(out: ShellRisk, ctx: Ctx, w: Word): void {
     const amp = t.indexOf("&", start);
     const stop = amp < 0 || amp > end ? end : amp;
     const eq = t.indexOf("=", start);
-    if (eq >= 0 && eq + 1 < stop) secretValue(out, ctx, w, eq + 1, stop, t.slice(eq + 1, stop), "plain");
+    if (eq >= 0 && eq + 1 < stop)
+      secretValue(out, ctx, w, eq + 1, stop, t.slice(eq + 1, stop), "query", t.slice(start, eq));
     start = stop + 1;
   }
 }

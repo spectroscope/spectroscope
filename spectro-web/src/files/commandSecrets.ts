@@ -5,7 +5,9 @@
 // `://` to the last `@` of its authority (1a). The values in credential
 // positions of network commands come from shellRisk (1b) under the rule name
 // `position`; one that overlaps a rule's hit widens that hit instead of
-// standing beside it.
+// standing beside it. A query value or a user name given alone whose name
+// says nothing of a credential (task 10 item 9) is only masked: it is a
+// credential when a rule matches it, else it stays out of the hits.
 
 import { findCredentials, COMMAND_RULES, PASSWORD_RULE, type CredentialHit } from "./secrets";
 import { shellRisk, type ShellRisk } from "./shellRisk";
@@ -14,9 +16,16 @@ import { segments, type Word } from "./shellTokens";
 /** The rule name of a value found by its place in a command, not by its shape. */
 export const POSITION_RULE = "position";
 
+/** A range of the command the report masks without a label: no credential, never printed. */
+export interface MaskedRange {
+  start: number;
+  end: number;
+}
+
 export interface CommandReading {
   risk: ShellRisk;
   hits: CredentialHit[]; // in text order
+  masked: MaskedRange[]; // in text order
   placeholders: number;
 }
 
@@ -40,14 +49,19 @@ export class CommandReadings {
 export function commandCredentials(
   command: string,
   risk: ShellRisk,
-): { hits: CredentialHit[]; placeholders: number } {
+): { hits: CredentialHit[]; masked: MaskedRange[]; placeholders: number } {
   const found = findCredentials(command, [], COMMAND_RULES, { identifiers: false });
   const words = wordsOf(command);
   const hits = found.hits.map((h) => widen(command, h, words));
+  const masked: MaskedRange[] = [];
   for (const v of risk.values) {
     const over = hits.filter((h) => v.start < h.end && h.start < v.end);
     if (over.some((h) => h.start <= v.start && v.end <= h.end)) continue;
     const spellings = [v.secret, v.value].filter((x, k, all) => all.indexOf(x) === k);
+    if (over.length === 0 && !v.named && !spellings.some(ruleMatches)) {
+      masked.push({ start: v.start, end: v.end });
+      continue;
+    }
     if (over.length > 0) {
       const h = over[0];
       h.start = Math.min(h.start, v.start);
@@ -66,8 +80,13 @@ export function commandCredentials(
     });
   }
   hits.sort((a, b) => a.start - b.start);
-  return { hits, placeholders: found.placeholders + risk.placeholders };
+  masked.sort((a, b) => a.start - b.start);
+  return { hits, masked, placeholders: found.placeholders + risk.placeholders };
 }
+
+/** A value a credential rule of a command matches on its own. */
+const ruleMatches = (value: string): boolean =>
+  findCredentials(value, [], COMMAND_RULES, { identifiers: false }).hits.length > 0;
 
 /** Every word of the command with its place, redirect targets included. */
 function wordsOf(command: string): Word[] {

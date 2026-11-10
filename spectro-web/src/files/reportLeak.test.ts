@@ -8,7 +8,7 @@
 import { describe, expect, it } from "vitest";
 import { reportCsv } from "./reportCsv";
 import { reportFilename, reportHtml } from "./reportHtml";
-import { LEAK_CALLS, LEAK_RAW, leakReport } from "./reportLeakFixture";
+import { LEAK_CALLS, LEAK_QUIET, LEAK_RAW, leakReport } from "./reportLeakFixture";
 import { findCredentials } from "./secrets";
 
 const CREDENTIAL_KINDS = new Set([
@@ -56,6 +56,21 @@ describe("the files report leaks no credential", () => {
         ),
     ).map((c) => c.name);
     expect(missing).toEqual([]);
+  });
+
+  it("a value in a position that says nothing of a credential makes no finding, and stays masked", () => {
+    // Task 10 item 9. The masking half is the raw-secret check below, which
+    // holds these values too; this is the counting half.
+    expect(LEAK_QUIET.length).toBe(3);
+    const counted = LEAK_QUIET.filter(({ call }) =>
+      report.findings.some((f) => f.callIndex === call && f.kind.startsWith("credential-")),
+    ).map((c) => c.name);
+    expect(counted).toEqual([]);
+    // The positive twin: each of those calls is in the report as a network command, masked.
+    for (const { name, call } of LEAK_QUIET) {
+      const network = report.findings.find((f) => f.callIndex === call && f.kind === "network");
+      expect(network?.command?.includes("[value]"), name).toBe(true);
+    }
   });
 
   it("no rule matches anywhere in the HTML or the CSV", () => {

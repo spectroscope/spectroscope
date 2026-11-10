@@ -20,7 +20,7 @@ import {
   type Destination,
   type ReachIndex,
 } from "./destinations";
-import { CommandReadings, type CommandReading } from "./commandSecrets";
+import { CommandReadings, type CommandReading, type MaskedRange } from "./commandSecrets";
 import type { FileCall, FileLedger, FileTouch, Source } from "./fold";
 import { higher, LEVEL_ORDER, outsideWorkspace, pathLevel, type Level } from "./levels";
 import {
@@ -189,8 +189,10 @@ export function buildReport(input: ReportInput): FilesReport {
   const commands = new Map<number, string>();
   const readings = new CommandReadings();
   // A command prints through its own reading: the rules, its words and its positions.
-  const maskCommand = (call: FileCall) => (text: string) =>
-    creds.maskWith(text, readings.of(text, call.base).hits);
+  const maskCommand = (call: FileCall) => (text: string) => {
+    const reading = readings.of(text, call.base);
+    return creds.maskWith(text, reading.hits, reading.masked);
+  };
 
   const scan = scanEvents(events, ledger, creds, all, reach, callAt, readings);
   const drafts = scan.drafts;
@@ -380,6 +382,9 @@ const MIN_CUT = 8;
 const MAX_NESTING = 4;
 /** A label the mask wrote; the title rule passes over it. */
 const MASK_LABEL = /\[credential \d+: [a-z-]+\]/y;
+
+/** What a masked value that is no credential prints as (task 10 item 9). */
+export const QUIET_MASK = "[value]";
 /** What ends a title word: any character that is not a letter or a digit (final wave item 6b). */
 const WORD_END = /[^\p{L}\p{N}]/u;
 
@@ -523,13 +528,19 @@ class Credentials {
     return text === "" ? text : this.maskWith(text, findCredentials(text).hits);
   }
 
-  /** mask() with the hits a reader found in `text` (a command's reading) in place of the rules alone. */
-  maskWith(text: string, hits: readonly CredentialHit[]): string {
+  /**
+   * mask() with the hits a reader found in `text` (a command's reading) in place
+   * of the rules alone. `quiet` are ranges masked as `[value]`: a query value or
+   * a user name alone that is no credential (task 10 item 9). Joined with a
+   * credential, the union prints the credential's label only.
+   */
+  maskWith(text: string, hits: readonly CredentialHit[], quiet: readonly MaskedRange[] = []): string {
     if (text === "") return text;
-    const spans: { start: number; end: number; ref: CredentialRef }[] = [];
+    const spans: { start: number; end: number; ref: CredentialRef | null }[] = [];
     for (const hit of hits.flatMap(withInner)) {
       spans.push({ start: hit.start, end: hit.end, ref: this.see(hit, -1, null).ref });
     }
+    for (const q of quiet) spans.push({ start: q.start, end: q.end, ref: null });
     this.longest ??= [...this.bySecret.values()].sort((a, b) => b.secret.length - a.secret.length);
     for (const s of this.longest) {
       for (const at of occurrences(text, s.secret, s.secret.length < MASK_INSIDE_WORDS)) {
@@ -548,9 +559,12 @@ class Credentials {
       const refs: CredentialRef[] = [];
       for (; i < spans.length && spans[i].start < end; i++) {
         end = Math.max(end, spans[i].end);
-        if (!refs.includes(spans[i].ref)) refs.push(spans[i].ref);
+        const ref = spans[i].ref;
+        if (ref !== null && !refs.includes(ref)) refs.push(ref);
       }
-      out += text.slice(at, start) + refs.map((r) => `[${r.label}: ${r.rule}]`).join("");
+      out +=
+        text.slice(at, start) +
+        (refs.length === 0 ? QUIET_MASK : refs.map((r) => `[${r.label}: ${r.rule}]`).join(""));
       at = end;
     }
     return out + text.slice(at);
