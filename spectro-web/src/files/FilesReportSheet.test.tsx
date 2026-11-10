@@ -413,7 +413,7 @@ describe("the sheet's words", () => {
       "Report",
     ]);
     // No dash of either kind in the sheet's words.
-    const dashed = keys.filter((k) => /[–—]/.test(dict[k].en + dict[k].de));
+    const dashed = keys.filter((k) => /[\u2013\u2014]/.test(dict[k].en + dict[k].de));
     expect(dashed).toEqual([]);
   });
 });
