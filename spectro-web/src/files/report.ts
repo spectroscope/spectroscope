@@ -190,7 +190,7 @@ export function buildReport(input: ReportInput): FilesReport {
   const readings = new CommandReadings();
   // A command prints through its own reading: the rules, its words and its positions.
   const maskCommand = (call: FileCall) => (text: string) => {
-    const reading = readings.of(text, call.base);
+    const reading = readings.of(text, call.base, POWERSHELL_TOOL.test(call.tool));
     return creds.maskWith(text, reading.hits, reading.masked);
   };
 
@@ -231,7 +231,7 @@ export function buildReport(input: ReportInput): FilesReport {
     const command = commandOf(call, events);
     if (command !== null) {
       commands.set(call.callIndex, command);
-      const risk = readings.of(command, call.base).risk;
+      const risk = readings.of(command, call.base, POWERSHELL_TOOL.test(call.tool)).risk;
       if (risk.envDump !== null) {
         const printed = scan.secretOutputs.get(call.callIndex);
         drafts.push(
@@ -707,7 +707,10 @@ function scanEvents(
       case "tool_call": {
         const name = String(e.name);
         const command = commandIn(name, e.input);
-        const shell = command === null ? null : readings.of(command, callAt.get(i)?.base ?? null);
+        const shell =
+          command === null
+            ? null
+            : readings.of(command, callAt.get(i)?.base ?? null, POWERSHELL_TOOL.test(name));
         const key = pairKey(e.agentId, e.callId);
         const stack = unpaired.get(key);
         if (stack === undefined) unpaired.set(key, [{ index: i, name, shell }]);
@@ -726,7 +729,9 @@ function scanEvents(
         const used: CredentialRef[] = [];
         for (const s of creds.before(i)) {
           if (used.includes(s.ref)) continue;
-          if (!inHits.has(s.secret) && !appearsAsWord(text, s.secret)) continue;
+          // Glued to a short option is a use too: `mysql -p<value>` (task 11 item 3d).
+          const glued = shell?.glued.includes(s.secret) === true;
+          if (!inHits.has(s.secret) && !appearsAsWord(text, s.secret) && !glued) continue;
           used.push(s.ref);
           drafts.push({
             ...blank("credential-used", "critical", i, "recorded"),

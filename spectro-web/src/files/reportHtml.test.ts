@@ -454,6 +454,34 @@ describe("reportHtml", () => {
     }
   });
 
+  it("a network command to this machine is not called absent (task 11 item 3a)", () => {
+    const one = build(
+      new Rec().start().tool("Bash", { command: "curl -s http://localhost:8080/api/health" }).events,
+    );
+    expect(one.verdict).toBe("project");
+    expect(one.findings.map((f) => f.kind)).toEqual(["network"]);
+    expect(verdictLine(one, "en")).toBe(
+      "The recording holds no file the session touched. This report checked for secret files by name, " +
+        "credentials by shape, environment and keychain dumps, files outside the project, personal data and " +
+        "scripts with unknown effect, and found none of these.",
+    );
+    const en = reportHtml(one, "en");
+    expect(en).toContain("The network command ran only against this machine.");
+    expect(en).not.toContain("network commands, files outside");
+    const de = reportHtml(one, "de");
+    expect(de).toContain("Der Netzwerkbefehl richtete sich nur an diesen Rechner.");
+    expect(de).not.toContain("Netzwerkbefehle, Dateien");
+    const two = build(
+      new Rec()
+        .start(null)
+        .tool("Bash", { command: "curl -s http://localhost:8080/a" })
+        .tool("Bash", { command: "curl http://127.0.0.1:5173/" }).events,
+    );
+    expect(reportHtml(two, "en")).toContain("All 2 network commands ran only against this machine.");
+    expect(reportHtml(two, "de")).toContain("Alle 2 Netzwerkbefehle richteten sich nur an diesen Rechner.");
+    expect(verdictLine(two, "en")).not.toContain("network commands");
+  });
+
   it("says when the workspace was not recorded", () => {
     const rec = new Rec().start(null).tool("read_file", { path: "/etc/hosts" });
     const html = reportHtml(build(rec.events), "en");

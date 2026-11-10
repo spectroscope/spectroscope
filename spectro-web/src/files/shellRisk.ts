@@ -48,9 +48,17 @@ export interface ShellRisk {
   placeholders: number;
 }
 
-export function shellRisk(command: string, cwd: string | null): ShellRisk {
+/**
+ * `powershell`: the line is PowerShell's (the call's tool is `powershell` or
+ * `pwsh`), so `$env:NAME` reads a variable there (task 11 item 3b).
+ */
+export function shellRisk(
+  command: string,
+  cwd: string | null,
+  { powershell = false }: { powershell?: boolean } = {},
+): ShellRisk {
   const out: ShellRisk = { envDump: null, network: [], secretOutput: false, values: [], placeholders: 0 };
-  readLine(command, cwd, out, 0, { at: 0 });
+  readLine(command, cwd, out, 0, { at: 0 }, { ps: powershell, printed: true });
   return out;
 }
 
@@ -64,23 +72,41 @@ const MAX_DEPTH = 4;
  */
 type Place = { at: number } | { span: [number, number] };
 
-/** What a command and its arguments are read against: the line's text and its place. */
+/**
+ * How a line is read (task 11 item 3): `ps` when it is PowerShell's, `printed`
+ * when its output is the call's own printed output, which a line inside a
+ * substitution's body is not.
+ */
+interface Mode {
+  ps: boolean;
+  printed: boolean;
+}
+
+/** What a command and its arguments are read against: the line's text, its place and its mode. */
 interface Ctx {
   line: string;
   place: Place;
+  mode: Mode;
 }
 
 const shift = (p: Place, by: number): Place => ("at" in p ? { at: p.at + by } : p);
 const within = (p: Place, start: number, end: number): Place =>
   "at" in p ? { span: [p.at + start, p.at + end] } : p;
 
-function readLine(line: string, cwd: string | null, out: ShellRisk, depth: number, place: Place): void {
+function readLine(
+  line: string,
+  cwd: string | null,
+  out: ShellRisk,
+  depth: number,
+  place: Place,
+  mode: Mode,
+): void {
   if (depth > MAX_DEPTH) return;
-  const ctx: Ctx = { line, place };
+  const ctx: Ctx = { line, place, mode };
   const items = riskSegments(line);
   items.forEach((item, at) => {
     if (item === "(" || item === ")") return;
-    readSubs(item, cwd, out, depth, place); // a substitution runs before the command that holds it
+    readSubs(item, cwd, out, depth, place, mode); // a substitution runs before the command that holds it
     run(item.words, item, cwd, out, depth, ctx, { items, at });
   });
 }
@@ -92,15 +118,25 @@ interface Next {
 }
 
 /** Reads the substitutions of a segment as lines; an arithmetic body only for the substitutions in it. */
-function readSubs(item: Segment, cwd: string | null, out: ShellRisk, depth: number, place: Place): void {
+function readSubs(
+  item: Segment,
+  cwd: string | null,
+  out: ShellRisk,
+  depth: number,
+  place: Place,
+  mode: Mode,
+): void {
+  const inner: Mode = { ps: mode.ps, printed: false };
   for (const w of wordsOf(item)) {
     const s = w as SWord;
-    subsOf(w).forEach((body, k) => readLine(body, cwd, out, depth + 1, shift(place, s.subAt?.[k] ?? 0)));
+    subsOf(w).forEach((body, k) =>
+      readLine(body, cwd, out, depth + 1, shift(place, s.subAt?.[k] ?? 0), inner),
+    );
     arithOf(w).forEach((body, k) => {
       if (depth + 1 > MAX_DEPTH) return;
-      const inner = shift(place, s.arithAt?.[k] ?? 0);
+      const at = shift(place, s.arithAt?.[k] ?? 0);
       for (const seg of riskSegments(body))
-        if (typeof seg !== "string") readSubs(seg, cwd, out, depth + 1, inner);
+        if (typeof seg !== "string") readSubs(seg, cwd, out, depth + 1, at, inner);
     });
   }
 }
@@ -382,7 +418,7 @@ function run(
   next: Next | null,
 ): void {
   const [head, ...args] = commandWords(words);
-  if (head && printsEnvVariable(head, args, ctx)) dumped(out, "$env:");
+  if (head && ctx.mode.ps && printsEnvVariable(head, args, ctx)) dumped(out, "$env:");
   if (!head || head.dynamic || depth > MAX_DEPTH) return;
   const written = commandName(head.text);
   if (written === null) return;
@@ -413,7 +449,7 @@ function run(
       args.length === 1
         ? placeOf(first, ctx)
         : within(ctx.place, first.start ?? 0, last.end ?? ctx.line.length);
-    return readLine(args.map((w) => w.text).join(" "), cwd, out, depth + 1, place);
+    return readLine(args.map((w) => w.text).join(" "), cwd, out, depth + 1, place, ctx.mode);
   }
   if (lower === "powershell" || lower === "pwsh") return powershell(args, cwd, out, depth, ctx);
   const psDump = psDumpOf(lower, args);
@@ -444,12 +480,14 @@ function run(
     const p = parse(args, SHELL);
     const script = p.operands[0];
     if (has(p, "-c") && script && !script.dynamic)
-      readLine(script.text, cwd, out, depth + 1, placeOf(script, ctx));
+      readLine(script.text, cwd, out, depth + 1, placeOf(script, ctx), { ...ctx.mode, ps: false });
     return;
   }
   const dump = dumpOf(name, args);
   if (dump !== null) dumped(out, dump);
-  if (dump !== null && printsOneSecret(dump, args)) out.secretOutput = true;
+  // A getter's output is registered only when it is what the call printed (task 11 item 3c).
+  if (dump !== null && printsOneSecret(dump, args) && ctx.mode.printed && !pipedOn(next))
+    out.secretOutput = true;
   const found = NETWORK.get(name)?.(args, seg, cwd);
   if (found) {
     subSends(found, name, args, seg, cwd);
@@ -724,7 +762,7 @@ function powershell(args: Word[], cwd: string | null, out: ShellRisk, depth: num
     rest.length === 1
       ? placeOf(first, ctx)
       : within(ctx.place, first.start ?? 0, last.end ?? ctx.line.length);
-  readLine(rest.map((w) => w.text).join(" "), cwd, out, depth + 1, place);
+  readLine(rest.map((w) => w.text).join(" "), cwd, out, depth + 1, place, { ...ctx.mode, ps: true });
 }
 const SHELLS = new Set(["sh", "bash", "zsh", "dash", "ksh"]);
 const SHELL: Spec = { short: "o", long: ["rcfile", "init-file"], posix: true };
@@ -759,10 +797,25 @@ const AWS: Spec = {
 const OP: Spec = { long: ["account", "config", "encoding", "format", "session", "vault", "fields"] };
 
 /** The dumps that print one stored secret and nothing else: `security` only with `-w`. */
-const ONE_SECRET = new Set(["gh auth token", "op read", "pass show", "aws configure get"]);
+const ONE_SECRET = new Set(["gh auth token", "op read", "pass show"]);
+/** The keys `aws configure get` prints a secret for, alone or after a profile (`prod.aws_session_token`). */
+const AWS_SECRET_KEYS = new Set(["aws_access_key_id", "aws_secret_access_key", "aws_session_token"]);
+
+/** True when the next command of the line reads this one's output from a pipe. */
+function pipedOn(next: Next | null): boolean {
+  if (next === null) return false;
+  let k = next.at + 1;
+  while (next.items[k] === ")") k++;
+  const after = next.items[k];
+  return after !== undefined && typeof after !== "string" && after.piped;
+}
 
 function printsOneSecret(dump: string, args: Word[]): boolean {
   if (ONE_SECRET.has(dump)) return true;
+  if (dump === "aws configure get") {
+    const key = parse(args, AWS).operands[2]?.text ?? "";
+    return AWS_SECRET_KEYS.has(key.slice(key.lastIndexOf(".") + 1));
+  }
   return dump.startsWith("security find-") && args.some((w) => /^-[A-Za-z]*w[A-Za-z]*$/.test(w.text));
 }
 
@@ -1594,8 +1647,12 @@ const shapeText = (w: Word): string => shapeOf(w) ?? DYN;
 
 /** An option whose name says it holds a secret: password, passwd, passphrase, token, secret, key, or `pass`. */
 const SECRET_OPTION = /password|passwd|passphrase|token|secret|key|^pass$|-pass$/i;
-/** Authorization, Proxy-Authorization, Cookie, and a header whose name says token, key, secret or auth. */
-const SECRET_HEADER = /^cookie$|token|key|secret|auth/i;
+/** Options whose name says key and whose value is a path or a type (task 11 item 3e). */
+const KEY_FILE_OPTIONS = new Set(["key", "key-type", "pubkey", "pinnedpubkey"]);
+const secretOption = (name: string): boolean =>
+  !KEY_FILE_OPTIONS.has(name.toLowerCase()) && SECRET_OPTION.test(name);
+/** Authorization, Proxy-Authorization, Cookie, and a header whose name says token, key, secret, auth or pass. */
+const SECRET_HEADER = /^cookie$|token|key|secret|auth|pass/i;
 const HEADER_NAME = /^\s*([A-Za-z0-9!#$%&'*+.^_`|~-]+)\s*:\s*/;
 
 const VALUE_SPECS = new Map<string, Spec>([
@@ -1659,13 +1716,13 @@ function positionValues(name: string, args: Word[], ctx: Ctx, out: ShellRisk): v
       const eq = shape.indexOf("=");
       if (eq >= 0 && shape[eq + 1] !== "@" && eq + 1 < shape.length)
         secretValue(out, ctx, holder, from + eq + 1, to, shape.slice(eq + 1), "query", shape.slice(0, eq));
-    } else if (o.name.startsWith("--") && SECRET_OPTION.test(o.name.slice(2)))
+    } else if (o.name.startsWith("--") && secretOption(o.name.slice(2)))
       secretValue(out, ctx, holder, from, to, shape, "plain");
   }
   // A long option the tool's table does not list still takes the next word when its name says secret.
   for (let k = 0; k + 1 < words.length; k++) {
     const t = words[k].text;
-    if (!t.startsWith("--") || t.includes("=") || !SECRET_OPTION.test(t.slice(2))) continue;
+    if (!t.startsWith("--") || t.includes("=") || !secretOption(t.slice(2))) continue;
     if (spec.long?.includes(t.slice(2))) continue;
     const next = words[k + 1];
     if (next.text.startsWith("-") || SCHEME.test(next.text)) continue;

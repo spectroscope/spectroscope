@@ -83,9 +83,13 @@ export const KEY_BODY_RULE: CredentialRule = {
 /** Every rule the report names, as a shell command is read: CREDENTIAL_RULES, then key-body. */
 export const COMMAND_RULES: readonly CredentialRule[] = [...CREDENTIAL_RULES, KEY_BODY_RULE];
 
-/** What stands before a base64 run that is public: an SSH public key, an integrity hash, a data URL. */
+/**
+ * What stands before a base64 run that is public: an SSH public key, an
+ * integrity hash, a data URL, its media type with parameters too
+ * (`data:image/svg+xml;charset=utf-8;base64,`, task 11 item 3f).
+ */
 const PUBLIC_BEFORE =
-  /(?:ssh-ed25519 |ssh-rsa |ecdsa-sha2-[A-Za-z0-9-]+ |sha(?:256|384|512)-|data:[^\s;,]*;base64,)$/;
+  /(?:ssh-ed25519 |ssh-rsa |ecdsa-sha2-[A-Za-z0-9-]+ |sha(?:256|384|512)-|data:[^\s;,]*(?:;[^\s;,]*)*;base64,)$/;
 
 /** The class runs of a run (upper case, lower case, digits), counted inside each segment between `/` and `+`. */
 function classRuns(run: string): number {
@@ -306,8 +310,8 @@ const isIdentifier = (value: string): boolean => /^[A-Za-z_.]+$/.test(value);
 
 const KEY_HEADER = "-----BEGIN ";
 const DASHES = "-----";
-/** How much text before a key-body match isKeyMaterial reads. */
-const BEFORE = 64;
+/** How much text before a key-body match isKeyMaterial reads: a data URL's header with its parameters fits. */
+const BEFORE = 160;
 
 // ---- Private-key blocks ----------------------------------------------------------
 //
@@ -545,10 +549,19 @@ export function findCredentials(
 /**
  * How many matches of the email and iban rules a text holds. An email-shaped
  * match whose local part is `git` is a Git remote (`git@github.com:o/r`), not
- * a person (final wave item 6d).
+ * a person (final wave item 6d), and one whose domain has a label made only
+ * of digits is a package and its version (`@types/node@22.9.0-beta.rc`, task
+ * 11 item 3g).
  */
+const isPerson = (match: string): boolean =>
+  !match.startsWith("git@") &&
+  !match
+    .slice(match.lastIndexOf("@") + 1)
+    .split(".")
+    .some((label) => /^\d+$/.test(label));
+
 export function countPersonalData(text: string): { email: number; iban: number } {
-  const email = ruleMatches(EMAIL, text).filter((m) => !m[0].startsWith("git@")).length;
+  const email = ruleMatches(EMAIL, text).filter((m) => isPerson(m[0])).length;
   return { email, iban: ruleMatches(IBAN, text).length };
 }
 

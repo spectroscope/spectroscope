@@ -117,6 +117,13 @@ describe("the key-body rule", () => {
       expect(asCommand(`echo '${prefix}${line}' >> f`), prefix).toEqual([]);
     }
     expect(asCommand(`curl -d 'img=data:image/png;base64,${line}' https://example.com/`)).toEqual([]);
+    // A media type with parameters (task 11 item 3f).
+    expect(asCommand(`echo 'data:image/svg+xml;charset=utf-8;base64,${line}' > i.txt`)).toEqual([]);
+    expect(
+      asCommand(
+        `echo 'data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,${line}' > x`,
+      ),
+    ).toEqual([]);
     // The same run anywhere else stays key material.
     expect(asCommand(`echo 'ssh-ed25519 x ${line}' >> f`)).toEqual([["key-body", line]]);
   });
@@ -317,6 +324,13 @@ describe("countPersonalData", () => {
     expect(countPersonalData("origin\tgit@github.com:acme/app.git (fetch)").email).toBe(0);
     expect(countPersonalData("Author: Ada <ada@example.org>").email).toBe(1);
     expect(countPersonalData("legit@example.org").email).toBe(1);
+  });
+
+  it("a domain with a label made only of digits is no email (task 11 item 3g)", () => {
+    expect(countPersonalData("added @types/node@22.9.0-beta.rc").email).toBe(0);
+    expect(countPersonalData("lodash@4.17.21 and react@18.3.1-rc.0").email).toBe(0);
+    // The positive twin: digits inside a label are fine.
+    expect(countPersonalData("ops@mail2.example.com").email).toBe(1);
   });
 
   it("personal data is counted separately", () => {

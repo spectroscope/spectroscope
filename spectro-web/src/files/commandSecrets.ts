@@ -42,22 +42,35 @@ export interface CommandReading {
   hits: CredentialHit[]; // in text order
   masked: MaskedRange[]; // in text order
   placeholders: number;
+  /** The values glued to a short option (`-p<value>`), as the shell reads them (task 11 item 3d). */
+  glued: string[];
 }
 
-/** One reading per command and folder, shared by the scan, the findings and the mask. */
+/** One reading per command, folder and shell, shared by the scan, the findings and the mask. */
 export class CommandReadings {
   private readonly cache = new Map<string, CommandReading>();
 
-  of(command: string, cwd: string | null): CommandReading {
-    const key = `${cwd ?? ""}\u0000${command}`;
+  /** `powershell`: the call's tool is PowerShell's (shellRisk). */
+  of(command: string, cwd: string | null, powershell = false): CommandReading {
+    const key = `${powershell ? "ps" : ""}\u0000${cwd ?? ""}\u0000${command}`;
     let reading = this.cache.get(key);
     if (reading === undefined) {
-      const risk = shellRisk(command, cwd);
-      reading = { risk, ...commandCredentials(command, risk) };
+      const risk = shellRisk(command, cwd, { powershell });
+      reading = { risk, ...commandCredentials(command, risk), glued: gluedValues(command) };
       this.cache.set(key, reading);
     }
     return reading;
   }
+}
+
+/** The text after a short option letter in every word that starts with one (`-p<value>`). */
+function gluedValues(command: string): string[] {
+  const out: string[] = [];
+  for (const s of segments(command)) {
+    if (typeof s === "string") continue;
+    for (const w of s.words) if (!w.dynamic && /^-[A-Za-z]./s.test(w.text)) out.push(w.text.slice(2));
+  }
+  return out;
 }
 
 /** The credentials of a command: rule hits widened to their word, then the position values. */

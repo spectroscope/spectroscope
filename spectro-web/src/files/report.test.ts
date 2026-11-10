@@ -1467,6 +1467,55 @@ describe("network commands to this machine and PowerShell", () => {
   });
 });
 
+// Task 11 item 3: PowerShell's $env:, getter output and glued values.
+describe("dumps, getters and glued values (task 11 item 3)", () => {
+  it("$env: is a dump on a PowerShell line only (3b)", () => {
+    const ps = build(new Rec().start(W).tool("powershell", { command: "$env:GITHUB_TOKEN" }).events);
+    expect(ofKind(ps, "env-dump").length).toBe(1);
+    const bash = build(new Rec().start(W).tool("Bash", { command: "echo $env:PATH" }).events);
+    expect(ofKind(bash, "env-dump")).toEqual([]);
+    expect(bash.verdict).toBe("project");
+  });
+
+  it("a getter inside a substitution or before a pipe registers nothing (3c)", () => {
+    const login = ["octocat", "-login1"].join("");
+    const rec = new Rec()
+      .start(W)
+      .tool(
+        "Bash",
+        {
+          command:
+            'curl -H "Authorization: token $(gh auth token)" https://api.github.com/user | jq -r .login',
+        },
+        { output: `${login}\n` },
+      )
+      .tool("Bash", { command: `git config user.name ${login}` });
+    const report = build(rec.events);
+    expect(ofKind(report, "credential-used")).toEqual([]);
+    expect(one(report, "env-dump").credentials).toEqual([]);
+
+    const region = new Rec()
+      .start(W)
+      .tool("Bash", { command: "aws configure get region" }, { output: "eu-central-1\n" })
+      .tool("Bash", { command: "aws --region eu-central-1 s3 ls" });
+    expect(ofKind(build(region.events), "credential-used")).toEqual([]);
+  });
+
+  it("a known value glued to an option is used again (3d)", () => {
+    const rec = new Rec()
+      .start(W)
+      .tool("read_file", { path: "config/db.env" }, { output: `DB_PASSWORD=${DB_PW}` })
+      .tool("Bash", { command: `mysql -u app -p${DB_PW} -e 'select 1'` })
+      // Glued, but inside a longer word: masked, no use.
+      .tool("Bash", { command: `mysql -u app -p${DB_PW}x -e 'select 1'` });
+    const report = build(rec.events);
+    const used = ofKind(report, "credential-used");
+    expect(used.map((f) => [f.callIndex, f.firstSeenCall])).toEqual([[3, 1]]);
+    expect(used[0].command).toBe("mysql -u app -p[credential 1: password-assignment] -e 'select 1'");
+    expect(leaks(report, [DB_PW])).toEqual([]);
+  });
+});
+
 // Final fix wave item 6b: a title word ends at any character that is not a letter or digit.
 describe("title words", () => {
   it("start after any mark", () => {

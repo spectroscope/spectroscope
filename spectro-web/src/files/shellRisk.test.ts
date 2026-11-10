@@ -1122,13 +1122,18 @@ describe("detection gaps", () => {
       "dir env:",
       "Get-ChildItem -Path Env:",
       "Get-Item Env:GITHUB_TOKEN",
-      "$env:GITHUB_TOKEN",
-      "echo $env:GITHUB_TOKEN",
-      "Write-Output $env:GITHUB_TOKEN",
     ])
       expect(dump(line), line).not.toBeNull();
+    // `$env:` is PowerShell's only on a PowerShell line (task 11 item 3b).
+    const ps = (line: string) => shellRisk(line, W, { powershell: true }).envDump;
+    for (const line of ["$env:GITHUB_TOKEN", "echo $env:GITHUB_TOKEN", "Write-Output $env:GITHUB_TOKEN"])
+      expect(ps(line), line).not.toBeNull();
     for (const line of ['$env:PATH = "C:\\\\bin"', "Get-ChildItem src", "echo $HOME"])
+      expect(ps(line), line).toBeNull();
+    for (const line of ["$env:GITHUB_TOKEN", "echo $env:PATH", "Write-Output $env:GITHUB_TOKEN"])
       expect(dump(line), line).toBeNull();
+    for (const line of ["pwsh -c 'echo $env:GITHUB_TOKEN'", "powershell -Command 'Write-Output $env:X'"])
+      expect(dump(line), line).not.toBeNull();
   });
 });
 
@@ -1202,5 +1207,54 @@ describe("which position values name a credential", () => {
         line,
       ).toEqual([true]);
     }
+  });
+});
+
+// Task 11 item 3: what a getter registers, and the option and header names.
+describe("getters and names (task 11 item 3)", () => {
+  const printed = (line: string) => shellRisk(line, W).secretOutput;
+
+  it("a getter's output registers only when it is the line's own printed output (3c)", () => {
+    for (const line of [
+      "gh auth token",
+      "echo start && gh auth token",
+      "sudo gh auth token",
+      "aws configure get aws_access_key_id",
+      "aws configure get aws_secret_access_key",
+      "aws configure get aws_session_token",
+      "aws --profile prod configure get prod.aws_secret_access_key",
+    ])
+      expect(printed(line), line).toBe(true);
+    for (const line of [
+      'curl -H "Authorization: token $(gh auth token)" https://api.github.com/user | jq -r .login',
+      "gh auth token | pbcopy",
+      "echo `gh auth token`",
+      "aws configure get region",
+      "aws --profile prod configure get output",
+    ])
+      expect(printed(line), line).toBe(false);
+    // The dump itself stays where it was.
+    expect(dump("aws configure get region")).toBe("aws configure get");
+  });
+
+  it("an option whose value is a path or a type is no credential position (3e)", () => {
+    const spans = (line: string) => shellRisk(line, W).values.map((v) => line.slice(v.start, v.end));
+    const pin = ["sha256//", "Yh8Kp2", "Wq5Nr7"].join("");
+    for (const line of [
+      "curl --key client.key https://a.example.com",
+      "curl --key-type PEM --cert c.pem https://a.example.com",
+      "curl --pubkey id.pub sftp://a.example.com/x",
+      `curl --pinnedpubkey ${pin} https://a.example.com`,
+    ])
+      expect(spans(line), line).toEqual([]);
+    const v = ["Zk9", "wQ4", "tLm2x"].join("");
+    expect(spans(`curl --api-key ${v} https://a.example.com`)).toEqual([v]);
+  });
+
+  it("a header whose name holds pass counts by position (3e)", () => {
+    const spans = (line: string) => shellRisk(line, W).values.map((v) => line.slice(v.start, v.end));
+    const v = ["Zk9", "wQ4", "tLm2x"].join("");
+    expect(spans(`curl -H "X-Password: ${v}" https://a.example.com`)).toEqual([v]);
+    expect(spans(`curl -H "X-Db-Pass: ${v}" https://a.example.com`)).toEqual([v]);
   });
 });

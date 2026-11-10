@@ -112,8 +112,11 @@ interface Words {
   sensitiveParts: { outside: string; network: (n: number) => string; personal: string; homeOrSystem: string };
   noCredential: string;
   noSecret: string;
-  checked: string;
-  checkedNoWorkspace: string;
+  /** What the report checked and found none of; network commands left out when every one ran on this machine. */
+  checked: (local: boolean) => string;
+  checkedNoWorkspace: (local: boolean) => string;
+  /** The network commands of a project-level report, all to this machine (task 11 item 3a). */
+  localNetwork: (n: number) => string;
   noWorkspaceLimit: string;
   wentTo: (list: string) => string;
   /** A destination row that records neither provider nor model, as wentTo names it. */
@@ -242,14 +245,18 @@ const EN: Words = {
   },
   noCredential: "No credential shape was found in the recorded results, inputs or messages.",
   noSecret: "No secret file, no credential and no environment dump was found.",
-  checked:
+  checked: (local) =>
     "This report checked for secret files by name, credentials by shape, environment and keychain dumps, " +
-    "network commands, files outside the project, personal data and scripts with unknown effect, " +
+    `${local ? "" : "network commands, "}files outside the project, personal data and scripts with unknown effect, ` +
     "and found none of these.",
-  checkedNoWorkspace:
+  checkedNoWorkspace: (local) =>
     "This report checked for secret files by name, credentials by shape, environment and keychain dumps, " +
-    "network commands, files in system folders and dot folders of a home folder, personal data and " +
+    `${local ? "" : "network commands, "}files in system folders and dot folders of a home folder, personal data and ` +
     "scripts with unknown effect, and found none of these.",
+  localNetwork: (n) =>
+    n === 1
+      ? "The network command ran only against this machine."
+      : `All ${n} network commands ran only against this machine.`,
   noWorkspaceLimit: "Without a workspace it cannot tell which other files belong to the project.",
   wentTo: (list) => `Content from these findings went to ${list}.`,
   unrecordedDestination: "a destination that was not recorded",
@@ -516,14 +523,18 @@ const DE: Words = {
   noCredential:
     "In den aufgezeichneten Ergebnissen, Eingaben und Nachrichten wurde keine Form von Zugangsdaten gefunden.",
   noSecret: "Keine geheime Datei, keine Zugangsdaten und keine Ausgabe der Umgebung wurden gefunden.",
-  checked:
+  checked: (local) =>
     "Dieser Bericht hat geheime Dateien nach Namen, Zugangsdaten nach Form, Ausgaben der Umgebung und " +
-    "des Schlüsselbunds, Netzwerkbefehle, Dateien außerhalb des Projekts, personenbezogene Daten " +
+    `des Schlüsselbunds, ${local ? "" : "Netzwerkbefehle, "}Dateien außerhalb des Projekts, personenbezogene Daten ` +
     "und Skripte mit unbekannter Wirkung geprüft und nichts davon gefunden.",
-  checkedNoWorkspace:
+  checkedNoWorkspace: (local) =>
     "Dieser Bericht hat geheime Dateien nach Namen, Zugangsdaten nach Form, Ausgaben der Umgebung und " +
-    "des Schlüsselbunds, Netzwerkbefehle, Dateien in Systemordnern und Punktordnern eines Home-Ordners, " +
+    `des Schlüsselbunds, ${local ? "" : "Netzwerkbefehle, "}Dateien in Systemordnern und Punktordnern eines Home-Ordners, ` +
     "personenbezogene Daten und Skripte mit unbekannter Wirkung geprüft und nichts davon gefunden.",
+  localNetwork: (n) =>
+    n === 1
+      ? "Der Netzwerkbefehl richtete sich nur an diesen Rechner."
+      : `Alle ${n} Netzwerkbefehle richteten sich nur an diesen Rechner.`,
   noWorkspaceLimit: "Ohne Arbeitsordner kann er nicht sagen, welche übrigen Dateien zum Projekt gehören.",
   wentTo: (list) => `Inhalt aus diesen Befunden ging an ${list}.`,
   unrecordedDestination: "ein Ziel, das nicht aufgezeichnet wurde",
@@ -967,11 +978,14 @@ function verdictText(lang: Lang, report: FilesReport): { headline: string; sente
       const noFiles = !report.files.some((f) => f.sources.some((s) => s !== "model"));
       if (noFiles) headline = w.headline.noFiles;
       else headline = report.workspace === null ? w.headline.noWorkspace : w.headline.project;
+      // Every network command of a project-level report ran on this machine (final wave item 4c).
+      const local = real.filter((f) => f.kind === "network").length;
       if (report.workspace === null) {
-        sentences.push(plainSentence(w.checkedNoWorkspace), plainSentence(w.noWorkspaceLimit));
+        sentences.push(plainSentence(w.checkedNoWorkspace(local > 0)), plainSentence(w.noWorkspaceLimit));
       } else {
-        sentences.push(plainSentence(w.checked));
+        sentences.push(plainSentence(w.checked(local > 0)));
       }
+      if (local > 0) sentences.push(plainSentence(w.localNetwork(local)));
       break;
     }
   }
