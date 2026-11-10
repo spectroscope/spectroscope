@@ -3,7 +3,7 @@
 
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { t } from "../i18n/i18n";
+import { dict, t } from "../i18n/i18n";
 import { importBarAbout, importBarNote, type ImportBarState } from "./importBar";
 import { ImportNoteBar } from "./ImportNoteBar";
 import { drive, type El } from "../testkit/driveComponent";
@@ -225,5 +225,39 @@ describe("the dialog names a lone side file instead of calling it invalid (item 
   it("lets the file picker offer the yaml and markdown side files", () => {
     expect(dialog).toMatch(/accept="[^"]*\.yaml[^"]*"/);
     expect(dialog).toMatch(/accept="[^"]*\.md[^"]*"/);
+  });
+});
+
+describe("the dialog and the sidebar name the Copilot format (item 8)", () => {
+  const DASH = /[–—]/;
+
+  it("the dialog's description names all three and suggests the folder for Copilot", () => {
+    for (const lang of ["en", "de"] as const) {
+      const hint = t(lang, "imp.hint", { path: "~/.claude/projects/…/*.jsonl" });
+      expect(hint, lang).toMatch(/spectroscope/);
+      expect(hint, lang).toMatch(/Claude[ -]Code/);
+      expect(hint, lang).toMatch(/Copilot/);
+      expect(hint, lang).not.toMatch(DASH);
+    }
+    expect(t("en", "imp.hint", { path: "P" })).toContain("pick its session folder");
+    expect(t("de", "imp.hint", { path: "P" })).toContain("wähle ihren Session-Ordner");
+  });
+
+  it("the Import button's title names all three, suggests the folder, and has no dash", () => {
+    for (const lang of ["en", "de"] as const) {
+      const title = t(lang, "nav.importTitle");
+      expect(title, lang).toMatch(/spectroscope/);
+      expect(title, lang).toMatch(/Claude[ -]Code/);
+      expect(title, lang).toMatch(/Copilot[ -]Session[ -]?[Oo]rdner|Copilot session folder/);
+      expect(title, lang).not.toMatch(DASH);
+    }
+  });
+
+  it("every new import sentence of task 12 has no dash", () => {
+    const keys = Object.keys(dict).filter((k) => k.startsWith("imp.copilot.") || k === "filesTab.snapshot.entry");
+    expect(keys.length).toBeGreaterThanOrEqual(12);
+    for (const key of keys) {
+      for (const lang of ["en", "de"] as const) expect(t(lang, key), `${key} ${lang}`).not.toMatch(DASH);
+    }
   });
 });
