@@ -477,8 +477,8 @@ describe("reportHtml", () => {
         .tool("Bash", { command: "curl -s http://localhost:8080/a" })
         .tool("Bash", { command: "curl http://127.0.0.1:5173/" }).events,
     );
-    expect(reportHtml(two, "en")).toContain("All 2 network commands ran only against this machine.");
-    expect(reportHtml(two, "de")).toContain("Alle 2 Netzwerkbefehle richteten sich nur an diesen Rechner.");
+    expect(reportHtml(two, "en")).toContain("The 2 network commands ran only against this machine.");
+    expect(reportHtml(two, "de")).toContain("Die 2 Netzwerkbefehle richteten sich nur an diesen Rechner.");
     expect(verdictLine(two, "en")).not.toContain("network commands");
   });
 
@@ -486,13 +486,12 @@ describe("reportHtml", () => {
     const report = build(new Rec().start().tool("read_file", { path: "README.md" }).events);
     const en = reportHtml(report, "en");
     expect(en).toContain(
-      "otherwise they are not counted and print as <code>[value]</code>, " +
-        "or as written when they are a variable or a placeholder.",
+      "otherwise it is not counted and prints as <code>[value]</code>, or as written when it is a variable or a placeholder.",
     );
     expect(en).not.toContain("otherwise they print as");
     const de = reportHtml(report, "de");
     expect(de).toContain(
-      "sonst zählen sie nicht und stehen als <code>[value]</code> im Befehl, " +
+      "sonst zählt er nicht und steht als <code>[value]</code> im Befehl, " +
         "eine Variable oder ein Platzhalter so, wie sie geschrieben wurden.",
     );
   });
@@ -501,18 +500,18 @@ describe("reportHtml", () => {
     const report = build(new Rec().start().tool("read_file", { path: "README.md" }).events);
     const en = reportHtml(report, "en");
     for (const part of [
-      "except <code>--key</code>, <code>--key-type</code>, <code>--pubkey</code> and <code>--pinnedpubkey</code>, whose values are paths or types,",
-      "of a header whose name says token, key, secret, auth or pass,",
-      "<code>aws configure get</code> of an access key, a secret key or a session token printed counts too, " +
-        "when the command printed it itself, not into a pipe or a substitution.",
+      "The options <code>--key</code>, <code>--key-type</code>, <code>--pubkey</code> and <code>--pinnedpubkey</code> are left out, because their values are paths or types.",
+      "and so does a header whose name says token, key, secret, auth or pass.",
+      "For <code>aws configure get</code>, that holds only for an access key, a secret key or a session token. " +
+        "In each case the command must have printed the value itself, not into a pipe or a substitution.",
     ])
       expect(en, part).toContain(part);
     const de = reportHtml(report, "de");
     for (const part of [
-      "außer <code>--key</code>, <code>--key-type</code>, <code>--pubkey</code> und <code>--pinnedpubkey</code>, deren Werte Pfade oder Typen sind,",
-      "eines Headers, dessen Name token, key, secret, auth oder pass enthält,",
-      "<code>aws configure get</code> für einen Zugriffsschlüssel, einen geheimen Schlüssel oder ein Sitzungstoken " +
-        "ausgab, zählt ebenso, wenn der Befehl ihn selbst ausgab, nicht in eine Pipe oder eine Befehlsersetzung.",
+      "Die Optionen <code>--key</code>, <code>--key-type</code>, <code>--pubkey</code> und <code>--pinnedpubkey</code> zählen nicht, weil ihre Werte Pfade oder Typen sind.",
+      "ebenso ein Header, dessen Name token, key, secret, auth oder pass enthält.",
+      "Bei <code>aws configure get</code> gilt das nur für einen Zugriffsschlüssel, einen geheimen Schlüssel oder ein " +
+        "Sitzungstoken. In jedem Fall muss der Befehl den Wert selbst ausgegeben haben, nicht in eine Pipe oder eine Befehlsersetzung.",
     ])
       expect(de, part).toContain(part);
   });
@@ -521,16 +520,20 @@ describe("reportHtml", () => {
     const report = build(new Rec().start().tool("read_file", { path: "README.md" }).events);
     const en = reportHtml(report, "en");
     expect(en).toContain(
-      "A query value counts only when a word of its name is key, token, secret, pass, password, passwd, passphrase, " +
-        "pwd, auth, authorization, sig, signature, session, sid, code, credential or bearer, or a joined form such as " +
-        "<code>apikey</code>, and a user name given alone does not count by its place;",
+      "A query value counts only when a word of its name says credential. Those words are key, token, secret, " +
+        "pass, password, passwd, passphrase, pwd, auth, authorization, sig, signature, session, sid, code, credential " +
+        "and bearer; joined forms such as <code>apikey</code> count too. A user name given alone does not count by its place.",
+    );
+    expect(en).toContain(
+      "the password after the colon in <code>-u</code>, <code>--user</code> and the other user options",
     );
     expect(en).not.toContain("their name holds");
     const de = reportHtml(report, "de");
     expect(de).toContain(
-      "Ein Wert einer Abfrage zählt nur, wenn ein Wort seines Namens key, token, secret, pass, password, passwd, " +
-        "passphrase, pwd, auth, authorization, sig, signature, session, sid, code, credential oder bearer ist oder " +
-        "eine zusammengeschriebene Form wie <code>apikey</code>, und ein Benutzername allein zählt nicht durch seine Stelle;",
+      "Ein Wert einer Abfrage zählt nur, wenn ein Wort seines Namens Zugangsdaten nennt. Diese Wörter sind key, " +
+        "token, secret, pass, password, passwd, passphrase, pwd, auth, authorization, sig, signature, session, sid, " +
+        "code, credential und bearer; zusammengeschriebene Formen wie <code>apikey</code> zählen ebenso. " +
+        "Ein Benutzername allein zählt nicht durch seine Stelle.",
     );
   });
 
