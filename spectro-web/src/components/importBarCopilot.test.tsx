@@ -5,6 +5,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { importBarAbout, importBarNote, type ImportBarState } from "./importBar";
 import { ImportNoteBar } from "./ImportNoteBar";
+import { drive, type El } from "../testkit/driveComponent";
+import { read } from "../testkit/source";
 
 describe("the bar names who recorded a Copilot folder and when (item 2)", () => {
   const copilot = {
@@ -78,6 +80,125 @@ describe("the bar says a session was still running when it was picked (item 4)",
     const html = renderToStaticMarkup(<ImportNoteBar lang="en" bar={bar} onClose={() => {}} />);
     expect(html).toContain(
       "Recorded by github/cli on 2026-11-10. This session was still running when it was picked; the import holds the 1,234 records written up to then.",
+    );
+  });
+});
+
+describe("the bar points a lone events.jsonl at its folder (item 6)", () => {
+  const copilot = { sessionId: "s-folder", alone: true as const };
+
+  it("says the file is part of a folder, in both languages", () => {
+    expect(importBarNote("en", { kind: "vscode-agent", copilot })).toBe(
+      "This file is part of a Copilot session folder. Pick the folder to load its name, its workspace and its file snapshots too.",
+    );
+    expect(importBarNote("de", { kind: "vscode-agent", copilot })).toBe(
+      "Diese Datei gehört zu einem Copilot-Session-Ordner. Wähle den Ordner, um auch Namen, Arbeitsordner und Dateischnappschüsse zu laden.",
+    );
+  });
+
+  it("offers the folder pick only for a file that arrived alone", () => {
+    expect(importBarAbout("en", { kind: "vscode-agent", copilot }).copilotFolder).toEqual({
+      sessionId: "s-folder",
+    });
+    expect(
+      importBarAbout("en", { kind: "vscode-agent", copilot: { sessionId: "s-folder" } }).copilotFolder,
+    ).toBeUndefined();
+    expect(importBarAbout("en", { kind: "claude-code" }).copilotFolder).toBeUndefined();
+  });
+
+  const bar = (lang: "en" | "de"): ImportBarState => ({
+    sessionId: "import:vscode-agent:events.jsonl",
+    file: "events.jsonl",
+    stats: { lines: 12, frames: 20, zeroLines: 0 },
+    counts: { prompts: 2, answers: 2 },
+    ...importBarAbout(lang, { kind: "vscode-agent", copilot }),
+  });
+
+  it("shows a button that opens the folder picker", () => {
+    const en = renderToStaticMarkup(
+      <ImportNoteBar lang="en" bar={bar("en")} onClose={() => {}} onPickFolder={() => {}} />,
+    );
+    expect(en).toContain(">Pick the session folder …</button>");
+    expect(en).toMatch(/<input type="file" hidden="" webkitdirectory=""/);
+    const de = renderToStaticMarkup(
+      <ImportNoteBar lang="de" bar={bar("de")} onClose={() => {}} onPickFolder={() => {}} />,
+    );
+    expect(de).toContain(">Session-Ordner wählen …</button>");
+  });
+
+  it("shows no such button for any other import", () => {
+    const plain: ImportBarState = {
+      sessionId: "import:vscode-agent:events.jsonl",
+      file: "events.jsonl",
+      stats: { lines: 12, frames: 20, zeroLines: 0 },
+      counts: { prompts: 2, answers: 2 },
+      ...importBarAbout("en", { kind: "vscode-agent", copilot: { sessionId: "s-folder" } }),
+    };
+    const html = renderToStaticMarkup(
+      <ImportNoteBar lang="en" bar={plain} onClose={() => {}} onPickFolder={() => {}} />,
+    );
+    expect(html).not.toContain("Pick the session folder");
+    expect(html).not.toContain("webkitdirectory");
+  });
+
+  it("hands the picked folder's files on", () => {
+    const got: File[][] = [];
+    const picked = [{ name: "events.jsonl" }, { name: "workspace.yaml" }] as unknown as File[];
+    drive(
+      <ImportNoteBar
+        lang="en"
+        bar={bar("en")}
+        onClose={() => {}}
+        onPickFolder={(files) => got.push(files)}
+      />,
+      [ImportNoteBar],
+      [
+        (tree: El[]) => {
+          const input = tree.find((el) => el.type === "input");
+          const target = { files: picked, value: "x" };
+          (input?.props.onChange as unknown as (e: { target: typeof target }) => void)({ target });
+          expect(target.value).toBe("");
+        },
+      ],
+    );
+    expect(got).toEqual([picked]);
+  });
+});
+
+describe("App opens the dialog with the folder the bar picked (item 6)", () => {
+  const app = read("../App.tsx", import.meta.url);
+  const dialog = read("./ImportDialog.tsx", import.meta.url);
+
+  it("hands the files and the shown session id to the dialog", () => {
+    expect(app).toMatch(
+      /onPickFolder=\{\(files\) => \{\s*setImportPick\(\{ files, sameSession: shownBar\.copilotFolder\?\.sessionId \?\? null \}\);\s*setImportOpen\(true\);/,
+    );
+    expect(app).toMatch(
+      /initialFiles=\{importPick\?\.files\}\s+sameSession=\{importPick\?\.sameSession \?\? null\}/,
+    );
+  });
+
+  it("lets the bar's files go once the dialog closes or loads", () => {
+    const openImport = app.slice(app.indexOf("  const openImport = "), app.indexOf("setImportBar({"));
+    expect(openImport).toMatch(/setImportOpen\(false\);\s*setImportPick\(null\);/);
+    expect(app).toMatch(/onClose=\{\(\) => \{\s*setImportOpen\(false\);\s*setImportPick\(null\);/);
+  });
+
+  it("replaces the history entry only for the same session", () => {
+    expect(app).toMatch(/note,\s*replace \? "apply" : "gesture",\s*wires,?\s*\)/);
+    expect(dialog).toMatch(/replacesShown\(got\.source, props\.sameSession\)/);
+  });
+
+  it("the dialog takes the bar's files once, as a pick", () => {
+    expect(dialog).toMatch(
+      /if \(props\.initialFiles !== undefined && !tookInitial\.current\) \{\s*tookInitial\.current = true;\s*takeFiles\(props\.initialFiles\);/,
+    );
+  });
+
+  it("the dialog marks a lone file pick", () => {
+    expect(dialog).toMatch(/const source = picked \? pickedAlone\(loaded\.source\) : loaded\.source;/);
+    expect(dialog).toMatch(
+      /load\(\s*raw,\s*file\.name,\s*undefined,\s*undefined,\s*\{[\s\S]*?\},\s*true,\s*\)/,
     );
   });
 });

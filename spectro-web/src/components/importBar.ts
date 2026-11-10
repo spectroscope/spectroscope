@@ -39,6 +39,10 @@ export interface ImportBarState {
   /** The file is one agent's transcript, not a session (card 152), so the
    *  bar's own sentence does not call it a session. */
   agentTranscript: boolean;
+  /** A Copilot events.jsonl that arrived without its folder (card 605, task
+   *  12): the bar offers the folder pick, and the session id says whether the
+   *  pick replaces this session. */
+  copilotFolder?: { sessionId: string | null };
 }
 
 /** The bar's text: what it says, and the raw numbers behind "Details". */
@@ -219,8 +223,9 @@ function isoDate(time: string): string | null {
 
 /**
  * What the bar says about a GitHub Copilot session (card 605, task 12): who
- * recorded the folder and when, from its workspace.yaml, and that the session
- * was still running when it was picked, from the lock beside its events.
+ * recorded the folder and when, from its workspace.yaml; that the file is part
+ * of a folder when it arrived alone; and that the session was still running
+ * when it was picked, from the lock beside its events.
  *
  * @param lang the chrome language
  * @param side what the Copilot session carried beside its events
@@ -233,6 +238,7 @@ export function copilotNote(lang: Lang, side: CopilotSide | null | undefined): s
   const date = side.workspace?.createdAt == null ? null : isoDate(side.workspace.createdAt);
   // The client is filled last, so a client name that looks like a slot stays a name.
   if (client !== null && date !== null) parts.push(t(lang, "imp.copilot.recorded", { date, client }));
+  if (side.alone === true) parts.push(t(lang, "imp.copilot.alone"));
   if (side.live !== undefined) {
     const n = side.live.records;
     parts.push(t(lang, n === 1 ? "imp.copilot.liveOne" : "imp.copilot.live", { n: grouped(n, lang) }));
@@ -282,8 +288,9 @@ export function importBarNote(
 }
 
 /**
- * The parts of the bar that follow from what kind of file was opened: the notes
- * and whether the file is one agent's transcript. Both come from this one call,
+ * The parts of the bar that follow from what kind of file was opened: the notes,
+ * whether the file is one agent's transcript, and whether the bar offers the
+ * folder of a Copilot file that arrived alone. Both come from this one call,
  * so a bar that carries the subagent note never calls the file a session.
  *
  * @param lang  the chrome language
@@ -293,6 +300,10 @@ export function importBarNote(
 export function importBarAbout(
   lang: Lang,
   about: Parameters<typeof importBarNote>[1],
-): Pick<ImportBarState, "note" | "agentTranscript"> {
-  return { note: importBarNote(lang, about), agentTranscript: about.subagent != null };
+): Pick<ImportBarState, "note" | "agentTranscript" | "copilotFolder"> {
+  return {
+    note: importBarNote(lang, about),
+    agentTranscript: about.subagent != null,
+    ...(about.copilot?.alone === true ? { copilotFolder: { sessionId: about.copilot.sessionId } } : {}),
+  };
 }

@@ -469,6 +469,11 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Diese Session lief noch, als sie gewählt wurde; der Import enthält die {n} Einträge, die bis dahin geschrieben waren.",
     en: "This session was still running when it was picked; the import holds the {n} records written up to then.",
   },
+  "imp.copilot.alone": {
+    de: "Diese Datei gehört zu einem Copilot-Session-Ordner. Wähle den Ordner, um auch Namen, Arbeitsordner und Dateischnappschüsse zu laden.",
+    en: "This file is part of a Copilot session folder. Pick the folder to load its name, its workspace and its file snapshots too.",
+  },
+  "imp.copilot.pickFolder": { de: "Session-Ordner wählen …", en: "Pick the session folder …" },
   "imp.copilot.store": {
     de: "{n} Copilot-Sessions in diesem Ordner.",
     en: "{n} Copilot sessions in this folder.",

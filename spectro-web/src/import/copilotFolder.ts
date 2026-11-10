@@ -64,6 +64,8 @@ export interface CopilotSide {
   /** An inuse.*.lock sat beside events.jsonl (item 4): the session was still
    *  running when it was picked, and the import holds this many records. */
   live?: { records: number };
+  /** events.jsonl was picked or dropped on its own, without its folder (item 6). */
+  alone?: true;
 }
 
 /** A picked file as far as this module reads it; a browser File is one. */
@@ -369,6 +371,34 @@ export function loadCopilotFolder(texts: CopilotFolderTexts): CopilotFolderLoad 
     label: workspace?.name ?? EVENTS_FILE,
     run: summary(groundCwd(events)),
   };
+}
+
+// ---- one file of a folder ----------------------------------------------------------
+
+/**
+ * The source of a file picked or dropped alone, marked when it is a Copilot
+ * session: its folder holds more than the file did (item 6).
+ *
+ * @param source what the importer read from the file
+ * @return the source, marked, or the same source for any other file
+ */
+export function pickedAlone(source: ImportSource): ImportSource {
+  return source.copilot === undefined ? source : { ...source, copilot: { ...source.copilot, alone: true } };
+}
+
+/**
+ * True when a folder load is the session already shown, by its session id.
+ *
+ * @param source the folder load's source
+ * @param shown  the session id of the session on screen, when it is a Copilot one
+ * @return whether the load replaces the shown session rather than being a new import
+ */
+export function replacesShown(
+  source: Pick<ImportSource, "copilot">,
+  shown: string | null | undefined,
+): boolean {
+  const id = source.copilot?.sessionId ?? null;
+  return id !== null && shown != null && id === shown;
 }
 
 // ---- a store ----------------------------------------------------------------------

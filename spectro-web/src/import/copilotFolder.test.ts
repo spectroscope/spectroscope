@@ -11,10 +11,12 @@ import {
   copilotStoreRows,
   copilotWorkspace,
   loadCopilotFolder,
+  pickedAlone,
   placeSnapshots,
   readCopilotFolder,
   readSnapshotIndex,
   readWorkspaceYaml,
+  replacesShown,
   type PickedText,
 } from "./copilotFolder";
 
@@ -541,5 +543,44 @@ describe("the rows of a Copilot store (item 5)", () => {
       [1, "B", 2000],
       [0, null, 1000],
     ]);
+  });
+});
+
+// ---- item 6: one file of a folder -------------------------------------------------------
+
+describe("events.jsonl picked alone points at its folder (item 6)", () => {
+  it("marks a Copilot session that arrived without its folder", () => {
+    const { source } = detectAndLoad(FOLDER_EVENTS);
+    expect(pickedAlone(source).copilot).toEqual({ sessionId: "s-folder", alone: true });
+    // Nothing else of the source changes.
+    expect({ ...pickedAlone(source), copilot: source.copilot }).toEqual(source);
+  });
+
+  it("marks nothing for a file that is no Copilot session", () => {
+    const { source } = detectAndLoad(CLAUDE);
+    expect(pickedAlone(source)).toBe(source);
+    expect(pickedAlone(detectAndLoad(fixture("vscode-agent.jsonl")).source).copilot).toBeUndefined();
+  });
+
+  it("a folder pick replaces the shown session only when its session id is the same", () => {
+    const folder = loadCopilotFolder({
+      events: FOLDER_EVENTS,
+      workspace: FOLDER_YAML,
+      snapshots: null,
+      live: false,
+    });
+    expect(replacesShown(folder.source, "s-folder")).toBe(true);
+    expect(replacesShown(folder.source, "s-other")).toBe(false);
+    expect(replacesShown(folder.source, null)).toBe(false);
+    expect(replacesShown(folder.source, undefined)).toBe(false);
+    const noId = loadCopilotFolder({
+      events: FOLDER_EVENTS.replace('"sessionId":"s-folder",', ""),
+      workspace: null,
+      snapshots: null,
+      live: false,
+    });
+    expect(noId.source.copilot?.sessionId).toBeNull();
+    expect(replacesShown(noId.source, null)).toBe(false);
+    expect(replacesShown(detectAndLoad(CLAUDE).source, "s-folder")).toBe(false);
   });
 });

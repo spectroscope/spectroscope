@@ -29,7 +29,9 @@ import {
 import {
   copilotStoreRows,
   loadCopilotFolder,
+  pickedAlone,
   readCopilotFolder,
+  replacesShown,
   type CopilotStoreRow,
 } from "../import/copilotFolder";
 import { reportBrowserError } from "../state/browserLog";
@@ -136,8 +138,17 @@ export function ImportDialog(props: {
     /** Card 473: what came with a spectroscope session file: a bundle's
      *  entries, or wires picked or dropped beside it. */
     wires?: ImportWires,
+    /** Card 605, task 12: a Copilot folder load of the session already on
+     *  screen, by its session id, so it replaces that session. */
+    replace?: boolean,
   ) => void;
   onClose: () => void;
+  /** Files picked before the dialog opened (the import bar's folder pick),
+   *  taken once as a pick when the dialog mounts. */
+  initialFiles?: File[];
+  /** The session id of the Copilot session on screen whose folder the bar
+   *  asked for, or null. */
+  sameSession?: string | null;
 }) {
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -297,10 +308,20 @@ export function ImportDialog(props: {
   // Every entry point clears the previous error before it starts. Without this
   // a failed pick left its red line standing while the next attempt succeeded,
   // and only the textarea's onChange ever cleared it.
-  const load = (raw: string, label: string, storePath?: string, note?: string, wires?: ImportWires): void => {
+  const load = (
+    raw: string,
+    label: string,
+    storePath?: string,
+    note?: string,
+    wires?: ImportWires,
+    /** A file picked or dropped on its own (task 12 item 6). */
+    picked = false,
+  ): void => {
     setError(null);
     try {
-      const { events, kind, source, subagent } = detectAndLoad(raw);
+      const loaded = detectAndLoad(raw);
+      const { events, kind, subagent } = loaded;
+      const source = picked ? pickedAlone(loaded.source) : loaded.source;
       // Tool results whose record held no output stay empty; say how many
       // once, here, rather than leaving a screen of empty tool bodies.
       setNote(toolOutputNote(lang, source.toolOutputs));
@@ -387,7 +408,18 @@ export function ImportDialog(props: {
       .then((texts) => {
         const got = loadCopilotFolder(texts);
         setNote(toolOutputNote(lang, got.source.toolOutputs));
-        props.onLoad(got.events, got.label, got.kind, got.source, got.subagent, undefined, got.run);
+        props.onLoad(
+          got.events,
+          got.label,
+          got.kind,
+          got.source,
+          got.subagent,
+          undefined,
+          got.run,
+          undefined,
+          undefined,
+          replacesShown(got.source, props.sameSession),
+        );
       })
       .catch((err: unknown) => {
         setError(err instanceof Error ? err.message : String(err));
@@ -462,13 +494,20 @@ export function ImportDialog(props: {
         // Card 473: the file's own name, so an old session finds its wire on
         // this machine by the id convention.
         .then((raw) =>
-          load(raw, file.name, undefined, undefined, {
-            sessionFileName: file.name,
-            llm: null,
-            browser: null,
-            children: [],
-            from: "files",
-          }),
+          load(
+            raw,
+            file.name,
+            undefined,
+            undefined,
+            {
+              sessionFileName: file.name,
+              llm: null,
+              browser: null,
+              children: [],
+              from: "files",
+            },
+            true,
+          ),
         )
         .catch(() => setError(t(lang, "imp.err.read", { name: file.name })));
       return;
@@ -509,6 +548,17 @@ export function ImportDialog(props: {
       reportBrowserError("import", err);
     });
   };
+
+  // The import bar's folder pick (task 12 item 6): its files are taken once,
+  // as if they had been picked here.
+  const tookInitial = useRef(false);
+  useEffect(() => {
+    if (props.initialFiles !== undefined && !tookInitial.current) {
+      tookInitial.current = true;
+      takeFiles(props.initialFiles);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const now = Date.now();
 

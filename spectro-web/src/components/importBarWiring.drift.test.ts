@@ -80,7 +80,7 @@ describe("the import dialog loads a Copilot session folder as a whole", () => {
     expect(dialog).toMatch(/group\.kind === "copilot"\) \{\s*loadCopilotPick\(list, group\.session\);/);
     expect(dialog).toMatch(/readCopilotFolder\(list, pick\)/);
     expect(dialog).toMatch(
-      /props\.onLoad\(got\.events, got\.label, got\.kind, got\.source, got\.subagent, undefined, got\.run\)/,
+      /props\.onLoad\(\s*got\.events,\s*got\.label,\s*got\.kind,\s*got\.source,\s*got\.subagent,\s*undefined,\s*got\.run,/,
     );
   });
 });

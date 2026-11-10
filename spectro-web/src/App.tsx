@@ -1487,6 +1487,8 @@ export function App() {
   // Session import (spectroscope JSONL or an adapted Claude Code transcript): the
   // loaded stream takes the SAME replay path as a stored session.
   const [importOpen, setImportOpen] = useState(false);
+  // Card 605, task 12: the folder the import bar picked, handed to the dialog once.
+  const [importPick, setImportPick] = useState<{ files: File[]; sameSession: string | null } | null>(null);
   // What the loaded file was, in its own numbers. Shown for EVERY import: until
   // now only a VS Code export said anything, so a Claude Code transcript was
   // labelled "Archive" and read as a session this machine had produced.
@@ -1584,6 +1586,7 @@ export function App() {
     // The dialog closes first, or it would stand over the sign.
     setOpening({ ticket, sessionId, title: label });
     setImportOpen(false);
+    setImportPick(null);
     // Card 473: a spectroscope session finds its wires (the bundle's, the
     // dropped ones, or this machine's by the referenced name) and reads them
     // under the same sign, in slices, so a 50 MB wire never freezes the page.
@@ -2900,10 +2903,26 @@ export function App() {
       )}
       {importOpen && (
         <ImportDialog
-          onLoad={(events, label, kind, source, subagent, storePath, run, note, wires) =>
-            void openImport(events, label, kind, source, subagent, storePath, run, note, "gesture", wires)
+          onLoad={(events, label, kind, source, subagent, storePath, run, note, wires, replace) =>
+            void openImport(
+              events,
+              label,
+              kind,
+              source,
+              subagent,
+              storePath,
+              run,
+              note,
+              replace ? "apply" : "gesture",
+              wires,
+            )
           }
-          onClose={() => setImportOpen(false)}
+          onClose={() => {
+            setImportOpen(false);
+            setImportPick(null);
+          }}
+          initialFiles={importPick?.files}
+          sameSession={importPick?.sameSession ?? null}
         />
       )}
       {scenariosOpen && <ScenarioDialog onPick={openScenario} onClose={() => setScenariosOpen(false)} />}
@@ -3738,6 +3757,12 @@ export function App() {
           lang={lang}
           bar={shownBar}
           onClose={() => setImportBar(null)}
+          // Card 605, task 12: the folder of a Copilot file that arrived alone
+          // opens in the import dialog, which loads it or lists its sessions.
+          onPickFolder={(files) => {
+            setImportPick({ files, sameSession: shownBar.copilotFolder?.sessionId ?? null });
+            setImportOpen(true);
+          }}
         />
       )}
       {localNoticeOpen && (
