@@ -114,7 +114,10 @@ it, so unknown event types are visible too.</p>
 <h2 id="ch-tabs-files-tab">The Files tab</h2>
 
 <p>The <strong>files</strong> tab shows what a run did to files: which file was read, created
-or changed, by which agent, and when, in seconds from the start of the run. For a recording
+or changed, by which agent, and when. A call's time counts from the start of the run and shows
+its seconds: <code>+7.4 s</code> under a minute, then <code>+12:05</code>, <code>+1:25:32</code>
+or <code>+3 d 04:12:05</code>. On the timeline a pause of more than two minutes shrinks to a
+short break mark, and pointing at the mark shows how long the pause was. For a recording
 without timestamps the tab counts calls instead. It reads only what the session recorded. The
 server records nothing extra for it, and nothing scans the working folder, so an imported
 session shows the files that its own calls named. A timeline draws one row per file and one row
