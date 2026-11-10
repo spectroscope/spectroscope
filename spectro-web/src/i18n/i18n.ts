@@ -473,6 +473,10 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Diese Datei gehört zu einem Copilot-Session-Ordner. Wähle den Ordner, um auch Namen, Arbeitsordner und Dateischnappschüsse zu laden.",
     en: "This file is part of a Copilot session folder. Pick the folder to load its name, its workspace and its file snapshots too.",
   },
+  "imp.copilot.sideFile": {
+    de: "Das ist eine Nebendatei eines Copilot-Session-Ordners. Wähle den Ordner oder seine events.jsonl.",
+    en: "This is a side file of a Copilot session folder. Pick the folder, or its events.jsonl.",
+  },
   "imp.copilot.pickFolder": { de: "Session-Ordner wählen …", en: "Pick the session folder …" },
   "imp.copilot.store": {
     de: "{n} Copilot-Sessions in diesem Ordner.",

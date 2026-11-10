@@ -27,6 +27,7 @@ import {
   type SidecarText,
 } from "../import/claudeCodeRun";
 import {
+  copilotSideFile,
   copilotStoreRows,
   loadCopilotFolder,
   pickedAlone,
@@ -493,7 +494,12 @@ export function ImportDialog(props: {
         .text()
         // Card 473: the file's own name, so an old session finds its wire on
         // this machine by the id convention.
-        .then((raw) =>
+        .then((raw) => {
+          // A side file of a Copilot folder is named as one, not as invalid JSONL (task 12 item 7).
+          if (copilotSideFile(file.name, raw)) {
+            setError(t(lang, "imp.copilot.sideFile"));
+            return;
+          }
           load(
             raw,
             file.name,
@@ -507,8 +513,8 @@ export function ImportDialog(props: {
               from: "files",
             },
             true,
-          ),
-        )
+          );
+        })
         .catch(() => setError(t(lang, "imp.err.read", { name: file.name })));
       return;
     }
@@ -814,7 +820,7 @@ export function ImportDialog(props: {
             <input
               ref={fileRef}
               type="file"
-              accept=".jsonl,.json,.txt,.zip"
+              accept=".jsonl,.json,.txt,.zip,.yaml,.md"
               multiple
               hidden
               onChange={onFile}

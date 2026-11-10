@@ -401,6 +401,40 @@ export function replacesShown(
   return id !== null && shown != null && id === shown;
 }
 
+// ---- a side file alone --------------------------------------------------------------
+
+/** The heading the checkpoint list of a Copilot folder opens with. */
+const CHECKPOINTS_HEADING = "# Checkpoints";
+
+/**
+ * True for a side file of a Copilot session folder (item 7): workspace.yaml by
+ * its name, the snapshot index by its `schema` and `snapshots` keys, the
+ * tracking file by `schema` and `tracking`, the checkpoint list (index.md) by
+ * its heading.
+ *
+ * @param name the file's name
+ * @param text the file
+ * @return whether the file is one of the four
+ */
+export function copilotSideFile(name: string, text: string): boolean {
+  if (name === "workspace.yaml") return true;
+  if (name === "index.md")
+    return (
+      text
+        .split(/\r?\n/)
+        .find((line) => line.trim() !== "")
+        ?.trim() === CHECKPOINTS_HEADING
+    );
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return false;
+  }
+  const root = asObject(parsed);
+  return root !== null && "schema" in root && ("snapshots" in root || "tracking" in root);
+}
+
 // ---- a store ----------------------------------------------------------------------
 
 /** A picked file as the store list reads it: its size and time come from the File, never from a read. */

@@ -3,6 +3,7 @@
 
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { t } from "../i18n/i18n";
 import { importBarAbout, importBarNote, type ImportBarState } from "./importBar";
 import { ImportNoteBar } from "./ImportNoteBar";
 import { drive, type El } from "../testkit/driveComponent";
@@ -200,5 +201,29 @@ describe("App opens the dialog with the folder the bar picked (item 6)", () => {
     expect(dialog).toMatch(
       /load\(\s*raw,\s*file\.name,\s*undefined,\s*undefined,\s*\{[\s\S]*?\},\s*true,\s*\)/,
     );
+  });
+});
+
+describe("the dialog names a lone side file instead of calling it invalid (item 7)", () => {
+  const dialog = read("./ImportDialog.tsx", import.meta.url);
+
+  it("says so in both languages", () => {
+    expect(t("en", "imp.copilot.sideFile")).toBe(
+      "This is a side file of a Copilot session folder. Pick the folder, or its events.jsonl.",
+    );
+    expect(t("de", "imp.copilot.sideFile")).toBe(
+      "Das ist eine Nebendatei eines Copilot-Session-Ordners. Wähle den Ordner oder seine events.jsonl.",
+    );
+  });
+
+  it("checks a single pick or drop for a side file before it loads", () => {
+    expect(dialog).toMatch(
+      /\.then\(\(raw\) => \{\s*(?:\/\/[^\n]*\n\s*)?if \(copilotSideFile\(file\.name, raw\)\) \{\s*setError\(t\(lang, "imp\.copilot\.sideFile"\)\);\s*return;\s*\}\s*load\(/,
+    );
+  });
+
+  it("lets the file picker offer the yaml and markdown side files", () => {
+    expect(dialog).toMatch(/accept="[^"]*\.yaml[^"]*"/);
+    expect(dialog).toMatch(/accept="[^"]*\.md[^"]*"/);
   });
 });

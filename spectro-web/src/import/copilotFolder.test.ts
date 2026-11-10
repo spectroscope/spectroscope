@@ -8,6 +8,7 @@ import type { PickedCopilotFolder } from "./claudeCodeRun";
 import type { RunEvent } from "../events";
 import { detectAndLoad } from "./detect";
 import {
+  copilotSideFile,
   copilotStoreRows,
   copilotWorkspace,
   loadCopilotFolder,
@@ -582,5 +583,27 @@ describe("events.jsonl picked alone points at its folder (item 6)", () => {
     expect(noId.source.copilot?.sessionId).toBeNull();
     expect(replacesShown(noId.source, null)).toBe(false);
     expect(replacesShown(detectAndLoad(CLAUDE).source, "s-folder")).toBe(false);
+  });
+});
+
+// ---- item 7: a side file alone ------------------------------------------------------------
+
+describe("a side file of a Copilot folder picked alone is named as one (item 7)", () => {
+  it("knows workspace.yaml, the snapshot index, the tracking file and the checkpoint list", () => {
+    expect(copilotSideFile("workspace.yaml", FOLDER_YAML)).toBe(true);
+    expect(copilotSideFile("index.json", FOLDER_INDEX)).toBe(true);
+    // The two JSON files are known by their keys, whatever their name.
+    expect(copilotSideFile("copy.json", '{"schema":1,"snapshots":[]}')).toBe(true);
+    expect(copilotSideFile("tracking.json", '{\n  "schema": 1,\n  "tracking": true\n}')).toBe(true);
+    expect(copilotSideFile("index.md", "# Checkpoints\n\n| 0 | a checkpoint |\n")).toBe(true);
+  });
+
+  it("names nothing else a side file", () => {
+    expect(copilotSideFile("events.jsonl", FOLDER_EVENTS)).toBe(false);
+    expect(copilotSideFile("index.md", "# Notes\n\nnothing here\n")).toBe(false);
+    expect(copilotSideFile("index.json", '{"schema":1}')).toBe(false);
+    expect(copilotSideFile("index.json", '{"snapshots":[]}')).toBe(false);
+    expect(copilotSideFile("other.yaml", "name: x\n")).toBe(false);
+    expect(copilotSideFile("index.json", "not json")).toBe(false);
   });
 });
