@@ -20,6 +20,7 @@ import { FilesOperations, FilesOpList } from "./FilesOperations";
 import { FilesTimeline } from "./FilesTimeline";
 import { FilesView, type FilesViewProps } from "./FilesView";
 import { foldFiles } from "./fold";
+import { mergeModel } from "./modelReading";
 
 const T0 = 1_760_000_000_000;
 
@@ -433,8 +434,13 @@ describe("the operations view", () => {
       "build/",
       "*.log",
     ]);
-    // The title holds the whole path.
-    expect(names.map((p) => p.title)).toEqual([far, "/ws/src/a.ts", "/ws/build/", "/ws/*.log"]);
+    // The title holds the whole path and the source.
+    expect(names.map((p) => p.title)).toEqual([
+      `${far} · recorded`,
+      "/ws/src/a.ts · recorded",
+      "/ws/build/ · probable",
+      "/ws/*.log · probable",
+    ]);
     // The source tag stays beside the name, after it, so a narrow column cuts the tag before the name.
     const order = (line: El): string[] =>
       inside(line)
@@ -453,6 +459,77 @@ describe("the operations view", () => {
       "explorer",
     );
     expect(textOf(explorer.props.children)).toContain("src/a.ts");
+  });
+
+  it("aNameCarriesItsSourceWhenTheColumnCutsItsTag", () => {
+    // 48 characters: past the 27 a line holds at 1024 px, so the tag after it is cut off.
+    const long = "GeneratedQuarterlyReportForTheWholeTeam_final.md";
+    const events = stamp([
+      { type: "run_start", runId: "r1", agentId: "main", prompt: "go", workspace: "/ws" },
+      call("p1", "run_command", { command: `echo hi > ${long}` }),
+      result("p1"),
+      call("w1", "write_file", { path: `docs/${long}`, content: "x\n" }),
+      result("w1", { fileChange: "created" }),
+    ]);
+    const nameSpans = (tree: El[]): El[] => tree.filter((el) => hasClass(el, "files-ops__path"));
+    const marks = (tree: El[]): string[] =>
+      nameSpans(tree).map((el) =>
+        hasClass(el, "files-ops__path--model")
+          ? "model"
+          : hasClass(el, "files-ops__path--probable")
+            ? "probable"
+            : "none",
+      );
+    // The probable name carries its source; the recorded twin carries none.
+    const tree = run(props({ events }), [press("view-operations")]);
+    expect(marks(tree)).toEqual(["probable", "none"]);
+    expect(nameSpans(tree).map((el) => el.props.title)).toEqual([
+      `/ws/${long} · probable`,
+      `/ws/docs/${long} · recorded`,
+    ]);
+    // The title speaks the tab's language.
+    setLang("de");
+    try {
+      const de = run(props({ events }), [press("view-operations")]);
+      expect(nameSpans(de).map((el) => el.props.title)).toEqual([
+        `/ws/${long} · wahrscheinlich`,
+        `/ws/docs/${long} · aufgezeichnet`,
+      ]);
+    } finally {
+      setLang("en");
+    }
+    // A model's reading: alone, or merged with the heuristic's guess, the name says model.
+    const ledger = mergeModel(foldFiles(events), [
+      { callIndex: 1, path: long, kind: "overwrite", reason: "" },
+      { callIndex: 1, path: "summary.txt", kind: "create", reason: "" },
+    ]);
+    const merged = drive(
+      <FilesOperations
+        lang="en"
+        ledger={ledger}
+        calls={ledger.calls}
+        ordinals={new Map(ledger.calls.map((c, i) => [c.callIndex, i + 1]))}
+        limit={99}
+        selection={{ call: null, path: null }}
+        agents={false}
+        onPick={() => {}}
+      />,
+      [FilesOperations],
+      [],
+    );
+    expect(marks(merged)).toEqual(["model", "model", "none"]);
+    expect(nameSpans(merged).map((el) => el.props.title)).toEqual([
+      `/ws/${long} · probable · model`,
+      "/ws/summary.txt · model",
+      `/ws/docs/${long} · recorded`,
+    ]);
+    // The stylesheet draws the two guesses apart, in the files aliases, and leaves recorded plain.
+    const css = read("./files.css", import.meta.url);
+    expect(blockOf(css, ".files-ops__path--probable")).toMatch(/dashed/);
+    expect(blockOf(css, ".files-ops__path--probable")).toMatch(/var\(--files-shell\)/);
+    expect(blockOf(css, ".files-ops__path--model")).toMatch(/dotted/);
+    expect(blockOf(css, ".files-ops__path--model")).toMatch(/var\(--files-model\)/);
+    expect(rules("files.css", css).some((r) => r.subject === ".files-ops__path--recorded")).toBe(false);
   });
 
   it("aLongCommandStaysOneLineWithTheWholeCommandInItsTitle", () => {

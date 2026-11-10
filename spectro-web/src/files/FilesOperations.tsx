@@ -250,18 +250,33 @@ export function fileNameOf(touch: FileTouch): string {
 }
 
 /**
+ * The name's own mark of its source, so a name never looks recorded when the
+ * column cuts the tag after it: a model's reading wins over the heuristic's
+ * guess, and a recorded name has none.
+ */
+function nameClass(touch: FileTouch): string {
+  if (touch.sources.includes("model")) return "files-mono files-ops__path files-ops__path--model";
+  if (touch.sources.includes("probable")) return "files-mono files-ops__path files-ops__path--probable";
+  return "files-mono files-ops__path";
+}
+
+/**
  * Each file a call touched, one line each: its name, its sources and what
  * happened to it; a failed call has none. The name comes first, so a narrow
- * column cuts the tag before the name. The title holds the whole path.
+ * column cuts the tag before the name, and the name carries its source as
+ * well. The title holds the whole path and the source.
  */
 function files(lang: Lang, call: FileCall): JSX.Element[] {
   if (call.status === "failed") return [];
-  return call.touches.map((touch, i) => (
-    <span key={i} className="files-ops__fx">
-      <span className="files-mono files-ops__path" title={shownPath(touch.path, touch.folder)}>
-        {fileNameOf(touch)}
-      </span>{" "}
-      {sourceTags(lang, touch.sources)} {t(lang, `filesTab.kind.${touch.kind}`)}
-    </span>
-  ));
+  return call.touches.map((touch, i) => {
+    const sources = touch.sources.map((source) => t(lang, `filesTab.source.${source}`)).join(" · ");
+    return (
+      <span key={i} className="files-ops__fx">
+        <span className={nameClass(touch)} title={`${shownPath(touch.path, touch.folder)} · ${sources}`}>
+          {fileNameOf(touch)}
+        </span>{" "}
+        {sourceTags(lang, touch.sources)} {t(lang, `filesTab.kind.${touch.kind}`)}
+      </span>
+    );
+  });
 }

@@ -650,6 +650,16 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* A name carries its source itself, so a probable or model name never looks
+   recorded when the column cuts the tag after it. */
+.files-ops__path--probable {
+  text-decoration: underline dashed var(--files-shell);
+  text-underline-offset: 3px;
+}
+.files-ops__path--model {
+  text-decoration: underline dotted var(--files-model);
+  text-underline-offset: 3px;
+}
 @media (max-width: 720px) {
   .files-hide-narrow {
     display: none;
