@@ -198,8 +198,9 @@ describe("App opens the dialog with the folder the bar picked (item 6)", () => {
 
   it("the dialog marks a lone file pick", () => {
     expect(dialog).toMatch(/const source = picked \? pickedAlone\(loaded\.source\) : loaded\.source;/);
+    // Only a file picked without a folder path (fix round 1 item 2).
     expect(dialog).toMatch(
-      /load\(\s*raw,\s*file\.name,\s*undefined,\s*undefined,\s*\{[\s\S]*?\},\s*true,\s*\)/,
+      /load\(\s*raw,\s*file\.name,\s*undefined,\s*undefined,\s*\{[\s\S]*?\},\s*pickedOnItsOwn\(file\),\s*\)/,
     );
   });
 });

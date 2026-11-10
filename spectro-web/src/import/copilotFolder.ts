@@ -387,6 +387,18 @@ export function pickedAlone(source: ImportSource): ImportSource {
 }
 
 /**
+ * True for a file the person picked or dropped on its own, false for a file
+ * of a folder pick: a folder pick that holds only events.jsonl is still the
+ * folder (fix round 1 item 2).
+ *
+ * @param file the picked file; a browser File carries its folder path
+ * @return whether it came without a folder path
+ */
+export function pickedOnItsOwn(file: { webkitRelativePath?: string }): boolean {
+  return (file.webkitRelativePath ?? "") === "";
+}
+
+/**
  * True when a folder load is the session already shown, by its session id.
  *
  * @param source the folder load's source

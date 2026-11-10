@@ -13,6 +13,7 @@ import {
   copilotWorkspace,
   loadCopilotFolder,
   pickedAlone,
+  pickedOnItsOwn,
   placeSnapshots,
   readCopilotFolder,
   readSnapshotIndex,
@@ -605,5 +606,15 @@ describe("a side file of a Copilot folder picked alone is named as one (item 7)"
     expect(copilotSideFile("index.json", '{"snapshots":[]}')).toBe(false);
     expect(copilotSideFile("other.yaml", "name: x\n")).toBe(false);
     expect(copilotSideFile("index.json", "not json")).toBe(false);
+  });
+});
+
+// ---- fix round 1, item 2 (review I2) ----------------------------------------------------
+
+describe("a folder pick that holds only events.jsonl is a folder pick (fix round 1 item 2)", () => {
+  it("only a file picked without a folder path counts as picked alone", () => {
+    expect(pickedOnItsOwn({ webkitRelativePath: "" })).toBe(true);
+    expect(pickedOnItsOwn({})).toBe(true);
+    expect(pickedOnItsOwn({ webkitRelativePath: "c13/events.jsonl" })).toBe(false);
   });
 });

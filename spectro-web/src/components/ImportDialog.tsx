@@ -31,6 +31,7 @@ import {
   copilotStoreRows,
   loadCopilotFolder,
   pickedAlone,
+  pickedOnItsOwn,
   readCopilotFolder,
   replacesShown,
   type CopilotStoreRow,
@@ -512,7 +513,7 @@ export function ImportDialog(props: {
               children: [],
               from: "files",
             },
-            true,
+            pickedOnItsOwn(file),
           );
         })
         .catch(() => setError(t(lang, "imp.err.read", { name: file.name })));
