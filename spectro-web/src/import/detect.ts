@@ -47,6 +47,25 @@ const VSCODE_AGENT_TYPES = new Set([
 const hasDataObject = (r: { data?: unknown }): boolean =>
   !!r.data && typeof r.data === "object" && !Array.isArray(r.data);
 
+/** The producer both GitHub Copilot files write into their session.start
+ *  (card 605, task 10): the CLI store's and the IDE export's. */
+const COPILOT_PRODUCER = "copilot-agent";
+
+/** A file whose FIRST record is a session.start whose data names the Copilot
+ *  producer is that format, whatever follows: four local CLI sessions hold only
+ *  session.start, session.model_change and session.shutdown, none of the six
+ *  names above. The six names stay the way in for a file without that record. */
+function opensAsCopilot(first: unknown): boolean {
+  const r = first as { type?: unknown; data?: unknown } | null;
+  return (
+    r !== null &&
+    typeof r === "object" &&
+    r.type === "session.start" &&
+    hasDataObject(r) &&
+    (r.data as { producer?: unknown }).producer === COPILOT_PRODUCER
+  );
+}
+
 /** How many distinct type names the failure message may name, and how long each
  *  may be. A file we do not understand is a file we do not trust: without these
  *  caps a hostile or merely enormous export could flood the dialog. */
@@ -149,6 +168,11 @@ export function detectAndLoad(text: string): {
     }
     return out;
   };
+
+  if (opensAsCopilot(records[0])) {
+    const { events, origin, toolOutputs } = vscodeAgentWithOrigin(records);
+    return { events, kind: "vscode-agent", source: { lines, origin: inFile(origin), toolOutputs } };
+  }
 
   // Real Claude Code transcripts open with metadata records (queue-operation,
   // attachment, ai-title, …) before the first message — scan for the first
