@@ -11,12 +11,20 @@
 //   subagent.started         -> agent_spawn + the child's run_start
 //   subagent.completed       -> the child's run_end
 //   session.start            -> ground_info {cwd} (the GitHub Copilot CLI's own
-//                               file, card 605; import-only, as in claudeCode.ts);
-//                               its selectedModel names the model of run_start
-// Every run_start names the provider copilot (card 605, final wave item 5), so
-// the files report can say where the content went.
+//                               file, card 605; import-only, as in claudeCode.ts)
 // so a recorded Copilot session replays through the same reducers as a
 // spectroscope run. Unrecognized records are skipped, never fatal.
+//
+// MODEL (card 605, task 10): every run_start names the provider copilot, so the
+// files report can say where the content went, and the model in force for that
+// run. session.start's selectedModel is "auto" in the CLI store (5 of 29 that
+// name one) and in the IDE export (4 of 4); the model auto mode picked is in
+// session.auto_mode_resolved.chosenModel, a switch in session.model_change's
+// newModel. A run takes the latest of those two at or before its first
+// assistant turn, else the first one after that turn within the run, else the
+// selectedModel of the latest session.start when it is not "auto". A switch to
+// "auto" ends the model in force until auto mode resolves, and "auto" alone
+// names no model. A child's run takes the model of its subagent.started.
 //
 // LANES (card 605, task 10): a record's top-level agentId, when it names a
 // child (a non-empty string other than "main"), is the agentId of every frame
@@ -66,6 +74,12 @@ interface VsRecord {
     error?: unknown;
     context?: { cwd?: unknown };
     selectedModel?: unknown;
+    /** session.auto_mode_resolved: the model auto mode picked. */
+    chosenModel?: unknown;
+    /** session.model_change: the model switched to. */
+    newModel?: unknown;
+    /** subagent.started: the child's model. */
+    model?: unknown;
   };
   id?: string;
   timestamp?: string;
@@ -89,6 +103,10 @@ const MAIN = "main";
 /** The lane of a record: its agentId when that names a child, else main. */
 const laneOf = (r: VsRecord): string =>
   typeof r.agentId === "string" && r.agentId !== "" && r.agentId !== MAIN ? r.agentId : MAIN;
+
+/** A model name: a non-empty string other than "auto", else null. */
+const modelName = (v: unknown): string | null =>
+  typeof v === "string" && v !== "" && v !== "auto" ? v : null;
 
 /** A child's task, from its parent's task call: the prompt, else the description, else the Claude Code importer's word. */
 function taskOf(input: unknown): string {
@@ -186,8 +204,14 @@ export function vscodeAgentWithOrigin(records: unknown[], base = 1_783_500_000_0
     r.type === "session.start" && typeof r.data?.selectedModel === "string" && r.data.selectedModel !== ""
       ? r.data.selectedModel
       : null;
-  // The model of the last session.start; a run opened before any names none.
-  let model: string | null = null;
+  // The selectedModel of the last session.start; a run opened before any names none.
+  let selected: string | null = null;
+  /** Each choice of a model in record order; `model` is null for a switch to auto. */
+  const choices: { at: number; model: string | null }[] = [];
+  /** The record index of each main-lane assistant turn or message. */
+  const turnsAt: number[] = [];
+  /** Each root run_start: where it sits in `out`, the record that opened it, the selectedModel then. */
+  const roots: { index: number; at: number; selected: string | null }[] = [];
 
   const emittedCalls = new Set<string>();
   const callStartTs = new Map<string, number>();
@@ -219,17 +243,11 @@ export function vscodeAgentWithOrigin(records: unknown[], base = 1_783_500_000_0
   /** An export can begin mid-session (the real one opens on a tool record).
    *  Everything downstream hangs off a run, so open one — with an empty prompt,
    *  because the request that started this slice is simply not in the file. */
-  const openRun = (prompt: string, ts: number): void => {
+  const openRun = (prompt: string, ts: number, at: number): void => {
     started = true;
-    out.push({
-      type: "run_start",
-      runId,
-      agentId: MAIN,
-      prompt,
-      provider: "copilot",
-      ...(model === null ? {} : { model }),
-      ts,
-    });
+    roots.push({ index: out.length, at, selected });
+    // The model is named after the pass, when the run's turns and choices are known.
+    out.push({ type: "run_start", runId, agentId: MAIN, prompt, provider: "copilot", ts });
   };
 
   const handleRecord = (r: VsRecord, i: number): void => {
@@ -240,7 +258,7 @@ export function vscodeAgentWithOrigin(records: unknown[], base = 1_783_500_000_0
 
     switch (r.type) {
       case "session.start": {
-        model = selectedModel(r) ?? model;
+        selected = selectedModel(r) ?? selected;
         // An absolute POSIX path only: the files tab joins relative paths with `/`.
         const at = d?.context?.cwd;
         if (typeof at !== "string" || !at.startsWith("/") || at === cwd) break;
@@ -259,12 +277,13 @@ export function vscodeAgentWithOrigin(records: unknown[], base = 1_783_500_000_0
         if (agentId !== MAIN) break;
         // Re-opening the run under the SAME runId is what puts a user bubble in
         // the chat; the reducer draws one per root run_start.
-        openRun(typeof d?.content === "string" ? d.content : "", ts);
+        openRun(typeof d?.content === "string" ? d.content : "", ts, i);
         break;
       }
 
       case "assistant.turn_start": {
-        if (!started) openRun("", ts);
+        if (!started) openRun("", ts, i);
+        if (agentId === MAIN) turnsAt.push(i);
         // turnId is a per-request counter that restarts (fifteen distinct values
         // across 189 records in the real export), so position is the only key.
         out.push({ type: "turn_start", agentId, turn: nextTurn(agentId), ts });
@@ -272,7 +291,8 @@ export function vscodeAgentWithOrigin(records: unknown[], base = 1_783_500_000_0
       }
 
       case "assistant.message": {
-        if (!started) openRun("", ts);
+        if (!started) openRun("", ts, i);
+        if (agentId === MAIN) turnsAt.push(i);
         const reasoning = typeof d?.reasoningText === "string" ? d.reasoningText : "";
         const content = typeof d?.content === "string" ? d.content : "";
         // Empty blocks would render as empty activities and empty stream slices.
@@ -293,7 +313,7 @@ export function vscodeAgentWithOrigin(records: unknown[], base = 1_783_500_000_0
       }
 
       case "tool.execution_start": {
-        if (!started) openRun("", ts);
+        if (!started) openRun("", ts, i);
         const callId = d?.toolCallId;
         if (typeof callId !== "string") break;
         callStartTs.set(callId, ts);
@@ -302,7 +322,7 @@ export function vscodeAgentWithOrigin(records: unknown[], base = 1_783_500_000_0
       }
 
       case "tool.execution_complete": {
-        if (!started) openRun("", ts);
+        if (!started) openRun("", ts, i);
         const callId = d?.toolCallId;
         if (typeof callId !== "string") break;
         const startTs = callStartTs.get(callId);
@@ -324,7 +344,7 @@ export function vscodeAgentWithOrigin(records: unknown[], base = 1_783_500_000_0
       }
 
       case "subagent.started": {
-        if (!started) openRun("", ts);
+        if (!started) openRun("", ts, i);
         // A start on the main lane names no child; a replayed one spawns it once.
         if (agentId === MAIN || childRuns.has(agentId)) break;
         const call = typeof d?.toolCallId === "string" ? calls.get(d.toolCallId) : undefined;
@@ -332,6 +352,7 @@ export function vscodeAgentWithOrigin(records: unknown[], base = 1_783_500_000_0
         const task = taskOf(call?.input);
         const childRun = `vscode-${agentId}`;
         childRuns.set(agentId, childRun);
+        const childModel = modelName(d?.model);
         out.push({ type: "agent_spawn", agentId, parentId, task, ts });
         out.push({
           type: "run_start",
@@ -340,8 +361,16 @@ export function vscodeAgentWithOrigin(records: unknown[], base = 1_783_500_000_0
           parentId,
           prompt: task,
           provider: "copilot",
+          ...(childModel === null ? {} : { model: childModel }),
           ts,
         });
+        break;
+      }
+
+      case "session.auto_mode_resolved":
+      case "session.model_change": {
+        const named = r.type === "session.model_change" ? d?.newModel : d?.chosenModel;
+        if (typeof named === "string" && named !== "") choices.push({ at: i, model: modelName(named) });
         break;
       }
 
@@ -363,6 +392,20 @@ export function vscodeAgentWithOrigin(records: unknown[], base = 1_783_500_000_0
   recs.forEach((r, i) => {
     handleRecord(r, i);
     chargeTo(recLine[i]);
+  });
+
+  // The model in force for each root run (see the file header).
+  roots.forEach((run, k) => {
+    const end = roots[k + 1]?.at ?? Infinity;
+    const turn = turnsAt.find((at) => at >= run.at && at < end);
+    const until = turn ?? end;
+    let latest: (typeof choices)[number] | undefined;
+    for (const c of choices) if (c.at < until) latest = c;
+    let model = latest?.model ?? null;
+    if (model === null && turn !== undefined)
+      model = choices.find((c) => c.at > turn && c.at < end && c.model !== null)?.model ?? null;
+    if (model === null && latest === undefined) model = modelName(run.selected);
+    if (model !== null) out[run.index] = { ...out[run.index], model } as RunEvent;
   });
 
   if (started) out.push({ type: "run_end", runId, stopReason: "end_turn", ts: lastTs });

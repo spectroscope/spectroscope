@@ -555,3 +555,85 @@ describe("a Copilot child works on its own lane (card 605)", () => {
     expect([end.focus, end.subagents.length]).toEqual(["user", 0]);
   });
 });
+
+// Task 10 item 4: selectedModel is "auto" in the CLI store; the model in force
+// is in session.auto_mode_resolved.chosenModel or session.model_change.newModel.
+describe("a Copilot run names the model in force for it (card 605)", () => {
+  let n = 0;
+  const rec = (type: string, data: object = {}) => ({ type, data, id: `r${++n}` });
+  const start = (selectedModel?: string) =>
+    rec("session.start", selectedModel === undefined ? {} : { selectedModel });
+  const resolved = (chosenModel: string) => rec("session.auto_mode_resolved", { chosenModel });
+  const changed = (newModel: string) => rec("session.model_change", { newModel });
+  const user = () => rec("user.message", { content: "go" });
+  const turn = () => rec("assistant.turn_start", { turnId: "0" });
+  const models = (records: unknown[]) =>
+    vscodeAgentToRunEvents(records)
+      .filter((e) => e.type === "run_start" && e.parentId === undefined)
+      .map((e) => (e as { model?: string }).model);
+
+  it("takes the chosen model of auto mode in the IDE's file", () => {
+    const ide = parseVscodeAgentExport(copilotIde).filter((e) => e.type === "run_start");
+    expect(ide.map((e) => [(e as { provider?: string }).provider, (e as { model?: string }).model])).toEqual([
+      ["copilot", "gpt-5-mini"],
+    ]);
+  });
+
+  it("auto alone names no model", () => {
+    expect(models([start("auto"), user(), turn()])).toEqual([undefined]);
+    expect(models([start("auto"), changed("auto"), user(), turn()])).toEqual([undefined]);
+  });
+
+  it("the latest choice at or before the run's first assistant turn wins over a later one", () => {
+    expect(models([start("auto"), user(), changed("gpt-5"), resolved("claude-sonnet-4.5"), turn()])).toEqual([
+      "claude-sonnet-4.5",
+    ]);
+    expect(models([start("auto"), user(), resolved("gpt-5"), turn(), changed("claude-sonnet-4.5")])).toEqual([
+      "gpt-5",
+    ]);
+    // A choice made in an earlier run is still in force.
+    expect(models([start("auto"), resolved("gpt-5"), user(), turn(), user(), turn()])).toEqual([
+      "gpt-5",
+      "gpt-5",
+    ]);
+    // A choice beats selectedModel.
+    expect(models([start("gpt-4.1"), resolved("gpt-5"), user(), turn()])).toEqual(["gpt-5"]);
+  });
+
+  it("else the first choice after that turn within the run, and none from the next run", () => {
+    expect(models([start("auto"), user(), turn(), resolved("gpt-5"), resolved("gpt-4.1")])).toEqual([
+      "gpt-5",
+    ]);
+    expect(models([start("auto"), user(), turn(), user(), resolved("gpt-5"), turn()])).toEqual([
+      undefined,
+      "gpt-5",
+    ]);
+    // A switch back to auto before the turn ends what was in force; auto mode then resolves within the run.
+    expect(
+      models([start("auto"), changed("gpt-5"), changed("auto"), user(), turn(), resolved("gpt-4.1")]),
+    ).toEqual(["gpt-4.1"]);
+    expect(models([start("gpt-4.1"), changed("auto"), user(), turn()])).toEqual([undefined]);
+  });
+
+  it("else selectedModel when it is not auto", () => {
+    expect(models([start("gpt-4.1"), user(), turn()])).toEqual(["gpt-4.1"]);
+    expect(models([start("gpt-4.1"), user()])).toEqual(["gpt-4.1"]);
+    // A run with no turn still takes a choice made before its end.
+    expect(models([start("auto"), user(), resolved("gpt-5")])).toEqual(["gpt-5"]);
+  });
+
+  it("a child's run names the model its subagent.started gives", () => {
+    const child = parseVscodeAgentExport(copilotCli).find(
+      (e) => e.type === "run_start" && e.parentId !== undefined,
+    );
+    expect((child as { model?: string }).model).toBe("claude-haiku-4.5");
+    const spawn = (model: unknown) =>
+      vscodeAgentToRunEvents([
+        user(),
+        { type: "subagent.started", data: { toolCallId: "x", model }, agentId: "c1", id: "s" },
+      ]).find((e) => e.type === "run_start" && e.parentId !== undefined) as { model?: string };
+    expect(spawn("auto").model).toBeUndefined();
+    expect(spawn("").model).toBeUndefined();
+    expect(spawn(7).model).toBeUndefined();
+  });
+});
