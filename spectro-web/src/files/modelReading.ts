@@ -6,7 +6,7 @@
 
 import type { FileCall, FileLedger, FileTouch } from "./fold";
 import { resolvePath } from "./paths";
-import type { TouchKind } from "./shell";
+import { KIND_ORDER, moreSpecific, type TouchKind } from "./shell";
 
 export interface ModelEntry {
   callIndex: number;
@@ -15,18 +15,7 @@ export interface ModelEntry {
   reason: string;
 }
 
-/** From the most specific kind to the least: a merge keeps the earlier one. */
-const SPECIFIC: readonly TouchKind[] = [
-  "create",
-  "delete",
-  "overwrite",
-  "append",
-  "change",
-  "write",
-  "read",
-  "unknown",
-];
-const KINDS: ReadonlySet<string> = new Set(SPECIFIC);
+const KINDS: ReadonlySet<string> = new Set(KIND_ORDER);
 
 /**
  * The model's entries, or null when the text is not the JSON contract: an
@@ -97,7 +86,7 @@ export function mergeModel(ledger: FileLedger, entries: readonly ModelEntry[]): 
     const before = touch.sources.includes("model");
     touches[at] = {
       ...touch,
-      kind: specific(touch.kind, entry.kind),
+      kind: moreSpecific(touch.kind, entry.kind),
       reason:
         entry.reason === "" ? touch.reason : `${touch.reason}; ${before ? "" : "model: "}${entry.reason}`,
       sources: before ? touch.sources : [...touch.sources, "model"],
@@ -115,9 +104,6 @@ export function mergeModel(ledger: FileLedger, entries: readonly ModelEntry[]): 
 
 /** The comparison key of a path: `.` and `..` folded even where no base is known. */
 const keyOf = (path: string) => resolvePath(path, ".");
-
-const specific = (a: TouchKind, b: TouchKind): TouchKind =>
-  SPECIFIC.indexOf(b) < SPECIFIC.indexOf(a) ? b : a;
 
 function filesOf(parsed: unknown): unknown[] | null {
   if (typeof parsed !== "object" || parsed === null) return null;

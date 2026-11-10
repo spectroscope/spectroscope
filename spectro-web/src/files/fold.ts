@@ -10,7 +10,7 @@ import { TITLE_AGENT_ID, type RunEvent } from "../events";
 import { shortenPath } from "../lab/fileTree";
 import { elapsedAt } from "../state/stepper";
 import { isRooted, resolvePath } from "./paths";
-import { shellTouches, type ShellTouch, type TouchKind } from "./shell";
+import { moreSpecific, shellTouches, type ShellTouch, type TouchKind } from "./shell";
 
 /** Who says the file was touched: a file tool, the shell heuristic, a model. */
 export type Source = "recorded" | "probable" | "model";
@@ -285,7 +285,7 @@ function fileCall(open: Open): FileCall | null {
   const failed = r?.isError === true;
   const touches: FileTouch[] = failed
     ? []
-    : reading.touches.map((t) => ({
+    : onePerPath(reading.touches).map((t) => ({
         ...t,
         reason: r === null ? t.reason + PENDING : t.reason,
         callIndex: open.callIndex,
@@ -308,6 +308,50 @@ function fileCall(open: Open): FileCall | null {
     touches,
   };
 }
+
+type ReadTouch = ShellTouch & { sources: Source[] };
+
+/**
+ * One touch per path of a call (C7). A command that names a path twice says
+ * one thing about it: the first touch keeps its place and spelling, the kind
+ * becomes the more specific one (KIND_ORDER, as in mergeModel), the reasons
+ * join with "; " without repeats, the replacement pairs follow each other,
+ * content and appended keep the first non-empty value, the sources unite and
+ * a folder stays a folder.
+ */
+function onePerPath(touches: readonly ReadTouch[]): ReadTouch[] {
+  const out: ReadTouch[] = [];
+  const reasons: string[][] = [];
+  const at = new Map<string, number>();
+  for (const touch of touches) {
+    const i = at.get(touch.path);
+    if (i === undefined) {
+      at.set(touch.path, out.length);
+      out.push(touch);
+      reasons.push([touch.reason]);
+      continue;
+    }
+    const first = out[i];
+    if (!reasons[i].includes(touch.reason)) reasons[i].push(touch.reason);
+    const merged: ReadTouch = {
+      ...first,
+      kind: moreSpecific(first.kind, touch.kind),
+      reason: reasons[i].join("; "),
+      folder: first.folder || touch.folder,
+      sources: SOURCE_ORDER.filter((s) => first.sources.includes(s) || touch.sources.includes(s)),
+    };
+    if (first.replaced !== undefined || touch.replaced !== undefined)
+      merged.replaced = [...(first.replaced ?? []), ...(touch.replaced ?? [])];
+    const content = filled(first.content) ?? filled(touch.content);
+    if (content !== undefined) merged.content = content;
+    const appended = filled(first.appended) ?? filled(touch.appended);
+    if (appended !== undefined) merged.appended = appended;
+    out[i] = merged;
+  }
+  return out;
+}
+
+const filled = (v: string | undefined): string | undefined => (v === undefined || v === "" ? undefined : v);
 
 function readCall(open: Open): Reading | null {
   // C15: Monitor waits on a shell loop; its command is not work on files.

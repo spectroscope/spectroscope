@@ -5,7 +5,7 @@
 import { describe, expect, it } from "vitest";
 import { TITLE_AGENT_ID, type RunEvent } from "../events";
 import { fileRows, foldFiles, summarize, type FileTouch, type Source } from "./fold";
-import type { TouchKind } from "./shell";
+import { shellTouches, type TouchKind } from "./shell";
 
 const W = "/ws";
 const T0 = 1_760_000_000_000;
@@ -462,6 +462,91 @@ describe("foldFiles", () => {
     expect(call.line).not.toContain("\n");
     expect(call.line).toBe("cat > a.md <<'EOF' ⏎ # Title ⏎ EOF");
     expect(call.touches.map((t) => [t.path, t.content])).toEqual([["/ws/a.md", "# Title\n"]]);
+  });
+});
+
+describe("one entry per call and file (C7)", () => {
+  const touchesOf = (command: string): FileTouch[] =>
+    foldFiles(new Rec().start(W).tool("Bash", { command }).events).calls[0].touches;
+
+  it("aPathNamedTwiceByOneCommandIsOneTouch", () => {
+    const touches = touchesOf("cat a.md | grep x a.md");
+    expect(touches.map(brief)).toEqual([
+      { path: "/ws/a.md", kind: "read", folder: false, sources: ["probable"] },
+    ]);
+    // Both reasons stay, joined, each once.
+    const raw = shellTouches("cat a.md | grep x a.md", W).touches.map((t) => t.reason);
+    expect(raw).toHaveLength(2);
+    expect(touches[0].reason).toBe([...new Set(raw)].join("; "));
+    // An identical reason is not repeated.
+    const twice = touchesOf("cat a.md && cat a.md");
+    expect(twice).toHaveLength(1);
+    expect(twice[0].reason).toBe(shellTouches("cat a.md", W).touches[0].reason);
+  });
+
+  it("theMoreSpecificKindWins", () => {
+    // cp writes b, cat reads it: one touch on b, kind write.
+    expect(touchesOf("cp a b && cat b").map(brief)).toEqual([
+      { path: "/ws/a", kind: "read", folder: false, sources: ["probable"] },
+      { path: "/ws/b", kind: "write", folder: false, sources: ["probable"] },
+    ]);
+    // The row of b holds that one touch.
+    const ledger = foldFiles(new Rec().start(W).tool("Bash", { command: "cp a b && cat b" }).events);
+    expect(fileRows(ledger, null).find((row) => row.path === "/ws/b")?.touches).toHaveLength(1);
+  });
+
+  it("doublePairsOnOnePathStayOneTouchWithBothPairs", () => {
+    const sed = touchesOf("sed -i 's/a/b/' f.txt && sed -i 's/c/d/' f.txt");
+    expect(sed.map(brief)).toEqual([
+      { path: "/ws/f.txt", kind: "change", folder: false, sources: ["probable"] },
+    ]);
+    expect(sed[0].replaced).toEqual([
+      { old: "a", new: "b" },
+      { old: "c", new: "d" },
+    ]);
+    // A MultiEdit is one touch with every pair, as before.
+    const edits = [
+      { old_string: "a", new_string: "b" },
+      { old_string: "c", new_string: "d" },
+    ];
+    const multi = foldFiles(new Rec().start(W).tool("MultiEdit", { file_path: "/ws/m.ts", edits }).events);
+    expect(multi.calls[0].touches).toHaveLength(1);
+    expect(multi.calls[0].touches[0].replaced).toHaveLength(2);
+  });
+
+  it("contentAndAppendedKeepTheFirstOnes", () => {
+    const command = "cat > n.md <<'EOF'\nfirst\nEOF\ncat >> n.md <<'EOF'\nmore\nEOF";
+    const raw = shellTouches(command, W).touches;
+    expect(raw.map((t) => t.kind)).toEqual(["overwrite", "append"]);
+    const touches = touchesOf(command);
+    expect(touches.map(brief)).toEqual([
+      { path: "/ws/n.md", kind: "overwrite", folder: false, sources: ["probable"] },
+    ]);
+    expect(touches[0].content).toBe(raw[0].content);
+    expect(touches[0].appended).toBe(raw[1].appended);
+  });
+
+  it("aLedgerWithoutRepeatsKeepsItsTouchesAndCounts", () => {
+    const commands = ["echo x > p.txt", "cp a.txt b.txt", "python3 s.py"];
+    let rec = new Rec().start(W).tool("edit_file", { path: "a.ts", old_string: "x", new_string: "y" });
+    for (const command of commands) rec = rec.tool("Bash", { command });
+    rec = rec.tool("read_file", { path: "r.txt" });
+    const ledger = foldFiles(rec.events);
+    // No call names one path twice, so nothing merges: every heuristic touch is there.
+    for (const call of ledger.calls) {
+      expect(new Set(call.touches.map((t) => t.path)).size).toBe(call.touches.length);
+    }
+    expect(ledger.calls.filter((c) => c.shell).map((c) => c.touches.length)).toEqual(
+      commands.map((command) => shellTouches(command, W).touches.length),
+    );
+    // Read only: r.txt, the copy's source a.txt and the script s.py.
+    expect(summarize(ledger, fileRows(ledger, null), null)).toEqual({
+      recordedChanged: 1,
+      probableChanged: 2,
+      onlyRead: 3,
+      shellCalls: 3,
+      unknownScripts: 1,
+    });
   });
 });
 

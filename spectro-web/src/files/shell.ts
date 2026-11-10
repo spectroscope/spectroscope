@@ -10,6 +10,22 @@ import { segments, unescape, type Segment, type Word } from "./shellTokens";
 export type TouchKind =
   "read" | "create" | "change" | "overwrite" | "write" | "append" | "delete" | "unknown";
 
+/** Every kind, from the most specific to the least: a merge of two touches keeps the earlier one. */
+export const KIND_ORDER: readonly TouchKind[] = [
+  "create",
+  "delete",
+  "overwrite",
+  "append",
+  "change",
+  "write",
+  "read",
+  "unknown",
+];
+
+/** The more specific of two kinds (KIND_ORDER). */
+export const moreSpecific = (a: TouchKind, b: TouchKind): TouchKind =>
+  KIND_ORDER.indexOf(b) < KIND_ORDER.indexOf(a) ? b : a;
+
 export interface ShellTouch {
   written: string; // the path as the command spells it, quotes removed
   path: string; // resolvePath(written, base at that point of the line)
