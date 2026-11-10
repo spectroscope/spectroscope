@@ -84,3 +84,18 @@ describe("the import dialog loads a Copilot session folder as a whole", () => {
     );
   });
 });
+
+// Task 12 fix round 1 item 11: the stripped dialog is the whole file. Its hint
+// path holds a "/*" inside a string, which used to open a comment that ran to
+// the next "*/" and hid everything below it from these pins.
+describe("the dialog pins read the whole dialog file", () => {
+  it("sees code below the hint", () => {
+    const hint = dialog.indexOf('t(lang, "imp.hint"');
+    expect(hint).toBeGreaterThan(0);
+    const below = dialog.slice(hint);
+    expect(below).toMatch(
+      /onPick=\{\(i\) => loadCopilotPick\(copilotStore\.files, copilotStore\.sessions\[i\]\)\}/,
+    );
+    expect(below).toContain('accept=".jsonl,.json,.txt,.zip,.yaml,.md"');
+  });
+});

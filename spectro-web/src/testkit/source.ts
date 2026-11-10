@@ -34,12 +34,115 @@ export function blankBlockComments(src: string): string {
   return src.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "));
 }
 
+/** The characters after which a `/` starts a regular expression, not a division. */
+const BEFORE_REGEX = new Set([..."(,=:[!&|?{};+-*%<>~^"]);
+/** The words after which a `/` starts a regular expression. */
+const REGEX_WORDS = new Set([
+  "return",
+  "typeof",
+  "case",
+  "do",
+  "else",
+  "in",
+  "of",
+  "new",
+  "delete",
+  "void",
+  "throw",
+  "yield",
+  "await",
+]);
+
 /**
- * The same, plus line comments to the end of the line — prose about a deleted
- * class is not the class. Newlines stay, so line counts still hold.
+ * Block comments blanked and line comments dropped, in source code: prose
+ * about a deleted class is not the class. Newlines stay, so line counts still
+ * hold. A `/*` or `//` inside a string, a template or a regular expression is
+ * code (card 605, task 12 fix round 1 item 11): the import dialog's hint path
+ * "~/.claude/projects/…/*.jsonl" opened a comment that hid the rest of the file.
+ * A quote in JSX text reads as a string to the end of its line.
  */
 export function stripComments(src: string): string {
-  return blankBlockComments(src).replace(/\/\/[^\n]*/g, "");
+  let out = "";
+  let i = 0;
+  /** The last character of code that is not blank, and the word it ends. */
+  let prev = "";
+  let word = "";
+  /** Brace depth of each `${` the scan is inside, innermost last. */
+  const templates: number[] = [];
+  let depth = 0;
+  /** Copies a quoted run from `i` (its opening quote, or the `}` that resumes a template) to its end. */
+  const copyQuoted = (quote: string): void => {
+    const from = i++;
+    while (i < src.length && src[i] !== quote && !(quote !== "`" && src[i] === "\n")) {
+      if (src[i] === "\\") i++;
+      else if (quote === "`" && src[i] === "$" && src[i + 1] === "{") {
+        out += src.slice(from, i + 2);
+        i += 2;
+        templates.push(depth);
+        depth = 0;
+        return;
+      }
+      i++;
+    }
+    out += src.slice(from, Math.min(i + 1, src.length));
+    i++;
+  };
+  while (i < src.length) {
+    const c = src[i];
+    const next = src[i + 1];
+    if (c === "/" && next === "/") {
+      while (i < src.length && src[i] !== "\n") i++;
+      continue;
+    }
+    if (c === "/" && next === "*") {
+      const end = src.indexOf("*/", i + 2);
+      const stop = end < 0 ? src.length : end + 2;
+      out += src.slice(i, stop).replace(/[^\n]/g, " ");
+      i = stop;
+      continue;
+    }
+    if (c === "'" || c === '"' || c === "`") {
+      // A template resumes after its `${...}`: the closing brace hands back here.
+      copyQuoted(c);
+      prev = c;
+      word = "";
+      continue;
+    }
+    if (c === "}" && templates.length > 0 && depth === 0) {
+      // The `}` of a `${`: back in the template's text, up to its end or its next `${`.
+      depth = templates.pop() ?? 0;
+      copyQuoted("`");
+      prev = "`";
+      word = "";
+      continue;
+    }
+    if (c === "/" && (prev === "" || BEFORE_REGEX.has(prev) || REGEX_WORDS.has(word))) {
+      const from = i++;
+      let inClass = false;
+      while (i < src.length && src[i] !== "\n") {
+        if (src[i] === "\\") i++;
+        else if (src[i] === "[") inClass = true;
+        else if (src[i] === "]") inClass = false;
+        else if (src[i] === "/" && !inClass) break;
+        i++;
+      }
+      while (i + 1 < src.length && /[a-z]/i.test(src[i + 1])) i++;
+      out += src.slice(from, i + 1);
+      i++;
+      prev = "/";
+      word = "";
+      continue;
+    }
+    if (c === "{") depth++;
+    else if (c === "}") depth--;
+    if (!/\s/.test(c)) {
+      prev = c;
+      word = /[A-Za-z_$]/.test(c) ? word + c : /[0-9]/.test(c) && word !== "" ? word + c : "";
+    }
+    out += c;
+    i++;
+  }
+  return out;
 }
 
 // ---- CSS rules, located by SUBJECT rather than by substring ------------------
