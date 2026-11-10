@@ -520,15 +520,16 @@ describe("reportHtml", () => {
     for (const part of [
       "They also include the value of the Cookie header, and of an option, a header or a query parameter when a word of its name says credential.",
       "Those words are key, token, secret, pass, password, passwd, passphrase, pwd, auth, authorization, sig, " +
-        "signature, session, sid, code, credential and bearer; key counts alone or beside api, access, secret, " +
-        "private, auth, client, master, signing or encryption, and code alone or beside auth, authorization, otp, " +
-        "verification, access, refresh, device or oauth.",
+        "signature, session, sid, code, credential and bearer. Key counts only alone or beside api, access, secret, " +
+        "private, auth, client, master, signing or encryption, and code only alone or beside auth, authorization, " +
+        "otp, verification, access, refresh, device or oauth.",
       "Joined forms such as <code>apikey</code>, and curl's <code>--tlspassword</code> and " +
         "<code>--proxy-tlspassword</code>, count too.",
-      "the password after the colon in <code>-u</code>, <code>--user</code> and the other user options",
+      "These places are a URL's password and the password of <code>sshpass -p</code>.",
       "A user name given alone, and a query value whose name says nothing of a credential, do not count by their place.",
       // Fix round 2 item 5 (M1).
-      "and the other user options, or the user when that password is empty, and the password of <code>sshpass -p</code>.",
+      "In <code>-u</code>, <code>--user</code> and the other user options it is the password after the colon, " +
+        "or the user when that password is empty.",
     ])
       expect(en, part).toContain(part);
     expect(en).not.toContain("their name holds");
@@ -537,12 +538,13 @@ describe("reportHtml", () => {
       "Dazu kommen der Wert des Headers Cookie und der Wert einer Option, eines Headers oder eines " +
         "Abfrageparameters, wenn ein Wort seines Namens Zugangsdaten nennt.",
       "Diese Wörter sind key, token, secret, pass, password, passwd, passphrase, pwd, auth, authorization, sig, " +
-        "signature, session, sid, code, credential und bearer; key zählt allein oder neben api, access, secret, " +
-        "private, auth, client, master, signing oder encryption, code allein oder neben auth, authorization, otp, " +
-        "verification, access, refresh, device oder oauth.",
+        "signature, session, sid, code, credential und bearer. Key zählt nur allein oder neben api, access, secret, " +
+        "private, auth, client, master, signing oder encryption, code nur allein oder neben auth, authorization, " +
+        "otp, verification, access, refresh, device oder oauth.",
       "dazu curls <code>--tlspassword</code> und <code>--proxy-tlspassword</code>.",
       "Ein Benutzername allein und ein Wert einer Abfrage, deren Name nichts von Zugangsdaten sagt, zählen nicht durch ihre Stelle.",
-      "und den anderen Benutzeroptionen, oder der Benutzer, wenn dieses Passwort leer ist, und das Passwort von <code>sshpass -p</code>.",
+      "Bei <code>-u</code>, <code>--user</code> und den anderen Benutzeroptionen ist es das Passwort nach dem " +
+        "Doppelpunkt, oder der Benutzer, wenn dieses Passwort leer ist.",
     ])
       expect(de, part).toContain(part);
   });
