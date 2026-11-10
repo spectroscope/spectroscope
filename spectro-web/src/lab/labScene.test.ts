@@ -616,6 +616,16 @@ describe("GitHub Copilot CLI tool names light the stations (card 605)", () => {
     }
   });
 
+  // Task 10 item 7: the IDE export's patch tool. Its input is the patch text, so
+  // the station names no file of its own.
+  it("routes apply_patch to the disk as a write", () => {
+    const s = play([
+      runStart(),
+      toolCall("apply_patch", "*** Begin Patch\n*** Update File: /w/a.ts\n*** End Patch"),
+    ]);
+    expect([s.focus, s.disk, s.activeTool, s.activeFile]).toEqual(["disk", "write", "apply_patch", null]);
+  });
+
   it("routes bash and powershell to the shell with their command", () => {
     for (const name of ["bash", "powershell"]) {
       const s = play([runStart(), toolCall(name, { command: "ls src", description: "look" })]);

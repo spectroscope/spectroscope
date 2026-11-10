@@ -7,6 +7,7 @@
 import { isValidElement, type ReactNode } from "react";
 import { describe, expect, it } from "vitest";
 import copilotCli from "../import/fixtures/copilot-cli.jsonl?raw";
+import copilotIde from "../import/fixtures/copilot-ide.jsonl?raw";
 import { parseVscodeAgentExport, vscodeAgentToRunEvents } from "../import/vscodeAgent";
 import { drive, type El } from "../testkit/driveComponent";
 import { FilesExplorer } from "./FilesExplorer";
@@ -211,3 +212,21 @@ function textOf(node: ReactNode): string {
 
 const hasClass = (el: El, name: string): boolean =>
   typeof el.props.className === "string" && el.props.className.split(/\s+/).includes(name);
+
+// Task 10 item 7: the IDE export's apply_patch carries the patch text, and its
+// headers name the files, so the touches are recorded.
+describe("a Copilot IDE session's patch in the files tab (card 605)", () => {
+  const ideRows = fileRows(foldFiles(parseVscodeAgentExport(copilotIde)), null);
+
+  it("draws the patched file as changed and the added file as created, both recorded", () => {
+    expect(ideRows.map((r) => [r.label, r.letter, r.sources])).toEqual([
+      ["src/config/loader.ts", "M", ["recorded"]],
+      ["src/**/*.test.ts", "R", ["recorded"]],
+      ["src/config/loader.test.ts", "A", ["recorded"]],
+    ]);
+    expect(ideRows[0].touches.map((t) => [t.kind, t.reason])).toEqual([
+      ["read", "read"],
+      ["change", "patched"],
+    ]);
+  });
+});

@@ -5,7 +5,7 @@
 // (docs/superpowers/specs/2026-11-09-files-tab-design.md) is the authority;
 // C11 to C18 of the plan's global constraints settle the open points.
 
-import { describeTool, fileChange, type ToolView } from "../components/toolViews";
+import { describeTool, fileChange, type PatchFile, type ToolView } from "../components/toolViews";
 import { TITLE_AGENT_ID, type RunEvent } from "../events";
 import { shortenPath } from "../lab/fileTree";
 import { elapsedAt } from "../state/stepper";
@@ -408,9 +408,42 @@ function readCall(open: Open): Reading | null {
       });
     case "command":
       return shell(view, open);
+    case "generic":
+      return view.patch === undefined ? null : patched(view.patch, base);
     default:
       return null;
   }
+}
+
+/** An apply_patch (card 605, task 10): one recorded touch per file its headers name. */
+function patched(files: readonly PatchFile[], base: string | null): Reading {
+  const touches: ReadTouch[] = [];
+  const touch = (written: string, kind: TouchKind, reason: string) =>
+    touches.push({
+      written,
+      path: resolvePath(written, base),
+      folder: false,
+      kind,
+      reason,
+      sources: ["recorded"],
+    });
+  for (const f of files) {
+    if (f.change === "add") touch(f.path, "create", "added by a patch");
+    else if (f.change === "delete") touch(f.path, "delete", "deleted by a patch");
+    else {
+      touch(f.path, "change", "patched");
+      if (f.movedTo !== null) touch(f.movedTo, "change", "patched and moved here");
+    }
+  }
+  return {
+    line: files[0].path,
+    shell: false,
+    output: null,
+    script: null,
+    inline: false,
+    note: null,
+    touches,
+  };
 }
 
 function write(view: Extract<ToolView, { kind: "write" }>, base: string | null): Reading {

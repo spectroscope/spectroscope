@@ -35,10 +35,15 @@ import {
 const READ_KINDS = ["file", "listing", "matches"];
 const WRITE_KINDS = ["write", "edit"];
 
-/** `MultiEdit` is routed by the lab and has no case in `describeTool`, so its
- *  kind is the fallback. C15 of the card 604 plan: the files fold handles it
- *  itself. */
-const NO_CASE_IN_TOOL_VIEWS = "MultiEdit";
+/** The lab writes that `describeTool` draws as the generic card, each with its
+ *  reason. `MultiEdit` has no case there (C15 of the card 604 plan: the files
+ *  fold handles it itself). `apply_patch` has one: its card is the patch text
+ *  as written, and the files its headers name ride on the view's `patch`
+ *  (card 605, task 10). */
+const DRAWN_GENERIC: Record<string, string> = {
+  MultiEdit: "no case",
+  apply_patch: "the patch as written",
+};
 
 describe("the lab's disk names read as the same kind in the tool views (card 604)", () => {
   it("everyLabDiskNameReadsAsTheSameKindInToolViews", () => {
@@ -52,10 +57,10 @@ describe("the lab's disk names read as the same kind in the tool views (card 604
 
     let writes = 0;
     for (const name of [...NATIVE_DISK_WRITE, ...CC_DISK_WRITE, ...COPILOT_DISK_WRITE]) {
-      if (name === NO_CASE_IN_TOOL_VIEWS) {
-        // The exception keeps its premise in view: once describeTool learns
-        // the name, this goes red and the exception has to go.
-        expect(viewKindOf(name), `${name} now has a case in describeTool`).toBe("generic");
+      if (name in DRAWN_GENERIC) {
+        // The exception keeps its premise in view: once describeTool draws the
+        // name with a write shape, this goes red and the exception has to go.
+        expect(viewKindOf(name), `${name} is no longer drawn generic`).toBe("generic");
         continue;
       }
       expect(WRITE_KINDS, `${name} is a lab write, describeTool says ${viewKindOf(name)}`).toContain(
@@ -76,12 +81,26 @@ describe("the lab's disk names read as the same kind in the tool views (card 604
     }
 
     // Floors, so an emptied set cannot turn the loops into a scan over nothing:
-    // 5 + 3 + 1 reads, 2 + 3 + 2 writes less MultiEdit, 5 shell verbs on
-    // 2026-11-10 (card 605 added the Copilot CLI's view, create, edit, bash,
-    // powershell, and Claude Code's Grep and VS Code's run_in_terminal).
+    // 5 + 3 + 1 reads, 2 + 3 + 3 writes less MultiEdit and apply_patch, 5 shell
+    // verbs on 2026-11-10 (card 605 added the Copilot CLI's view, create, edit,
+    // bash, powershell, apply_patch, and Claude Code's Grep and VS Code's
+    // run_in_terminal).
     expect(reads).toBeGreaterThanOrEqual(9);
     expect(writes).toBeGreaterThanOrEqual(6);
     expect(shells).toBeGreaterThanOrEqual(5);
+  });
+
+  it("apply_patch is drawn generic and still names its files to the fold", () => {
+    // The premise of its exception above: the view carries the files.
+    const view = describeTool(
+      "apply_patch",
+      "*** Begin Patch\n*** Add File: a.txt\n+a\n*** End Patch",
+      "",
+      false,
+    );
+    expect(view.kind === "generic" ? view.patch : null).toEqual([
+      { path: "a.txt", change: "add", movedTo: null },
+    ]);
   });
 });
 

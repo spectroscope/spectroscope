@@ -134,12 +134,13 @@ function taskOf(input: unknown): string {
   return strField(input, "prompt") || strField(input, "description") || "subtask";
 }
 
-/** The two announcement sites disagree about the type of `arguments`:
- *  tool.execution_start carries an object, assistant.message.toolRequests
- *  carries the same payload as a JSON string. Decode the string form so a call
- *  known only from a toolRequests entry reaches the card as fields rather than
- *  as escaped JSON. Anything that does not parse is passed through untouched —
- *  it is still what the export said. */
+/** Either announcement site can carry `arguments` as a string:
+ *  assistant.message.toolRequests carries the payload as a JSON string, and
+ *  tool.execution_start carries the IDE export's apply_patch as the patch text
+ *  itself (9 of 9 local calls, none of them JSON). Decode a JSON string so the
+ *  call reaches the card as fields rather than as escaped JSON. Anything that
+ *  does not parse to an object is passed through untouched: it is still what
+ *  the export said. */
 function decodeArguments(value: unknown): unknown {
   if (typeof value !== "string") return value;
   try {
@@ -216,7 +217,7 @@ export function vscodeAgentWithOrigin(records: unknown[], base = 1_783_500_000_0
     const id = r.type === "tool.execution_start" ? r.data?.toolCallId : undefined;
     if (typeof id === "string") {
       startedCallIds.add(id);
-      calls.set(id, { agentId: laneOf(r), input: r.data?.arguments });
+      calls.set(id, { agentId: laneOf(r), input: decodeArguments(r.data?.arguments) });
     }
   }
 
@@ -338,7 +339,13 @@ export function vscodeAgentWithOrigin(records: unknown[], base = 1_783_500_000_0
         const callId = d?.toolCallId;
         if (typeof callId !== "string") break;
         callStartTs.set(callId, ts);
-        emitCall(agentId, callId, typeof d?.toolName === "string" ? d.toolName : "tool", d?.arguments, ts);
+        emitCall(
+          agentId,
+          callId,
+          typeof d?.toolName === "string" ? d.toolName : "tool",
+          decodeArguments(d?.arguments),
+          ts,
+        );
         break;
       }
 

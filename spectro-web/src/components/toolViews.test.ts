@@ -3,7 +3,7 @@
 // render it as itself instead of as two JSON blobs. Pure, DOM-free.
 
 import { describe, expect, it } from "vitest";
-import { describeTool, runStats, splitInput } from "./toolViews";
+import { describeTool, patchFiles, runStats, splitInput } from "./toolViews";
 
 describe("describeTool — files", () => {
   it("read_file becomes a file view with its path and body", () => {
@@ -1953,5 +1953,68 @@ describe("describeTool with the tool's own return value", () => {
       false,
     );
     expect(view).toMatchObject({ kind: "task", rows: [{ fromStatus: null }] });
+  });
+});
+
+// Card 605, task 10 item 7: the patch tool of the GitHub Copilot IDE export.
+// Its arguments are the patch text itself (9 of 9 local calls, all opening
+// with "*** Begin Patch"); the headers name the files.
+describe("apply_patch names its files by its headers (card 605)", () => {
+  const patch = (...body: string[]) => ["*** Begin Patch", ...body, "*** End Patch", ""].join("\n");
+
+  it("reads add, update with and without a move, and delete, in order", () => {
+    const text = patch(
+      "*** Update File: /w/src/a.ts",
+      "@@",
+      "-old",
+      "+new",
+      "*** Update File: /w/src/b.ts",
+      "*** Move to: /w/src/c.ts",
+      "@@",
+      " same",
+      "*** Add File: /w/src/d.ts",
+      "+one",
+      "*** Delete File: /w/src/e.ts",
+    );
+    const view = describeTool("apply_patch", text, "Done", false);
+    expect(view.kind).toBe("generic");
+    if (view.kind !== "generic") return;
+    // The card stays the patch as written.
+    expect([view.input, view.output]).toEqual([text, "Done"]);
+    expect(view.patch).toEqual([
+      { path: "/w/src/a.ts", change: "update", movedTo: null },
+      { path: "/w/src/b.ts", change: "update", movedTo: "/w/src/c.ts" },
+      { path: "/w/src/d.ts", change: "add", movedTo: null },
+      { path: "/w/src/e.ts", change: "delete", movedTo: null },
+    ]);
+  });
+
+  it("reads a header only at a line start, a move only right after its update, and CRLF lines", () => {
+    expect(patchFiles(patch("*** Add File: a.txt", "+*** Update File: b.txt", "+x"))).toEqual([
+      { path: "a.txt", change: "add", movedTo: null },
+    ]);
+    expect(patchFiles(patch("*** Update File: a.txt", "@@", "*** Move to: b.txt"))).toEqual([
+      { path: "a.txt", change: "update", movedTo: null },
+    ]);
+    expect(patchFiles(patch("*** Add File: a.txt", "*** Move to: b.txt"))).toEqual([
+      { path: "a.txt", change: "add", movedTo: null },
+    ]);
+    expect(patchFiles(patch("*** Update File: a.txt").replace(/\n/g, "\r\n"))).toEqual([
+      { path: "a.txt", change: "update", movedTo: null },
+    ]);
+  });
+
+  it("is no patch without the envelope, without a file, or as anything but text", () => {
+    for (const input of [
+      "*** Update File: a.txt",
+      patch(),
+      patch("*** Update File:   "),
+      { input: patch("*** Update File: a.txt") },
+      null,
+    ]) {
+      expect(patchFiles(input), JSON.stringify(input)).toBeNull();
+      const view = describeTool("apply_patch", input, "", false);
+      expect(view.kind === "generic" && view.patch === undefined, JSON.stringify(input)).toBe(true);
+    }
   });
 });

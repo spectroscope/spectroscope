@@ -92,7 +92,59 @@ export type ToolView =
       run: WorkflowRun | null;
       result: string;
     }
-  | { kind: "generic"; input: unknown; output: string };
+  | {
+      kind: "generic";
+      input: unknown;
+      output: string;
+      /** apply_patch (card 605, task 10): the files its headers name. The card
+       *  stays the patch as written; the files tab reads these. */
+      patch?: PatchFile[];
+    };
+
+/** One file an apply_patch names: what its header does to it, and where a move put it. */
+export type PatchFile = { path: string; change: "add" | "update" | "delete"; movedTo: string | null };
+
+const PATCH_BEGIN = "*** Begin Patch";
+const PATCH_FILE = /^\*\*\* (Add|Update|Delete) File: (.*)$/;
+const PATCH_MOVE = /^\*\*\* Move to: (.*)$/;
+const PATCH_CHANGE = { Add: "add", Update: "update", Delete: "delete" } as const;
+
+/**
+ * The files of an apply_patch call, read off its headers: `*** Add File: p`,
+ * `*** Update File: p` with an optional `*** Move to: q` on the next line, and
+ * `*** Delete File: p`. A body line starts with `+`, `-`, a space or `@@`, so
+ * no body line reads as a header.
+ *
+ * @param input the call's input: the patch text, opening with `*** Begin Patch`
+ * @return the files in the order of their headers, or null for any other input
+ */
+export function patchFiles(input: unknown): PatchFile[] | null {
+  if (typeof input !== "string" || !input.trimStart().startsWith(PATCH_BEGIN)) return null;
+  const files: PatchFile[] = [];
+  let updated: PatchFile | null = null;
+  for (const raw of input.split("\n")) {
+    const line = raw.endsWith("\r") ? raw.slice(0, -1) : raw;
+    const move = updated === null ? null : PATCH_MOVE.exec(line);
+    if (updated !== null && move !== null) {
+      const to = move[1].trim();
+      if (to !== "") updated.movedTo = to;
+      updated = null;
+      continue;
+    }
+    updated = null;
+    const head = PATCH_FILE.exec(line);
+    const path = head?.[2].trim() ?? "";
+    if (head === null || path === "") continue;
+    const file: PatchFile = {
+      path,
+      change: PATCH_CHANGE[head[1] as keyof typeof PATCH_CHANGE],
+      movedTo: null,
+    };
+    files.push(file);
+    if (file.change === "update") updated = file;
+  }
+  return files.length > 0 ? files : null;
+}
 
 /** What a mutating file tool did (card 269) — the three words the harness
  *  reports, and the whole vocabulary. Anything else on the wire is a word this
@@ -1643,6 +1695,14 @@ export function describeTool(
             ? under
             : `${where.replace(/\/+$/, "")}/${under}`;
       return { kind: "matches", pattern, path, filter, lines: lines(out) };
+    }
+
+    // The patch tool of the GitHub Copilot IDE export (card 605, task 10): its
+    // input is the patch text. The card shows it as written; the files tab
+    // reads the files its headers name.
+    case "apply_patch": {
+      const patch = patchFiles(input);
+      return patch === null ? generic : { kind: "generic", input, output: out, patch };
     }
 
     case "Bash":

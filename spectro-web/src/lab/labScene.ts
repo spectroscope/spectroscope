@@ -107,12 +107,14 @@ export const NATIVE_DISK_WRITE: ReadonlySet<string> = new Set(["write_file", "ed
 // path to it would claim an MCP chain that never ran.
 export const CC_DISK_READ = new Set(["Read", "Glob", "Grep"]);
 export const CC_DISK_WRITE = new Set(["Write", "Edit", "MultiEdit"]);
-/** The GitHub Copilot CLI's file verbs (card 605). Each names its file `path`.
+/** The GitHub Copilot CLI's file verbs (card 605). Each names its file `path`,
+ *  except the IDE export's `apply_patch`, whose input is the patch text: it
+ *  lights the disk as a write and names no file there (task 10).
  *  Its `glob` and `grep` are the native names above, its shell verbs are in
  *  SHELL_TOOLS, and its shell session verbs (`write_bash` and the like) touch
  *  no station. */
 export const COPILOT_DISK_READ: ReadonlySet<string> = new Set(["view"]);
-export const COPILOT_DISK_WRITE: ReadonlySet<string> = new Set(["create", "edit"]);
+export const COPILOT_DISK_WRITE: ReadonlySet<string> = new Set(["create", "edit", "apply_patch"]);
 /** The shell verbs, native and imported, that reach the cmd station and leave
  *  a command instead of a path. EXPORTED for the same reason the disk sets are
  *  (card 301): the file footprint counts exactly what the map lights here, and

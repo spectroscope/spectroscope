@@ -657,3 +657,50 @@ describe("summarize", () => {
     expect(run({})).toEqual([1, 1]);
   });
 });
+
+// Card 605, task 10 item 7: one apply_patch names several files, each recorded.
+describe("an apply_patch call (card 605)", () => {
+  const PATCH = [
+    "*** Begin Patch",
+    "*** Update File: src/a.ts",
+    "@@",
+    "-x",
+    "+y",
+    "*** Update File: src/b.ts",
+    "*** Move to: src/c.ts",
+    "*** Add File: src/d.ts",
+    "+d",
+    "*** Delete File: src/e.ts",
+    "*** End Patch",
+  ].join("\n");
+  const session = (result: { output: string; isError: boolean } | null): RunEvent[] => [
+    { type: "run_start", runId: "r", agentId: "main", prompt: "go", workspace: "/w", ts: 1000 },
+    { type: "tool_call", agentId: "main", callId: "p1", name: "apply_patch", input: PATCH, ts: 2000 },
+    ...(result === null
+      ? []
+      : [
+          { type: "tool_result" as const, agentId: "main", callId: "p1", durationMs: 0, ts: 3000, ...result },
+        ]),
+  ];
+
+  it("gives one recorded touch per named file, of the kind its header says", () => {
+    const [call] = foldFiles(session({ output: "Success.", isError: false })).calls;
+    expect([call.tool, call.line, call.shell, call.status]).toEqual(["apply_patch", "src/a.ts", false, "ok"]);
+    expect(call.touches.map((t) => [t.path, t.kind, t.sources, t.reason])).toEqual([
+      ["/w/src/a.ts", "change", ["recorded"], "patched"],
+      ["/w/src/b.ts", "change", ["recorded"], "patched"],
+      ["/w/src/c.ts", "change", ["recorded"], "patched and moved here"],
+      ["/w/src/d.ts", "create", ["recorded"], "added by a patch"],
+      ["/w/src/e.ts", "delete", ["recorded"], "deleted by a patch"],
+    ]);
+    const letters = fileRows(foldFiles(session({ output: "", isError: false })), null).map((r) => r.letter);
+    expect(letters).toEqual(["M", "M", "M", "A", "D"]);
+  });
+
+  it("touches nothing when the patch failed, and marks its touches pending without a result", () => {
+    expect(foldFiles(session({ output: "conflict", isError: true })).calls[0].touches).toEqual([]);
+    const pending = foldFiles(session(null)).calls[0].touches;
+    expect(pending.every((t) => t.reason.endsWith(" (no result yet)"))).toBe(true);
+    expect(pending).toHaveLength(5);
+  });
+});

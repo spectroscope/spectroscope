@@ -693,3 +693,28 @@ describe("a Copilot usage record gives a usage frame on its lane (card 605)", ()
     expect(usage(parseVscodeAgentExport(copilotCli)).some((e) => "aiCredits" in e)).toBe(false);
   });
 });
+
+// Task 10 item 7: tool.execution_start may carry its arguments as a string.
+describe("tool.execution_start arguments given as a string (card 605)", () => {
+  const input = (args: unknown) =>
+    (
+      vscodeAgentToRunEvents([
+        { type: "tool.execution_start", data: { toolCallId: "t1", toolName: "x", arguments: args } },
+      ]).find((e) => e.type === "tool_call") as { input: unknown }
+    ).input;
+
+  it("parses a JSON string into the object it encodes, and keeps any other string as written", () => {
+    expect(input('{"path":"/w/a.ts"}')).toEqual({ path: "/w/a.ts" });
+    expect(input("not json {")).toBe("not json {");
+    expect(input('"quoted"')).toBe('"quoted"');
+    expect(input({ path: "/w/a.ts" })).toEqual({ path: "/w/a.ts" });
+  });
+
+  it("keeps the IDE's patch text as the input of its apply_patch call", () => {
+    const call = parseVscodeAgentExport(copilotIde).find(
+      (e) => e.type === "tool_call" && e.name === "apply_patch",
+    ) as { input: unknown };
+    expect(typeof call.input).toBe("string");
+    expect((call.input as string).startsWith("*** Begin Patch")).toBe(true);
+  });
+});
