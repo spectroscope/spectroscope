@@ -5,13 +5,15 @@
 //
 // Two properties carry the weight here and each has its own test: every tool
 // call is announced TWICE in the source (once in assistant.message.toolRequests,
-// once as tool.execution_start) and must still produce exactly one card; and the
-// format carries no tool output at all, which the adapter must leave empty
-// rather than fill with a sentence of its own.
+// once as tool.execution_start) and must still produce exactly one card; and a
+// completion without a result leaves the output empty rather than filled with
+// a sentence of the adapter's own. The GitHub Copilot files record the output
+// in `result.content` (card 605, task 10), and that is what a result carries.
 import { describe, expect, it } from "vitest";
 // Vite-native raw import: the fixture arrives as a plain string, no fs/paths.
 import vscodeAgent from "./fixtures/vscode-agent.jsonl?raw";
 import copilotCli from "./fixtures/copilot-cli.jsonl?raw";
+import copilotIde from "./fixtures/copilot-ide.jsonl?raw";
 import { isWireEvent } from "../wire/nonWire";
 import { parseVscodeAgentExport, vscodeAgentToRunEvents, vscodeAgentWithOrigin } from "./vscodeAgent";
 import { advanceScene, initialScene } from "../lab/labScene";
@@ -62,7 +64,7 @@ describe("vscodeAgent adapter", () => {
     expect(events.some((e) => e.type === "tool_result" && e.callId === "call-3")).toBe(true);
   });
 
-  it("leaves tool output empty because the format carries none, and never invents a placeholder", () => {
+  it("leaves the output of a completion without a result empty, and never invents a placeholder", () => {
     const results = events.filter((e) => e.type === "tool_result");
     expect(results).toHaveLength(3);
     expect(results.every((r) => r.output === "")).toBe(true);
@@ -338,5 +340,60 @@ describe("a Copilot CLI create records the file as created (card 605)", () => {
       (e) => (e as { type: string }).type === "tool_result",
     );
     expect(cli.filter((e) => (e as { fileChange?: string }).fileChange === "created")).toHaveLength(1);
+  });
+});
+
+// Task 10 item 1: tool.execution_complete records the output in
+// data.result.content, and a failure its error.
+describe("a Copilot completion carries what the tool returned (card 605)", () => {
+  const output = (events: readonly unknown[], callId: string) =>
+    (
+      events.find(
+        (e) =>
+          (e as { type: string; callId?: string }).type === "tool_result" &&
+          (e as { callId?: string }).callId === callId,
+      ) as { output?: string } | undefined
+    )?.output;
+  const complete = (data: object) => [
+    { type: "tool.execution_start", data: { toolCallId: "t1", toolName: "view", arguments: {} }, id: "a" },
+    { type: "tool.execution_complete", data: { toolCallId: "t1", ...data }, id: "b" },
+  ];
+
+  it("takes the output from result.content in the CLI's file and in the IDE's", () => {
+    const cli = parseVscodeAgentExport(copilotCli);
+    expect(output(cli, "t1")).toBe("320. TEST(Parser, EmptyLine) {");
+    expect(output(cli, "t5")).toBe("Created file /w/src/parser/test/EmptyLineTest.cpp");
+    const ide = parseVscodeAgentExport(copilotIde);
+    expect(output(ide, "c1")).toBe("1. export function load() {}");
+    expect(output(ide, "c2")).toBe("No files matched.");
+  });
+
+  it("a failure adds one line code: message, of the parts that are strings", () => {
+    const ide = parseVscodeAgentExport(copilotIde);
+    expect(output(ide, "c4")).toBe("rejected: The user rejected this tool call.");
+    // The CLI fixture's failed view names a message only.
+    expect(output(parseVscodeAgentExport(copilotCli), "t8")).toBe("Path does not exist");
+    const run = (data: object) => output(vscodeAgentToRunEvents(complete(data)), "t1");
+    expect(run({ success: false, error: { code: "denied" } })).toBe("denied");
+    expect(run({ success: false, error: { code: 7, message: "gone" } })).toBe("gone");
+    expect(run({ success: false, error: { code: 7, message: null } })).toBe("");
+    expect(run({ success: false, error: "denied" })).toBe("");
+    expect(run({ success: false, error: { code: "x", message: "" } })).toBe("x");
+    expect(run({ success: false, result: { content: "" }, error: { code: "x", message: "y" } })).toBe("x: y");
+    // The line follows the content when both are there.
+    expect(run({ success: false, result: { content: "half" }, error: { code: "x", message: "y" } })).toBe(
+      "half\nx: y",
+    );
+    // A success says nothing about an error it carries.
+    expect(run({ success: true, result: { content: "ok" }, error: { code: "x", message: "y" } })).toBe("ok");
+  });
+
+  it("a result without a string content stays empty", () => {
+    const run = (data: object) => output(vscodeAgentToRunEvents(complete(data)), "t1");
+    expect(run({ success: true })).toBe("");
+    expect(run({ success: true, result: { content: 7 } })).toBe("");
+    expect(run({ success: true, result: "text" })).toBe("");
+    // An empty content is what the tool returned.
+    expect(run({ success: true, result: { content: "" } })).toBe("");
   });
 });

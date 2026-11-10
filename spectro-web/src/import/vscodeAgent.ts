@@ -16,12 +16,15 @@
 // so a recorded Copilot session replays through the same reducers as a
 // spectroscope run. Unrecognized records are skipped, never fatal.
 //
-// WHAT THIS FORMAT CANNOT GIVE US: tool.execution_complete carries nothing but
-// { toolCallId, success }. There is no tool output anywhere in the export, so
-// every tool_result leaves `output` empty. Filling it with a phrase like "(no
-// output recorded)" would be indistinguishable from a tool that really returned
-// that text — the absence is reported once, by the importer, from the "kind"
-// detectAndLoad returns.
+// TOOL OUTPUT (card 605, task 10): tool.execution_complete records what the
+// tool returned in data.result.content (95 of 103 completions in the IDE
+// export, 294 of 297 in the CLI store), and a failure its data.error. The
+// output is that content, plus one line "<code>: <message>" of a failure's
+// error. A completion without either leaves `output` empty: a phrase like "(no
+// output recorded)" would read as a tool that really returned that text. Two
+// fields have no wire field and stay unread: result.detailedContent (the file
+// diff of an edit or create) and shellExecution.exitCode. The counts are a
+// census of both local corpora on 2026-11-10 (task 10 report).
 
 import type { RunEvent } from "../events";
 import type { ImportedEvents } from "./claudeCode";
@@ -44,6 +47,8 @@ interface VsRecord {
     toolName?: string;
     arguments?: unknown;
     success?: boolean;
+    result?: unknown;
+    error?: unknown;
     context?: { cwd?: unknown };
     selectedModel?: unknown;
   };
@@ -78,6 +83,24 @@ function decodeArguments(value: unknown): unknown {
   } catch {
     return value;
   }
+}
+
+/** A string field of an object, or null. */
+function strField(o: unknown, key: string): string | null {
+  if (typeof o !== "object" || o === null) return null;
+  const v = (o as Record<string, unknown>)[key];
+  return typeof v === "string" ? v : null;
+}
+
+/** What a completion recorded the tool returned: result.content, then a failure's "code: message". */
+function toolOutput(d: VsRecord["data"]): string {
+  const filled = (parts: (string | null)[]) => parts.filter((x): x is string => x !== null && x !== "");
+  const lines = filled([strField(d?.result, "content")]);
+  if (d?.success === false) {
+    const said = filled([strField(d.error, "code"), strField(d.error, "message")]);
+    if (said.length > 0) lines.push(said.join(": "));
+  }
+  return lines.join("\n");
 }
 
 export function vscodeAgentToRunEvents(records: unknown[], base = 1_783_500_000_000): RunEvent[] {
@@ -230,7 +253,7 @@ export function vscodeAgentWithOrigin(records: unknown[], base = 1_783_500_000_0
           type: "tool_result",
           agentId,
           callId,
-          output: "", // the export records no tool output; see the file header
+          output: toolOutput(d),
           isError: d?.success === false,
           durationMs: startTs === undefined ? 0 : Math.max(0, ts - startTs),
           // The CLI's create writes a new file: 17 of 17 local creates answer "Created file" (card 605).
