@@ -4,7 +4,7 @@
 // probable. The rule table follows section 2 of the design document
 // (docs/superpowers/specs/2026-11-09-files-tab-design.md).
 
-import { isRooted, resolvePath, saysFolder } from "./paths";
+import { isRooted, resolvePath } from "./paths";
 import { segments, unescape, type Segment, type Word } from "./shellTokens";
 
 export type TouchKind =
@@ -563,7 +563,7 @@ interface Reader extends OptSpec {
   pattern?: string[];
   folder?: true | string[];
   listing?: true; // its operands are listed, not read
-  search?: true | string[]; // an operand that says folder is searched (always, or with one of these options); a file is read
+  names?: string; // with this option it lists file names, it reads no content (rg --files)
   files?: string[]; // options whose value is a file the verb reads
   base?: true | string[]; // without a path and without input on stdin, it searches the folder it runs in (always, or with one of these options)
 }
@@ -573,7 +573,6 @@ const GREP: Reader = {
   pattern: ["-e", "-f", "--regexp", "--file"],
   files: ["-f", "--file"],
   base: ["-r", "-R", "--recursive"],
-  search: ["-r", "-R", "--recursive"],
 };
 const READERS: Record<string, Reader> = {
   cat: {},
@@ -606,7 +605,7 @@ const READERS: Record<string, Reader> = {
     pattern: ["-e", "-f", "--regexp", "--file", "--files", "--type-list"],
     files: ["-f", "--file"],
     base: true,
-    search: true,
+    names: "--files",
   },
   awk: { values: "Ffv", pattern: ["-f"], files: ["-f"] },
   jq: {
@@ -631,22 +630,21 @@ function reader(name: string, spec: Reader, args: Word[], c: Ctx): void {
     const v = o.flags.get(f);
     if (v) add(c, v, "read", `${name} ${v.text}`);
   }
-  // A recursive grep or an rg searches a folder; on a file it prints the
-  // file's matching lines, which is a read (task 11 item 2).
-  const search = spec.search === true || (spec.search !== undefined && has(o, ...spec.search));
-  const listing = spec.listing ? { listing: true as const } : {};
+  // A content search (grep, rg) reads every file or folder it names, a secret
+  // one too; only `rg --files` lists names (fix round 2 item 2).
+  const names = spec.listing === true || (spec.names !== undefined && has(o, spec.names));
+  const listing = names ? { listing: true as const } : {};
   for (const a of operands) {
     if (a.text.startsWith("+")) continue;
-    const searched = search && (a.glob || saysFolder(a.text));
-    add(c, a, "read", `${name} ${a.text}`, {
-      folder: folder || searched,
-      ...listing,
-      ...(searched ? { search: true as const } : {}),
-    });
+    add(c, a, "read", `${name} ${a.text}`, { folder, ...listing });
   }
+  // Without a path it searches the folder it runs in: a search entry, no file read.
   const base = spec.base === true || (spec.base !== undefined && has(o, ...spec.base));
   if (base && operands.length === 0 && !fedStdin(c.seg)) {
-    add(c, ".", "read", pattern ? `${name} "${pattern.text}"` : name, { folder: true, search: true });
+    add(c, ".", "read", pattern ? `${name} "${pattern.text}"` : name, {
+      folder: true,
+      ...(names ? { listing: true as const } : { search: true as const }),
+    });
   }
 }
 

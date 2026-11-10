@@ -573,20 +573,17 @@ function matchesAt(
       line: pattern,
     };
   }
-  // A grep narrowed by a glob filter searched a pattern (describeTool joined it into the path).
-  if (view.filter !== null) {
-    return recorded(path, base, "read", `search for ${pattern} in ${view.filter}`, {
-      folder: true,
-      pattern: true,
-      search: true,
-    });
-  }
-  // A grep on a plain path searched that file or folder; only the path itself can say folder.
-  const folder = saysFolder(path);
-  return recorded(path, base, "read", `search for ${pattern}`, {
-    folder,
-    ...(folder ? { search: true } : {}),
-  });
+  // A content search reads what it names (fix round 2 item 2): a file, a
+  // folder, or the files a glob filter matches (describeTool joined it into
+  // the path). A tool's path is literal; only the path itself can say folder.
+  const patterned = view.filter !== null;
+  return recorded(
+    path,
+    base,
+    "read",
+    view.filter === null ? `search for ${pattern}` : `search for ${pattern} in ${view.filter}`,
+    { folder: patterned || saysFolder(path), ...(patterned ? { pattern: true as const } : {}) },
+  );
 }
 
 function shell(view: Extract<ToolView, { kind: "command" }>, open: Open): Reading {

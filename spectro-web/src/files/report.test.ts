@@ -1358,13 +1358,10 @@ describe("searches and listings", () => {
       ["Bash", { command: "ls ~/.ssh" }],
       ["Bash", { command: "ls /tmp" }],
       ["Bash", { command: "find . -name '*.key'" }],
-      ["Bash", { command: "grep -rn password ~/.ssh/" }],
       ["Bash", { command: "rg -n token" }],
-      ["Bash", { command: "rg TODO src/" }],
       ["Bash", { command: "grep -r TODO ." }],
       ["Bash", { command: "stat .env && test -f .env && file .env" }],
       ["Grep", { pattern: "password" }],
-      ["Grep", { pattern: "password", path: "/w/src", glob: "*.ts" }],
       ["list_dir", { path: "/w/.ssh" }],
     ] as [string, unknown][]) {
       const report = verdictOf([name, input]);
@@ -1395,7 +1392,62 @@ describe("searches and listings", () => {
   it("the IDE export's rg on a secret file is a read of it (task 11 item 6)", () => {
     const report = verdictOf(["rg", { pattern: "API_KEY", paths: ["/w/src/", "/w/.env"] }]);
     expect(ofKind(report, "secret-file").map((f) => f.file)).toEqual([".env"]);
-    expect(report.searches.map((x) => x.label)).toEqual(["src"]);
+    // The folder is a read too since fix round 2 item 2: a content search reads what it searches.
+    expect(report.files.map((f) => f.label)).toEqual([".env", "src"]);
+    expect(report.searches).toEqual([]);
+  });
+
+  it("a content search reads what it searches; a name search lists (fix round 2 item 2)", () => {
+    const secret = [
+      ["Bash", { command: "grep -rn password ~/.ssh/" }],
+      ["Bash", { command: "grep -rn password ~/.ssh" }],
+      ["Bash", { command: "rg -uu KEY ~/.aws/" }],
+      ["Bash", { command: "rg KEY *.pem" }],
+      ["Bash", { command: "rg KEY ~/.ssh/id_*" }],
+      ["Bash", { command: "rg KEY .env" }],
+      ["Bash", { command: "grep -r KEY .env" }],
+      ["Bash", { command: "rg KEY .env*" }],
+      ["Bash", { command: "rg KEY id_*" }],
+      ["Grep", { pattern: "KEY", path: "/Users/a/.ssh" }],
+      ["grep_search", { query: "KEY", includePattern: "**/.env*" }],
+      ["rg", { pattern: "KEY", paths: ["/w/.env.local"] }],
+    ] as [string, unknown][];
+    for (const [name, input] of secret) {
+      const report = verdictOf([name, input]);
+      const what = JSON.stringify(input);
+      expect(ofKind(report, "secret-file").length, what).toBe(1);
+      expect(report.verdict, what).toBe("critical");
+    }
+    // Another folder or file is a read of it, outside the workspace an outside one.
+    const src = verdictOf(
+      ["Bash", { command: "rg TODO src" }],
+      ["Grep", { pattern: "TODO", path: "/w/lib/" }],
+    );
+    expect(src.files.map((f) => [f.label, f.what])).toEqual([
+      ["src", ["read"]],
+      ["lib", ["read"]],
+    ]);
+    expect(src.searches).toEqual([]);
+    const away = verdictOf(["Bash", { command: "rg TODO /Users/a/other/" }]);
+    expect(ofKind(away, "outside").map((f) => f.file)).toEqual(["/Users/a/other"]);
+    // No path, or the workspace root, is a search; the name searches list.
+    for (const [name, input] of [
+      ["Bash", { command: "rg TODO" }],
+      ["Bash", { command: "grep -r TODO ." }],
+      ["Grep", { pattern: "TODO", path: W }],
+      ["Glob", { pattern: "**/*.pem" }],
+      ["Bash", { command: "ls ~/.ssh" }],
+      ["Bash", { command: "find . -name '*.pem'" }],
+      ["Bash", { command: "rg --files ~/.ssh" }],
+      ["list_dir", { path: "/Users/a/.ssh" }],
+      ["file_search", { query: "**/.env*" }],
+    ] as [string, unknown][]) {
+      const report = verdictOf([name, input]);
+      const what = JSON.stringify(input);
+      expect(ofKind(report, "secret-file"), what).toEqual([]);
+      expect(report.files, what).toEqual([]);
+      expect(report.searches.length, what).toBe(1);
+    }
   });
 
   it("are listed with their pattern and the level of their literal base folder", () => {
@@ -1450,7 +1502,8 @@ describe("searches and listings", () => {
     const report = build(rec.events);
     expect(ofKind(report, "secret-file")).toEqual([]);
     expect(report.verdict).toBe("project");
-    expect(report.files.map((f) => f.label)).toEqual(["src/a.ts"]);
+    // A Grep narrowed by a glob reads the files it matches (fix round 2 item 2).
+    expect(report.files.map((f) => f.label)).toEqual(["src/**/*.ts", "src/a.ts"]);
   });
 });
 

@@ -211,3 +211,13 @@ describe("higher", () => {
     }
   });
 });
+
+// Fix round 2 item 2: a pattern a content search reads is secret by what it keeps literal.
+describe("secret-shaped patterns", () => {
+  it("a pattern of a secret name is secret, a broad one is not", () => {
+    for (const p of ["/w/.env*", "/w/*.pem", "/w/id_*", "/w/**/.env.*", "/w/secrets.*", "~/.ssh/*"])
+      expect(isSecretPath(p), p).toBe(true);
+    for (const p of ["/w/*", "/w/*.json", "/w/src/**/*.ts", "/w/*.md", "/w/app/[id]"])
+      expect(isSecretPath(p), p).toBe(false);
+  });
+});

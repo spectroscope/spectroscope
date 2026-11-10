@@ -216,7 +216,7 @@ const hasClass = (el: El, name: string): boolean =>
 // Task 11 item 6: the IDE export's rg and glob name their places in a paths
 // list; each entry is a touch, a folder searched and a file read.
 describe("a Copilot IDE session's searches in the files tab (card 605)", () => {
-  it("reads every entry of a paths list: a folder is searched, a file is read", () => {
+  it("reads every entry of a paths list, a folder and a file alike (fix round 2 item 2)", () => {
     const calls = foldFiles(parseVscodeAgentExport(copilotIde)).calls;
     const touches = calls
       .filter((c) => c.tool === "rg" || c.tool === "glob")
@@ -226,7 +226,7 @@ describe("a Copilot IDE session's searches in the files tab (card 605)", () => {
       [
         "rg",
         [
-          ["/w/src/config", true],
+          ["/w/src/config", false],
           ["/w/README.md", false],
         ],
       ],

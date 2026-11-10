@@ -145,7 +145,8 @@ describe("shellTouches rules", () => {
   });
 
   it("aRecursiveGrepOrRgOnAFileReadsIt", () => {
-    // Task 11 item 2: only a pathless call and an operand that says folder search.
+    // Task 11 item 2, as fix round 2 item 2 rules: a content search reads every
+    // file or folder it names; only a pathless call searches.
     const how = (command: string) =>
       touches(command).map((t) => [t.written, t.kind, t.folder, t.search === true]);
     for (const [command, written] of [
@@ -157,16 +158,19 @@ describe("shellTouches rules", () => {
       ["rg TODO /Users/a/other-project/notes.md", "/Users/a/other-project/notes.md"],
     ])
       expect(how(command), command).toEqual([[written, "read", false, false]]);
-    // The positive twin: no path, or a path that says folder, is a search.
+    // A folder is read as a folder; only no path at all is a search.
     expect(how("rg TODO")).toEqual([[".", "read", true, true]]);
-    expect(how("rg TODO src/")).toEqual([["src/", "read", true, true]]);
-    expect(how("grep -r TODO .")).toEqual([[".", "read", true, true]]);
-    expect(how("rg TODO 'src/*.ts'")).toEqual([["src/*.ts", "read", true, true]]);
-    // One call, one of each.
+    expect(how("rg TODO src/")).toEqual([["src/", "read", true, false]]);
+    expect(how("grep -r TODO .")).toEqual([[".", "read", true, false]]);
+    expect(how("rg TODO src/*.ts")).toEqual([["src/*.ts", "read", true, false]]);
     expect(how("rg TODO src/ .env")).toEqual([
-      ["src/", "read", true, true],
+      ["src/", "read", true, false],
       [".env", "read", false, false],
     ]);
+    // rg --files lists names: a listing, with or without a path.
+    const listed = (command: string) => touches(command).map((t) => [t.written, t.listing === true]);
+    expect(listed("rg --files ~/.ssh")).toEqual([["~/.ssh", true]]);
+    expect(listed("rg --files")).toEqual([[".", true]]);
   });
 
   it("aFileReadByGrepOrLsIsNotAFolder", () => {

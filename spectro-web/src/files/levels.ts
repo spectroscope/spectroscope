@@ -90,7 +90,17 @@ function extensionOf(name: string): string {
   return dot >= 0 ? name.slice(dot + 1) : "";
 }
 
+/** A name with a glob character: secret when its literal part is a secret name, or it opens like an SSH key (`id_*`). */
+const GLOB_CHAR = /[*?[\]{}]/;
+function isSecretPattern(name: string, code: boolean): boolean {
+  if (/^id_/.test(name)) return true;
+  const literal = name.replace(/\[[^\]]*\]|\{[^}]*\}|[*?]/g, "");
+  return literal !== "" && isSecretName(literal, code);
+}
+
 function isSecretName(name: string, code: boolean): boolean {
+  // A pattern (`.env*`, `*.pem`, `id_*`) is secret by what it keeps literal (fix round 2 item 2).
+  if (GLOB_CHAR.test(name)) return isSecretPattern(name, code);
   if (TEMPLATE_SUFFIXES.has(extensionOf(name))) return false;
   if (name === ".env" || name.startsWith(".env.")) return true;
   if (!code && (name.startsWith("secrets.") || name.startsWith("credentials."))) return true;

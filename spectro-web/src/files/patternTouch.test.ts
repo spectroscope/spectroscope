@@ -65,23 +65,23 @@ describe("a touch is a listing or a search by its source (card 605)", () => {
     expect(how("list_dir", { path: "/w/.ssh" })).toEqual([["/w/.ssh", true, false]]);
   });
 
-  it("find, a recursive grep, rg, a pathless grep and the glob tools search", () => {
+  it("find, a pathless grep or rg and the glob tools search; a content search with a path reads", () => {
     expect(how("Bash", { command: "find src -name '*.ts'" })).toEqual([["/w/src", false, true]]);
-    // An operand searches when it says folder, as a Grep tool's path does (task 11 item 2).
-    expect(how("Bash", { command: "grep -rn TODO src/" })).toEqual([["/w/src", false, true]]);
-    expect(how("Bash", { command: "rg TODO src/" })).toEqual([["/w/src", false, true]]);
+    // A content search with a path reads it (fix round 2 item 2); find and the glob tools search.
+    expect(how("Bash", { command: "grep -rn TODO src/" })).toEqual([["/w/src", false, false]]);
+    expect(how("Bash", { command: "rg TODO src/" })).toEqual([["/w/src", false, false]]);
     expect(how("Bash", { command: "rg TODO" })).toEqual([["/w", false, true]]);
     expect(how("Grep", { pattern: "TODO" })).toEqual([["/w", false, true]]);
     expect(how("Grep", { pattern: "TODO", path: "/w/src", glob: "*.ts" })).toEqual([
-      ["/w/src/**/*.ts", false, true],
+      ["/w/src/**/*.ts", false, false],
     ]);
     expect(how("Glob", { pattern: "**/*.pem" })).toEqual([["**/*.pem", false, true]]);
   });
 
-  it("the IDE export's rg reads a file and searches a folder, one touch per entry of paths (task 11 item 6)", () => {
+  it("the IDE export's rg reads each entry of paths, a file or a folder (task 11 item 6, fix round 2 item 2)", () => {
     expect(how("rg", { pattern: "KEY", paths: ["/w/.env"] })).toEqual([["/w/.env", false, false]]);
     expect(how("rg", { pattern: "TODO", paths: ["/w/src/", "/w/README.md"] })).toEqual([
-      ["/w/src", false, true],
+      ["/w/src", false, false],
       ["/w/README.md", false, false],
     ]);
     expect(how("rg", { pattern: "TODO" })).toEqual([["/w", false, true]]);
