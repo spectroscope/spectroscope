@@ -26,9 +26,18 @@ export interface Destination {
 // The test stayLocal in FilesConsent.tsx makes, copied: that file is a React component.
 const CLOUD_MODEL = /[:-]cloud$/i;
 const IPV4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
+// An IPv4-mapped IPv6 address, dotted (`::ffff:127.0.0.1`) or in the hex form `new URL` writes (`::ffff:7f00:1`).
+const MAPPED_IPV4 = /^::ffff:(?:(\d{1,3}(?:\.\d{1,3}){3})|([0-9a-f]{1,4}):([0-9a-f]{1,4}))$/;
+// The first group of an IPv6 address: one to four hex digits before a colon.
+const IPV6_FIRST_GROUP = /^([0-9a-f]{1,4}):/;
+const LOOPBACK_NAMES = new Set(["localhost", "::1", "0.0.0.0"]);
 
-// Where a run_start provider runs when no exchange names a host. A Map, so a
-// provider named like an Object.prototype member reads as unknown.
+/**
+ * Where a provider runs when no exchange names a host: the run_start fallback
+ * and an exchange whose url does not parse. A Map, so a provider named like an
+ * Object.prototype member reads as unknown.
+ * `ollama`, `lmstudio` and `llamacpp` stay unknown: the renderer prints them as a local server, address not recorded.
+ */
 const PROVIDER_WHERE = new Map<string, Where>([
   ["spectro-local", "this-machine"],
   ["scripted", "this-machine"],
@@ -40,22 +49,21 @@ const PROVIDER_WHERE = new Map<string, Where>([
 ]);
 
 /**
- * The class of a host a model was called on. Loopback is this machine, or a
- * local cloud when the model ends in `:cloud` or `-cloud` (a local server
- * that forwards to its provider's cloud). The private ranges 10/8, 172.16/12,
- * 192.168/16, 100.64/10 (Tailscale), `*.local` and `*.ts.net` are the
- * network; everything else is cloud.
+ * The class of a host a model was called on. Loopback (also IPv4-mapped) is
+ * this machine. The private ranges 10/8, 172.16/12, 192.168/16, 100.64/10
+ * (Tailscale), fc00::/7, fe80::/10, `*.local` and `*.ts.net` are the network.
+ * Behind either, a model ending in `:cloud` or `-cloud` is a local cloud: the
+ * server there relays to its provider's cloud. Everything else is cloud. A
+ * trailing dot is ignored.
  */
 export function hostWhere(host: string, model: string): Where {
   let h = host.trim().toLowerCase();
   if (h.startsWith("[") && h.endsWith("]")) h = h.slice(1, -1);
+  if (h.endsWith(".")) h = h.slice(0, -1);
   if (h === "") return "unknown";
-  const ip = ipv4(h);
-  if (h === "localhost" || h === "::1" || h === "0.0.0.0" || (ip !== null && ip[0] === 127)) {
-    return CLOUD_MODEL.test(model.trim()) ? "local-cloud" : "this-machine";
-  }
-  if (ip !== null) return privateIpv4(ip) ? "network" : "cloud";
-  return h.endsWith(".local") || h.endsWith(".ts.net") ? "network" : "cloud";
+  const place = placeOf(h);
+  if (place === "cloud") return "cloud";
+  return CLOUD_MODEL.test(model.trim()) ? "local-cloud" : place;
 }
 
 /**
@@ -71,7 +79,7 @@ export function destinations(events: readonly RunEvent[]): Destination[] {
     const { key, provider, model, host } = exchangePlace(e);
     let row = rows.get(key);
     if (row === undefined) {
-      const where = host === null ? "unknown" : hostWhere(host, model ?? "");
+      const where = host === null ? providerWhere(provider) : hostWhere(host, model ?? "");
       row = { key, provider, model, host, where, requests: 0, largestRequest: null, recorded: true };
       rows.set(key, row);
     }
@@ -85,59 +93,56 @@ export function destinations(events: readonly RunEvent[]): Destination[] {
 }
 
 /**
+ * What `reachedBy` reads, built by `reachIndex` from one event list. It holds
+ * the list as it was when built: a list that changed needs a new index.
+ */
+export interface ReachIndex {
+  /** Key to the position of its first exchange of any kind, the row order of `destinations`. */
+  readonly rank: ReadonlyMap<string, number>;
+  /** Agent to key to the index of its last chat or compaction exchange. */
+  readonly lastAt: ReadonlyMap<string, ReadonlyMap<string, number>>;
+}
+
+/** One pass over the events, so a report that asks once per finding stays linear. */
+export function reachIndex(events: readonly RunEvent[]): ReachIndex {
+  const rank = new Map<string, number>();
+  const lastAt = new Map<string, Map<string, number>>();
+  for (let i = 0; i < events.length; i++) {
+    const e = events[i] as unknown as Record<string, unknown>;
+    if (e.type !== "llm_exchange") continue;
+    const { key } = exchangePlace(e);
+    if (!rank.has(key)) rank.set(key, rank.size);
+    if (e.kind !== "chat" && e.kind !== "compaction") continue;
+    const agent = typeof e.agentId === "string" ? e.agentId : "";
+    let byKey = lastAt.get(agent);
+    if (byKey === undefined) {
+      byKey = new Map();
+      lastAt.set(agent, byKey);
+    }
+    byKey.set(key, i);
+  }
+  return { rank, lastAt };
+}
+
+/**
  * The keys of the destinations the agent's chat and compaction exchanges
  * after `fromIndex` went to, in the order of the rows. When the agent called
  * no model after that point, every key of `all`: the recording cannot say
  * which one the content reached.
  */
 export function reachedBy(
-  events: readonly RunEvent[],
+  index: ReachIndex,
   agentId: string,
   fromIndex: number,
   all: readonly Destination[],
 ): string[] {
-  const reach = reachOf(events);
-  const lastAt = reach.lastAt.get(agentId);
+  const lastAt = index.lastAt.get(agentId);
   const keys: string[] = [];
   if (lastAt !== undefined) {
     for (const [key, at] of lastAt) if (at > fromIndex) keys.push(key);
   }
   if (keys.length === 0) return all.map((d) => d.key);
-  return keys.sort((a, b) => (reach.rank.get(a) ?? 0) - (reach.rank.get(b) ?? 0));
-}
-
-interface Reach {
-  length: number;
-  /** Key to the position of its first exchange of any kind, the row order of `destinations`. */
-  rank: Map<string, number>;
-  /** Agent to key to the index of its last chat or compaction exchange. */
-  lastAt: Map<string, Map<string, number>>;
-}
-
-// One pass per event list, so a report that asks once per finding stays linear.
-// The length check reads a list again after it grew in place.
-const REACH = new WeakMap<readonly RunEvent[], Reach>();
-
-function reachOf(events: readonly RunEvent[]): Reach {
-  const cached = REACH.get(events);
-  if (cached !== undefined && cached.length === events.length) return cached;
-  const reach: Reach = { length: events.length, rank: new Map(), lastAt: new Map() };
-  for (let i = 0; i < events.length; i++) {
-    const e = events[i] as unknown as Record<string, unknown>;
-    if (e.type !== "llm_exchange") continue;
-    const { key } = exchangePlace(e);
-    if (!reach.rank.has(key)) reach.rank.set(key, reach.rank.size);
-    if (e.kind !== "chat" && e.kind !== "compaction") continue;
-    const agent = typeof e.agentId === "string" ? e.agentId : "";
-    let byKey = reach.lastAt.get(agent);
-    if (byKey === undefined) {
-      byKey = new Map();
-      reach.lastAt.set(agent, byKey);
-    }
-    byKey.set(key, i);
-  }
-  REACH.set(events, reach);
-  return reach;
+  return keys.sort((a, b) => (index.rank.get(a) ?? 0) - (index.rank.get(b) ?? 0));
 }
 
 function fromRunStart(events: readonly RunEvent[]): Destination[] {
@@ -145,7 +150,7 @@ function fromRunStart(events: readonly RunEvent[]): Destination[] {
   const add = (provider: string | null, model: string | null): void => {
     const key = keyOf(provider, model, null);
     if (rows.has(key)) return;
-    const where = provider === null ? "unknown" : (PROVIDER_WHERE.get(provider) ?? "unknown");
+    const where = providerWhere(provider);
     rows.set(key, {
       key,
       provider,
@@ -190,12 +195,26 @@ function hostOf(url: unknown): string | null {
   }
 }
 
+function providerWhere(provider: string | null): Where {
+  return provider === null ? "unknown" : (PROVIDER_WHERE.get(provider) ?? "unknown");
+}
+
 function keyOf(provider: string | null, model: string | null, host: string | null): string {
   return `${provider ?? ""}|${model ?? ""}|${host ?? ""}`;
 }
 
 function text(v: unknown): string | null {
   return typeof v === "string" && v.trim() !== "" ? v : null;
+}
+
+type Place = "this-machine" | "network" | "cloud";
+
+function placeOf(h: string): Place {
+  if (LOOPBACK_NAMES.has(h)) return "this-machine";
+  const ip = ipv4(h) ?? mappedIpv4(h);
+  if (ip !== null) return ip[0] === 127 ? "this-machine" : privateIpv4(ip) ? "network" : "cloud";
+  if (privateIpv6(h)) return "network";
+  return h.endsWith(".local") || h.endsWith(".ts.net") ? "network" : "cloud";
 }
 
 function ipv4(host: string): number[] | null {
@@ -212,4 +231,21 @@ function privateIpv4([a, b]: number[]): boolean {
     (a === 192 && b === 168) ||
     (a === 100 && b >= 64 && b <= 127)
   );
+}
+
+function mappedIpv4(host: string): number[] | null {
+  const m = MAPPED_IPV4.exec(host);
+  if (m === null) return null;
+  if (m[1] !== undefined) return ipv4(m[1]);
+  const high = parseInt(m[2], 16);
+  const low = parseInt(m[3], 16);
+  return [high >> 8, high & 255, low >> 8, low & 255];
+}
+
+/** fc00::/7 (unique local) and fe80::/10 (link local), read from the first group. */
+function privateIpv6(host: string): boolean {
+  const m = IPV6_FIRST_GROUP.exec(host);
+  if (m === null) return false;
+  const group = parseInt(m[1], 16);
+  return (group & 0xfe00) === 0xfc00 || (group & 0xffc0) === 0xfe80;
 }

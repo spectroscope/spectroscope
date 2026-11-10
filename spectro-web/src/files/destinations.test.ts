@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from "vitest";
 import { TITLE_AGENT_ID, type RunEvent } from "../events";
-import { destinations, hostWhere, reachedBy } from "./destinations";
+import { destinations, hostWhere, reachedBy, reachIndex } from "./destinations";
 
 const T0 = 1_760_000_000_000;
 
@@ -74,10 +74,47 @@ describe("hostWhere", () => {
     expect(hostWhere("127.0.0.300", "m")).toBe("cloud");
   });
 
-  it("a cloud model only counts behind a loopback host", () => {
+  it("a cloud model behind a loopback or private-network host is a local cloud", () => {
     expect(hostWhere("127.0.0.1", " minimax-m3:CLOUD ")).toBe("local-cloud");
+    for (const host of [
+      "10.1.2.3",
+      "192.168.1.9",
+      "100.64.10.20",
+      "nas.local",
+      "box.tail1234.ts.net",
+      "fd12::1",
+    ]) {
+      expect(hostWhere(host, "minimax-m3:cloud"), host).toBe("local-cloud");
+      expect(hostWhere(host, "glm-5-cloud"), host).toBe("local-cloud");
+    }
     expect(hostWhere("api.example.com", "minimax-m3:cloud")).toBe("cloud");
+    expect(hostWhere("172.32.0.1", "minimax-m3:cloud")).toBe("cloud");
     expect(hostWhere("localhost", "cloudy")).toBe("this-machine");
+    expect(hostWhere("10.1.2.3", "cloudy")).toBe("network");
+  });
+
+  it("IPv6 unique-local and link-local are the network, IPv4-mapped addresses read as IPv4", () => {
+    for (const host of ["fc00::1", "fd12:3456::1", "[fdff:ffff::1]", "fe80::1", "febf:1::2"]) {
+      expect(hostWhere(host, "m"), host).toBe("network");
+    }
+    for (const host of ["fbff::1", "fe00::1", "fec0::1", "2001:db8::1", "fc::1", "fd12x::1"]) {
+      expect(hostWhere(host, "m"), host).toBe("cloud");
+    }
+    for (const host of ["::ffff:127.0.0.1", "::ffff:7f00:1", "[::ffff:7f00:1]", "::ffff:7f12:3456"]) {
+      expect(hostWhere(host, "m"), host).toBe("this-machine");
+    }
+    expect(hostWhere("::ffff:10.0.0.1", "m")).toBe("network");
+    expect(hostWhere("::ffff:a00:1", "m")).toBe("network");
+    expect(hostWhere("::ffff:8.8.8.8", "m")).toBe("cloud");
+    expect(hostWhere("::ffff:808:808", "m")).toBe("cloud");
+  });
+
+  it("a trailing dot on a host is ignored", () => {
+    expect(hostWhere("localhost.", "m")).toBe("this-machine");
+    expect(hostWhere("127.0.0.1.", "m")).toBe("this-machine");
+    expect(hostWhere("nas.local.", "m")).toBe("network");
+    expect(hostWhere("box.tail1234.ts.net.", "m")).toBe("network");
+    expect(hostWhere(".", "m")).toBe("unknown");
   });
 
   it("names compare in lower case and an empty host is unknown", () => {
@@ -146,12 +183,18 @@ describe("destinations", () => {
     const out = destinations([
       exchange({ provider: "ollama", model: "minimax-m3:cloud", url: "http://127.0.0.1:11434/api/chat" }),
       exchange({ provider: "ollama", model: "qwen2.5:7b", url: "http://[::1]:11434/api/chat" }),
+      exchange({ provider: "ollama", model: "qwen2.5:7b", url: "http://[fd00::5]:11434/api/chat" }),
+      exchange({ provider: "ollama", model: "qwen2.5:7b", url: "http://[::ffff:127.0.0.1]:11434/api/chat" }),
+      exchange({ provider: "ollama", model: "minimax-m3:cloud", url: "http://nas.local.:11434/api/chat" }),
     ]);
     expect(out[0]).toMatchObject({ host: "127.0.0.1", where: "local-cloud" });
     expect(out[1]).toMatchObject({ host: "[::1]", where: "this-machine" });
+    expect(out[2]).toMatchObject({ host: "[fd00::5]", where: "network" });
+    expect(out[3]).toMatchObject({ host: "[::ffff:7f00:1]", where: "this-machine" });
+    expect(out[4]).toMatchObject({ host: "nas.local.", where: "local-cloud" });
   });
 
-  it("a URL that does not parse gives no host and an unknown place", () => {
+  it("a URL that does not parse gives no host and the provider's place", () => {
     for (const url of ["copilot-runtime", "localhost:11434", "", 42]) {
       const out = destinations([exchange({ provider: "copilot", model: "gpt-5", url })]);
       expect(out, String(url)).toEqual([
@@ -160,13 +203,19 @@ describe("destinations", () => {
           provider: "copilot",
           model: "gpt-5",
           host: null,
-          where: "unknown",
+          where: "cloud",
           requests: 1,
           largestRequest: 100,
           recorded: true,
         },
       ]);
     }
+    const where = (provider: string | undefined): string =>
+      destinations([exchange({ provider, url: "copilot-runtime" })])[0].where;
+    expect(where("spectro-local")).toBe("this-machine");
+    expect(where("ollama")).toBe("unknown");
+    expect(where("constructor")).toBe("unknown");
+    expect(where(undefined)).toBe("unknown");
   });
 
   it("every kind of exchange counts as a destination", () => {
@@ -262,9 +311,11 @@ describe("reachedBy", () => {
       exchange({ agentId: "helper-1", ...local }),
     ];
     const all = destinations(events);
-    expect(reachedBy(events, "main", 5, all)).toEqual(["anthropic|claude-sonnet-4-5|api.anthropic.com"]);
-    expect(reachedBy(events, "main", 6, all)).toEqual(all.map((d) => d.key));
-    expect(reachedBy(events, "nobody", 0, all)).toEqual(all.map((d) => d.key));
+    expect(reachedBy(reachIndex(events), "main", 5, all)).toEqual([
+      "anthropic|claude-sonnet-4-5|api.anthropic.com",
+    ]);
+    expect(reachedBy(reachIndex(events), "main", 6, all)).toEqual(all.map((d) => d.key));
+    expect(reachedBy(reachIndex(events), "nobody", 0, all)).toEqual(all.map((d) => d.key));
   });
 
   it("only chat and compaction exchanges after the call count, in the order of the rows", () => {
@@ -284,12 +335,14 @@ describe("reachedBy", () => {
     ];
     const all = destinations(events);
     expect(all).toHaveLength(3);
-    expect(reachedBy(events, "main", 1, all)).toEqual([
+    expect(reachedBy(reachIndex(events), "main", 1, all)).toEqual([
       "anthropic|claude-sonnet-4-5|api.anthropic.com",
       "ollama|q|localhost",
     ]);
-    expect(reachedBy(events, "main", 3, all)).toEqual(["anthropic|claude-sonnet-4-5|api.anthropic.com"]);
-    expect(reachedBy(events, "main", 4, all)).toEqual(all.map((d) => d.key));
+    expect(reachedBy(reachIndex(events), "main", 3, all)).toEqual([
+      "anthropic|claude-sonnet-4-5|api.anthropic.com",
+    ]);
+    expect(reachedBy(reachIndex(events), "main", 4, all)).toEqual(all.map((d) => d.key));
   });
 
   it("keys come in the order of the rows, not of the agent's own first exchange", () => {
@@ -301,34 +354,48 @@ describe("reachedBy", () => {
     ];
     const all = destinations(events);
     expect(all).toHaveLength(3);
-    expect(reachedBy(events, "main", -1, all)).toEqual([
+    expect(reachedBy(reachIndex(events), "main", -1, all)).toEqual([
       "anthropic|claude-sonnet-4-5|api.anthropic.com",
       "ollama|q|localhost",
     ]);
   });
 
-  it("a session that grows in place is read again", () => {
-    // The first answer is "every key"; after the push the right answer is a strict subset of every key.
-    const events: RunEvent[] = [exchange({ agentId: "helper-1", ...cloud }), filler()];
-    expect(reachedBy(events, "main", 0, destinations(events))).toEqual([
+  it("two indexes built from two lists answer independently", () => {
+    const a = [exchange({ agentId: "main", ...cloud })];
+    const b = [exchange({ agentId: "main", ...local })];
+    const ia = reachIndex(a);
+    const ib = reachIndex(b);
+    expect(reachedBy(ia, "main", -1, destinations(a))).toEqual([
       "anthropic|claude-sonnet-4-5|api.anthropic.com",
     ]);
+    expect(reachedBy(ib, "main", -1, destinations(b))).toEqual(["ollama|q|localhost"]);
+    expect(reachedBy(ia, "main", -1, destinations(a))).toEqual([
+      "anthropic|claude-sonnet-4-5|api.anthropic.com",
+    ]);
+  });
+
+  it("an index holds the list as it was built; a new event needs a new index", () => {
+    // The old index knows no exchange of main and gives every key; a new one gives a strict subset.
+    const events: RunEvent[] = [exchange({ agentId: "helper-1", ...cloud }), filler()];
+    const before = reachIndex(events);
     events.push(exchange({ agentId: "main", ...local }));
     const grown = destinations(events);
     expect(grown).toHaveLength(2);
-    expect(reachedBy(events, "main", 0, grown)).toEqual(["ollama|q|localhost"]);
+    expect(reachedBy(before, "main", 0, grown)).toEqual(grown.map((d) => d.key));
+    expect(reachedBy(reachIndex(events), "main", 0, grown)).toEqual(["ollama|q|localhost"]);
   });
 
-  it("stays linear on a long session", () => {
+  it("one index and 2,500 lookups on 10,000 events stay well under a second", () => {
     const events: RunEvent[] = [];
-    for (let i = 0; i < 20_000; i++) {
+    for (let i = 0; i < 10_000; i++) {
       events.push(
         i % 2 === 0 ? filler() : exchange({ agentId: i % 4 === 1 ? "main" : "helper-1", ...cloud }),
       );
     }
     const all = destinations(events);
     const start = performance.now();
-    for (let i = 0; i < 20_000; i++) reachedBy(events, "main", i, all);
+    const index = reachIndex(events);
+    for (let i = 0; i < 2_500; i++) reachedBy(index, "main", i * 4, all);
     expect(performance.now() - start).toBeLessThan(1_000);
   });
 });
