@@ -22,9 +22,11 @@ import {
   importClaudeCodeRun,
   runSummary,
   type ImportedRunSummary,
+  type PickedCopilotFolder,
   type RunStateText,
   type SidecarText,
 } from "../import/claudeCodeRun";
+import { loadCopilotFolder, readCopilotFolder } from "../import/copilotFolder";
 import { reportBrowserError } from "../state/browserLog";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
@@ -307,6 +309,24 @@ export function ImportDialog(props: {
     takeFiles(Array.from(e.dataTransfer.files));
   };
 
+  /**
+   * One Copilot session folder (card 605, task 12): the files the grouping
+   * named are read, and the folder loads as a whole. A folder whose
+   * events.jsonl is not a Copilot session loads as whatever it is.
+   */
+  const loadCopilotPick = (list: File[], pick: PickedCopilotFolder): void => {
+    void readCopilotFolder(list, pick)
+      .then((texts) => {
+        const got = loadCopilotFolder(texts);
+        setNote(toolOutputNote(lang, got.source.toolOutputs));
+        props.onLoad(got.events, got.label, got.kind, got.source, got.subagent, undefined, got.run);
+      })
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : String(err));
+        reportBrowserError("import", err);
+      });
+  };
+
   const takeFiles = (list: File[]): void => {
     if (list.length === 0) return;
     setError(null);
@@ -343,6 +363,14 @@ export function ImportDialog(props: {
     }
     if (group.kind === "many") {
       setError(t(lang, "imp.err.manySessions", { n: group.count }));
+      return;
+    }
+    if (group.kind === "copilot") {
+      loadCopilotPick(list, group.session);
+      return;
+    }
+    if (group.kind === "copilot-store") {
+      setError(t(lang, "imp.err.manySessions", { n: group.sessions.length }));
       return;
     }
     if (group.kind === "single") {

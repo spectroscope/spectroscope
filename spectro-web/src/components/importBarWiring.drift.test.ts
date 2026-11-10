@@ -45,11 +45,17 @@ describe("App shows the import bar card 440 describes", () => {
 // for every way a file arrives (a paste or pick, a store row, a folder pick),
 // read off the source each one loaded, and never off the format alone.
 describe("the import dialog states the tool output note from the loaded source", () => {
-  it("sets the note from toolOutputNote on all three load paths", () => {
+  it("sets the note from toolOutputNote on all four load paths", () => {
     const calls = [...dialog.matchAll(/setNote\(toolOutputNote\(lang, (\w+(?:\.\w+)*)\)\)/g)].map(
       (m) => m[1],
     );
-    expect(calls).toEqual(["source.toolOutputs", "result.source.toolOutputs", "run.source.toolOutputs"]);
+    // Task 12 adds the Copilot session folder as the fourth.
+    expect(calls).toEqual([
+      "source.toolOutputs",
+      "result.source.toolOutputs",
+      "got.source.toolOutputs",
+      "run.source.toolOutputs",
+    ]);
     expect(dialog).not.toContain('kind === "vscode-agent"');
     expect(dialog).not.toContain("imp.vscodeNote");
   });
@@ -63,5 +69,17 @@ describe("the import dialog names a pick of several sessions", () => {
       /group\.kind === "many"\) \{\s*setError\(t\(lang, "imp\.err\.manySessions", \{ n: group\.count \}\)\);/,
     );
     expect(dialog).toMatch(/group\.kind === "none"\) \{\s*setError\(t\(lang, "imp\.err\.noSession"\)\);/);
+  });
+});
+
+// Card 605, task 12 item 1: a pick with the layout of a Copilot session folder
+// loads through the folder loader, which reads only the files the grouping named.
+describe("the import dialog loads a Copilot session folder as a whole", () => {
+  it("maps the copilot group to the folder loader and hands its run summary on", () => {
+    expect(dialog).toMatch(/group\.kind === "copilot"\) \{\s*loadCopilotPick\(list, group\.session\);/);
+    expect(dialog).toMatch(/readCopilotFolder\(list, pick\)/);
+    expect(dialog).toMatch(
+      /props\.onLoad\(got\.events, got\.label, got\.kind, got\.source, got\.subagent, undefined, got\.run\)/,
+    );
   });
 });

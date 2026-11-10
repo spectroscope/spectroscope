@@ -843,6 +843,19 @@ export interface PickedSidecar {
   runId: string | null;
 }
 
+/** One GitHub Copilot session folder of a pick (card 605, task 12): the
+ *  indices of its events.jsonl, its workspace.yaml and its
+ *  rewind-file-snapshots/index.json, and whether an inuse.*.lock sits beside
+ *  events.jsonl. */
+export interface PickedCopilotFolder {
+  /** The folder's path inside the pick, "" for files picked without one. */
+  folder: string;
+  events: number;
+  workspace: number | null;
+  snapshots: number | null;
+  live: boolean;
+}
+
 /** What a selection is. Indices point into the caller's own file list. */
 export type PickedGroup =
   | { kind: "single"; session: number }
@@ -855,7 +868,12 @@ export type PickedGroup =
     }
   | { kind: "none" }
   /** Several session candidates: nothing loads, and the dialog says how many (task 11 item 7). */
-  | { kind: "many"; count: number };
+  | { kind: "many"; count: number }
+  /** One Copilot session folder (task 12 item 1). */
+  | { kind: "copilot"; session: PickedCopilotFolder }
+  /** A folder of Copilot session folders: the ones with events.jsonl, and how
+   *  many had the layout without one (task 12 item 5). */
+  | { kind: "copilot-store"; sessions: PickedCopilotFolder[]; skipped: number };
 
 const SIDECAR_NAME = /^agent-(.+)\.jsonl$/;
 const META_NAME = /^agent-(.+)\.meta\.json$/;
@@ -886,6 +904,8 @@ export function groupPickedFiles(files: PickedFile[]): PickedGroup {
   if (files.length === 1) {
     return { kind: "single", session: 0 };
   }
+  const copilot = copilotLayout(files);
+  if (copilot !== null) return copilot;
   const sessions: number[] = [];
   // Keyed by run AND agent: two runs are free to file an agent under the same
   // hex id, and a key that forgot the directory would silently drop one.
@@ -922,4 +942,119 @@ export function groupPickedFiles(files: PickedFile[]): PickedGroup {
     runId,
   }));
   return { kind: "run", session: sessions[0], sidecars, runStates };
+}
+
+// ---- a GitHub Copilot session folder (card 605, task 12) --------------------
+
+const COPILOT_EVENTS = "events.jsonl";
+const COPILOT_WORKSPACE = "workspace.yaml";
+const COPILOT_SNAPSHOT_INDEX = "rewind-file-snapshots/index.json";
+const COPILOT_CHECKPOINTS = "checkpoints/index.md";
+/** Any file under the snapshot folder marks it, the index included. */
+const COPILOT_SNAPSHOT_DIR = /(?:^|\/)rewind-file-snapshots\//;
+/** The lock a running Copilot keeps beside events.jsonl: `inuse.<pid>.lock`. */
+const COPILOT_LOCK = /^inuse\.[^/]+\.lock$/;
+
+/** What one folder of a pick holds of the Copilot layout. */
+interface CopilotCandidate extends PickedCopilotFolder {
+  hasEvents: boolean;
+  /** workspace.yaml, rewind-file-snapshots/ or checkpoints/index.md sits in it. */
+  marked: boolean;
+}
+
+/** The folder a path names when it ends in `/<suffix>`, "" when it is the suffix, else null. */
+function folderOf(path: string, suffix: string): string | null {
+  if (path === suffix) return "";
+  return path.endsWith(`/${suffix}`) ? path.slice(0, -suffix.length - 1) : null;
+}
+
+/**
+ * The Copilot layout of a pick, or null when the pick does not have it.
+ *
+ * A Copilot session folder holds events.jsonl together with workspace.yaml,
+ * rewind-file-snapshots/ or checkpoints/index.md (measured over an IDE export
+ * of 4 and a CLI store of 40, 2026-11-10). Names and paths only: nothing is
+ * read, and nothing under files/, research/ or the backups is named. One such
+ * folder is a session; several folders with events.jsonl beside at least one
+ * of them are a store, in which a folder with the marks and no events.jsonl is
+ * counted and not listed. A folder inside another candidate (a session's own
+ * files/) is not a session of its own.
+ */
+function copilotLayout(files: PickedFile[]): PickedGroup | null {
+  const byFolder = new Map<string, CopilotCandidate>();
+  const at = (folder: string): CopilotCandidate => {
+    let c = byFolder.get(folder);
+    if (c === undefined) {
+      c = {
+        folder,
+        events: -1,
+        workspace: null,
+        snapshots: null,
+        live: false,
+        hasEvents: false,
+        marked: false,
+      };
+      byFolder.set(folder, c);
+    }
+    return c;
+  };
+  files.forEach((f, i) => {
+    const path = f.relativePath !== "" ? f.relativePath : f.name;
+    let folder = folderOf(path, COPILOT_EVENTS);
+    if (folder !== null) {
+      const c = at(folder);
+      if (!c.hasEvents) {
+        c.events = i;
+        c.hasEvents = true;
+      }
+      return;
+    }
+    folder = folderOf(path, COPILOT_WORKSPACE);
+    if (folder !== null) {
+      const c = at(folder);
+      c.workspace ??= i;
+      c.marked = true;
+      return;
+    }
+    folder = folderOf(path, COPILOT_SNAPSHOT_INDEX);
+    if (folder !== null) {
+      const c = at(folder);
+      c.snapshots ??= i;
+      c.marked = true;
+      return;
+    }
+    folder = folderOf(path, COPILOT_CHECKPOINTS);
+    if (folder !== null) {
+      at(folder).marked = true;
+      return;
+    }
+    const snapshotDir = COPILOT_SNAPSHOT_DIR.exec(path);
+    if (snapshotDir !== null) {
+      at(path.slice(0, snapshotDir.index)).marked = true;
+      return;
+    }
+    if (COPILOT_LOCK.test(f.name)) {
+      const own = folderOf(path, f.name);
+      if (own !== null) at(own).live = true;
+    }
+  });
+  const candidates = [...byFolder.values()].filter((c) => c.hasEvents || c.marked);
+  const inside = (c: CopilotCandidate, outer: CopilotCandidate): boolean =>
+    outer !== c && (outer.folder === "" || c.folder.startsWith(`${outer.folder}/`));
+  const own = candidates.filter((c) => !candidates.some((outer) => inside(c, outer)));
+  const listed = own.filter((c) => c.hasEvents);
+  if (!listed.some((c) => c.marked)) return null;
+  const pickOf = (c: CopilotCandidate): PickedCopilotFolder => ({
+    folder: c.folder,
+    events: c.events,
+    workspace: c.workspace,
+    snapshots: c.snapshots,
+    live: c.live,
+  });
+  if (listed.length === 1) return { kind: "copilot", session: pickOf(listed[0]) };
+  return {
+    kind: "copilot-store",
+    sessions: listed.map(pickOf),
+    skipped: own.filter((c) => !c.hasEvents).length,
+  };
 }
