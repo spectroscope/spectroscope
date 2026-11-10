@@ -8,6 +8,8 @@
 //   assistant.message        -> thinking_delta / text_delta / tool_call
 //   tool.execution_start     -> tool_call
 //   tool.execution_complete  -> tool_result
+//   subagent.started         -> agent_spawn + the child's run_start
+//   subagent.completed       -> the child's run_end
 //   session.start            -> ground_info {cwd} (the GitHub Copilot CLI's own
 //                               file, card 605; import-only, as in claudeCode.ts);
 //                               its selectedModel names the model of run_start
@@ -15,6 +17,16 @@
 // the files report can say where the content went.
 // so a recorded Copilot session replays through the same reducers as a
 // spectroscope run. Unrecognized records are skipped, never fatal.
+//
+// LANES (card 605, task 10): a record's top-level agentId, when it names a
+// child (a non-empty string other than "main"), is the agentId of every frame
+// the record produces; the CLI store writes it on 1,546 of its 2,649 records,
+// the IDE export on none. A child follows the Claude Code importer's idiom: its
+// spawn and its own run open at subagent.started, with the prompt of the
+// parent's task call (joined on toolCallId) as the task; it numbers its own
+// turns; its run ends at subagent.completed, the child's own last record. Its
+// user.message is that same task (28 of 28 in the store) and gives no frame,
+// so it never reads as a prompt somebody typed.
 //
 // TOOL OUTPUT (card 605, task 10): tool.execution_complete records what the
 // tool returned in data.result.content (95 of 103 completions in the IDE
@@ -38,6 +50,8 @@ interface VsToolRequest {
 
 interface VsRecord {
   type?: string;
+  /** The lane: absent or "main" on the main agent's records, the child's id on a child's. */
+  agentId?: unknown;
   data?: {
     turnId?: string;
     messageId?: string;
@@ -69,6 +83,17 @@ const tsOf = (r: VsRecord, i: number, base: number): number => {
 
 const asRecord = (r: unknown): VsRecord | null =>
   r && typeof r === "object" && !Array.isArray(r) ? (r as VsRecord) : null;
+
+const MAIN = "main";
+
+/** The lane of a record: its agentId when that names a child, else main. */
+const laneOf = (r: VsRecord): string =>
+  typeof r.agentId === "string" && r.agentId !== "" && r.agentId !== MAIN ? r.agentId : MAIN;
+
+/** A child's task, from its parent's task call: the prompt, else the description, else the Claude Code importer's word. */
+function taskOf(input: unknown): string {
+  return strField(input, "prompt") || strField(input, "description") || "subtask";
+}
 
 /** The two announcement sites disagree about the type of `arguments`:
  *  tool.execution_start carries an object, assistant.message.toolRequests
@@ -139,7 +164,6 @@ export function vscodeAgentWithOrigin(records: unknown[], base = 1_783_500_000_0
     while (origin.length < out.length) origin.push(line);
   };
   const runId = "vscode-import";
-  const agentId = "main";
 
   // Every tool call is announced twice: once in assistant.message.toolRequests
   // and once as tool.execution_start. execution_start is the better source (it
@@ -147,9 +171,14 @@ export function vscodeAgentWithOrigin(records: unknown[], base = 1_783_500_000_0
   // measured from), so the announcement only fills in for calls that never got
   // one — measured in the real export, four completions arrive with no start.
   const startedCallIds = new Set<string>();
+  /** Each call's lane and input, for the spawn its toolCallId names. */
+  const calls = new Map<string, { agentId: string; input: unknown }>();
   for (const r of recs) {
     const id = r.type === "tool.execution_start" ? r.data?.toolCallId : undefined;
-    if (typeof id === "string") startedCallIds.add(id);
+    if (typeof id === "string") {
+      startedCallIds.add(id);
+      calls.set(id, { agentId: laneOf(r), input: r.data?.arguments });
+    }
   }
 
   /** A non-empty selectedModel of a session.start, else null. */
@@ -165,13 +194,22 @@ export function vscodeAgentWithOrigin(records: unknown[], base = 1_783_500_000_0
   /** The tool of each call id, for the completion: a successful create made its file. */
   const callTool = new Map<string, string>();
   let started = false;
-  let turn = 0;
+  /** Turns are per agent, as in the Claude Code importer. */
+  const turns = new Map<string, number>();
+  const nextTurn = (agentId: string): number => {
+    const n = (turns.get(agentId) ?? 0) + 1;
+    turns.set(agentId, n);
+    return n;
+  };
+  /** Each spawned child's run id, and the children whose run has ended. */
+  const childRuns = new Map<string, string>();
+  const ended = new Set<string>();
   let lastTs = base;
   /** The folder the last session.start named, so a resume in the same folder adds nothing. */
   let cwd: string | null = null;
   const toolOutputs: ToolOutputCount = { missing: 0, total: 0 };
 
-  const emitCall = (callId: string, name: string, input: unknown, ts: number): void => {
+  const emitCall = (agentId: string, callId: string, name: string, input: unknown, ts: number): void => {
     if (emittedCalls.has(callId)) return;
     emittedCalls.add(callId);
     callTool.set(callId, name);
@@ -186,7 +224,7 @@ export function vscodeAgentWithOrigin(records: unknown[], base = 1_783_500_000_0
     out.push({
       type: "run_start",
       runId,
-      agentId,
+      agentId: MAIN,
       prompt,
       provider: "copilot",
       ...(model === null ? {} : { model }),
@@ -198,6 +236,7 @@ export function vscodeAgentWithOrigin(records: unknown[], base = 1_783_500_000_0
     const ts = tsOf(r, i, base);
     lastTs = ts;
     const d = r.data;
+    const agentId = laneOf(r);
 
     switch (r.type) {
       case "session.start": {
@@ -216,6 +255,8 @@ export function vscodeAgentWithOrigin(records: unknown[], base = 1_783_500_000_0
       }
 
       case "user.message": {
+        // A child's message is its task, already on its spawn and its run.
+        if (agentId !== MAIN) break;
         // Re-opening the run under the SAME runId is what puts a user bubble in
         // the chat; the reducer draws one per root run_start.
         openRun(typeof d?.content === "string" ? d.content : "", ts);
@@ -226,7 +267,7 @@ export function vscodeAgentWithOrigin(records: unknown[], base = 1_783_500_000_0
         if (!started) openRun("", ts);
         // turnId is a per-request counter that restarts (fifteen distinct values
         // across 189 records in the real export), so position is the only key.
-        out.push({ type: "turn_start", agentId, turn: ++turn, ts });
+        out.push({ type: "turn_start", agentId, turn: nextTurn(agentId), ts });
         break;
       }
 
@@ -241,6 +282,7 @@ export function vscodeAgentWithOrigin(records: unknown[], base = 1_783_500_000_0
           const callId = req?.toolCallId;
           if (typeof callId !== "string" || startedCallIds.has(callId)) continue;
           emitCall(
+            agentId,
             callId,
             typeof req.name === "string" ? req.name : "tool",
             decodeArguments(req.arguments),
@@ -255,7 +297,7 @@ export function vscodeAgentWithOrigin(records: unknown[], base = 1_783_500_000_0
         const callId = d?.toolCallId;
         if (typeof callId !== "string") break;
         callStartTs.set(callId, ts);
-        emitCall(callId, typeof d?.toolName === "string" ? d.toolName : "tool", d?.arguments, ts);
+        emitCall(agentId, callId, typeof d?.toolName === "string" ? d.toolName : "tool", d?.arguments, ts);
         break;
       }
 
@@ -278,6 +320,36 @@ export function vscodeAgentWithOrigin(records: unknown[], base = 1_783_500_000_0
           ...(callTool.get(callId) === "create" && d?.success === true ? { fileChange: "created" } : {}),
           ts,
         });
+        break;
+      }
+
+      case "subagent.started": {
+        if (!started) openRun("", ts);
+        // A start on the main lane names no child; a replayed one spawns it once.
+        if (agentId === MAIN || childRuns.has(agentId)) break;
+        const call = typeof d?.toolCallId === "string" ? calls.get(d.toolCallId) : undefined;
+        const parentId = call === undefined || call.agentId === agentId ? MAIN : call.agentId;
+        const task = taskOf(call?.input);
+        const childRun = `vscode-${agentId}`;
+        childRuns.set(agentId, childRun);
+        out.push({ type: "agent_spawn", agentId, parentId, task, ts });
+        out.push({
+          type: "run_start",
+          runId: childRun,
+          agentId,
+          parentId,
+          prompt: task,
+          provider: "copilot",
+          ts,
+        });
+        break;
+      }
+
+      case "subagent.completed": {
+        const childRun = childRuns.get(agentId);
+        if (childRun === undefined || ended.has(agentId)) break;
+        ended.add(agentId);
+        out.push({ type: "run_end", runId: childRun, stopReason: "end_turn", ts });
         break;
       }
 

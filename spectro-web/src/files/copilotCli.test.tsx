@@ -7,10 +7,11 @@
 import { isValidElement, type ReactNode } from "react";
 import { describe, expect, it } from "vitest";
 import copilotCli from "../import/fixtures/copilot-cli.jsonl?raw";
-import { parseVscodeAgentExport } from "../import/vscodeAgent";
+import { parseVscodeAgentExport, vscodeAgentToRunEvents } from "../import/vscodeAgent";
 import { drive, type El } from "../testkit/driveComponent";
 import { FilesExplorer } from "./FilesExplorer";
 import { fileRows, foldFiles, summarize } from "./fold";
+import { buildReport } from "./report";
 
 const events = parseVscodeAgentExport(copilotCli);
 const ledger = foldFiles(events);
@@ -74,6 +75,7 @@ describe("a Copilot CLI session in the files tab (card 605)", () => {
       "/w/build/test.log",
       "/w/out/head.txt",
       "/w/src/parser/test/EmptyLineTest.cpp",
+      "/w/src/parser/Lexer.cpp",
     ]);
   });
 
@@ -86,6 +88,7 @@ describe("a Copilot CLI session in the files tab (card 605)", () => {
       "build/test.log",
       "out/head.txt",
       "src/parser/test/EmptyLineTest.cpp",
+      "src/parser/Lexer.cpp",
     ]);
   });
 
@@ -115,9 +118,57 @@ describe("a Copilot CLI session in the files tab (card 605)", () => {
       "1 test.log",
       "0 src/parser/",
       "1 **/*Mock* [pattern]",
+      "1 Lexer.cpp",
       "1 test/",
       "2 ParserTest.cpp",
     ]);
+  });
+
+  // Task 10 item 3: a child's records carry its agentId, so its touches are its own.
+  it("gives the child's read to the child, and the agent filter keeps it apart", () => {
+    const lexer = row("/w/src/parser/Lexer.cpp");
+    expect(lexer.touches.map((t) => [t.agentId, t.kind, t.sources])).toEqual([
+      ["a-lex", "read", ["recorded"]],
+    ]);
+    const mainOnly = fileRows(ledger, new Set(["main"])).map((r) => r.path);
+    expect(mainOnly).not.toContain("/w/src/parser/Lexer.cpp");
+    expect(mainOnly).toContain("/w/src/parser/Parser.cpp");
+    expect(fileRows(ledger, new Set(["a-lex"])).map((r) => r.path)).toEqual(["/w/src/parser/Lexer.cpp"]);
+    // The report names the child among the session's agents.
+    const report = buildReport({ events, ledger, sessionId: "s", title: null, version: null, now: 0 });
+    expect(report.agents).toEqual(["main", "a-lex"]);
+  });
+
+  it("puts a finding about a child's call under the child", () => {
+    const child = (r: object) => ({ ...r, agentId: "a-env" });
+    const records = [
+      { type: "session.start", data: { context: { cwd: "/w" } } },
+      { type: "user.message", data: { content: "go" } },
+      {
+        type: "tool.execution_start",
+        data: { toolCallId: "t1", toolName: "task", arguments: { prompt: "look" } },
+      },
+      child({ type: "subagent.started", data: { toolCallId: "t1" } }),
+      child({
+        type: "tool.execution_start",
+        data: { toolCallId: "u1", toolName: "view", arguments: { path: "/w/.env" } },
+      }),
+      child({
+        type: "tool.execution_complete",
+        data: { toolCallId: "u1", success: true, result: { content: "" } },
+      }),
+    ];
+    const childEvents = vscodeAgentToRunEvents(records);
+    const report = buildReport({
+      events: childEvents,
+      ledger: foldFiles(childEvents),
+      sessionId: "s",
+      title: null,
+      version: null,
+      now: 0,
+    });
+    const secret = report.findings.filter((f) => f.kind === "secret-file");
+    expect(secret.map((f) => [f.agentId, f.tool])).toEqual([["a-env", "view"]]);
   });
 });
 

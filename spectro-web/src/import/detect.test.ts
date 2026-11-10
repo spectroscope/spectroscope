@@ -146,7 +146,7 @@ describe("the count of tool results without output", () => {
   it("rides on the source of a Copilot or VS Code file", () => {
     expect(detectAndLoad(vscodeAgent).source.toolOutputs).toEqual({ missing: 3, total: 3 });
     expect(detectAndLoad(copilotIde).source.toolOutputs).toEqual({ missing: 0, total: 4 });
-    expect(detectAndLoad(copilotCli).source.toolOutputs).toEqual({ missing: 0, total: 8 });
+    expect(detectAndLoad(copilotCli).source.toolOutputs).toEqual({ missing: 0, total: 11 });
   });
 
   it("is absent for the other formats, which say nothing of the kind", () => {

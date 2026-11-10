@@ -283,7 +283,8 @@ describe("the Copilot importer names its provider and model (card 605)", () => {
 
   it("takes the model of session.start's selectedModel, with provider copilot", () => {
     const cli = parseVscodeAgentExport(copilotCli);
-    expect(runStarts(cli).map((e) => [e.provider, e.model])).toEqual([["copilot", "claude-sonnet-4.5"]]);
+    const roots = runStarts(cli).filter((e) => (e as { parentId?: string }).parentId === undefined);
+    expect(roots.map((e) => [e.provider, e.model])).toEqual([["copilot", "claude-sonnet-4.5"]]);
   });
 
   it("names the provider without a model when selectedModel is missing or empty", () => {
@@ -417,5 +418,140 @@ describe("a Copilot completion carries what the tool returned (card 605)", () =>
     expect(
       vscodeAgentWithOrigin([{ type: "tool.execution_complete", data: { success: true } }]).toolOutputs,
     ).toEqual({ missing: 0, total: 0 });
+  });
+});
+
+// Task 10 item 3: a record's top-level agentId names its lane. The CLI store
+// writes it on a child's records (1,546 of 2,649 records); the IDE export
+// writes none.
+describe("a Copilot child works on its own lane (card 605)", () => {
+  const records = copilotCli
+    .split(/\r?\n/)
+    .filter((l) => l.trim())
+    .map((l) => JSON.parse(l) as { type: string; agentId?: string; id: string });
+  const { events, origin } = vscodeAgentWithOrigin(records);
+  const frames = events as unknown as Record<string, unknown>[];
+  const line = (id: string) => records.findIndex((r) => r.id === id);
+  const PROMPT = "Read the lexer and report how it handles an empty line.";
+
+  it("every frame of a record carries the record's lane", () => {
+    let child = 0;
+    frames.forEach((f, i) => {
+      if (origin[i] < 0 || typeof f.agentId !== "string") return;
+      const lane = records[origin[i]].agentId ?? "main";
+      expect(f.agentId, `${String(f.type)} of ${records[origin[i]].id}`).toBe(lane);
+      if (lane !== "main") child++;
+    });
+    // The spawn and the child's run, its turn, the view and its result, its text.
+    expect(child).toBe(6);
+  });
+
+  it("subagent.started gives the spawn and the child's own run, named by the parent's task call", () => {
+    const at = frames.filter((_, i) => origin[i] === line("e22")).map((f) => f.type);
+    expect(at).toEqual(["agent_spawn", "run_start"]);
+    expect(frames.find((f) => f.type === "agent_spawn")).toEqual({
+      type: "agent_spawn",
+      agentId: "a-lex",
+      parentId: "main",
+      task: PROMPT,
+      ts: Date.parse("2026-11-10T09:00:21.000Z"),
+    });
+    expect(frames.find((f) => f.type === "run_start" && f.agentId === "a-lex")).toMatchObject({
+      runId: "vscode-a-lex",
+      parentId: "main",
+      prompt: PROMPT,
+      provider: "copilot",
+    });
+  });
+
+  it("the child's user.message is its task and gives no frame, so the chat shows one prompt", () => {
+    expect(frames.filter((_, i) => origin[i] === line("e23"))).toEqual([]);
+    expect(frames.filter((f) => f.type === "run_start" && f.parentId === undefined)).toHaveLength(1);
+  });
+
+  it("numbers turns per agent", () => {
+    const turns = frames.filter((f) => f.type === "turn_start").map((f) => [f.agentId, f.turn]);
+    expect(turns).toEqual([
+      ["main", 1],
+      ["a-lex", 1],
+    ]);
+  });
+
+  it("subagent.completed ends the child's run, and the file ends the root run", () => {
+    const ends = frames.filter((f) => f.type === "run_end");
+    expect(ends.map((f) => f.runId)).toEqual(["vscode-a-lex", "vscode-import"]);
+    expect(origin[frames.indexOf(ends[0])]).toBe(line("e31"));
+    // A child the file never saw complete keeps its run open, as in the Claude Code importer.
+    const open = vscodeAgentToRunEvents(records.filter((r) => r.type !== "subagent.completed"));
+    expect(open.filter((e) => e.type === "run_end").map((e) => (e as { runId: string }).runId)).toEqual([
+      "vscode-import",
+    ]);
+  });
+
+  it("an agentId that is absent, empty, main or not a string is the main lane", () => {
+    for (const agentId of [undefined, "", "main", 7]) {
+      const out = vscodeAgentToRunEvents([
+        {
+          type: "user.message",
+          data: { content: "go" },
+          id: "a",
+          ...(agentId === undefined ? {} : { agentId }),
+        },
+        { type: "assistant.turn_start", data: {}, id: "b", ...(agentId === undefined ? {} : { agentId }) },
+      ]);
+      expect(
+        out.filter((e) => "agentId" in e).map((e) => (e as { agentId: string }).agentId),
+        JSON.stringify(agentId),
+      ).toEqual(["main", "main"]);
+    }
+  });
+
+  it("a child's own task call names the child as the parent of the next child", () => {
+    const out = vscodeAgentToRunEvents([
+      { type: "user.message", data: { content: "go" }, id: "a" },
+      {
+        type: "tool.execution_start",
+        data: { toolCallId: "p1", toolName: "task", arguments: { prompt: "one" } },
+        id: "b",
+      },
+      { type: "subagent.started", data: { toolCallId: "p1" }, agentId: "c1", id: "c" },
+      {
+        type: "tool.execution_start",
+        data: { toolCallId: "p2", toolName: "task", arguments: { description: "two" } },
+        agentId: "c1",
+        id: "d",
+      },
+      { type: "subagent.started", data: { toolCallId: "p2" }, agentId: "c2", id: "e" },
+      // A spawn whose call is not in the file hangs off main, with the Claude Code importer's fallback task.
+      { type: "subagent.started", data: { toolCallId: "gone" }, agentId: "c3", id: "f" },
+      // A replayed start spawns nothing more.
+      { type: "subagent.started", data: { toolCallId: "p1" }, agentId: "c1", id: "g" },
+      // A start on the main lane names no child.
+      { type: "subagent.started", data: { toolCallId: "p1" }, id: "h" },
+    ]);
+    const spawns = out.filter((e) => e.type === "agent_spawn") as {
+      agentId: string;
+      parentId: string;
+      task: string;
+    }[];
+    expect(spawns.map((e) => [e.agentId, e.parentId, e.task])).toEqual([
+      ["c1", "main", "one"],
+      ["c2", "c1", "two"],
+      ["c3", "main", "subtask"],
+    ]);
+  });
+
+  it("the IDE export, which writes no agentId, stays on one lane", () => {
+    const ide = parseVscodeAgentExport(copilotIde) as unknown as Record<string, unknown>[];
+    expect(new Set(ide.filter((e) => "agentId" in e).map((e) => e.agentId))).toEqual(new Set(["main"]));
+  });
+
+  it("the lab holds the child while it works and retires it with the root run", () => {
+    const upto = frames.findIndex((f) => f.type === "tool_call" && f.callId === "u1");
+    const mid = events.slice(0, upto + 1).reduce(advanceScene, initialScene());
+    expect(mid.subagents.map((c) => [c.id, c.focus])).toEqual([["a-lex", "disk"]]);
+    expect(mid.focus).not.toBe("disk");
+    const end = events.reduce(advanceScene, initialScene());
+    expect([end.focus, end.subagents.length]).toEqual(["user", 0]);
   });
 });
