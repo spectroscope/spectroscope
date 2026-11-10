@@ -501,7 +501,6 @@ describe("reportHtml", () => {
     const en = reportHtml(report, "en");
     for (const part of [
       "The options <code>--key</code>, <code>--key-type</code>, <code>--pubkey</code> and <code>--pinnedpubkey</code> are left out, because their values are paths or types.",
-      "and so does a header whose name says token, key, secret, auth or pass.",
       "For <code>aws configure get</code>, that holds only for an access key, a secret key or a session token. " +
         "In each case the command must have printed the value itself, not into a pipe or a substitution.",
     ])
@@ -509,32 +508,40 @@ describe("reportHtml", () => {
     const de = reportHtml(report, "de");
     for (const part of [
       "Die Optionen <code>--key</code>, <code>--key-type</code>, <code>--pubkey</code> und <code>--pinnedpubkey</code> zählen nicht, weil ihre Werte Pfade oder Typen sind.",
-      "ebenso ein Header, dessen Name token, key, secret, auth oder pass enthält.",
       "Bei <code>aws configure get</code> gilt das nur für einen Zugriffsschlüssel, einen geheimen Schlüssel oder ein " +
         "Sitzungstoken. In jedem Fall muss der Befehl den Wert selbst ausgegeben haben, nicht in eine Pipe oder eine Befehlsersetzung.",
     ])
       expect(de, part).toContain(part);
   });
 
-  it("the method states the word rule for names and the colon rule for users (task 11 item 11)", () => {
+  it("the method states the word rule for names and the colon rule for users (task 11 item 11, fix round 2 item 4)", () => {
     const report = build(new Rec().start().tool("read_file", { path: "README.md" }).events);
     const en = reportHtml(report, "en");
-    expect(en).toContain(
-      "A query value counts only when a word of its name says credential. Those words are key, token, secret, " +
-        "pass, password, passwd, passphrase, pwd, auth, authorization, sig, signature, session, sid, code, credential " +
-        "and bearer; joined forms such as <code>apikey</code> count too. A user name given alone does not count by its place.",
-    );
-    expect(en).toContain(
+    for (const part of [
+      "They also include the value of the Cookie header, and of an option, a header or a query parameter when a word of its name says credential.",
+      "Those words are key, token, secret, pass, password, passwd, passphrase, pwd, auth, authorization, sig, " +
+        "signature, session, sid, code, credential and bearer; key counts alone or beside api, access, secret, " +
+        "private, auth, client, master, signing or encryption, and code alone or beside auth, authorization, otp, " +
+        "verification, access, refresh, device or oauth.",
+      "Joined forms such as <code>apikey</code>, and curl's <code>--tlspassword</code> and " +
+        "<code>--proxy-tlspassword</code>, count too.",
       "the password after the colon in <code>-u</code>, <code>--user</code> and the other user options",
-    );
+      "A user name given alone, and a query value whose name says nothing of a credential, do not count by their place.",
+    ])
+      expect(en, part).toContain(part);
     expect(en).not.toContain("their name holds");
     const de = reportHtml(report, "de");
-    expect(de).toContain(
-      "Ein Wert einer Abfrage zählt nur, wenn ein Wort seines Namens Zugangsdaten nennt. Diese Wörter sind key, " +
-        "token, secret, pass, password, passwd, passphrase, pwd, auth, authorization, sig, signature, session, sid, " +
-        "code, credential und bearer; zusammengeschriebene Formen wie <code>apikey</code> zählen ebenso. " +
-        "Ein Benutzername allein zählt nicht durch seine Stelle.",
-    );
+    for (const part of [
+      "Dazu kommen der Wert des Headers Cookie und der Wert einer Option, eines Headers oder eines " +
+        "Abfrageparameters, wenn ein Wort seines Namens Zugangsdaten nennt.",
+      "Diese Wörter sind key, token, secret, pass, password, passwd, passphrase, pwd, auth, authorization, sig, " +
+        "signature, session, sid, code, credential und bearer; key zählt allein oder neben api, access, secret, " +
+        "private, auth, client, master, signing oder encryption, code allein oder neben auth, authorization, otp, " +
+        "verification, access, refresh, device oder oauth.",
+      "dazu curls <code>--tlspassword</code> und <code>--proxy-tlspassword</code>.",
+      "Ein Benutzername allein und ein Wert einer Abfrage, deren Name nichts von Zugangsdaten sagt, zählen nicht durch ihre Stelle.",
+    ])
+      expect(de, part).toContain(part);
   });
 
   it("the method says a password is masked into the next word after a name that ends in its sign (task 11 item 1)", () => {

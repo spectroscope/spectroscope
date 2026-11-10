@@ -1328,3 +1328,61 @@ describe("names by their words, users by their password (task 11 item 11)", () =
     expect(named(`curl --oauth2-bearer ${TOK} https://a.example.com`)).toEqual([[TOK, true]]);
   });
 });
+
+// Fix round 2 item 4: header, query and option names count by their words.
+// `key` and `code` count alone or beside a word that says what they open.
+describe("names by their words everywhere (fix round 2 item 4)", () => {
+  const V = ["Zk9", "wQ4", "tLm2x"].join("");
+  const spans = (line: string) => shellRisk(line, W).values.map((v) => [line.slice(v.start, v.end), v.named]);
+
+  it("a header counts by a word of its name", () => {
+    for (const header of ["X-Compass-Region", "X-Passthrough", "X-Request-Id", "X-Keyboard"])
+      expect(spans(`curl -H "${header}: ${V}" https://a.example.com`), header).toEqual([]);
+    for (const header of [
+      "X-Api-Key",
+      "Authorization",
+      "Proxy-Authorization",
+      "Cookie",
+      "X-Auth-Token",
+      "X-Password",
+      "X-Session-Id",
+    ])
+      expect(spans(`curl -H "${header}: ${V}" https://a.example.com`).length, header).toBe(1);
+  });
+
+  it("a query name counts key and code only alone or with a word that says what they open", () => {
+    for (const [param, says] of [
+      ["zip_code", false],
+      ["country_code", false],
+      ["sort_key", false],
+      ["public_key", false],
+      ["key_id", false],
+      ["code", true],
+      ["key", true],
+      ["api_key", true],
+      ["authorization_code", true],
+      ["oauth_code", true],
+      ["otp_code", true],
+      ["private_key", true],
+      ["signing_key", true],
+      ["access_key_id", true],
+    ] as const)
+      expect(spans(`curl "https://a.example.com/x?${param}=${V}"`), param).toEqual([[V, says]]);
+  });
+
+  it("an option counts by a word of its name, and curl's compound password options by name", () => {
+    for (const option of [
+      "--tlspassword",
+      "--proxy-tlspassword",
+      "--api-key",
+      "--client-secret",
+      "--proxy-pass",
+    ])
+      expect(
+        spans(`curl ${option} ${V} https://a.example.com`).map(([v]) => v),
+        option,
+      ).toEqual([V]);
+    for (const option of ["--monkey-wrench", "--sort-key", "--zip-code"])
+      expect(spans(`curl ${option} ${V} https://a.example.com`), option).toEqual([]);
+  });
+});

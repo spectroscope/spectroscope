@@ -1623,6 +1623,32 @@ export const CREDENTIAL_NAME_JOINED: readonly string[] = [
   "sessionid",
 ];
 const CREDENTIAL_WORDS = new Set([...CREDENTIAL_NAME_WORDS, ...CREDENTIAL_NAME_JOINED]);
+/** The words beside which `key` and `code` name a credential; alone they do too (fix round 2 item 4). */
+export const KEY_PARTNERS: readonly string[] = [
+  "api",
+  "access",
+  "secret",
+  "private",
+  "auth",
+  "client",
+  "master",
+  "signing",
+  "encryption",
+];
+export const CODE_PARTNERS: readonly string[] = [
+  "auth",
+  "authorization",
+  "otp",
+  "verification",
+  "access",
+  "refresh",
+  "device",
+  "oauth",
+];
+const PARTNERS = new Map<string, ReadonlySet<string>>([
+  ["key", new Set(KEY_PARTNERS)],
+  ["code", new Set(CODE_PARTNERS)],
+]);
 
 /**
  * Whether a query parameter's name says it holds a credential: a word of it,
@@ -1631,12 +1657,19 @@ const CREDENTIAL_WORDS = new Set([...CREDENTIAL_NAME_WORDS, ...CREDENTIAL_NAME_J
  * with a plural `s`. `side` and `zipcode` say nothing (task 11 item 11).
  */
 export function saysCredential(name: string): boolean {
-  return name
+  const words = name
     .replace(/([a-z])([A-Z])/g, "$1 $2")
     .replace(/([A-Z])([A-Z][a-z])/g, "$1 $2")
     .split(/[^A-Za-z]+/)
+    .filter((w) => w !== "")
     .map((w) => w.toLowerCase())
-    .some((w) => CREDENTIAL_WORDS.has(w) || (w.endsWith("s") && CREDENTIAL_WORDS.has(w.slice(0, -1))));
+    .map((w) => (w.endsWith("s") && CREDENTIAL_WORDS.has(w.slice(0, -1)) ? w.slice(0, -1) : w));
+  return words.some((w) => {
+    if (!CREDENTIAL_WORDS.has(w)) return false;
+    // `key` and `code` alone, or beside a word that says what they open (fix round 2 item 4).
+    const partners = PARTNERS.get(w);
+    return partners === undefined || words.length === 1 || words.some((x) => partners.has(x));
+  });
 }
 
 const AUTH_SCHEME = /^\s*(?:bearer|basic|token|digest|negotiate|bot)\s+/i;
@@ -1682,14 +1715,16 @@ function secretValue(
 /** A word's shape, or its text when it is literal; DYN for a dynamic word of unknown pieces. */
 const shapeText = (w: Word): string => shapeOf(w) ?? DYN;
 
-/** An option whose name says it holds a secret: password, passwd, passphrase, token, secret, key, or `pass`. */
-const SECRET_OPTION = /password|passwd|passphrase|token|secret|key|^pass$|-pass$/i;
+/** curl's option names that join a credential word to another, which the word rule would miss. */
+export const COMPOUND_OPTIONS: readonly string[] = ["tlspassword", "proxy-tlspassword"];
 /** Options whose name says key and whose value is a path or a type (task 11 item 3e). */
 const KEY_FILE_OPTIONS = new Set(["key", "key-type", "pubkey", "pinnedpubkey"]);
+/** An option whose name says credential by its words (saysCredential), or one of curl's compound names. */
 const secretOption = (name: string): boolean =>
-  !KEY_FILE_OPTIONS.has(name.toLowerCase()) && SECRET_OPTION.test(name);
-/** Authorization, Proxy-Authorization, Cookie, and a header whose name says token, key, secret, auth or pass. */
-const SECRET_HEADER = /^cookie$|token|key|secret|auth|pass/i;
+  !KEY_FILE_OPTIONS.has(name.toLowerCase()) &&
+  (COMPOUND_OPTIONS.includes(name.toLowerCase()) || saysCredential(name));
+/** Cookie, and a header whose name says credential by its words (Authorization, X-Api-Key). */
+const secretHeader = (name: string): boolean => name.toLowerCase() === "cookie" || saysCredential(name);
 const HEADER_NAME = /^\s*([A-Za-z0-9!#$%&'*+.^_`|~-]+)\s*:\s*/;
 
 const VALUE_SPECS = new Map<string, Spec>([
@@ -1763,7 +1798,7 @@ function positionValues(name: string, args: Word[], ctx: Ctx, out: ShellRisk): v
     for (const w of p.operands) {
       const t = shapeText(w);
       const h = /^([A-Za-z0-9!#$%&'*+.^_`|~-]+):(?![=@])/.exec(t);
-      if (h && SECRET_HEADER.test(h[1])) headerValue(out, ctx, w, 0, t);
+      if (h && secretHeader(h[1])) headerValue(out, ctx, w, 0, t);
       const q = /^[^=:@]+==/.exec(t);
       if (q)
         secretValue(
@@ -1783,7 +1818,7 @@ function positionValues(name: string, args: Word[], ctx: Ctx, out: ShellRisk): v
 /** The value of a header with a secret name, after `Name:`. `shape` is the holder's shape from `from` on. */
 function headerValue(out: ShellRisk, ctx: Ctx, holder: Word, from: number, shape: string): void {
   const m = HEADER_NAME.exec(shape);
-  if (!m || !SECRET_HEADER.test(m[1]) || shape.length === m[0].length) return;
+  if (!m || !secretHeader(m[1]) || shape.length === m[0].length) return;
   secretValue(out, ctx, holder, from + m[0].length, holder.text.length, shape.slice(m[0].length), "header");
 }
 
