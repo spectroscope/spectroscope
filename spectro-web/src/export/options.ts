@@ -100,15 +100,19 @@ export interface StreamFacts {
   /** Frames an import read around the conversation. Same rule, different
    *  sentence: these carry something the reader saw on screen. */
   importedFrames: number;
+  /** A Copilot session folder's file snapshots (card 605, task 12). They
+   *  travel beside the import, not in the stream, so the caller passes them. */
+  snapshots: number;
 }
 
 /**
  * What a stream contains that a target format might not be able to hold.
  *
  * @param events the stream about to be written
+ * @param side   what the import carried beside the stream: a Copilot folder's snapshot count
  * @return counts, all of them derived — never a guess, never a constant
  */
-export function streamFacts(events: readonly RunEvent[]): StreamFacts {
+export function streamFacts(events: readonly RunEvent[], side: { snapshots?: number } = {}): StreamFacts {
   const agents = new Set<string>();
   const facts: StreamFacts = {
     events: events.length,
@@ -121,6 +125,7 @@ export function streamFacts(events: readonly RunEvent[]): StreamFacts {
     images: 0,
     socketFrames: 0,
     importedFrames: 0,
+    snapshots: side.snapshots ?? 0,
   };
   for (const event of events) {
     // Read before the switch, because these types are not in the RunEvent union
@@ -166,6 +171,16 @@ export interface Loss {
   de: string;
 }
 
+/** A Copilot folder's file snapshots: no writer has a line for them, in any format. */
+const SNAPSHOTS_LOSS = {
+  code: "copilot-snapshots",
+  of: (f: StreamFacts) => f.snapshots,
+  en: (n: number) =>
+    `${n} file ${n === 1 ? "snapshot" : "snapshots"} of the Copilot folder: no export writes ${n === 1 ? "it" : "them"}`,
+  de: (n: number) =>
+    `${n} ${n === 1 ? "Dateischnappschuss" : "Dateischnappschüsse"} des Copilot-Ordners: kein Export schreibt ${n === 1 ? "ihn" : "sie"}`,
+};
+
 /** One entry per thing a foreign shape cannot carry, with the fact that decides
  *  whether it applies to THIS stream. A loss with a count of zero is never
  *  printed: a session with no subagents loses no subagents, and warning anyway
@@ -204,6 +219,7 @@ const LOSSES: Record<
       de: (n) =>
         `${n} importierte ${n === 1 ? "Frame" : "Frames"}, die rund um das Gespräch gelesen wurden: auch dafür hat das Draht-Format keine Zeile`,
     },
+    SNAPSHOTS_LOSS,
   ],
   "claude-code": [
     {
@@ -218,6 +234,7 @@ const LOSSES: Record<
       en: (n) => `${n} generated ${n === 1 ? "image" : "images"} — no counterpart in that format`,
       de: (n) => `${n} generierte ${n === 1 ? "Grafik" : "Grafiken"} — kein Gegenstück in dem Format`,
     },
+    SNAPSHOTS_LOSS,
   ],
   vscode: [
     {
@@ -267,6 +284,7 @@ const LOSSES: Record<
       en: (n) => `${n} generated ${n === 1 ? "image" : "images"} — no counterpart in that format`,
       de: (n) => `${n} generierte ${n === 1 ? "Grafik" : "Grafiken"} — kein Gegenstück in dem Format`,
     },
+    SNAPSHOTS_LOSS,
   ],
 };
 

@@ -435,6 +435,27 @@ export function copilotSideFile(name: string, text: string): boolean {
   return root !== null && "schema" in root && ("snapshots" in root || "tracking" in root);
 }
 
+// ---- the snapshot count of the import on screen ------------------------------------
+
+/** The import on screen and its snapshot count; only that import holds one. */
+let heldSnapshots: { sessionId: string; count: number } | null = null;
+
+/**
+ * Holds the snapshot count of the import that just opened, for the export
+ * sheet to say they are not exported (item 9). A later import replaces it.
+ *
+ * @param sessionId the import's replay id
+ * @param count     how many snapshots it carried
+ */
+export function holdCopilotSnapshots(sessionId: string, count: number): void {
+  heldSnapshots = count > 0 ? { sessionId, count } : null;
+}
+
+/** The snapshot count of the import with this id, 0 for any other view. */
+export function heldCopilotSnapshots(sessionId: string | null | undefined): number {
+  return heldSnapshots !== null && heldSnapshots.sessionId === sessionId ? heldSnapshots.count : 0;
+}
+
 // ---- a store ----------------------------------------------------------------------
 
 /** A picked file as the store list reads it: its size and time come from the File, never from a read. */

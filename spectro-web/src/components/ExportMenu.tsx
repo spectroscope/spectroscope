@@ -33,6 +33,7 @@ import { toVscodeAgentJsonl } from "../export/vscodeAgent";
 import type { ExportRequest, JsonlFormat } from "../export/options";
 import type { ExportKind } from "../export/kinds";
 import { ExportDialog } from "./ExportDialog";
+import { heldCopilotSnapshots } from "../import/copilotFolder";
 
 export type { ExportKind };
 
@@ -239,6 +240,7 @@ export function ExportMenu(props: {
           failedUnits={known ? translation.failed.size : 0}
           label={props.label}
           extended={props.extended}
+          snapshots={heldCopilotSnapshots(props.viewKey)}
           onSaveHtml={saveTheHtml}
           onSaveJsonl={saveTheJsonl}
           onClose={() => setOpen(false)}

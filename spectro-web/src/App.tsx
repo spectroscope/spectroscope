@@ -243,6 +243,7 @@ import {
 } from "./components/importBar";
 import { ImportNoteBar } from "./components/ImportNoteBar";
 import type { ImportedRunSummary } from "./import/claudeCodeRun";
+import { holdCopilotSnapshots } from "./import/copilotFolder";
 import { importedPhasesOf, type WorkflowDeclaration } from "./lab/workflowGraph";
 import { withCommandMarks } from "./lab/labChatState";
 import { collectImages, imageLines, indexOf, withSourceLines } from "./state/sessionImages";
@@ -1581,6 +1582,8 @@ export function App() {
     const sessionId = `import:${kind}:${label}`;
     // Card 473: only the import on screen holds wires; the last one lets go.
     releaseHeldWires();
+    // Card 605, task 12: and only it holds the count of its Copilot file snapshots.
+    holdCopilotSnapshots(sessionId, source.copilot?.snapshots?.length ?? 0);
     // Card 431: an import can be as large as a recorded session (the store
     // serves up to 128 MiB), so its fold runs in slices under the same sign.
     // The dialog closes first, or it would stand over the sign.
