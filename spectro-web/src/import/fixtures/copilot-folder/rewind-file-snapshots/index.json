@@ -1,0 +1,92 @@
+{
+  "schema": 1,
+  "snapshots": [
+    {
+      "snapshotId": "snap-1",
+      "eventId": "u1",
+      "userMessage": "Add a parser test.",
+      "timestamp": "2026-11-10T09:00:02.000Z",
+      "files": {
+        "k1": {
+          "path": "/w/src/parser.ts",
+          "preimage": {
+            "kind": "content",
+            "contentHash": "h1",
+            "backupFile": "h1",
+            "mode": 33188,
+            "size": 10,
+            "resolvedPath": "/w/src/parser.ts"
+          },
+          "postimage": { "kind": "content", "contentHash": "h2", "resolvedPath": "/w/src/parser.ts" },
+          "linesAdded": 3,
+          "linesRemoved": 1
+        },
+        "k2": {
+          "path": "/w/test/parser.test.ts",
+          "preimage": { "kind": "none" },
+          "postimage": { "kind": "content", "contentHash": "h3", "resolvedPath": "/w/test/parser.test.ts" },
+          "linesAdded": 12,
+          "linesRemoved": 0
+        },
+        "k3": {
+          "path": "/w/old/notes.txt",
+          "preimage": {
+            "kind": "content",
+            "contentHash": "h4",
+            "backupFile": "h4",
+            "mode": 33188,
+            "size": 4,
+            "resolvedPath": "/w/old/notes.txt"
+          },
+          "postimage": { "kind": "none" },
+          "linesAdded": 0,
+          "linesRemoved": 4
+        }
+      },
+      "backupFiles": ["h1", "h4"],
+      "fileCount": 3,
+      "linesAdded": 15,
+      "linesRemoved": 5
+    },
+    {
+      "snapshotId": "snap-2",
+      "eventId": "u2",
+      "userMessage": "Now tidy the settings.",
+      "timestamp": "2026-11-10T09:00:10.000Z",
+      "files": {
+        "k4": {
+          "path": "/w/.env",
+          "preimage": {
+            "kind": "content",
+            "contentHash": "h5",
+            "backupFile": "h5",
+            "mode": 33188,
+            "size": 8,
+            "resolvedPath": "/w/.env"
+          },
+          "postimage": { "kind": "content", "contentHash": "h6", "resolvedPath": "/w/.env" },
+          "linesAdded": 1,
+          "linesRemoved": 1
+        },
+        "k5": {
+          "path": "/srv/shared/settings.md",
+          "preimage": {
+            "kind": "content",
+            "contentHash": "h7",
+            "backupFile": "h7",
+            "mode": 33188,
+            "size": 8,
+            "resolvedPath": "/srv/shared/settings.md"
+          },
+          "postimage": { "kind": "content", "contentHash": "h8", "resolvedPath": "/srv/shared/settings.md" },
+          "linesAdded": 2,
+          "linesRemoved": 2
+        }
+      },
+      "backupFiles": ["h5", "h7"],
+      "fileCount": 2,
+      "linesAdded": 3,
+      "linesRemoved": 3
+    }
+  ]
+}

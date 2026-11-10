@@ -7,6 +7,7 @@
 
 import { describeTool, fileChange, type PatchFile, type ToolView } from "../components/toolViews";
 import { TITLE_AGENT_ID, type RunEvent } from "../events";
+import type { CopilotSnapshot } from "../import/copilotFolder";
 import { shortenPath } from "../lab/fileTree";
 import { elapsedAt } from "../state/stepper";
 import { isRooted, resolvePath, saysFolder } from "./paths";
@@ -20,6 +21,7 @@ export interface FileTouch extends ShellTouch {
   callIndex: number; // index of the tool_call in the event list
   agentId: string;
   t: number | null; // seconds from the first event (C12)
+  lines?: { added: number; removed: number }; // a Copilot file snapshot's count for this file
 }
 
 export interface FileCall {
@@ -36,7 +38,14 @@ export interface FileCall {
   inline: boolean;
   note: string | null; // "no change" for an unchanged write, "no file named" for a shell call without touches
   touches: FileTouch[];
+  /** A Copilot file snapshot (card 605, task 12): its lines over all its files. */
+  snapshot?: { added: number; removed: number };
 }
+
+/** The tool of a Copilot file snapshot's entry; the views name it in the reader's language. */
+export const COPILOT_SNAPSHOT_TOOL = "copilot-file-snapshot";
+/** The reason of a snapshot's touch: where it was recorded. */
+const SNAPSHOT_REASON = "rewind-file-snapshots";
 
 export interface PromptMark {
   eventIndex: number;
@@ -110,8 +119,16 @@ interface Reading {
  *
  * One pass: a result pairs with the latest unpaired call of the same agent and
  * call id through a map of stacks, so the cost stays linear in the events.
+ *
+ * A Copilot session folder's file snapshots (card 605, task 12) arrive beside
+ * the events. Each becomes a recorded call of its own at the end of its run
+ * (its `at`), or at the latest free event of that run when a file call stands
+ * there, so no two calls share an index.
  */
-export function foldFiles(events: readonly RunEvent[]): FileLedger {
+export function foldFiles(
+  events: readonly RunEvent[],
+  snapshots: readonly CopilotSnapshot[] = [],
+): FileLedger {
   const opened: Open[] = [];
   const unpaired = new Map<string, Open[]>();
   const prompts: PromptMark[] = [];
@@ -189,6 +206,7 @@ export function foldFiles(events: readonly RunEvent[]): FileLedger {
     const call = fileCall(open);
     if (call !== null) calls.push(call);
   }
+  if (snapshots.length > 0) addSnapshots(calls, events, snapshots, workspace);
   const timed = calls.some((c) => c.t !== null) || prompts.some((p) => p.t !== null);
   return { calls, prompts, workspace, timed };
 }
@@ -274,6 +292,66 @@ function letterOf(touches: readonly FileTouch[]): FileRow["letter"] {
   if (last === "delete") return "D";
   if (first !== null) return first === "create" ? "A" : "M";
   return unknown ? "?" : "R";
+}
+
+/** The snapshot calls, merged into `calls` in event order. A snapshot without files gives none. */
+function addSnapshots(
+  calls: FileCall[],
+  events: readonly RunEvent[],
+  snapshots: readonly CopilotSnapshot[],
+  workspace: string | null,
+): void {
+  if (events.length === 0) return;
+  const taken = new Set(calls.map((c) => c.callIndex));
+  let added = false;
+  for (const snap of snapshots) {
+    if (snap.files.length === 0) continue;
+    const lo = Math.max(0, snap.from ?? 0);
+    let at = Math.min(snap.at, events.length - 1);
+    while (at >= lo && taken.has(at)) at--;
+    if (at < lo) continue;
+    taken.add(at);
+    const t = seconds(events, at);
+    const byPath = new Map<string, FileTouch>();
+    let plus = 0;
+    let minus = 0;
+    for (const file of snap.files) {
+      plus += file.added;
+      minus += file.removed;
+      const path = resolvePath(file.path, workspace);
+      if (byPath.has(path)) continue;
+      byPath.set(path, {
+        written: file.path,
+        path,
+        folder: false,
+        kind: file.kind,
+        reason: SNAPSHOT_REASON,
+        sources: ["recorded"],
+        callIndex: at,
+        agentId: snap.agentId,
+        t,
+        lines: { added: file.added, removed: file.removed },
+      });
+    }
+    calls.push({
+      callIndex: at,
+      agentId: snap.agentId,
+      t,
+      tool: COPILOT_SNAPSHOT_TOOL,
+      line: `+${plus} \u2212${minus}`,
+      status: "ok",
+      shell: false,
+      output: null,
+      base: workspace,
+      script: null,
+      inline: false,
+      note: null,
+      touches: [...byPath.values()],
+      snapshot: { added: plus, removed: minus },
+    });
+    added = true;
+  }
+  if (added) calls.sort((a, b) => a.callIndex - b.callIndex);
 }
 
 // The fold of one call.

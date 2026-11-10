@@ -6560,6 +6560,8 @@ export const dict: Record<string, { de: string; en: string }> = {
   "filesTab.ops.col.call": { de: "Aufruf", en: "call" },
   "filesTab.ops.col.files": { de: "Dateien", en: "files" },
   "filesTab.ops.col.tool": { de: "Werkzeug", en: "tool" },
+  // Card 605, task 12: the entry of a Copilot session folder's file snapshot.
+  "filesTab.snapshot.entry": { de: "Copilot-Dateischnappschuss", en: "Copilot file snapshot" },
   "filesTab.agents.aria": { de: "Agenten", en: "Agents" },
   "filesTab.timeline.aria": { de: "Zeitleiste der Dateien", en: "File timeline" },
   "filesTab.timeline.play": { de: "abspielen", en: "play" },

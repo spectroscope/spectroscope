@@ -24,12 +24,43 @@ export interface CopilotWorkspace {
   createdAt: string | null;
 }
 
+/** One file of a recorded snapshot (item 3). */
+export interface CopilotSnapshotFile {
+  path: string;
+  /** create when the preimage holds no content, delete when the postimage holds none, else change. */
+  kind: "create" | "change" | "delete";
+  added: number;
+  removed: number;
+}
+
+/** A snapshot of rewind-file-snapshots/index.json, as the file records it. */
+export interface CopilotSnapshotRecord {
+  /** The user.message the snapshot belongs to, or null when the record names none. */
+  eventId: string | null;
+  /** The agent the record names, else "main". */
+  agentId: string;
+  files: CopilotSnapshotFile[];
+}
+
+/** A snapshot placed on the loaded stream. */
+export interface CopilotSnapshot {
+  /** The event index of the root run_start its user.message opened, or null when it opened none. */
+  from: number | null;
+  /** The event index of that run's end (its last event before the next root
+   *  run_start), or the stream's last event when it opened none. */
+  at: number;
+  agentId: string;
+  files: CopilotSnapshotFile[];
+}
+
 /** What a Copilot session carries beside its events: never a RunEvent, never written to a file. */
 export interface CopilotSide {
   /** session.start's sessionId, or null when it names none. */
   sessionId: string | null;
   /** What the folder's workspace.yaml said; absent without one. */
   workspace?: CopilotWorkspace;
+  /** The folder's recorded file snapshots; absent when it had none. */
+  snapshots?: CopilotSnapshot[];
 }
 
 /** A picked file as far as this module reads it; a browser File is one. */
@@ -160,6 +191,111 @@ export function copilotWorkspace(yaml: Readonly<Record<string, string>>): Copilo
   };
 }
 
+// ---- rewind-file-snapshots/index.json ---------------------------------------------
+
+const MAIN = "main";
+
+const asObject = (v: unknown): Record<string, unknown> | null =>
+  typeof v === "object" && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
+
+const nonEmpty = (v: unknown): string | null => (typeof v === "string" && v !== "" ? v : null);
+
+/** A count of lines: a finite number not below zero, else 0. */
+const lineCount = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : 0);
+
+/** An image holds content when its kind says so: 7 of 8 preimages and 8 of 8
+ *  postimages measured say "content"; the other kind is read as no content. */
+const holdsContent = (image: unknown): boolean => asObject(image)?.kind === "content";
+
+/**
+ * The snapshots of a rewind-file-snapshots/index.json, or null when the text
+ * is no snapshot index (an object with `schema` and a `snapshots` list). Only
+ * which files changed is read: the stored file contents (the backups) are
+ * never named, and an image's hash, size and mode are left unread.
+ *
+ * @param text the file
+ * @return the snapshots in file order, or null
+ */
+export function readSnapshotIndex(text: string): CopilotSnapshotRecord[] | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  const root = asObject(parsed);
+  if (root === null || !("schema" in root) || !Array.isArray(root.snapshots)) return null;
+  const out: CopilotSnapshotRecord[] = [];
+  for (const raw of root.snapshots) {
+    const snapshot = asObject(raw);
+    if (snapshot === null) continue;
+    const agent = nonEmpty(snapshot.agentId);
+    const files: CopilotSnapshotFile[] = [];
+    for (const value of Object.values(asObject(snapshot.files) ?? {})) {
+      const entry = asObject(value);
+      if (entry === null) continue;
+      const pre = asObject(entry.preimage);
+      const post = asObject(entry.postimage);
+      const path = nonEmpty(entry.path) ?? nonEmpty(pre?.resolvedPath) ?? nonEmpty(post?.resolvedPath);
+      if (path === null) continue;
+      const kind = !holdsContent(post) ? "delete" : !holdsContent(pre) ? "create" : "change";
+      files.push({ path, kind, added: lineCount(entry.linesAdded), removed: lineCount(entry.linesRemoved) });
+    }
+    out.push({
+      eventId: nonEmpty(snapshot.eventId),
+      agentId: agent !== null && agent !== MAIN ? agent : MAIN,
+      files,
+    });
+  }
+  return out;
+}
+
+/** The record a line holds, or null. */
+function recordOf(line: string | undefined): Record<string, unknown> | null {
+  if (line === undefined) return null;
+  try {
+    return asObject(JSON.parse(line));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The snapshots placed on the stream: each belongs to the root run that its
+ * user.message opened, at that run's end. A snapshot whose eventId opened no
+ * run stands at the end of the stream.
+ *
+ * @param records the snapshots as the index records them
+ * @param events  the loaded stream
+ * @param source  the stream's lines and origins
+ * @return the placed snapshots, in record order
+ */
+export function placeSnapshots(
+  records: readonly CopilotSnapshotRecord[],
+  events: readonly RunEvent[],
+  source: Pick<ImportSource, "lines" | "origin">,
+): CopilotSnapshot[] {
+  if (events.length === 0) return [];
+  const roots: number[] = [];
+  const openedBy = new Map<string, number>();
+  events.forEach((e, i) => {
+    const f = e as unknown as { type?: unknown; parentId?: unknown };
+    if (f.type !== "run_start" || f.parentId != null) return;
+    roots.push(i);
+    const line = source.origin[i];
+    const record = line < 0 ? null : recordOf(source.lines[line]);
+    const id = record?.type === "user.message" ? nonEmpty(record.id) : null;
+    if (id !== null && !openedBy.has(id)) openedBy.set(id, i);
+  });
+  const last = events.length - 1;
+  return records.map((r) => {
+    const from = r.eventId === null ? undefined : openedBy.get(r.eventId);
+    if (from === undefined) return { from: null, at: last, agentId: r.agentId, files: r.files };
+    const next = roots.find((at) => at > from);
+    return { from, at: next === undefined ? last : next - 1, agentId: r.agentId, files: r.files };
+  });
+}
+
 // ---- the folder -------------------------------------------------------------------
 
 /** The stream with a ground_info frame of the importer's own at its head. */
@@ -187,7 +323,9 @@ function withGround(
  * Copilot session by its producer; any other events.jsonl loads as whatever it
  * is. workspace.yaml names the import (its `name`) and gives the workspace
  * when session.start names none (its `cwd`, as an importer-built ground_info
- * frame; a ground_info from session.start stays first).
+ * frame; a ground_info from session.start stays first). The snapshot index
+ * gives the recorded file changes, placed on the stream and carried beside
+ * it (`source.copilot.snapshots`), never as frames.
  *
  * @param texts the folder's texts
  * @return the import, named and summarised for the dialog
@@ -210,7 +348,14 @@ export function loadCopilotFolder(texts: CopilotFolderTexts): CopilotFolderLoad 
   let origin = loaded.source.origin;
   if (workspace?.cwd != null && groundCwd(events) === null)
     ({ events, origin } = withGround(events, origin, workspace.cwd));
-  const copilot: CopilotSide = { ...side, ...(workspace !== null ? { workspace } : {}) };
+  const records = texts.snapshots === null ? null : readSnapshotIndex(texts.snapshots);
+  const snapshots =
+    records === null ? [] : placeSnapshots(records, events, { lines: loaded.source.lines, origin });
+  const copilot: CopilotSide = {
+    ...side,
+    ...(workspace !== null ? { workspace } : {}),
+    ...(snapshots.length > 0 ? { snapshots } : {}),
+  };
   return {
     events,
     kind: loaded.kind,

@@ -1,9 +1,9 @@
 // Card 605: the files report as CSV (design section 5). UTF-8 with a byte
 // order mark so a spreadsheet reads the umlauts, comma separated, quoted as
 // RFC 4180 says, CRLF line ends. One row per finding, one per file, then one
-// per search or listing. The report model holds files, not single touches, so
-// a file row carries what happened to it over the session, its sources, its
-// first time and its calls.
+// per search or listing, then one per Copilot file snapshot. The report model
+// holds files, not single touches, so a file row carries what happened to it
+// over the session, its sources, its first time and its calls.
 //
 // The columns level, what, source and finding carry the report's tokens in
 // every language, for filtering; clock, detail and destination are written in
@@ -11,8 +11,16 @@
 
 import type { Lang } from "../i18n/i18n";
 import { clockText } from "./axis";
-import type { FilesReport, Finding, ReportFile, ReportSearch } from "./report";
-import { cutNote, destinationText, findingEvent, reachedDestinations, scrub } from "./reportHtml";
+import { COPILOT_SNAPSHOT_TOOL } from "./fold";
+import type { FilesReport, Finding, ReportFile, ReportSearch, ReportSnapshot } from "./report";
+import {
+  cutNote,
+  destinationText,
+  findingEvent,
+  reachedDestinations,
+  scrub,
+  snapshotLines,
+} from "./reportHtml";
 
 export const CSV_HEADER: readonly string[] = [
   "level",
@@ -58,6 +66,7 @@ interface Words {
   calls: (n: number) => string;
   modelOnly: string;
   namesOnly: string;
+  snapshot: string;
 }
 
 const W: Record<Lang, Words> = {
@@ -75,6 +84,7 @@ const W: Record<Lang, Words> = {
     calls: (n) => `${n} ${n === 1 ? "call" : "calls"}`,
     modelOnly: "only a model's reading names it, not counted",
     namesOnly: "a search or listing: names only, not counted",
+    snapshot: "Copilot file snapshot",
   },
   de: {
     lines: (n) => (n === 0 ? "keine Ausgabe aufgezeichnet" : `${n} ${n === 1 ? "Zeile" : "Zeilen"}`),
@@ -90,6 +100,7 @@ const W: Record<Lang, Words> = {
     calls: (n) => `${n} ${n === 1 ? "Aufruf" : "Aufrufe"}`,
     modelOnly: "nur die Lesart eines Modells nennt sie, nicht gezählt",
     namesOnly: "eine Suche oder Auflistung: nur Namen, nicht gezählt",
+    snapshot: "Copilot-Dateischnappschuss",
   },
 };
 
@@ -196,13 +207,33 @@ function searchRow(lang: Lang, report: FilesReport, f: ReportSearch): string[] {
   ];
 }
 
-/** The files report as one CSV text: the byte order mark, the header, the findings, the files, the searches. */
+/** A Copilot file snapshot: its files one per line, what happened to them, its entry and lines in `detail`. */
+function snapshotRow(lang: Lang, report: FilesReport, s: ReportSnapshot): string[] {
+  const what = ["changed", "created", "deleted"].filter((w) => s.files.some((f) => f.what === w));
+  return [
+    "",
+    timeS(s.t),
+    clock(lang, report, s.t),
+    String(s.callIndex),
+    scrub(s.agentId),
+    COPILOT_SNAPSHOT_TOOL,
+    what.join(" "),
+    "recorded",
+    s.files.map((f) => f.label).join("\n"),
+    "",
+    `${W[lang].snapshot} ${snapshotLines(s)}`,
+    "",
+  ];
+}
+
+/** The files report as one CSV text: the byte order mark, the header, the findings, the files, the searches, the snapshots. */
 export function reportCsv(report: FilesReport, lang: Lang): string {
   const rows = [
     [...CSV_HEADER],
     ...report.findings.map((f) => findingRow(lang, report, f)),
     ...report.files.map((f) => fileRow(lang, report, f)),
     ...report.searches.map((f) => searchRow(lang, report, f)),
+    ...report.snapshots.map((s) => snapshotRow(lang, report, s)),
   ];
   return BOM + rows.map((row) => row.map(csvCell).join(",") + EOL).join("");
 }

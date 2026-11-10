@@ -5,11 +5,14 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { PickedCopilotFolder } from "./claudeCodeRun";
+import type { RunEvent } from "../events";
 import { detectAndLoad } from "./detect";
 import {
   copilotWorkspace,
   loadCopilotFolder,
+  placeSnapshots,
   readCopilotFolder,
+  readSnapshotIndex,
   readWorkspaceYaml,
   type PickedText,
 } from "./copilotFolder";
@@ -263,5 +266,177 @@ describe("the importer marks a Copilot session by its producer", () => {
   it("marks nothing for a file the producer does not name", () => {
     expect(detectAndLoad(fixture("vscode-agent.jsonl")).source.copilot).toBeUndefined();
     expect(detectAndLoad(CLAUDE).source.copilot).toBeUndefined();
+  });
+});
+
+// ---- item 3: the file snapshots ----------------------------------------------------
+
+const FOLDER_EVENTS = fixture("copilot-folder/events.jsonl");
+const FOLDER_YAML = fixture("copilot-folder/workspace.yaml");
+const FOLDER_INDEX = fixture("copilot-folder/rewind-file-snapshots/index.json");
+
+/** The root run_starts of a stream, by event index. */
+const rootsOf = (events: readonly { type: string; parentId?: unknown }[]): number[] =>
+  events.flatMap((e, i) => (e.type === "run_start" && e.parentId === undefined ? [i] : []));
+
+describe("reading rewind-file-snapshots/index.json (item 3)", () => {
+  it("gives each snapshot's files: created, changed or deleted, with their lines", () => {
+    const read = readSnapshotIndex(FOLDER_INDEX);
+    expect(read).toEqual([
+      {
+        eventId: "u1",
+        agentId: "main",
+        files: [
+          { path: "/w/src/parser.ts", kind: "change", added: 3, removed: 1 },
+          { path: "/w/test/parser.test.ts", kind: "create", added: 12, removed: 0 },
+          { path: "/w/old/notes.txt", kind: "delete", added: 0, removed: 4 },
+        ],
+      },
+      {
+        eventId: "u2",
+        agentId: "main",
+        files: [
+          { path: "/w/.env", kind: "change", added: 1, removed: 1 },
+          { path: "/srv/shared/settings.md", kind: "change", added: 2, removed: 2 },
+        ],
+      },
+    ]);
+  });
+
+  it("an image without content, or none at all, holds no content", () => {
+    const one = (pre: unknown, post: unknown) =>
+      readSnapshotIndex(
+        JSON.stringify({
+          schema: 1,
+          snapshots: [{ eventId: "e", files: { k: { path: "/w/a", preimage: pre, postimage: post } } }],
+        }),
+      )?.[0].files[0].kind;
+    const content = { kind: "content", contentHash: "h" };
+    expect(one(content, content)).toBe("change");
+    expect(one(undefined, content)).toBe("create");
+    expect(one(null, content)).toBe("create");
+    expect(one({ kind: "lorem" }, content)).toBe("create");
+    expect(one(content, undefined)).toBe("delete");
+    expect(one(content, { kind: "lorem" })).toBe("delete");
+    // Nothing before and nothing after: the file does not stand at the end.
+    expect(one({ kind: "lorem" }, { kind: "lorem" })).toBe("delete");
+  });
+
+  it("takes resolvedPath when path is missing, names the record's agent, and keeps lines finite", () => {
+    const read = readSnapshotIndex(
+      JSON.stringify({
+        schema: 1,
+        snapshots: [
+          {
+            eventId: "e",
+            agentId: "a-lex",
+            files: {
+              k: {
+                preimage: { kind: "content", resolvedPath: "/w/from-pre" },
+                postimage: { kind: "content" },
+                linesAdded: -3,
+                linesRemoved: "7",
+              },
+              nopath: { preimage: { kind: "content" }, postimage: { kind: "content" } },
+            },
+          },
+          { files: {} },
+        ],
+      }),
+    );
+    expect(read).toEqual([
+      {
+        eventId: "e",
+        agentId: "a-lex",
+        files: [{ path: "/w/from-pre", kind: "change", added: 0, removed: 0 }],
+      },
+      { eventId: null, agentId: "main", files: [] },
+    ]);
+  });
+
+  it("a file that is no snapshot index gives none", () => {
+    expect(readSnapshotIndex('{"schema":1,"tracking":true}')).toBeNull();
+    expect(readSnapshotIndex('{"snapshots":[]}')).toBeNull();
+    expect(readSnapshotIndex("[1,2]")).toBeNull();
+    expect(readSnapshotIndex("not json")).toBeNull();
+    expect(readSnapshotIndex('{"schema":1,"k13":{},"snapshots":[]}')).toEqual([]);
+  });
+});
+
+describe("a snapshot belongs to the run its user.message opened (item 3)", () => {
+  it("stands at the end of that run, on the main agent", () => {
+    const got = loadCopilotFolder({
+      events: FOLDER_EVENTS,
+      workspace: FOLDER_YAML,
+      snapshots: FOLDER_INDEX,
+      live: false,
+    });
+    const roots = rootsOf(got.events as unknown as { type: string; parentId?: unknown }[]);
+    expect(roots).toHaveLength(2);
+    const placed = got.source.copilot?.snapshots;
+    expect(placed?.map((s) => ({ from: s.from, at: s.at, agentId: s.agentId }))).toEqual([
+      { from: roots[0], at: roots[1] - 1, agentId: "main" },
+      { from: roots[1], at: got.events.length - 1, agentId: "main" },
+    ]);
+    expect(placed?.[0].files.map((f) => f.kind)).toEqual(["change", "create", "delete"]);
+  });
+
+  it("a snapshot whose eventId opened no run stands at the end of the session", () => {
+    const index = FOLDER_INDEX.replace('"eventId": "u2"', '"eventId": "not-a-message"');
+    const got = loadCopilotFolder({ events: FOLDER_EVENTS, workspace: null, snapshots: index, live: false });
+    expect(got.source.copilot?.snapshots?.[1]).toMatchObject({ from: null, at: got.events.length - 1 });
+  });
+
+  it("a folder without an index, or with an index of no snapshots, carries none", () => {
+    const none = loadCopilotFolder({ events: FOLDER_EVENTS, workspace: null, snapshots: null, live: false });
+    expect(none.source.copilot?.snapshots).toBeUndefined();
+    const empty = loadCopilotFolder({
+      events: FOLDER_EVENTS,
+      workspace: null,
+      snapshots: '{"schema":1,"snapshots":[]}',
+      live: false,
+    });
+    expect(empty.source.copilot?.snapshots).toBeUndefined();
+  });
+
+  it("the snapshots stay beside the stream: no frame carries them", () => {
+    const got = loadCopilotFolder({
+      events: FOLDER_EVENTS,
+      workspace: null,
+      snapshots: FOLDER_INDEX,
+      live: false,
+    });
+    const plain = loadCopilotFolder({ events: FOLDER_EVENTS, workspace: null, snapshots: null, live: false });
+    expect(got.events).toEqual(plain.events);
+    expect(JSON.stringify(got.events)).not.toContain("parser.test.ts");
+  });
+});
+
+describe("a child's run does not end the run its parent's message opened (item 3)", () => {
+  it("places the snapshot before the next root run_start, past the child's", () => {
+    const lines = [
+      JSON.stringify({ type: "user.message", id: "u1" }),
+      JSON.stringify({ type: "subagent.started", id: "x1" }),
+      JSON.stringify({ type: "user.message", id: "u2" }),
+    ];
+    const events = [
+      { type: "run_start", runId: "r", agentId: "main", prompt: "a", ts: 1 },
+      { type: "run_start", runId: "c", agentId: "kid", parentId: "main", prompt: "t", ts: 2 },
+      { type: "text_delta", agentId: "kid", text: "x", ts: 3 },
+      { type: "run_start", runId: "r", agentId: "main", prompt: "b", ts: 4 },
+      { type: "run_end", runId: "r", stopReason: "end_turn", ts: 5 },
+    ] as unknown as RunEvent[];
+    const placed = placeSnapshots(
+      [
+        { eventId: "u1", agentId: "main", files: [] },
+        { eventId: "u2", agentId: "main", files: [] },
+      ],
+      events,
+      { lines, origin: Int32Array.from([0, 1, 1, 2, -1]) },
+    );
+    expect(placed.map((p) => [p.from, p.at])).toEqual([
+      [0, 2],
+      [3, 4],
+    ]);
   });
 });

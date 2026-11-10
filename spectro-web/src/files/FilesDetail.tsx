@@ -13,6 +13,7 @@ import { whenLabel } from "./cursor";
 import { shownPath, sourceTags } from "./FilesExplorer";
 import type { FileCall, FileLedger, FileRow, FileTouch } from "./fold";
 import type { DiffStyle, FilesSelection } from "./FilesView";
+import { linesText, toolOf } from "./label";
 
 export interface FilesDetailProps {
   lang: Lang;
@@ -69,7 +70,7 @@ function head(props: FilesDetailProps, call: FileCall, at: number): JSX.Element 
     <div className="files-detail__head">
       <span className="files-detail__when">
         {whenLabel(lang, call.t, at + 1)} · <span className="files-mono">{call.agentId}</span> ·{" "}
-        <span className="files-mono">{call.tool}</span>
+        <span className="files-mono">{toolOf(lang, call)}</span>
       </span>
       <span className="files-detail__links">
         {script !== null && (
@@ -178,6 +179,7 @@ function touchBlock(props: FilesDetailProps, call: FileCall, touch: FileTouch, i
             {removed > 0 && <span className="files-minus"> -{removed}</span>}
           </span>
         )}
+        {touch.lines !== undefined && <span className="files-mono">{linesText(touch.lines)}</span>}
         <span className="files-reason">{touch.reason}</span>
       </div>
       {diff !== null && (

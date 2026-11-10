@@ -29,6 +29,7 @@ import {
 } from "react";
 import type { RunEvent } from "../events";
 import { agentAccent } from "../format";
+import type { CopilotSnapshot } from "../import/copilotFolder";
 import { t, type Lang } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { DEFAULT_INTERVAL_MS } from "../state/stepper";
@@ -65,6 +66,8 @@ export interface FilesViewProps {
   onOpenPath: ((path: string) => void) | null;
   /** The session's title, for the report; null when the session has none. */
   title: string | null;
+  /** A Copilot session folder's file snapshots, carried beside the events (card 605, task 12). */
+  snapshots?: readonly CopilotSnapshot[];
 }
 
 export type FilesViewName = "all" | "diff" | "created" | "operations";
@@ -117,9 +120,9 @@ function typing(target: unknown): boolean {
 }
 
 export function FilesView(props: FilesViewProps): JSX.Element {
-  const { viewKey, events, startAt, onStartHandled, onFocusEvent, onOpenPath, title } = props;
+  const { viewKey, events, startAt, onStartHandled, onFocusEvent, onOpenPath, title, snapshots } = props;
   const lang = useLang();
-  const heuristic = useMemo(() => foldFiles(events), [events]);
+  const heuristic = useMemo(() => foldFiles(events, snapshots), [events, snapshots]);
   // With a model's reading shown, the merged ledger replaces the heuristic one downstream.
   const [readingMode, setReadingMode] = useState<ReadingMode>("heuristic");
   const { ledger, analysis, modelShown } = useShownLedger(viewKey, heuristic, readingMode, events);

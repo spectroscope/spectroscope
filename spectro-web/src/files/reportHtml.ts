@@ -13,7 +13,7 @@ import { escapeHtml } from "../export/markup";
 import type { Lang } from "../i18n/i18n";
 import { clockText, timeText } from "./axis";
 import type { Destination } from "./destinations";
-import type { Source } from "./fold";
+import { COPILOT_SNAPSHOT_TOOL, type Source } from "./fold";
 import type { Level } from "./levels";
 import type {
   CredentialRef,
@@ -127,6 +127,7 @@ interface Words {
   headings: {
     destinations: string;
     findings: string;
+    snapshots: string;
     levels: string;
     files: string;
     searches: string;
@@ -172,6 +173,14 @@ interface Words {
   limitPowershell: string;
   method: (placeholders: number, count: string) => string[];
   footer: (version: string | null) => string;
+  /** A Copilot session folder's file snapshots (card 605, task 12). */
+  snapshot: {
+    entry: string;
+    /** The entry as the actor of a finding's sentence. */
+    actor: string;
+    cols: [string, string, string, string];
+    method: string;
+  };
 }
 
 /** What a finding's body sentence needs besides the finding. */
@@ -280,6 +289,7 @@ const EN: Words = {
   headings: {
     destinations: "Where the content went",
     findings: "Findings",
+    snapshots: "Copilot file snapshots",
     levels: "Files by level",
     files: "All files",
     searches: "Searches and listings",
@@ -480,6 +490,13 @@ const EN: Words = {
     "Destinations come from the recorded exchanges with a model; a session without them falls back to the provider and model the run started with.",
   ],
   footer: (version) => `spectroscope${version === null ? "" : ` ${version}`} · files report`,
+  snapshot: {
+    entry: "Copilot file snapshot",
+    actor: "A Copilot file snapshot",
+    cols: ["when", "entry", "files", "lines"],
+    method:
+      "File snapshots of the Copilot folder were read for which files changed; their stored file contents were not read.",
+  },
 };
 
 const DE: Words = {
@@ -558,6 +575,7 @@ const DE: Words = {
   headings: {
     destinations: "Wohin der Inhalt ging",
     findings: "Befunde",
+    snapshots: "Copilot-Dateischnappschüsse",
     levels: "Dateien nach Stufe",
     files: "Alle Dateien",
     searches: "Suchen und Auflistungen",
@@ -764,6 +782,13 @@ const DE: Words = {
     "Die Ziele kommen aus den aufgezeichneten Austauschen mit einem Modell; ohne sie nennt der Bericht Anbieter und Modell, mit denen der Lauf begann.",
   ],
   footer: (version) => `spectroscope${version === null ? "" : ` ${version}`} · Dateibericht`,
+  snapshot: {
+    entry: "Copilot-Dateischnappschuss",
+    actor: "Ein Copilot-Dateischnappschuss",
+    cols: ["wann", "Eintrag", "Dateien", "Zeilen"],
+    method:
+      "Die Dateischnappschüsse des Copilot-Ordners wurden gelesen, um zu sehen, welche Dateien sich änderten; die gespeicherten Dateiinhalte wurden nicht gelesen.",
+  },
 };
 
 const W: Record<Lang, Words> = { en: EN, de: DE };
@@ -1075,7 +1100,8 @@ ${rows.join("\n")}
 function findingArticle(lang: Lang, report: FilesReport, f: Finding): string {
   const w = W[lang];
   const ctx: Ctx = {
-    tool: f.tool === null ? "" : code(scrub(f.tool)),
+    tool:
+      f.tool === null ? "" : f.tool === COPILOT_SNAPSHOT_TOOL ? esc(w.snapshot.actor) : code(scrub(f.tool)),
     file: f.file === null ? "" : `<span class="path">${masked(f.file)}</span>`,
     creds: credentialsText(lang, f.credentials),
     personal: report.personal,
@@ -1170,6 +1196,36 @@ ${rows.join("\n")}
 </section>`;
 }
 
+/** A Copilot session folder's file snapshots, each its own entry, when the import read any. */
+function snapshotsSection(lang: Lang, report: FilesReport): string {
+  if (report.snapshots.length === 0) return "";
+  const w = W[lang];
+  const head = w.snapshot.cols.map((c, i) => `<th${i === 3 ? ' class="num"' : ""}>${esc(c)}</th>`).join("");
+  const rows = report.snapshots.map((snap) => {
+    const first = report.timed && snap.t !== null ? `+${clockText(lang, snap.t)}` : w.event(snap.callIndex);
+    const files = snap.files
+      .map(
+        (f) => `<span class="path">${masked(f.label)}</span> ${esc(w.what[f.what])} ${esc(snapshotLines(f))}`,
+      )
+      .join("<br>");
+    return `<tr data-snapshot><td>${esc(first)}</td><td>${esc(w.snapshot.entry)}</td><td>${files}</td><td class="num">${esc(snapshotLines(snap))}</td></tr>`;
+  });
+  return `<section data-section="snapshots">
+<h2>${esc(w.headings.snapshots)}</h2>
+<div class="wrap"><table>
+<thead><tr>${head}</tr></thead>
+<tbody>
+${rows.join("\n")}
+</tbody>
+</table></div>
+</section>
+`;
+}
+
+/** A snapshot's lines: `+added −removed`. */
+export const snapshotLines = (n: { added: number; removed: number }): string =>
+  `+${n.added} \u2212${n.removed}`;
+
 /** The searches and listings, when the session made any. */
 function searchesSection(lang: Lang, report: FilesReport): string {
   if (report.searches.length === 0) return "";
@@ -1215,7 +1271,11 @@ function methodSection(lang: Lang, report: FilesReport): string {
   const w = W[lang];
   // The method lines are this module's own markup; only the count is inserted.
   const count = esc(report.placeholders.toLocaleString(lang));
-  const items = w.method(report.placeholders, count).map((l) => `<li>${l}</li>`);
+  const said = [
+    ...w.method(report.placeholders, count),
+    ...(report.snapshots.length > 0 ? [esc(w.snapshot.method)] : []),
+  ];
+  const items = said.map((l) => `<li>${l}</li>`);
   return `<section data-section="method">
 <h2>${esc(w.headings.method)}</h2>
 <ul class="method">
@@ -1309,8 +1369,8 @@ const SWITCH = `
 /**
  * The files report as one self-contained HTML document in the report's
  * language: header, verdict, where the content went, findings, files by
- * level, all files, searches and listings (when any), what the report cannot
- * see, method. Light by default,
+ * level, all files, searches and listings (when any), Copilot file snapshots
+ * (when any), what the report cannot see, method. Light by default,
  * with a switch to dark; print is light.
  */
 export function reportHtml(report: FilesReport, lang: Lang): string {
@@ -1334,7 +1394,7 @@ ${destinationsSection(lang, report)}
 ${findingsSection(lang, report)}
 ${levelsSection(lang, report)}
 ${filesSection(lang, report)}
-${searchesSection(lang, report)}${limitsSection(lang, report)}
+${searchesSection(lang, report)}${snapshotsSection(lang, report)}${limitsSection(lang, report)}
 ${methodSection(lang, report)}
 <footer>${esc(w.footer(version))}</footer>
 </main>

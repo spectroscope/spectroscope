@@ -3,6 +3,10 @@
 // 720 px, files.css), and a label is fitted to that many characters here, so
 // the stylesheet never has to cut one. The full path is the row's title.
 // `clip` cuts a text at its end, for the call lines and titles of the tab.
+// `toolOf` and `lineOf` are what the tab prints for a call's tool and line.
+
+import { t, type Lang } from "../i18n/i18n";
+import type { FileCall } from "./fold";
 
 /** Characters a row label may take in the wide layout; files.css sizes the column to match. */
 export const LABEL_CHARS = 32;
@@ -49,3 +53,18 @@ function middle(name: string, max: number): string {
   const tail = room - head;
   return `${stem.slice(0, head)}…${tail > 0 ? stem.slice(stem.length - tail) : ""}${ext}`;
 }
+
+/** A call's tool as the tab prints it: its name, or the entry of a Copilot file snapshot in the reader's language. */
+export function toolOf(lang: Lang, call: FileCall): string {
+  return call.snapshot !== undefined ? t(lang, "filesTab.snapshot.entry") : call.tool;
+}
+
+/** A call's line as the tab prints it: a command after `$`, a snapshot after its entry. */
+export function lineOf(lang: Lang, call: FileCall): string {
+  if (call.snapshot !== undefined) return `${t(lang, "filesTab.snapshot.entry")} ${call.line}`;
+  return call.shell ? `$ ${call.line}` : call.line;
+}
+
+/** A snapshot file's lines: `+added −removed`. */
+export const linesText = (lines: { added: number; removed: number }): string =>
+  `+${lines.added} \u2212${lines.removed}`;

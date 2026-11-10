@@ -15,7 +15,7 @@ import { whenLabel } from "./cursor";
 import { shownPath, sourceTags } from "./FilesExplorer";
 import { KIND_CLASS } from "./FilesTimeline";
 import type { FileCall, FileLedger, FileRow, FileTouch, PromptMark } from "./fold";
-import { clip } from "./label";
+import { clip, linesText, lineOf, toolOf } from "./label";
 import type { FilesSelection } from "./FilesView";
 import type { TouchKind } from "./shell";
 
@@ -100,11 +100,11 @@ export function FilesOperations(props: FilesOperationsProps): JSX.Element {
                 <td className="files-ops__p">{promptOf(ledger.prompts, call.callIndex) ?? ""}</td>
                 {agents && <td className="files-ops__agent">{agentTag(call.agentId)}</td>}
                 <td className="files-ops__op">{operation(lang, call)}</td>
-                <td className="files-ops__line" title={callLine(call)}>
-                  {clip(callLine(call), LINE_MAX)}
+                <td className="files-ops__line" title={lineOf(lang, call)}>
+                  {clip(lineOf(lang, call), LINE_MAX)}
                 </td>
                 <td className="files-ops__files">{files(lang, call)}</td>
-                <td className="files-ops__tool files-hide-narrow">{call.tool}</td>
+                <td className="files-ops__tool files-hide-narrow">{toolOf(lang, call)}</td>
               </tr>
             ))}
           </tbody>
@@ -161,8 +161,8 @@ export function FilesOpList(props: FilesOpListProps): JSX.Element {
                 {operation(lang, call)}
                 {props.agents && agentTag(call.agentId)}
               </span>
-              <span className="files-op__line" title={callLine(call)}>
-                {clip(callLine(call), LINE_MAX)}
+              <span className="files-op__line" title={lineOf(lang, call)}>
+                {clip(lineOf(lang, call), LINE_MAX)}
               </span>
             </button>
           ))
@@ -231,8 +231,6 @@ function agentTag(agentId: string): JSX.Element {
 /** A call line shows at most this many characters in the table and the list; its title holds the rest. */
 export const LINE_MAX = 200;
 
-const callLine = (call: FileCall): string => (call.shell ? `$ ${call.line}` : call.line);
-
 /**
  * What the table's files cell names: the last segment of the path, a folder's
  * with its slash, a pattern as the call wrote it. The explorer and the detail
@@ -273,6 +271,7 @@ function files(lang: Lang, call: FileCall): JSX.Element[] {
           {fileNameOf(touch)}
         </span>{" "}
         {sourceTags(lang, touch.sources)} {t(lang, `filesTab.kind.${touch.kind}`)}
+        {touch.lines !== undefined && ` ${linesText(touch.lines)}`}
       </span>
     );
   });

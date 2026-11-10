@@ -3529,6 +3529,8 @@ export function App() {
               onFocusEvent={focusInTrace}
               onOpenPath={onOpenFilesPath}
               title={shownSessionId !== null ? sessionTitleOf(shownSessionId) : null}
+              // Card 605, task 12: a Copilot folder's snapshots travel beside the import's events.
+              snapshots={enteredFleet === null ? replay?.source?.copilot?.snapshots : undefined}
             />
           ) : null}
         </ChunkBoundary>

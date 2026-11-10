@@ -107,6 +107,16 @@ export interface ReportSearch {
   calls: number;
 }
 
+/** One file snapshot of a Copilot session folder (card 605, task 12): its own entry, with its files and lines. */
+export interface ReportSnapshot {
+  callIndex: number; // the event the snapshot stands at, the end of its run
+  t: number | null;
+  agentId: string;
+  added: number;
+  removed: number;
+  files: { label: string; what: What; added: number; removed: number }[]; // labels shortened and masked
+}
+
 export interface FilesReport {
   sessionId: string;
   title: string | null; // masked
@@ -124,6 +134,7 @@ export interface FilesReport {
   findings: Finding[]; // by level, then time
   files: ReportFile[]; // by level, then first call
   searches: ReportSearch[]; // by level, then first call
+  snapshots: ReportSnapshot[]; // in event order; empty unless a Copilot folder's snapshots were read
   /** Files per level under their most specific kind; a file only a model named is not counted. */
   counts: Record<Level, Record<Counted, number>>;
   placeholders: number;
@@ -330,6 +341,26 @@ export function buildReport(input: ReportInput): FilesReport {
   }));
   searches.sort((a, b) => rank(a.level) - rank(b.level) || a.firstCall - b.firstCall);
 
+  const snapshots: ReportSnapshot[] = ledger.calls.flatMap((call) =>
+    call.snapshot === undefined
+      ? []
+      : [
+          {
+            callIndex: call.callIndex,
+            t: call.t,
+            agentId: call.agentId,
+            added: call.snapshot.added,
+            removed: call.snapshot.removed,
+            files: call.touches.map((touch) => ({
+              label: label(touch.path),
+              what: WHAT_OF[touch.kind] ?? "changed",
+              added: touch.lines?.added ?? 0,
+              removed: touch.lines?.removed ?? 0,
+            })),
+          },
+        ],
+  );
+
   return {
     sessionId: input.sessionId,
     title: input.title === null ? null : creds.maskTitle(input.title),
@@ -345,6 +376,7 @@ export function buildReport(input: ReportInput): FilesReport {
     findings,
     files,
     searches,
+    snapshots,
     counts: tally,
     placeholders: scan.placeholders,
     personal: scan.personal,
