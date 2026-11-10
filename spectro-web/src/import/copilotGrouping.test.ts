@@ -179,8 +179,23 @@ describe("a Copilot session folder is recognised by its layout", () => {
     expect(group.session.live).toBe(false);
   });
 
+  it("a CLI folder of events.jsonl and its lock is a session folder in use (fix round 1 item 3)", () => {
+    const files = pick("session-state", [["c20", ["events.jsonl", "inuse.5020.hold", "inuse.4020.lock"]]]);
+    expect(groupPickedFiles(files)).toEqual({
+      kind: "copilot",
+      session: { folder: "session-state/c20", events: 0, workspace: null, snapshots: null, live: true },
+    });
+    // The hold file alone marks nothing.
+    expect(groupPickedFiles(pick("s", [["c", ["events.jsonl", "inuse.5020.hold"]]])).kind).toBe("run");
+  });
+
   it("each mark alone is enough beside events.jsonl", () => {
-    for (const mark of ["workspace.yaml", "rewind-file-snapshots/tracking.json", "checkpoints/index.md"]) {
+    for (const mark of [
+      "workspace.yaml",
+      "rewind-file-snapshots/tracking.json",
+      "checkpoints/index.md",
+      "inuse.123.lock",
+    ]) {
       const group = groupPickedFiles(pick("x", [["one", ["events.jsonl", mark]]]));
       expect(group.kind, mark).toBe("copilot");
     }
@@ -264,11 +279,6 @@ describe("everything that is not this layout keeps today's grouping", () => {
       sidecars: [{ jsonl: 1, meta: 2, runId: null }],
       runStates: [],
     });
-  });
-
-  it("a CLI folder of events.jsonl and its locks alone has no mark, and loads as a run", () => {
-    const files = pick("session-state", [["c20", ["events.jsonl", "inuse.5020.hold", "inuse.4020.lock"]]]);
-    expect(groupPickedFiles(files)).toEqual({ kind: "run", session: 0, sidecars: [], runStates: [] });
   });
 
   it("folders of events.jsonl without any mark keep the several-sessions message", () => {

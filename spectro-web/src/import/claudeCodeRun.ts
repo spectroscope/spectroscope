@@ -958,7 +958,7 @@ const COPILOT_LOCK = /^inuse\.[^/]+\.lock$/;
 /** What one folder of a pick holds of the Copilot layout. */
 interface CopilotCandidate extends PickedCopilotFolder {
   hasEvents: boolean;
-  /** workspace.yaml, rewind-file-snapshots/ or checkpoints/index.md sits in it. */
+  /** workspace.yaml, rewind-file-snapshots/, checkpoints/index.md or an inuse.*.lock sits in it. */
   marked: boolean;
 }
 
@@ -972,8 +972,8 @@ function folderOf(path: string, suffix: string): string | null {
  * The Copilot layout of a pick, or null when the pick does not have it.
  *
  * A Copilot session folder holds events.jsonl together with workspace.yaml,
- * rewind-file-snapshots/ or checkpoints/index.md (measured over an IDE export
- * of 4 and a CLI store of 40, 2026-11-10). Names and paths only: nothing is
+ * rewind-file-snapshots/, checkpoints/index.md or an inuse.*.lock (measured
+ * over an IDE export of 4 and a CLI store of 40, 2026-11-10). Names and paths only: nothing is
  * read, and nothing under files/, research/ or the backups is named. One such
  * folder is a session; several folders with events.jsonl beside at least one
  * of them are a store, in which a folder with the marks and no events.jsonl is
@@ -1035,7 +1035,11 @@ function copilotLayout(files: PickedFile[]): PickedGroup | null {
     }
     if (COPILOT_LOCK.test(f.name)) {
       const own = folderOf(path, f.name);
-      if (own !== null) at(own).live = true;
+      if (own === null) return;
+      const c = at(own);
+      c.live = true;
+      // A lock is a mark too (fix round 1 item 3): 11 CLI folders hold only events.jsonl and their lock.
+      c.marked = true;
     }
   });
   const candidates = [...byFolder.values()].filter((c) => c.hasEvents || c.marked);
