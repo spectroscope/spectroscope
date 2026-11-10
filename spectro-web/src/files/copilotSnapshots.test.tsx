@@ -13,10 +13,12 @@ import { loadCopilotFolder, type CopilotSnapshot } from "../import/copilotFolder
 import events from "../import/fixtures/copilot-folder/events.jsonl?raw";
 import index from "../import/fixtures/copilot-folder/rewind-file-snapshots/index.json?raw";
 import workspace from "../import/fixtures/copilot-folder/workspace.yaml?raw";
+import { setLang } from "../state/lang";
 import { replayComposer } from "../state/sessionRows";
 import { FilesDetail } from "./FilesDetail";
 import { FilesOperations } from "./FilesOperations";
-import { COPILOT_SNAPSHOT_TOOL, fileRows, foldFiles, type FileCall } from "./fold";
+import { COPILOT_SNAPSHOT_TOOL, fileRows, foldFiles, summarize, type FileCall } from "./fold";
+import { FilesView } from "./FilesView";
 import { buildReport } from "./report";
 import { reportCsv } from "./reportCsv";
 import { reportHtml } from "./reportHtml";
@@ -441,5 +443,68 @@ describe("the report names snapshot files of an unknown kind (fix round 1 item 9
     expect(html).toContain(
       "2 files of the Copilot snapshots name a kind this report does not know, so they count as changed.",
     );
+  });
+});
+
+describe("the summary line names snapshot changes apart (fix round 1 item 10)", () => {
+  it("counts files only a snapshot changed apart from files changed by file tools", () => {
+    expect(summarize(ledger, fileRows(ledger, null), null)).toMatchObject({
+      recordedChanged: 0,
+      snapshotChanged: 5,
+    });
+    // A file a file tool changed counts there, even when a snapshot changed it too.
+    const edited = [
+      ...stream.slice(0, 3),
+      {
+        type: "tool_call",
+        agentId: "main",
+        callId: "e1",
+        name: "edit_file",
+        input: { path: "/w/src/parser.ts", old_string: "1", new_string: "2" },
+        ts: 1,
+      },
+      {
+        type: "tool_result",
+        agentId: "main",
+        callId: "e1",
+        output: "ok",
+        isError: false,
+        durationMs: 1,
+        fileChange: "changed",
+        ts: 1,
+      },
+      ...stream.slice(3),
+    ] as unknown as RunEvent[];
+    const mixed = foldFiles(
+      edited,
+      loadCopilotFolder({ events, workspace, snapshots: index, live: false }).source.copilot?.snapshots ?? [],
+    );
+    expect(summarize(mixed, fileRows(mixed, null), null)).toMatchObject({
+      recordedChanged: 1,
+      snapshotChanged: 4,
+    });
+  });
+
+  it("the files tab says it in both languages, and only when there is one", () => {
+    const view = (lang: "en" | "de", snaps: readonly CopilotSnapshot[] | undefined) => {
+      setLang(lang);
+      return renderToStaticMarkup(
+        <FilesView
+          viewKey="import:vscode-agent:Parser test#s01"
+          events={stream}
+          startAt={null}
+          onStartHandled={() => {}}
+          onFocusEvent={() => {}}
+          onOpenPath={null}
+          title={null}
+          snapshots={snaps}
+        />,
+      );
+    };
+    expect(view("en", snapshots)).toContain("<b>0</b> files changed by file tools");
+    expect(view("en", snapshots)).toContain("<b>5</b> recorded by Copilot snapshots");
+    expect(view("de", snapshots)).toContain("<b>5</b> aus Copilot-Schnappschüssen");
+    expect(view("en", undefined)).not.toContain("Copilot snapshots");
+    setLang("en");
   });
 });

@@ -21,7 +21,7 @@ export interface FileTouch extends ShellTouch {
   callIndex: number; // index of the tool_call in the event list
   agentId: string;
   t: number | null; // seconds from the first event (C12)
-  lines?: { added: number; removed: number }; // a Copilot file snapshot's count for this file
+  lines?: { added: number; removed: number }; // a Copilot file snapshot's count for this file; only its touches carry one
   unknownKind?: true; // a Copilot file snapshot named a kind the reader does not know: read as a change
 }
 
@@ -75,6 +75,8 @@ export interface FileRow {
 
 export interface FilesSummary {
   recordedChanged: number;
+  /** Files only a Copilot file snapshot changed (fix round 1 item 10); no file tool's change. */
+  snapshotChanged: number;
   probableChanged: number;
   onlyRead: number;
   shellCalls: number;
@@ -255,13 +257,15 @@ export function summarize(
   agents: ReadonlySet<string> | null,
 ): FilesSummary {
   let recordedChanged = 0;
+  let snapshotChanged = 0;
   let probableChanged = 0;
   let onlyRead = 0;
   for (const row of rows) {
     if (row.letter === "R") onlyRead++;
     else if (row.letter !== "?") {
-      const recorded = row.touches.some((t) => CHANGES.has(t.kind) && t.sources.includes("recorded"));
-      if (recorded) recordedChanged++;
+      const recorded = row.touches.filter((t) => CHANGES.has(t.kind) && t.sources.includes("recorded"));
+      if (recorded.some((t) => t.lines === undefined)) recordedChanged++;
+      else if (recorded.length > 0) snapshotChanged++;
       else probableChanged++;
     }
   }
@@ -272,7 +276,7 @@ export function summarize(
     shellCalls++;
     if (call.status !== "failed" && (call.script !== null || call.inline)) unknownScripts++;
   }
-  return { recordedChanged, probableChanged, onlyRead, shellCalls, unknownScripts };
+  return { recordedChanged, snapshotChanged, probableChanged, onlyRead, shellCalls, unknownScripts };
 }
 
 /**

@@ -563,6 +563,7 @@ describe("one entry per call and file (C7)", () => {
     // Read only: r.txt, the copy's source a.txt and the script s.py.
     expect(summarize(ledger, fileRows(ledger, null), null)).toEqual({
       recordedChanged: 1,
+      snapshotChanged: 0,
       probableChanged: 2,
       onlyRead: 3,
       shellCalls: 3,
@@ -623,6 +624,7 @@ describe("summarize", () => {
     const ledger = foldFiles(rec.events);
     expect(summarize(ledger, fileRows(ledger, null), null)).toEqual({
       recordedChanged: 1,
+      snapshotChanged: 0,
       probableChanged: 1,
       onlyRead: 2,
       shellCalls: 2,

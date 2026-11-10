@@ -463,6 +463,8 @@ function summaryLine(lang: Lang, s: FilesSummary, modelShown: boolean): ReactNod
       s.recordedChanged === 1 ? "filesTab.summary.recordedOne" : "filesTab.summary.recorded",
       s.recordedChanged,
     ),
+    // Card 605, task 12: files only a Copilot snapshot changed are named apart, when there are any.
+    ...(s.snapshotChanged > 0 ? [" · ", bold(lang, "filesTab.summary.snapshots", s.snapshotChanged)] : []),
     " · ",
     bold(
       lang,

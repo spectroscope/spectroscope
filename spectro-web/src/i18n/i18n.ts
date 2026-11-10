@@ -6472,6 +6472,7 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "{n} Datei durch Dateiwerkzeuge geändert",
     en: "{n} file changed by file tools",
   },
+  "filesTab.summary.snapshots": { de: "{n} aus Copilot-Schnappschüssen", en: "{n} recorded by Copilot snapshots" },
   "filesTab.summary.probable": {
     de: "{n} weitere wahrscheinlich durch Shell-Befehle geändert",
     en: "{n} more probably changed by shell commands",
