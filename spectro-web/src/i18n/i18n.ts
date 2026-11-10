@@ -34,8 +34,8 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "Server unreachable · session list unavailable.",
   },
   "nav.importTitle": {
-    de: "Eine .jsonl laden — spectroscope-Session oder Claude-Code-Transkript",
-    en: "Load a .jsonl — spectroscope session or Claude Code transcript",
+    de: "Eine spectroscope-Session oder ein Claude-Code-Transkript (.jsonl) oder einen GitHub-Copilot-Session-Ordner laden",
+    en: "Load a spectroscope session or a Claude Code transcript (.jsonl), or a GitHub Copilot session folder",
   },
   "nav.history": { de: "Verlauf", en: "History" },
   "nav.back": { de: "zurück (⌘←)", en: "back (⌘←)" },
@@ -416,8 +416,8 @@ export const dict: Record<string, { de: string; en: string }> = {
   // import dialog
   "imp.title": { de: "Session-Datei laden", en: "Load a session file" },
   "imp.hint": {
-    de: "Rohes spectroscope-JSONL wird wortwörtlich abgespielt; ein Claude-Code-Transkript ({path}) wird adaptiert — Subagenten-Sidechains werden Kind-Agenten.",
-    en: "Raw spectroscope JSONL replays verbatim; a Claude Code transcript ({path}) is adapted — subagent sidechains become child agents.",
+    de: "Rohes spectroscope-JSONL wird wortwörtlich abgespielt. Ein Claude-Code-Transkript ({path}) wird adaptiert, seine Subagenten-Sidechains werden Kind-Agenten. Für eine GitHub-Copilot-Session wähle ihren Session-Ordner, um auch Namen, Arbeitsordner und Dateischnappschüsse zu laden.",
+    en: "Raw spectroscope JSONL replays verbatim. A Claude Code transcript ({path}) is adapted, and its subagent sidechains become child agents. For a GitHub Copilot session, pick its session folder to load its name, its workspace and its file snapshots as well.",
   },
   "imp.placeholder": { de: ".jsonl-Inhalt hier einfügen …", en: "Paste .jsonl content here …" },
   "imp.store": {
@@ -447,9 +447,58 @@ export const dict: Record<string, { de: string; en: string }> = {
   "imp.found.llmNone": { de: "kein LLM-Wire", en: "no llm wire" },
   "imp.found.browserNone": { de: "kein Browser-Wire", en: "no browser wire" },
   "imp.found.noWire": { de: "Ein Wire kam nicht mit.", en: "No wire came with it." },
-  "imp.vscodeNote": {
-    de: "Dieser VS-Code-Export hält fest, welche Tools liefen und ob sie erfolgreich waren, aber nicht, was sie zurückgaben. Die Tool-Inhalte bleiben deshalb leer.",
-    en: "This VS Code export records which tools ran and whether they succeeded, but not what they returned. The tool bodies are empty for that reason.",
+  // Card 605, task 10: the tool results of an imported file whose record held no output.
+  "imp.noOutput": {
+    de: "{n} von {m} Werkzeugergebnissen in dieser Datei haben keine Ausgabe festgehalten; sie bleiben leer.",
+    en: "{n} of {m} tool results in this file recorded no output; those stay empty.",
+  },
+  "imp.noOutputOne": {
+    de: "{n} von {m} Werkzeugergebnissen in dieser Datei hat keine Ausgabe festgehalten; es bleibt leer.",
+    en: "{n} of {m} tool results in this file recorded no output; it stays empty.",
+  },
+  "imp.noOutputOnly": {
+    de: "{n} von {m} Werkzeugergebnis in dieser Datei hat keine Ausgabe festgehalten; es bleibt leer.",
+    en: "{n} of {m} tool result in this file recorded no output; it stays empty.",
+  },
+  // Card 605, task 12: a GitHub Copilot session folder.
+  "imp.copilot.recorded": {
+    de: "Aufgezeichnet von {client} am {date}.",
+    en: "Recorded by {client} on {date}.",
+  },
+  "imp.copilot.live": {
+    de: "Eine Sperrdatei markierte diese Session beim Wählen als belegt. Lief sie noch, enthält der Import die {n} Einträge, die bis dahin geschrieben waren.",
+    en: "A lock file marked this session as in use when it was picked. If it was still running, the import holds the {n} records written up to then.",
+  },
+  "imp.copilot.alone": {
+    de: "Diese Datei gehört zu einem Copilot-Session-Ordner. Wähle den Ordner, um auch Namen, Arbeitsordner und Dateischnappschüsse zu laden.",
+    en: "This file is part of a Copilot session folder. Pick the folder to load its name, its workspace and its file snapshots too.",
+  },
+  "imp.copilot.sideFile": {
+    de: "Das ist eine Nebendatei eines Copilot-Session-Ordners. Wähle den Ordner oder seine events.jsonl.",
+    en: "This is a side file of a Copilot session folder. Pick the folder, or its events.jsonl.",
+  },
+  "imp.copilot.pickFolder": { de: "Session-Ordner wählen …", en: "Pick the session folder …" },
+  "imp.copilot.torn": {
+    de: "Die letzte Zeile der Datei war unvollständig und wurde weggelassen.",
+    en: "The last line of the file was incomplete and was left out.",
+  },
+  "imp.copilot.store": {
+    de: "{n} Copilot-Sessions in diesem Ordner.",
+    en: "{n} Copilot sessions in this folder.",
+  },
+  "imp.copilot.storeSkipped": {
+    de: "{n} Ordner ohne events.jsonl sind nicht aufgeführt.",
+    en: "{n} folders without an events.jsonl are not listed.",
+  },
+  "imp.copilot.storeSkippedOne": {
+    de: "{n} Ordner ohne events.jsonl ist nicht aufgeführt.",
+    en: "{n} folder without an events.jsonl is not listed.",
+  },
+  "imp.copilot.unnamed": { de: "Session ohne Namen {id}", en: "unnamed session {id}" },
+  "imp.copilot.liveMark": { de: "belegt", en: "in use" },
+  "imp.copilot.liveOne": {
+    de: "Eine Sperrdatei markierte diese Session beim Wählen als belegt. Lief sie noch, enthält der Import den {n} Eintrag, der bis dahin geschrieben war.",
+    en: "A lock file marked this session as in use when it was picked. If it was still running, the import holds the {n} record written up to then.",
   },
   "imp.err.read": {
     de: "Der Browser konnte „{name}“ nicht lesen. Liegt die Datei noch da, und darf er sie sehen?",
@@ -651,6 +700,10 @@ export const dict: Record<string, { de: string; en: string }> = {
   "imp.err.noSession": {
     de: "Keine Session-.jsonl in der Auswahl gefunden.",
     en: "No session .jsonl found in the selection.",
+  },
+  "imp.err.manySessions": {
+    de: "Dieser Ordner enthält {n} Session-Dateien. Wähle den Ordner einer Session.",
+    en: "This folder holds {n} session files. Pick the folder of one session.",
   },
 
   // common
@@ -6419,6 +6472,7 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "{n} Datei durch Dateiwerkzeuge geändert",
     en: "{n} file changed by file tools",
   },
+  "filesTab.summary.snapshots": { de: "{n} aus Copilot-Schnappschüssen", en: "{n} recorded by Copilot snapshots" },
   "filesTab.summary.probable": {
     de: "{n} weitere wahrscheinlich durch Shell-Befehle geändert",
     en: "{n} more probably changed by shell commands",
@@ -6443,6 +6497,7 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "A erstellt · M geändert · D gelöscht · R gelesen · ? ein Skript hat sie vielleicht geändert. Ein gestrichelter Buchstabe ist eine Vermutung aus einem Shell-Befehl oder von einem Modell. Ein durchgezogener stammt von einem Dateiwerkzeug.",
     en: "A created · M changed · D deleted · R read · ? a script may have changed it. A dashed letter is a guess from a shell command or a model. A solid letter comes from a file tool.",
   },
+  "filesTab.explorer.pattern": { de: "Muster", en: "pattern" },
   "filesTab.source.recorded": { de: "aufgezeichnet", en: "recorded" },
   "filesTab.source.probable": { de: "wahrscheinlich", en: "probable" },
   "filesTab.source.model": { de: "Modell", en: "model" },
@@ -6541,6 +6596,8 @@ export const dict: Record<string, { de: string; en: string }> = {
   "filesTab.ops.col.call": { de: "Aufruf", en: "call" },
   "filesTab.ops.col.files": { de: "Dateien", en: "files" },
   "filesTab.ops.col.tool": { de: "Werkzeug", en: "tool" },
+  // Card 605, task 12: the entry of a Copilot session folder's file snapshot.
+  "filesTab.snapshot.entry": { de: "Copilot-Dateischnappschuss", en: "Copilot file snapshot" },
   "filesTab.agents.aria": { de: "Agenten", en: "Agents" },
   "filesTab.timeline.aria": { de: "Zeitleiste der Dateien", en: "File timeline" },
   "filesTab.timeline.play": { de: "abspielen", en: "play" },
@@ -6684,6 +6741,33 @@ export const dict: Record<string, { de: string; en: string }> = {
   },
   "filesTab.consent.cancel": { de: "abbrechen", en: "cancel" },
   "filesTab.consent.send": { de: "an {model} senden", en: "send to {model}" },
+  // Card 605: the Report button of the files tab and its sheet.
+  "filesTab.report.button": { de: "Bericht", en: "Report" },
+  "filesTab.report.title": { de: "Dateibericht", en: "Files report" },
+  "filesTab.report.building": {
+    de: "Der Bericht entsteht aus der ganzen Session.",
+    en: "Building the report from the whole session.",
+  },
+  "filesTab.report.failed": {
+    de: "Aus dieser Session ließ sich kein Bericht erstellen.",
+    en: "The report could not be built from this session.",
+  },
+  "filesTab.report.pdf": { de: "PDF", en: "PDF" },
+  "filesTab.report.html": { de: "HTML", en: "HTML" },
+  "filesTab.report.csv": { de: "CSV", en: "CSV" },
+  "filesTab.report.pdfNote": {
+    de: "Der Druckdialog bietet Als PDF sichern an.",
+    en: "The print dialog offers Save as PDF.",
+  },
+  "filesTab.report.scope": {
+    de: "Umfasst die ganze Session; die Filter dieses Tabs gelten nicht.",
+    en: "Covers the whole session; the filters of this tab do not apply.",
+  },
+  "filesTab.report.level.critical": { de: "kritisch", en: "critical" },
+  "filesTab.report.level.sensitive": { de: "sensibel", en: "sensitive" },
+  "filesTab.report.level.unknown": { de: "unbekannt", en: "unknown" },
+  "filesTab.report.level.project": { de: "Projekt", en: "project" },
+  "filesTab.report.frame": { de: "Druckfassung des Berichts", en: "print copy of the report" },
 };
 
 /** Chrome string for `key` in `lang`; `{var}` placeholders fill from `vars`.

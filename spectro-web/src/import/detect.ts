@@ -6,8 +6,9 @@
 
 import type { RunEvent } from "../events";
 import { claudeCodeWithOrigin } from "./claudeCode";
+import type { CopilotSide } from "./copilotFolder";
 import type { SubagentTranscript } from "./subagentFile";
-import { vscodeAgentWithOrigin } from "./vscodeAgent";
+import { vscodeAgentWithOrigin, type ToolOutputCount } from "./vscodeAgent";
 
 const SPECTRO_TYPES = new Set([
   "run_start",
@@ -47,6 +48,25 @@ const VSCODE_AGENT_TYPES = new Set([
 const hasDataObject = (r: { data?: unknown }): boolean =>
   !!r.data && typeof r.data === "object" && !Array.isArray(r.data);
 
+/** The producer both GitHub Copilot files write into their session.start
+ *  (card 605, task 10): the CLI store's and the IDE export's. */
+const COPILOT_PRODUCER = "copilot-agent";
+
+/** A file whose FIRST record is a session.start whose data names the Copilot
+ *  producer is that format, whatever follows: four local CLI sessions hold only
+ *  session.start, session.model_change and session.shutdown, none of the six
+ *  names above. The six names stay the way in for a file without that record. */
+function opensAsCopilot(first: unknown): boolean {
+  const r = first as { type?: unknown; data?: unknown } | null;
+  return (
+    r !== null &&
+    typeof r === "object" &&
+    r.type === "session.start" &&
+    hasDataObject(r) &&
+    (r.data as { producer?: unknown }).producer === COPILOT_PRODUCER
+  );
+}
+
 /** How many distinct type names the failure message may name, and how long each
  *  may be. A file we do not understand is a file we do not trust: without these
  *  caps a hostile or merely enormous export could flood the dialog. */
@@ -84,6 +104,14 @@ export interface ImportSource {
    *  line, counted from zero), or -1 for a frame the importer built rather
    *  than read. */
   origin: Int32Array;
+  /** A VS Code or Copilot file only (card 605, task 10): how many of its tool
+   *  results the record held no output for. The import dialog and the bar
+   *  say the count; absent for the formats that say nothing of the kind. */
+  toolOutputs?: ToolOutputCount;
+  /** A GitHub Copilot session only, recognised by its producer (card 605,
+   *  task 12): its session id, and what its folder added when the folder was
+   *  picked (import/copilotFolder.ts). Never written to any file. */
+  copilot?: CopilotSide;
 }
 
 /** The file, cut into lines, and which of them carry a record.
@@ -146,6 +174,15 @@ export function detectAndLoad(text: string): {
     return out;
   };
 
+  if (opensAsCopilot(records[0])) {
+    const { events, origin, toolOutputs } = vscodeAgentWithOrigin(records);
+    const sessionId = (records[0] as { data: { sessionId?: unknown } }).data.sessionId;
+    const copilot: CopilotSide = {
+      sessionId: typeof sessionId === "string" && sessionId !== "" ? sessionId : null,
+    };
+    return { events, kind: "vscode-agent", source: { lines, origin: inFile(origin), toolOutputs, copilot } };
+  }
+
   // Real Claude Code transcripts open with metadata records (queue-operation,
   // attachment, ai-title, …) before the first message — scan for the first
   // line that identifies a format instead of trusting line one.
@@ -162,8 +199,8 @@ export function detectAndLoad(text: string): {
       return { events: records as RunEvent[], kind: "spectroscope", source: { lines, origin: identity } };
     }
     if (VSCODE_AGENT_TYPES.has(r.type) && hasDataObject(r)) {
-      const { events, origin } = vscodeAgentWithOrigin(records);
-      return { events, kind: "vscode-agent", source: { lines, origin: inFile(origin) } };
+      const { events, origin, toolOutputs } = vscodeAgentWithOrigin(records);
+      return { events, kind: "vscode-agent", source: { lines, origin: inFile(origin), toolOutputs } };
     }
     if (r.message !== undefined) {
       const { events, origin, subagent } = claudeCodeWithOrigin(records);

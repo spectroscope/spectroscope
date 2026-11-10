@@ -84,18 +84,18 @@ sit an ordinary file picker and a paste box for everything else. Detection reads
 than the first line, because a real transcript opens with metadata records before its first
 message, and the first record naming a format decides which of three it is.</p>
 <ul>
-  <li><strong>Raw spectroscope JSONL</strong> — recognized by its event types, eighteen of them,
+  <li><strong>Raw spectroscope JSONL</strong>: recognized by its event types, eighteen of them,
       and replayed verbatim. Files from the TypeScript edition work identically (the format is
       the contract).</li>
-  <li><strong>Claude Code transcripts</strong> — recognized by their <code>message</code>
+  <li><strong>Claude Code transcripts</strong>: recognized by their <code>message</code>
       records and translated by an adapter: tool uses become <code>tool_call</code>s,
       <code>Task</code>/<code>Agent</code> spawns become <code>agent_spawn</code> + A2A messages,
       thinking becomes <code>thinking_delta</code>, sidechains fold under their owning task.
       You can watch a real Claude Code session step through the Lab's map.</li>
-  <li><strong>VS Code agent-mode exports</strong> — dotted type names over a <code>data</code>
-      object. That export records which tools ran and whether they succeeded, never what they
-      returned, so the dialog states it in one line rather than leaving a screen of empty tool
-      bodies to read as a broken import.</li>
+  <li><strong>VS Code agent-mode exports and GitHub Copilot session files</strong>: dotted type
+      names over a <code>data</code> object. The adapter reads what each tool returned when the
+      file records it. When some results carry no output, the dialog says how many of them, so
+      empty tool bodies do not read as a broken import.</li>
 </ul>
 
 <p>A file matching none of the three is refused by name: the message lists up to five of the type

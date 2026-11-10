@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 import { read, stripComments } from "../testkit/source";
 
 const app = stripComments(read("../App.tsx", import.meta.url));
+const dialog = stripComments(read("./ImportDialog.tsx", import.meta.url));
 
 function openImport(): string {
   const at = app.indexOf("  const openImport = ");
@@ -23,9 +24,11 @@ describe("App shows the import bar card 440 describes", () => {
   // One call gives the notes and whether the file is an agent's transcript, so
   // the bar cannot carry the subagent note and still call the file a session.
   it("builds the notes for special kinds of file in one place", () => {
-    // Card 473 added the found sentence as its own field, in the same call.
+    // Card 473 added the found sentence as its own field, in the same call, and
+    // card 605 (task 10) the count of tool results the file recorded no output for,
+    // and task 12 what a Copilot session folder carried beside its events.
     expect(openImport()).toMatch(
-      /\.\.\.importBarAbout\(lang, \{ kind, subagent, run, extra: note, found: foundNote \}\),/,
+      /\.\.\.importBarAbout\(lang, \{\s*kind,\s*subagent,\s*run,\s*extra: note,\s*found: foundNote,\s*toolOutputs: source\.toolOutputs,\s*copilot: source\.copilot,?\s*\}\),/,
     );
     expect(openImport()).not.toContain("importBarNote(");
   });
@@ -36,5 +39,63 @@ describe("App shows the import bar card 440 describes", () => {
     );
     expect(app).not.toContain('"imp.bar"');
     expect(app).not.toContain('className="import-note-bar"');
+  });
+});
+
+// Card 605, task 10: the dialog says the count of tool results without output
+// for every way a file arrives (a paste or pick, a store row, a folder pick),
+// read off the source each one loaded, and never off the format alone.
+describe("the import dialog states the tool output note from the loaded source", () => {
+  it("sets the note from toolOutputNote on all four load paths", () => {
+    const calls = [...dialog.matchAll(/setNote\(toolOutputNote\(lang, (\w+(?:\.\w+)*)\)\)/g)].map(
+      (m) => m[1],
+    );
+    // Task 12 adds the Copilot session folder as the fourth.
+    expect(calls).toEqual([
+      "source.toolOutputs",
+      "result.source.toolOutputs",
+      "got.source.toolOutputs",
+      "run.source.toolOutputs",
+    ]);
+    expect(dialog).not.toContain('kind === "vscode-agent"');
+    expect(dialog).not.toContain("imp.vscodeNote");
+  });
+});
+
+// Card 605, task 11 item 7: a pick of several session files says how many it
+// holds; only a pick of none says no session was found.
+describe("the import dialog names a pick of several sessions", () => {
+  it("maps the many group to its own message with the count", () => {
+    expect(dialog).toMatch(
+      /group\.kind === "many"\) \{\s*setError\(t\(lang, "imp\.err\.manySessions", \{ n: group\.count \}\)\);/,
+    );
+    expect(dialog).toMatch(/group\.kind === "none"\) \{\s*setError\(t\(lang, "imp\.err\.noSession"\)\);/);
+  });
+});
+
+// Card 605, task 12 item 1: a pick with the layout of a Copilot session folder
+// loads through the folder loader, which reads only the files the grouping named.
+describe("the import dialog loads a Copilot session folder as a whole", () => {
+  it("maps the copilot group to the folder loader and hands its run summary on", () => {
+    expect(dialog).toMatch(/group\.kind === "copilot"\) \{\s*loadCopilotPick\(list, group\.session\);/);
+    expect(dialog).toMatch(/readCopilotFolder\(list, pick\)/);
+    expect(dialog).toMatch(
+      /props\.onLoad\(\s*got\.events,\s*got\.label,\s*got\.kind,\s*got\.source,\s*got\.subagent,\s*undefined,\s*got\.run,/,
+    );
+  });
+});
+
+// Task 12 fix round 1 item 11: the stripped dialog is the whole file. Its hint
+// path holds a "/*" inside a string, which used to open a comment that ran to
+// the next "*/" and hid everything below it from these pins.
+describe("the dialog pins read the whole dialog file", () => {
+  it("sees code below the hint", () => {
+    const hint = dialog.indexOf('t(lang, "imp.hint"');
+    expect(hint).toBeGreaterThan(0);
+    const below = dialog.slice(hint);
+    expect(below).toMatch(
+      /onPick=\{\(i\) => loadCopilotPick\(copilotStore\.files, copilotStore\.sessions\[i\]\)\}/,
+    );
+    expect(below).toContain('accept=".jsonl,.json,.txt,.zip,.yaml,.md"');
   });
 });

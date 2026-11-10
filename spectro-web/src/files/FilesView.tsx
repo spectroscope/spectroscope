@@ -12,6 +12,10 @@
 //
 // The cursor is the tab's own (C2): it never calls the session's stepper and
 // never changes the route.
+//
+// Card 605: a Report button after the model controls opens the report sheet
+// (FilesReportSheet.tsx) over the ledger the panes show. Closing the sheet
+// returns the focus to the button. The empty state shows the button too.
 
 import {
   useEffect,
@@ -25,6 +29,7 @@ import {
 } from "react";
 import type { RunEvent } from "../events";
 import { agentAccent } from "../format";
+import type { CopilotSnapshot } from "../import/copilotFolder";
 import { t, type Lang } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { DEFAULT_INTERVAL_MS } from "../state/stepper";
@@ -35,6 +40,7 @@ import { FilesExplorer } from "./FilesExplorer";
 import { useShownLedger, type ReadingMode } from "./filesAnalysis";
 import { FilesModelControls } from "./FilesModelControls";
 import { FilesOperations, FilesOpList } from "./FilesOperations";
+import { FilesReportSheet } from "./FilesReportSheet";
 import { FilesTimeline, timelineAxis } from "./FilesTimeline";
 import {
   fileRows,
@@ -58,6 +64,10 @@ export interface FilesViewProps {
   onFocusEvent: (agentId: string, event: RunEvent) => void;
   /** Opens a path in the Files panel; null when the session has no folder. */
   onOpenPath: ((path: string) => void) | null;
+  /** The session's title, for the report; null when the session has none. */
+  title: string | null;
+  /** A Copilot session folder's file snapshots, carried beside the events (card 605, task 12). */
+  snapshots?: readonly CopilotSnapshot[];
 }
 
 export type FilesViewName = "all" | "diff" | "created" | "operations";
@@ -110,9 +120,9 @@ function typing(target: unknown): boolean {
 }
 
 export function FilesView(props: FilesViewProps): JSX.Element {
-  const { viewKey, events, startAt, onStartHandled, onFocusEvent, onOpenPath } = props;
+  const { viewKey, events, startAt, onStartHandled, onFocusEvent, onOpenPath, title, snapshots } = props;
   const lang = useLang();
-  const heuristic = useMemo(() => foldFiles(events), [events]);
+  const heuristic = useMemo(() => foldFiles(events, snapshots), [events, snapshots]);
   // With a model's reading shown, the merged ledger replaces the heuristic one downstream.
   const [readingMode, setReadingMode] = useState<ReadingMode>("heuristic");
   const { ledger, analysis, modelShown } = useShownLedger(viewKey, heuristic, readingMode, events);
@@ -131,8 +141,10 @@ export function FilesView(props: FilesViewProps): JSX.Element {
   const [selection, setSelection] = useState<FilesSelection>(NOTHING);
   const [cursor, setCursor] = useState<Cursor>(FOLLOW);
   const [playing, setPlaying] = useState(false);
-  // Another session on screen starts with nothing selected, every agent shown
-  // and the cursor at its end.
+  const [reportOpen, setReportOpen] = useState(false);
+  const reportButton = useRef<HTMLButtonElement>(null);
+  // Another session on screen starts with nothing selected, every agent shown,
+  // the cursor at its end and no report sheet.
   const [shownKey, setShownKey] = useState(viewKey);
   if (shownKey !== viewKey) {
     setShownKey(viewKey);
@@ -140,6 +152,7 @@ export function FilesView(props: FilesViewProps): JSX.Element {
     setHidden(NO_AGENTS);
     setCursor(FOLLOW);
     setPlaying(false);
+    setReportOpen(false);
   }
   // The event a route opened the tab at places the cursor, once per route.
   const [taken, setTaken] = useState<RunEvent | null>(null);
@@ -174,9 +187,43 @@ export function FilesView(props: FilesViewProps): JSX.Element {
     return () => clearInterval(timer);
   }, [playing]);
 
+  const closeReport = (): void => {
+    setReportOpen(false);
+    reportButton.current?.focus();
+  };
+
+  // The Report button and its sheet. A session without file calls has them
+  // too: prompts, steering messages and tool results can hold findings.
+  const report = (
+    <>
+      <button
+        type="button"
+        ref={reportButton}
+        className="files-report__open"
+        data-action="report"
+        aria-haspopup="dialog"
+        aria-expanded={reportOpen}
+        onClick={() => setReportOpen(true)}
+      >
+        {t(lang, "filesTab.report.button")}
+      </button>
+      {reportOpen && (
+        <FilesReportSheet
+          lang={lang}
+          events={events}
+          ledger={ledger}
+          sessionId={viewKey}
+          title={title}
+          onClose={closeReport}
+        />
+      )}
+    </>
+  );
+
   if (ledger.calls.length === 0) {
     return (
       <div className="files-tab">
+        {events.length > 0 && <section className="files-toolbar">{report}</section>}
         <p className="files-empty">{t(lang, "filesTab.empty")}</p>
       </div>
     );
@@ -351,6 +398,7 @@ export function FilesView(props: FilesViewProps): JSX.Element {
           ledger={heuristic}
           analysis={analysis}
         />
+        {report}
         <p className="files-summary">{summaryLine(lang, summary, modelShown)}</p>
       </section>
       <FilesTimeline
@@ -415,6 +463,8 @@ function summaryLine(lang: Lang, s: FilesSummary, modelShown: boolean): ReactNod
       s.recordedChanged === 1 ? "filesTab.summary.recordedOne" : "filesTab.summary.recorded",
       s.recordedChanged,
     ),
+    // Card 605, task 12: files only a Copilot snapshot changed are named apart, when there are any.
+    ...(s.snapshotChanged > 0 ? [" · ", bold(lang, "filesTab.summary.snapshots", s.snapshotChanged)] : []),
     " · ",
     bold(
       lang,

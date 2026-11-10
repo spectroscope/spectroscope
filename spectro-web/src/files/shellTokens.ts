@@ -13,11 +13,16 @@ export interface Word {
   dynamic: boolean; // holds a variable or a substitution, so the value is unknown
   glob: boolean; // holds an unquoted pattern character
   quoted?: boolean;
+  start?: number; // where the word starts in the command, quotes included (card 605)
+  end?: number; // where it ends, exclusive
 }
 export interface Heredoc {
   strip: boolean;
   delimiter: string;
   body: string;
+  /** Where the body starts and ends in the command, its terminator line left out (card 605). */
+  start?: number;
+  end?: number;
 }
 type Tok =
   | { k: "word"; w: Word }
@@ -61,7 +66,7 @@ function lex(src: string): Tok[] {
           op = after;
           i = j;
         } else {
-          toks.push({ k: "word", w });
+          toks.push({ k: "word", w: { ...w, start: i, end: j } });
           i = j;
           continue;
         }
@@ -84,6 +89,8 @@ function lex(src: string): Tok[] {
 function readBodies(src: string, i: number, docs: Heredoc[]): number {
   for (const doc of docs) {
     let body = "";
+    doc.start = i;
+    doc.end = i;
     while (i < src.length) {
       const nl = src.indexOf("\n", i);
       const end = nl === -1 ? src.length : nl;
@@ -91,6 +98,7 @@ function readBodies(src: string, i: number, docs: Heredoc[]): number {
       i = nl === -1 ? src.length : nl + 1;
       if (line === doc.delimiter) break;
       body += line + "\n";
+      doc.end = end;
     }
     doc.body = body;
   }

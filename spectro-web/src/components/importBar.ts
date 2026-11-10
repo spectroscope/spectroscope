@@ -9,8 +9,10 @@
 import type { RunEvent } from "../events";
 import { t, type Lang } from "../i18n/i18n";
 import type { ImportedRunSummary } from "../import/claudeCodeRun";
+import type { CopilotSide } from "../import/copilotFolder";
 import type { ImportKind } from "../import/detect";
 import type { SubagentTranscript } from "../import/subagentFile";
+import type { ToolOutputCount } from "../import/vscodeAgent";
 import type { SourceStats } from "../state/traceSource";
 
 /** The conversation, in the units a reader counts it in (card 440). */
@@ -37,6 +39,10 @@ export interface ImportBarState {
   /** The file is one agent's transcript, not a session (card 152), so the
    *  bar's own sentence does not call it a session. */
   agentTranscript: boolean;
+  /** A Copilot events.jsonl that arrived without its folder (card 605, task
+   *  12): the bar offers the folder pick, and the session id says whether the
+   *  pick replaces this session. */
+  copilotFolder?: { sessionId: string | null };
 }
 
 /** The bar's text: what it says, and the raw numbers behind "Details". */
@@ -196,14 +202,62 @@ export function importBarText(lang: Lang, bar: ImportBarState): ImportBarText {
 }
 
 /**
+ * How many tool results of the file recorded no output (card 605, task 10),
+ * or null when every result recorded one or the import counted none.
+ *
+ * @param lang  the chrome language
+ * @param count the importer's count, from `ImportSource.toolOutputs`
+ * @return the sentence, or null
+ */
+export function toolOutputNote(lang: Lang, count: ToolOutputCount | null | undefined): string | null {
+  if (count == null || count.missing <= 0) return null;
+  const key = count.missing > 1 ? "imp.noOutput" : count.total > 1 ? "imp.noOutputOne" : "imp.noOutputOnly";
+  return t(lang, key, { n: grouped(count.missing, lang), m: grouped(count.total, lang) });
+}
+
+/** The UTC date of an ISO time, or null when it does not parse. */
+function isoDate(time: string): string | null {
+  const ms = Date.parse(time);
+  return Number.isFinite(ms) ? new Date(ms).toISOString().slice(0, 10) : null;
+}
+
+/**
+ * What the bar says about a GitHub Copilot session (card 605, task 12): who
+ * recorded the folder and when, from its workspace.yaml; that the file is part
+ * of a folder when it arrived alone; that a lock file beside its events
+ * marked it as in use when it was picked; and that a half-written last line
+ * was left out.
+ *
+ * @param lang the chrome language
+ * @param side what the Copilot session carried beside its events
+ * @return the sentences, or null when there is nothing of the kind to say
+ */
+export function copilotNote(lang: Lang, side: CopilotSide | null | undefined): string | null {
+  if (!side) return null;
+  const parts: string[] = [];
+  const client = side.workspace?.client ?? null;
+  const date = side.workspace?.createdAt == null ? null : isoDate(side.workspace.createdAt);
+  // The client is filled last, so a client name that looks like a slot stays a name.
+  if (client !== null && date !== null) parts.push(t(lang, "imp.copilot.recorded", { date, client }));
+  if (side.alone === true) parts.push(t(lang, "imp.copilot.alone"));
+  if (side.live !== undefined) {
+    const n = side.live.records;
+    parts.push(t(lang, n === 1 ? "imp.copilot.liveOne" : "imp.copilot.live", { n: grouped(n, lang) }));
+  }
+  if (side.torn === true) parts.push(t(lang, "imp.copilot.torn"));
+  return parts.length > 0 ? parts.join(" ") : null;
+}
+
+/**
  * The notes a special kind of file adds to the bar, in a fixed order.
  *
- * The VS Code note is about a FORMAT's limits (that export records that each
- * tool ran and whether it succeeded, never what it returned); the subagent note
- * is about what THIS file is (card 152); the children note is what a run import
- * carried (card 291); `extra` is a sentence the store owes the reader, such as
- * a run that fell back to its session file (card 318); `found` is what came
- * with a spectroscope session file: its wires and child sessions (card 473).
+ * The Copilot note says what a Copilot session folder added (card 605, task
+ * 12); the tool output note counts the results a VS Code or Copilot file
+ * recorded no output for (card 605, task 10); the subagent note is about what THIS file
+ * is (card 152); the children note is what a run import carried (card 291);
+ * `extra` is a sentence the store owes the reader, such as a run that fell
+ * back to its session file (card 318); `found` is what came with a
+ * spectroscope session file: its wires and child sessions (card 473).
  *
  * @param lang  the chrome language
  * @param about what the import knows about the file
@@ -218,10 +272,15 @@ export function importBarNote(
     extra?: string | null;
     /** Card 473: what came with a spectroscope session file, said once. */
     found?: string | null;
+    /** Card 605, task 10: the importer's count of results without output. */
+    toolOutputs?: ToolOutputCount | null;
+    /** Card 605, task 12: what a Copilot session carried beside its events. */
+    copilot?: CopilotSide | null;
   },
 ): string | null {
   const notes = [
-    about.kind === "vscode-agent" ? t(lang, "imp.vscodeNote") : null,
+    copilotNote(lang, about.copilot),
+    toolOutputNote(lang, about.toolOutputs),
     subagentNote(lang, about.subagent),
     childrenNote(lang, about.run),
     about.extra ?? null,
@@ -231,8 +290,9 @@ export function importBarNote(
 }
 
 /**
- * The parts of the bar that follow from what kind of file was opened: the notes
- * and whether the file is one agent's transcript. Both come from this one call,
+ * The parts of the bar that follow from what kind of file was opened: the notes,
+ * whether the file is one agent's transcript, and whether the bar offers the
+ * folder of a Copilot file that arrived alone. Both come from this one call,
  * so a bar that carries the subagent note never calls the file a session.
  *
  * @param lang  the chrome language
@@ -242,6 +302,10 @@ export function importBarNote(
 export function importBarAbout(
   lang: Lang,
   about: Parameters<typeof importBarNote>[1],
-): Pick<ImportBarState, "note" | "agentTranscript"> {
-  return { note: importBarNote(lang, about), agentTranscript: about.subagent != null };
+): Pick<ImportBarState, "note" | "agentTranscript" | "copilotFolder"> {
+  return {
+    note: importBarNote(lang, about),
+    agentTranscript: about.subagent != null,
+    ...(about.copilot?.alone === true ? { copilotFolder: { sessionId: about.copilot.sessionId } } : {}),
+  };
 }

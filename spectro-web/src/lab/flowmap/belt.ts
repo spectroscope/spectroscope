@@ -17,7 +17,7 @@
 // later are different claims, and the map is read for exactly that difference.
 
 import { describeTool, type ToolView } from "../../components/toolViews";
-import { CC_DISK_READ, CC_DISK_WRITE, SHELL_TOOLS } from "../labScene";
+import { CC_DISK_READ, CC_DISK_WRITE, COPILOT_DISK_WRITE, SHELL_TOOLS } from "../labScene";
 
 /** The harness's own tool belt, plus the extension actions. */
 export const TOOL_CHIPS = [
@@ -68,7 +68,9 @@ export interface BeltChip {
  *
  * These are FIELD names, not tool names — the thing this card exists to remove
  * is a second vocabulary of tools, and there is none here. One key per shape
- * the table below gives a chip to; the shapes it gives no chip to would answer
+ * the table below gives a chip to, and one more per spelling of it a
+ * vocabulary uses (the Copilot CLI's `file_text`, `old_str` and `new_str`,
+ * card 605); the shapes it gives no chip to would answer
  * `generic` with an unsatisfied probe and `generic` maps to no chip either, so
  * the two answers coincide and nothing hangs on them.
  * `beltCoverage.test.tsx` demands that every chip-bearing shape stay reachable
@@ -78,8 +80,11 @@ export interface BeltChip {
 const NAME_PROBE = {
   path: "p",
   content: "c",
+  file_text: "c",
   old_string: "a",
   new_string: "b",
+  old_str: "a",
+  new_str: "b",
   pattern: "*",
   command: "c",
   name: "n",
@@ -138,24 +143,27 @@ export const CHIP_FOR_KIND: Record<ToolView["kind"], string | null> = {
 
 /**
  * The remainder: names the MAP already routes to a station that the classifier
- * has no arm for at all.
+ * draws with no station shape.
  *
- * A mapping of STATIONS — three sets, three chips — and deliberately not of
+ * A mapping of STATIONS, four sets and their chips, and deliberately not of
  * tool names: every name comes out of the sets `labScene` exports and folds
- * with, so a name added there is covered here the moment it is added. The
- * native disk sets are absent because each of their names is either a chip
- * label, answered by name, or a name the classifier knows (card 604,
- * `diskVocabulary.drift.test.ts`); these three sets are the imported
- * vocabulary the fold learnt.
+ * with, so a name added there is covered here the moment it is added. Of the
+ * seven sets, the native disk sets and the Copilot CLI's read set are absent
+ * because each of their names is either a chip label, answered by name, or a
+ * name the classifier knows (cards 604 and 605, `diskVocabulary.drift.test.ts`);
+ * these four are the Claude Code disk sets, the Copilot CLI's write set and the
+ * shell set.
  *
- * What it carries today is exactly one name, and it is why this step exists:
- * the fold routes it to the disk, the classifier has never heard of it, and
- * without this it would draw as a call with no station while the disk beside it
- * spins.
+ * What it carries today is two names, and they are why this step exists: the
+ * fold routes each to the disk, and the classifier draws one as a call it has
+ * no arm for and the other (the IDE export's patch tool, card 605 task 10) as
+ * the patch text it was given. Without this each would draw as a call with no
+ * station while the disk beside it spins.
  */
 const STATION_CHIP: [ReadonlySet<string>, string][] = [
   [CC_DISK_READ, "read_file"],
   [CC_DISK_WRITE, "write_file"],
+  [COPILOT_DISK_WRITE, "write_file"],
   [SHELL_TOOLS, "run_command"],
 ];
 

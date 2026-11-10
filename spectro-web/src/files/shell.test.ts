@@ -123,11 +123,12 @@ describe("shellTouches rules", () => {
   });
 
   it("aGrepWithoutAPathReadsItsFolder", () => {
+    // A search, not a read of the folder's files (card 605).
     expect(touches("rg needle")).toEqual([
-      { written: ".", path: "/w", folder: true, kind: "read", reason: 'rg "needle"' },
+      { written: ".", path: "/w", folder: true, kind: "read", reason: 'rg "needle"', search: true },
     ]);
     expect(touches("grep -rn needle")).toEqual([
-      { written: ".", path: "/w", folder: true, kind: "read", reason: 'grep "needle"' },
+      { written: ".", path: "/w", folder: true, kind: "read", reason: 'grep "needle"', search: true },
     ]);
     expect(touches("grep -r -e needle")[0].reason).toBe('grep "needle"');
     expect(shortAll("cd web && rg needle")).toEqual([{ path: "/w/web", kind: "read", folder: true }]);
@@ -141,6 +142,35 @@ describe("shellTouches rules", () => {
     expect(shortAll("rg needle src")).toEqual([{ path: "/w/src", kind: "read", folder: false }]);
     // An unknown folder names nothing.
     expect(touches("cd $DIR && rg needle")).toEqual([]);
+  });
+
+  it("aRecursiveGrepOrRgOnAFileReadsIt", () => {
+    // Task 11 item 2, as fix round 2 item 2 rules: a content search reads every
+    // file or folder it names; only a pathless call searches.
+    const how = (command: string) =>
+      touches(command).map((t) => [t.written, t.kind, t.folder, t.search === true]);
+    for (const [command, written] of [
+      ["rg KEY .env", ".env"],
+      ["rg -n API_KEY ~/.aws/credentials", "~/.aws/credentials"],
+      ["grep -r KEY .env", ".env"],
+      ["grep -rn token ~/.ssh/id_rsa", "~/.ssh/id_rsa"],
+      ["grep -R password .env.local", ".env.local"],
+      ["rg TODO /Users/a/other-project/notes.md", "/Users/a/other-project/notes.md"],
+    ])
+      expect(how(command), command).toEqual([[written, "read", false, false]]);
+    // A folder is read as a folder; only no path at all is a search.
+    expect(how("rg TODO")).toEqual([[".", "read", true, true]]);
+    expect(how("rg TODO src/")).toEqual([["src/", "read", true, false]]);
+    expect(how("grep -r TODO .")).toEqual([[".", "read", true, false]]);
+    expect(how("rg TODO src/*.ts")).toEqual([["src/*.ts", "read", true, false]]);
+    expect(how("rg TODO src/ .env")).toEqual([
+      ["src/", "read", true, false],
+      [".env", "read", false, false],
+    ]);
+    // rg --files lists names: a listing, with or without a path.
+    const listed = (command: string) => touches(command).map((t) => [t.written, t.listing === true]);
+    expect(listed("rg --files ~/.ssh")).toEqual([["~/.ssh", true]]);
+    expect(listed("rg --files")).toEqual([[".", true]]);
   });
 
   it("aFileReadByGrepOrLsIsNotAFolder", () => {
@@ -424,13 +454,20 @@ describe("shellTouches review fixes", () => {
     expect(shortAll("git checkout .")).toEqual([{ path: "/w", kind: "change", folder: true }]);
   });
 
+  it("a cd under the home folder moves the base too (fix round 2 item 5)", () => {
+    expect(shortAll("cd ~/.ssh && cat id_rsa")).toEqual([
+      { path: "~/.ssh/id_rsa", kind: "read", folder: false },
+    ]);
+    expect(shortAll("cd ~ && touch a")).toEqual([{ path: "~/a", kind: "create", folder: false }]);
+    expect(shortAll("cd /w/app; cat .env")).toEqual([{ path: "/w/app/.env", kind: "read", folder: false }]);
+  });
+
   it("a lost base drops relative paths and keeps absolute ones", () => {
     expect(touches("cd $DIR && touch a && touch /tmp/b")).toEqual([
       { written: "/tmp/b", path: "/tmp/b", folder: false, kind: "create", reason: "touch /tmp/b" },
     ]);
     expect(touches("cd - && touch a")).toEqual([]);
     expect(touches("cd && touch a")).toEqual([]);
-    expect(touches("cd ~ && touch a")).toEqual([]);
     expect(shortAll("cd $DIR && cat ~/notes.md")).toEqual([
       { path: "~/notes.md", kind: "read", folder: false },
     ]);

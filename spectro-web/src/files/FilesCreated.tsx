@@ -12,6 +12,7 @@ import { whenLabel } from "./cursor";
 import { addedLines, linesOf } from "./FilesDetail";
 import { CHANGE_KINDS, shownPath, sourceTags } from "./FilesExplorer";
 import type { FileLedger, FileRow, FileTouch } from "./fold";
+import { toolOf } from "./label";
 
 export interface FilesCreatedProps {
   lang: Lang;
@@ -78,7 +79,7 @@ function card(props: FilesCreatedProps, row: FileRow, touch: FileTouch): JSX.Ele
       data-path={row.path}
     >
       <div className="files-card__head" title={row.path}>
-        {shownPath(row.label, touch.folder)}
+        {shownPath(row.label, [touch])}
       </div>
       <div className="files-card__meta">
         {sourceTags(lang, touch.sources)}
@@ -94,7 +95,7 @@ function card(props: FilesCreatedProps, row: FileRow, touch: FileTouch): JSX.Ele
           {call !== undefined && (
             <>
               {" · "}
-              <span className="files-mono">{call.tool}</span>
+              <span className="files-mono">{toolOf(lang, call)}</span>
             </>
           )}
           {facts.map((fact) => ` · ${fact}`).join("")}

@@ -54,6 +54,8 @@ class NoOperatorAddressesInTheRepoTest {
     private static final Set<String> NEUTRAL = Set.of(
             // the CGNAT block a tailnet uses
             "100.64.0.0", "100.64.0.1", "100.64.0.2", "100.64.0.3",
+            // the last addresses of 172.16/12 and 100.64/10, for range-end tests (card 605)
+            "172.31.255.255", "100.127.255.255",
             // RFC 1918, generic
             "10.0.0.1", "10.0.0.2", "10.0.0.5", "10.0.0.9",
             "172.16.0.1", "172.16.4.1", "172.16.4.4", "172.31.0.1",

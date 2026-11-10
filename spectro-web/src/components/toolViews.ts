@@ -47,7 +47,18 @@ export type ToolView =
       at: string | null;
     }
   | { kind: "listing"; path: string; entries: string[] }
-  | { kind: "matches"; pattern: string; path: string | null; lines: string[] }
+  | {
+      kind: "matches";
+      pattern: string;
+      /** Where it searched; a grep's glob filter is joined into it (card 605). */
+      path: string | null;
+      /** Every place, when the call names more than one (a `paths` list, task 11
+       *  item 6), each joined with the filter like `path`; `path` is the first. */
+      paths?: string[];
+      /** The glob filter a grep was narrowed by, as the call wrote it, or null. */
+      filter: string | null;
+      lines: string[];
+    }
   | {
       kind: "command";
       command: string;
@@ -84,7 +95,65 @@ export type ToolView =
       run: WorkflowRun | null;
       result: string;
     }
-  | { kind: "generic"; input: unknown; output: string };
+  | {
+      kind: "generic";
+      input: unknown;
+      output: string;
+      /** apply_patch (card 605, task 10): the files its headers name. The card
+       *  stays the patch as written; the files tab reads these. */
+      patch?: PatchFile[];
+    };
+
+/** One file an apply_patch names: what its header does to it, and where a move put it. */
+export type PatchFile = { path: string; change: "add" | "update" | "delete"; movedTo: string | null };
+
+const PATCH_BEGIN = "*** Begin Patch";
+const PATCH_FILE = /^\*\*\* (Add|Update|Delete) File: (.*)$/;
+const PATCH_MOVE = /^\*\*\* Move to: (.*)$/;
+const PATCH_CHANGE = { Add: "add", Update: "update", Delete: "delete" } as const;
+
+/**
+ * The files of an apply_patch call, read off its headers: `*** Add File: p`,
+ * `*** Update File: p` with an optional `*** Move to: q` on the next line, and
+ * `*** Delete File: p`. A body line starts with `+`, `-`, a space or `@@`, so
+ * no body line reads as a header.
+ *
+ * @param input the call's input: the patch text, opening with `*** Begin Patch`,
+ *              or an object whose `input` field is that text (task 11 item 12)
+ * @return the files in the order of their headers, or null for any other input
+ */
+export function patchFiles(input: unknown): PatchFile[] | null {
+  const text = typeof input === "string" ? input : str(input, "input");
+  if (text === null || !text.trimStart().startsWith(PATCH_BEGIN)) return null;
+  return patchHeaders(text);
+}
+
+function patchHeaders(input: string): PatchFile[] | null {
+  const files: PatchFile[] = [];
+  let updated: PatchFile | null = null;
+  for (const raw of input.split("\n")) {
+    const line = raw.endsWith("\r") ? raw.slice(0, -1) : raw;
+    const move = updated === null ? null : PATCH_MOVE.exec(line);
+    if (updated !== null && move !== null) {
+      const to = move[1].trim();
+      if (to !== "") updated.movedTo = to;
+      updated = null;
+      continue;
+    }
+    updated = null;
+    const head = PATCH_FILE.exec(line);
+    const path = head?.[2].trim() ?? "";
+    if (head === null || path === "") continue;
+    const file: PatchFile = {
+      path,
+      change: PATCH_CHANGE[head[1] as keyof typeof PATCH_CHANGE],
+      movedTo: null,
+    };
+    files.push(file);
+    if (file.change === "update") updated = file;
+  }
+  return files.length > 0 ? files : null;
+}
 
 /** What a mutating file tool did (card 269) — the three words the harness
  *  reports, and the whole vocabulary. Anything else on the wire is a word this
@@ -531,6 +600,10 @@ const FILE_BODY_KEYS = new Set([
   "newString",
   "old_string",
   "oldString",
+  // The GitHub Copilot CLI's create and edit (card 605).
+  "file_text",
+  "old_str",
+  "new_str",
 ]);
 
 /** Keys whose value IS the thing a tool acts on, and the only fields a language
@@ -1460,6 +1533,41 @@ function patchAt(hunks: readonly PatchHunk[]): string | null {
   return `lines ${spans.join(", ")}`;
 }
 
+const isInt = (v: unknown): v is number => typeof v === "number" && Number.isInteger(v);
+
+/**
+ * A Copilot CLI `view_range` as the offset and limit of a read: [320, 500] is
+ * 320 and 181, [320, -1] runs to the end of the file. The CLI also reads the
+ * flat spelling `view_range[0]` and `view_range[1]`. Anything else names no page.
+ */
+function viewRange(input: unknown): [number | null, number | null] {
+  const listed = arr(input, "view_range");
+  const flat = [num(input, "view_range[0]"), num(input, "view_range[1]")];
+  const range = listed ?? flat;
+  if (range.length !== 2) return [null, null];
+  const [first, last] = range;
+  if (!isInt(first) || !isInt(last) || first < 1) return [null, null];
+  if (last === -1) return [first, null];
+  return last >= first ? [first, last - first + 1] : [null, null];
+}
+
+/**
+ * The places a search names: `path`, VS Code's `includePattern`, or the
+ * Copilot `paths` as a string or a list (task 11 item 6: each entry).
+ *
+ * @return the places, null when the call names none, undefined when a list
+ *         holds an entry that is not a string
+ */
+function searchPlaces(input: unknown): string[] | null | undefined {
+  const one = firstStr(input, "path", "includePattern");
+  if (one !== null) return [one];
+  const paths = str(input, "paths") ?? arr(input, "paths");
+  if (paths === null) return null;
+  if (typeof paths === "string") return [paths];
+  if (paths.length === 0) return null;
+  return paths.every((p) => typeof p === "string") ? (paths as string[]) : undefined;
+}
+
 export function describeTool(
   name: string,
   input: unknown,
@@ -1489,11 +1597,14 @@ export function describeTool(
   switch (name) {
     case "Read":
     case "read_file":
-    case "view_file": {
-      const path = firstStr(input, "path", "filePath", "file_path");
+    case "view_file":
+    case "view": {
+      // The GitHub Copilot CLI's `view` names its file `path` only, and its
+      // page as `view_range` (card 605).
+      const copilot = name === "view";
+      const path = copilot ? str(input, "path") : firstStr(input, "path", "filePath", "file_path");
       if (path === null) return generic;
-      const offset = num(input, "offset");
-      const limit = num(input, "limit");
+      const [offset, limit] = copilot ? viewRange(input) : [num(input, "offset"), num(input, "limit")];
       const called =
         offset !== null
           ? limit !== null
@@ -1521,6 +1632,24 @@ export function describeTool(
       const content = str(input, "content");
       if (path === null || content === null) return generic;
       return { kind: "write", path, content, result: out, changed };
+    }
+
+    // The Copilot CLI's write: `path` and `file_text`.
+    case "create": {
+      const path = str(input, "path");
+      const content = str(input, "file_text");
+      if (path === null || content === null) return generic;
+      return { kind: "write", path, content, result: out, changed };
+    }
+
+    // The Copilot CLI's edit: `path`, `old_str` and `new_str`. Its schema marks
+    // `new_str` optional; without it the replacement is not in the record.
+    case "edit": {
+      const path = str(input, "path");
+      const before = str(input, "old_str");
+      const after = str(input, "new_str");
+      if (path === null || before === null || after === null) return generic;
+      return { kind: "edit", path, before, after, result: out, at: null, changed };
     }
 
     case "Edit":
@@ -1553,22 +1682,56 @@ export function describeTool(
     case "Grep":
     case "glob":
     case "grep":
+    case "rg":
     case "grep_search":
     case "file_search": {
+      // `rg` is the GitHub Copilot IDE export's search (task 11 item 6):
+      // `pattern`, a `paths` list, and an optional `glob`, like grep.
       // A VS Code export says `query` and `includePattern` for the same two
       // fields. semantic_search is deliberately absent: its result is ranked
       // excerpts, and counting their lines would report a hit count the tool
       // never gave.
       const pattern = firstStr(input, "pattern", "query");
       if (pattern === null) return generic;
-      const path = firstStr(input, "path", "includePattern");
-      return { kind: "matches", pattern, path, lines: lines(out) };
+      const places = searchPlaces(input);
+      if (places === undefined) return generic;
+      // A grep narrowed by a file glob searched the files under its path that
+      // match it. Ripgrep matches a glob without a slash at any depth, so that
+      // one stands under `**/`; a glob with a slash is joined as written.
+      const glob = name === "grep" || name === "Grep" || name === "rg" ? str(input, "glob") : null;
+      const filter = glob === "" ? null : glob;
+      const under = filter === null || filter.includes("/") ? filter : `**/${filter}`;
+      const join = (where: string | null): string | null =>
+        under === null
+          ? where
+          : where === null || where === ""
+            ? under
+            : `${where.replace(/\/+$/, "")}/${under}`;
+      const joined = (places ?? [null]).map(join);
+      return {
+        kind: "matches",
+        pattern,
+        path: joined[0],
+        ...(joined.length > 1 ? { paths: joined as string[] } : {}),
+        filter,
+        lines: lines(out),
+      };
+    }
+
+    // The patch tool of the GitHub Copilot IDE export (card 605, task 10): its
+    // input is the patch text. The card shows it as written; the files tab
+    // reads the files its headers name.
+    case "apply_patch": {
+      const patch = patchFiles(input);
+      return patch === null ? generic : { kind: "generic", input, output: out, patch };
     }
 
     case "Bash":
     case "run_in_terminal":
     case "run_command":
-    case "Monitor": {
+    case "Monitor":
+    case "bash":
+    case "powershell": {
       // Monitor waits on a shell loop, so its stop condition is inside the
       // command rather than beside it in a field of its own.
       const command = str(input, "command");

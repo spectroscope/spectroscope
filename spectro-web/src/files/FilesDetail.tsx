@@ -13,6 +13,7 @@ import { whenLabel } from "./cursor";
 import { shownPath, sourceTags } from "./FilesExplorer";
 import type { FileCall, FileLedger, FileRow, FileTouch } from "./fold";
 import type { DiffStyle, FilesSelection } from "./FilesView";
+import { linesText, toolOf } from "./label";
 
 export interface FilesDetailProps {
   lang: Lang;
@@ -69,7 +70,7 @@ function head(props: FilesDetailProps, call: FileCall, at: number): JSX.Element 
     <div className="files-detail__head">
       <span className="files-detail__when">
         {whenLabel(lang, call.t, at + 1)} · <span className="files-mono">{call.agentId}</span> ·{" "}
-        <span className="files-mono">{call.tool}</span>
+        <span className="files-mono">{toolOf(lang, call)}</span>
       </span>
       <span className="files-detail__links">
         {script !== null && (
@@ -119,10 +120,7 @@ function stepper(props: FilesDetailProps, call: FileCall): JSX.Element | null {
           {t(lang, "filesTab.detail.changeOf", {
             k: pos + 1,
             n: changes.length,
-            path: shownPath(
-              row.label,
-              row.touches.some((touch) => touch.folder),
-            ),
+            path: shownPath(row.label, row.touches),
           })}
         </span>
         <button
@@ -173,9 +171,7 @@ function touchBlock(props: FilesDetailProps, call: FileCall, touch: FileTouch, i
     <div key={i} className="files-touch">
       <div className="files-detail__tools">
         {sourceTags(lang, touch.sources)}
-        <span className="files-mono">
-          {shownPath(shortenPath(touch.path, ledger.workspace), touch.folder)}
-        </span>
+        <span className="files-mono">{shownPath(shortenPath(touch.path, ledger.workspace), [touch])}</span>
         <span>{t(lang, `filesTab.kind.${touch.kind}`)}</span>
         {diff !== null && (
           <span className="files-mono">
@@ -183,6 +179,7 @@ function touchBlock(props: FilesDetailProps, call: FileCall, touch: FileTouch, i
             {removed > 0 && <span className="files-minus"> -{removed}</span>}
           </span>
         )}
+        {touch.lines !== undefined && <span className="files-mono">{linesText(touch.lines)}</span>}
         <span className="files-reason">{touch.reason}</span>
       </div>
       {diff !== null && (

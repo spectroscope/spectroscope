@@ -3,7 +3,7 @@
 // render it as itself instead of as two JSON blobs. Pure, DOM-free.
 
 import { describe, expect, it } from "vitest";
-import { describeTool, runStats, splitInput } from "./toolViews";
+import { describeTool, patchFiles, runStats, splitInput } from "./toolViews";
 
 describe("describeTool — files", () => {
   it("read_file becomes a file view with its path and body", () => {
@@ -207,6 +207,216 @@ describe("VS Code agent-mode tool names", () => {
       "generic",
     );
     expect(describeTool("create_file", { filePath: "x" }, "", false).kind).toBe("generic");
+  });
+});
+
+describe("GitHub Copilot CLI tool names (card 605)", () => {
+  // The dotted session format of the Copilot CLI (import/vscodeAgent.ts) keeps
+  // the CLI's own names and argument keys: `view`, `create`, `edit`, `bash`.
+  const P = "/w/src/a/test/T.cpp";
+
+  it("reads view as a file read of its path", () => {
+    const v = describeTool("view", { path: P }, "", false);
+    expect(v.kind).toBe("file");
+    if (v.kind !== "file") throw new Error("kind");
+    expect(v.path).toBe(P);
+    expect(v.range).toBeNull();
+  });
+
+  it("names a view_range in the range style of every other read", () => {
+    const v = describeTool("view", { path: P, view_range: [320, 500] }, "", false);
+    const read = describeTool("Read", { file_path: P, offset: 320, limit: 181 }, "", false);
+    if (v.kind !== "file" || read.kind !== "file") throw new Error("kind");
+    expect(v.range).toMatch(/^lines 320\D500$/);
+    expect(v.range).toBe(read.range);
+  });
+
+  it("reads a view_range that runs to the end of the file, and the flat spelling of a range", () => {
+    const open = describeTool("view", { path: P, view_range: [320, -1] }, "", false);
+    if (open.kind !== "file") throw new Error("kind");
+    expect(open.range).toBe("from line 320");
+    const flat = describeTool("view", { path: P, "view_range[0]": 10, "view_range[1]": 20 }, "", false);
+    if (flat.kind !== "file") throw new Error("kind");
+    expect(flat.range).toMatch(/^lines 10\D20$/);
+  });
+
+  it("names no page for a view_range it cannot read", () => {
+    for (const range of [[500, 320], [0, 10], ["1", "2"], [1]]) {
+      const v = describeTool("view", { path: P, view_range: range }, "", false);
+      if (v.kind !== "file") throw new Error("kind");
+      expect(v.range, JSON.stringify(range)).toBeNull();
+    }
+  });
+
+  it("keeps a view without its path generic, and reads no other spelling of the path", () => {
+    expect(describeTool("view", { view_range: [1, 2] }, "", false).kind).toBe("generic");
+    expect(describeTool("view", { file_path: P }, "", false).kind).toBe("generic");
+    expect(describeTool("view", { filePath: P }, "", false).kind).toBe("generic");
+  });
+
+  it("reads create as a write of file_text", () => {
+    const v = describeTool(
+      "create",
+      { path: "/w/src/new.ts", file_text: "export const n = 1;\n" },
+      "",
+      false,
+    );
+    expect(v.kind).toBe("write");
+    if (v.kind !== "write") throw new Error("kind");
+    expect(v.path).toBe("/w/src/new.ts");
+    expect(v.content).toBe("export const n = 1;\n");
+    expect(v.changed).toBeNull();
+  });
+
+  it("keeps a create without file_text generic, and does not take content for it", () => {
+    expect(describeTool("create", { path: "/w/a.ts" }, "", false).kind).toBe("generic");
+    expect(describeTool("create", { path: "/w/a.ts", content: "x" }, "", false).kind).toBe("generic");
+    expect(describeTool("create", { file_text: "x" }, "", false).kind).toBe("generic");
+  });
+
+  it("reads edit as an edit of old_str into new_str", () => {
+    const v = describeTool("edit", { path: "/w/a.ts", old_str: "one", new_str: "two" }, "", false);
+    expect(v.kind).toBe("edit");
+    if (v.kind !== "edit") throw new Error("kind");
+    expect([v.path, v.before, v.after]).toEqual(["/w/a.ts", "one", "two"]);
+  });
+
+  it("keeps an edit without one of its three fields generic", () => {
+    expect(describeTool("edit", { path: "/w/a.ts", old_str: "one" }, "", false).kind).toBe("generic");
+    expect(describeTool("edit", { path: "/w/a.ts", new_str: "two" }, "", false).kind).toBe("generic");
+    expect(describeTool("edit", { old_str: "one", new_str: "two" }, "", false).kind).toBe("generic");
+    expect(
+      describeTool("edit", { path: "/w/a.ts", old_string: "one", new_string: "two" }, "", false).kind,
+    ).toBe("generic");
+  });
+
+  it("reads bash and powershell as commands", () => {
+    for (const name of ["bash", "powershell"]) {
+      const v = describeTool(name, { command: "ls src", description: "look", initial_wait: 30 }, "", false);
+      expect(v.kind, name).toBe("command");
+      if (v.kind === "command") expect(v.command).toBe("ls src");
+      expect(describeTool(name, { description: "no command" }, "", false).kind, name).toBe("generic");
+    }
+  });
+
+  it("keeps the shell session verbs generic: they name a session, not a file or a command", () => {
+    const input = { shellId: "s1", command: "ls", input: "y" };
+    for (const shell of ["bash", "powershell"]) {
+      // The positive twin: the same input under the shell's own name is a command.
+      expect(describeTool(shell, input, "", false).kind, shell).toBe("command");
+      for (const verb of ["write", "read", "stop", "list"]) {
+        const name = `${verb}_${shell}`;
+        expect(describeTool(name, input, "", false).kind, name).toBe("generic");
+      }
+    }
+  });
+
+  it("matches the names exactly, case included", () => {
+    expect(describeTool("View", { path: P }, "", false).kind).toBe("generic");
+    expect(describeTool("Create", { path: P, file_text: "x" }, "", false).kind).toBe("generic");
+    expect(describeTool("BASH", { command: "ls" }, "", false).kind).toBe("generic");
+  });
+
+  it("reads glob with its pattern and its path", () => {
+    const v = describeTool("glob", { pattern: "**/*Mock*", path: "/w/src" }, "", false);
+    if (v.kind !== "matches") throw new Error("kind");
+    expect([v.pattern, v.path]).toEqual(["**/*Mock*", "/w/src"]);
+  });
+
+  // Fix round 1: ripgrep matches a glob without a slash at any depth under the
+  // path, so the drawn pattern is the superset `path/**/glob`; a glob with a
+  // slash is anchored and keeps the plain join.
+  const searched = (name: string, input: object): [string | null, string | null] => {
+    const v = describeTool(name, input, "", false);
+    if (v.kind !== "matches") throw new Error(`${name}: ${v.kind}`);
+    return [v.path, v.filter];
+  };
+
+  it("reads a grep's slashless glob as any depth under its path, for grep and Grep", () => {
+    for (const name of ["grep", "Grep"]) {
+      expect(searched(name, { pattern: "TODO", path: "/w/src", glob: "*.ts" }), name).toEqual([
+        "/w/src/**/*.ts",
+        "*.ts",
+      ]);
+      expect(searched(name, { pattern: "TODO", path: "/w/src/", glob: "*.ts" }), name).toEqual([
+        "/w/src/**/*.ts",
+        "*.ts",
+      ]);
+      expect(searched(name, { pattern: "TODO", glob: "*.{ts,tsx}" }), name).toEqual([
+        "**/*.{ts,tsx}",
+        "*.{ts,tsx}",
+      ]);
+    }
+  });
+
+  it("joins a grep's glob with a slash as written, for grep and Grep", () => {
+    for (const name of ["grep", "Grep"]) {
+      expect(searched(name, { pattern: "TODO", path: "/w/src", glob: "lib/*.ts" }), name).toEqual([
+        "/w/src/lib/*.ts",
+        "lib/*.ts",
+      ]);
+      expect(searched(name, { pattern: "TODO", glob: "**/*.ts" }), name).toEqual(["**/*.ts", "**/*.ts"]);
+    }
+  });
+
+  it("keeps the path of a grep without a glob, and names no filter for a glob tool", () => {
+    expect(searched("grep", { pattern: "TODO", path: "/w/src" })).toEqual(["/w/src", null]);
+    expect(searched("grep", { pattern: "TODO", path: "/w/src", glob: "" })).toEqual(["/w/src", null]);
+    expect(searched("glob", { pattern: "*.ts", path: "/w/src", glob: "*.md" })).toEqual(["/w/src", null]);
+  });
+
+  it("reads the CLI's paths field when it names one place", () => {
+    for (const paths of ["/w/src", ["/w/src"]]) {
+      const v = describeTool("glob", { pattern: "*.ts", paths }, "", false);
+      if (v.kind !== "matches") throw new Error("kind");
+      expect(v.path, JSON.stringify(paths)).toBe("/w/src");
+      expect(v.paths, JSON.stringify(paths)).toBeUndefined();
+    }
+  });
+
+  // Task 11 item 6: the IDE export's rg, and a paths list of several places.
+  it("reads every entry of a paths list, the glob filter joined into each", () => {
+    const places = (name: string, input: object) => {
+      const v = describeTool(name, input, "", false);
+      if (v.kind !== "matches") throw new Error(`${name}: ${v.kind}`);
+      return [v.path, v.paths ?? null, v.filter];
+    };
+    expect(places("grep", { pattern: "x", paths: ["/w/a", "/w/b"] })).toEqual([
+      "/w/a",
+      ["/w/a", "/w/b"],
+      null,
+    ]);
+    expect(places("glob", { pattern: "*.json", paths: ["/w/src", "/w/test"] })).toEqual([
+      "/w/src",
+      ["/w/src", "/w/test"],
+      null,
+    ]);
+    expect(places("rg", { pattern: "x", paths: ["/w/src/", "/w/README.md"], glob: "*.ts" })).toEqual([
+      "/w/src/**/*.ts",
+      ["/w/src/**/*.ts", "/w/README.md/**/*.ts"],
+      "*.ts",
+    ]);
+    // A list with an entry that is not a string names no place the card can show.
+    expect(describeTool("rg", { pattern: "x", paths: ["/w/a", 7] }, "", false).kind).toBe("generic");
+  });
+
+  it("draws the IDE export's rg as a search, like grep", () => {
+    expect(searched("rg", { pattern: "TODO", paths: "/w/src" })).toEqual(["/w/src", null]);
+    expect(searched("rg", { pattern: "TODO", paths: ["/w/src"], glob: "*.ts" })).toEqual([
+      "/w/src/**/*.ts",
+      "*.ts",
+    ]);
+    expect(searched("rg", { pattern: "TODO" })).toEqual([null, null]);
+  });
+
+  it("colours the CLI's file bodies by the file's name", () => {
+    const input = { path: "/w/a.py", file_text: "import os\nprint(1)", old_str: "a\nb", new_str: "c\nd" };
+    const langs = splitInput("create", input).blocks.map((b) => [b.key, b.lang]);
+    expect(langs).toEqual([
+      ["file_text", "python"],
+      ["old_str", "python"],
+      ["new_str", "python"],
+    ]);
   });
 });
 
@@ -1778,5 +1988,85 @@ describe("describeTool with the tool's own return value", () => {
       false,
     );
     expect(view).toMatchObject({ kind: "task", rows: [{ fromStatus: null }] });
+  });
+});
+
+// Card 605, task 10 item 7: the patch tool of the GitHub Copilot IDE export.
+// Its arguments are the patch text itself (9 of 9 local calls, all opening
+// with "*** Begin Patch"); the headers name the files.
+describe("apply_patch names its files by its headers (card 605)", () => {
+  const patch = (...body: string[]) => ["*** Begin Patch", ...body, "*** End Patch", ""].join("\n");
+
+  it("reads add, update with and without a move, and delete, in order", () => {
+    const text = patch(
+      "*** Update File: /w/src/a.ts",
+      "@@",
+      "-old",
+      "+new",
+      "*** Update File: /w/src/b.ts",
+      "*** Move to: /w/src/c.ts",
+      "@@",
+      " same",
+      "*** Add File: /w/src/d.ts",
+      "+one",
+      "*** Delete File: /w/src/e.ts",
+    );
+    const view = describeTool("apply_patch", text, "Done", false);
+    expect(view.kind).toBe("generic");
+    if (view.kind !== "generic") return;
+    // The card stays the patch as written.
+    expect([view.input, view.output]).toEqual([text, "Done"]);
+    expect(view.patch).toEqual([
+      { path: "/w/src/a.ts", change: "update", movedTo: null },
+      { path: "/w/src/b.ts", change: "update", movedTo: "/w/src/c.ts" },
+      { path: "/w/src/d.ts", change: "add", movedTo: null },
+      { path: "/w/src/e.ts", change: "delete", movedTo: null },
+    ]);
+  });
+
+  it("reads a header only at a line start, a move only right after its update, and CRLF lines", () => {
+    expect(patchFiles(patch("*** Add File: a.txt", "+*** Update File: b.txt", "+x"))).toEqual([
+      { path: "a.txt", change: "add", movedTo: null },
+    ]);
+    expect(patchFiles(patch("*** Update File: a.txt", "@@", "*** Move to: b.txt"))).toEqual([
+      { path: "a.txt", change: "update", movedTo: null },
+    ]);
+    expect(patchFiles(patch("*** Add File: a.txt", "*** Move to: b.txt"))).toEqual([
+      { path: "a.txt", change: "add", movedTo: null },
+    ]);
+    expect(patchFiles(patch("*** Update File: a.txt").replace(/\n/g, "\r\n"))).toEqual([
+      { path: "a.txt", change: "update", movedTo: null },
+    ]);
+  });
+
+  it("reads the patch of an object's input field too (task 11 item 12)", () => {
+    for (const input of [
+      { input: patch("*** Update File: a.txt") },
+      { input: patch("*** Update File: a.txt"), explanation: "rename" },
+    ]) {
+      expect(patchFiles(input), JSON.stringify(input)).toEqual([
+        { path: "a.txt", change: "update", movedTo: null },
+      ]);
+      const view = describeTool("apply_patch", input, "", false);
+      expect(view.kind === "generic" ? view.patch : null).toEqual([
+        { path: "a.txt", change: "update", movedTo: null },
+      ]);
+    }
+  });
+
+  it("is no patch without the envelope, without a file, or as anything but text", () => {
+    for (const input of [
+      "*** Update File: a.txt",
+      patch(),
+      patch("*** Update File:   "),
+      { input: "*** Update File: a.txt" },
+      { input: 7 },
+      { patch: patch("*** Update File: a.txt") },
+      null,
+    ]) {
+      expect(patchFiles(input), JSON.stringify(input)).toBeNull();
+      const view = describeTool("apply_patch", input, "", false);
+      expect(view.kind === "generic" && view.patch === undefined, JSON.stringify(input)).toBe(true);
+    }
   });
 });

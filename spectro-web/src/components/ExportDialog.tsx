@@ -108,6 +108,8 @@ export interface ExportDialogProps {
   failedUnits: number;
   label?: string | null;
   extended?: boolean;
+  /** A Copilot folder's file snapshots the import carried (card 605, task 12). */
+  snapshots?: number;
   onSaveHtml: (request: ExportRequest, html: string) => void;
   onSaveJsonl: (request: ExportRequest) => void;
   onClose: () => void;
@@ -126,7 +128,10 @@ export function ExportDialog(props: ExportDialogProps) {
   const printFrame = useRef<HTMLIFrameElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
 
-  const facts = useMemo(() => streamFacts(props.events), [props.events]);
+  const facts = useMemo(
+    () => streamFacts(props.events, { snapshots: props.snapshots ?? 0 }),
+    [props.events, props.snapshots],
+  );
   const losses = useMemo(() => formatLosses(request.format, facts), [request.format, facts]);
   const offer = useMemo(
     () =>

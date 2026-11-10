@@ -927,14 +927,14 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
     .map(modelOf)
     .find((m) => m !== undefined);
 
+  // run_start names the provider anthropic when it names a model (card 605,
+  // final wave item 5: the files report says where the content went). The
+  // transcript records no API host, so run_start names none and the report
+  // prints "address not recorded".
   // provider_info is the socket-only announcement of the active backend, and
   // the reducer takes the latest one. A transcript names its model per message,
   // so the file itself says when it changed: announce it once up front and
-  // again at each switch. Two fields stay OUT: the API host, which a transcript
-  // never records, and the provider — a Claude model id says which model spoke,
-  // not whether it came from the Anthropic API, Bedrock or Vertex, and the
-  // trace turns a claimed "anthropic" into a claimed endpoint. Absent reads as
-  // unknown; a guess would read as fact.
+  // again at each switch. provider_info carries the model only.
   let announced: string | undefined;
   const announce = (model: string | undefined, ts: number): void => {
     if (model === undefined || model === announced) return;
@@ -1613,7 +1613,7 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
             runId,
             agentId: owner,
             prompt: r.type === "user" ? asText(content, true) : "",
-            ...(firstModel !== undefined ? { model: firstModel } : {}),
+            ...(firstModel !== undefined ? { provider: "anthropic", model: firstModel } : {}),
             ts,
           });
           started = true;
@@ -1739,7 +1739,7 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
           runId,
           agentId: "main",
           prompt: asText(content, true),
-          ...(firstModel !== undefined ? { model: firstModel } : {}),
+          ...(firstModel !== undefined ? { provider: "anthropic", model: firstModel } : {}),
           ts,
         });
         started = true;

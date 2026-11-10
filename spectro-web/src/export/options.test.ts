@@ -4,6 +4,8 @@
 // COUNTED from the stream in front of the reader — "3 subagents and 142 tool
 // outputs will not survive" is checkable, "some data may be lost" is noise.
 
+import { heldCopilotSnapshots, holdCopilotSnapshots } from "../import/copilotFolder";
+import { read } from "../testkit/source";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -141,11 +143,25 @@ describe("formatLosses", () => {
   it("counts what the VS Code shape cannot carry", () => {
     const losses = formatLosses("vscode", streamFacts(sampleEvents()));
     const codes = losses.map((l) => l.code);
-    // That export records no tool output anywhere and has no subagent record.
+    // This writer records no tool output and no subagent record.
     expect(codes).toContain("tool-output");
     expect(codes).toContain("subagents");
     expect(losses.find((l) => l.code === "tool-output")?.count).toBe(2);
     expect(losses.find((l) => l.code === "subagents")?.count).toBe(1);
+  });
+
+  it("says the VS Code writer drops lanes and token counts, which the Copilot format holds (task 11 item 7)", () => {
+    const facts = { ...streamFacts([]), subagents: 2, usage: 1 };
+    const said = formatLosses("vscode", facts)
+      .filter((l) => l.code === "subagents" || l.code === "usage")
+      .map((l) => [l.en, l.de]);
+    expect(said).toEqual([
+      [
+        "2 subagent lanes: this export writes one lane, so their work folds into it",
+        "2 Subagenten-Spuren: dieser Export schreibt eine Spur, ihre Arbeit landet darin",
+      ],
+      ["1 token count: this export does not write it", "1 Token-Zählung: dieser Export schreibt sie nicht"],
+    ]);
   });
 
   it("says nothing about a loss the stream cannot suffer", () => {
@@ -275,5 +291,59 @@ describe("DEFAULT_REQUEST", () => {
     // reads; the reader can fold it away afterwards.
     expect(DEFAULT_REQUEST.tools).toBe("open");
     expect(DEFAULT_REQUEST.format).toBe("spectroscope");
+  });
+});
+
+// Card 605, task 12 item 9: a Copilot session folder's file snapshots travel
+// beside the import and are written by no export; every format says so.
+describe("the export says a Copilot folder's file snapshots are not exported", () => {
+  it("counts the snapshots the import carried, none by default", () => {
+    expect(streamFacts([]).snapshots).toBe(0);
+    expect(streamFacts([], { snapshots: 2 }).snapshots).toBe(2);
+  });
+
+  it("names them as a loss of every format, in both languages", () => {
+    for (const format of JSONL_FORMATS) {
+      const two = formatLosses(format, streamFacts([], { snapshots: 2 })).find(
+        (l) => l.code === "copilot-snapshots",
+      );
+      expect(two, format).toEqual({
+        code: "copilot-snapshots",
+        count: 2,
+        en: "2 file snapshots of the Copilot folder: no export writes them",
+        de: "2 Dateischnappschüsse des Copilot-Ordners: kein Export schreibt sie",
+      });
+      const one = formatLosses(format, streamFacts([], { snapshots: 1 })).find(
+        (l) => l.code === "copilot-snapshots",
+      );
+      expect([one?.en, one?.de], format).toEqual([
+        "1 file snapshot of the Copilot folder: no export writes it",
+        "1 Dateischnappschuss des Copilot-Ordners: kein Export schreibt ihn",
+      ]);
+      expect(
+        formatLosses(format, streamFacts([])).map((l) => l.code),
+        format,
+      ).not.toContain("copilot-snapshots");
+    }
+  });
+});
+
+describe("the export sheet reads the snapshot count of the import on screen", () => {
+  it("holds the count for the import that carried it, and only that one", () => {
+    holdCopilotSnapshots("import:vscode-agent:Parser test", 2);
+    expect(heldCopilotSnapshots("import:vscode-agent:Parser test")).toBe(2);
+    expect(heldCopilotSnapshots("import:vscode-agent:other")).toBe(0);
+    expect(heldCopilotSnapshots(undefined)).toBe(0);
+    holdCopilotSnapshots("import:claude-code:x.jsonl", 0);
+    expect(heldCopilotSnapshots("import:vscode-agent:Parser test")).toBe(0);
+  });
+
+  it("App holds it when an import opens, and the menu hands it to the sheet", () => {
+    const app = read("../App.tsx", import.meta.url);
+    const menu = read("../components/ExportMenu.tsx", import.meta.url);
+    const sheet = read("../components/ExportDialog.tsx", import.meta.url);
+    expect(app).toMatch(/holdCopilotSnapshots\(sessionId, source\.copilot\?\.snapshots\?\.length \?\? 0\);/);
+    expect(menu).toMatch(/snapshots=\{heldCopilotSnapshots\(props\.viewKey\)\}/);
+    expect(sheet).toMatch(/streamFacts\(props\.events, \{ snapshots: props\.snapshots \?\? 0 \}\)/);
   });
 });

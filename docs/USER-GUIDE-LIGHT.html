@@ -501,7 +501,7 @@ pre.tree .hl { color: var(--sand); }
   </div>
   <div class="cover-foot">
     <span>spectroscope — the agent orchestrator you can watch</span>
-    <span>2026-11-10 · v0.16.0</span>
+    <span>2026-11-10 · v0.16.1</span>
   </div>
 </div>
 
@@ -1560,11 +1560,16 @@ the trace at that call. The <em>created</em> view has one card per file the run 
 content when the session holds it. The <em>operations</em> view is a table of every call with its
 time, prompt, operation, files and tool. In the explorer each file carries a letter:
 <code>A</code> created, <code>M</code> changed, <code>D</code> deleted, <code>R</code> read, and
-<code>?</code> when a script may have changed it.</p>
+<code>?</code> when a script may have changed it. A glob pattern from a search tool, such as
+<code>src/**/*.ts</code>, shows as one row marked <em>pattern</em>, under the folder before its
+first wildcard.</p>
 
 <p>Next to the letter, each entry carries a source tag. An entry tagged <em>recorded</em> comes
-from a file tool that named the file. An entry tagged <em>probable</em> comes from the heuristic,
-which finds files in shell commands. It covers redirects (<code>echo text &gt; notes.txt</code>),
+from a file tool that named the file. The tab reads the file tools of spectroscope, Claude Code
+and VS Code, the GitHub Copilot CLI's <code>view</code>, <code>create</code> and
+<code>edit</code>, and the Copilot IDE export's <code>apply_patch</code> and <code>rg</code>. An entry tagged <em>probable</em> comes from the heuristic, which finds files in
+shell commands, including the Copilot CLI's <code>bash</code> and <code>powershell</code> calls.
+It covers redirects (<code>echo text &gt; notes.txt</code>),
 file commands such as <code>cp</code>, <code>mv</code>, <code>rm</code> and <code>sed -i</code>,
 and commands that only read. An entry tagged <em>model</em> comes from a model's reading. The
 heuristic is the default. It runs in the browser and reads only the command line. When a command
@@ -1588,6 +1593,68 @@ send. The model's entries count for shell commands only. Where the model names a
 heuristic found on the same call, the entry carries the <em>probable</em> tag and the
 <em>model</em> tag. The status line names the model whose reading is shown, and the reading is not
 saved with the session.</p>
+
+<p>The <em>Report</em> button sits in the tab's toolbar after the model controls. It writes a
+report on the session's files: it lists the files the session read, changed, created or deleted,
+sorted by level, and says whether secrets reached a model. The report covers the whole session,
+so the agent chips and the cursor do not change it. A sheet opens with the verdict line and three
+buttons. <em>PDF</em> opens the print dialog, where <em>Save as PDF</em> writes the file.
+<em>HTML</em> saves one self-contained page. <em>CSV</em> saves a table with one row per finding,
+one row per file and one row per search or listing. Each file and each finding has one of four
+levels. The level <em>critical</em> is for secrets, and <em>sensitive</em> is for files outside
+the project, network commands and personal data. A script whose effect the recording does not
+show is <em>unknown</em>, and a file inside the workspace is <em>project</em>. The verdict is the
+highest level. When nothing ranks above <em>project</em>, the report lists what it checked and
+says that it found none of it.</p>
+
+<p>A finding is one match of the report's rules in the recording. It can be a secret file such
+as <code>.env</code> or a key under <code>.ssh/</code>, or a credential in a tool result, a tool
+input or a prompt. In a network command, a value also counts as a credential by the place it
+stands in, whatever its shape. These places are a URL's password, the password after the colon
+in <code>-u</code> and <code>--user</code> (or the user, when that password is empty), and a
+cookie. They also include the value of an option, a header or a query parameter when a word of
+its name says credential. So <code>access_token</code>, <code>apiKey</code> and
+<code>X-Api-Key</code> count, and <code>page</code>, <code>zip_code</code> and
+<code>X-Compass-Region</code> do not. The options <code>--key</code>, <code>--key-type</code>,
+<code>--pubkey</code> and <code>--pinnedpubkey</code> do not count, because their values are paths
+or types. The last place is the password of <code>sshpass -p</code>. A user name given alone, and
+a query value whose name says nothing of a credential, are masked in the printed command and do
+not count. A credential that a later
+call uses again is a finding of its own, also when it is glued to an option such as
+<code>-p</code>. So is a command that prints the environment or a stored secret. The one value
+that a command such as <code>gh auth token</code> printed is a credential as well. That holds when
+the command printed it itself, not into a pipe or a substitution. A network command is a finding
+too, shown with its host and the files it sends. One whose host is this machine stays at
+<em>project</em>. A listing or a name search, such as a glob pattern, <code>ls</code>,
+<code>find</code> or <code>rg --files</code>, counts in no file row. The report lists it in a
+table of its own, with the level of the folder it starts in. A content search such as
+<code>grep</code>, <code>rg</code> or the Grep tool reads what it names. A secret folder such as
+<code>~/.ssh</code>, or a pattern such as <code>*.pem</code>, is then a critical read, and any
+other folder or file is a read of it. Only a content search without a path, or over the workspace
+itself, goes to that table. An entry there raises no finding about a file and does not count
+toward the verdict. Its result is checked like any other result. The remaining findings are a file outside the project, personal data
+such as email-shaped strings in tool results, and a script with unknown effect. Entries from a
+model's reading carry the <em>model</em> tag and do not count toward the verdict.</p>
+
+<p>The report prints no file content, and no credential that its rules or these places in a
+command found. A credential appears only as its rule, a size band such as 17 to 32 bytes and a
+label such as <code>credential 1</code>. The band stands in for the exact length, and no hash of
+the value is written. In a printed command, the report masks a password to the end of its word.
+When an unquoted word ends in <code>=</code> or <code>:</code>, it masks the next word too,
+unless that is a path or an option. It masks a URL's user and password from <code>://</code> to
+the last <code>@</code>. Printed commands and the title also hide every word of four or more
+characters that mixes letters and digits, or upper case, lower case and symbols. Such a word
+prints as <code>[hidden]</code>; a path, an address, an option, a program and a version stay
+readable. The section
+<em>Where the content went</em> lists each model the session called and says where it ran. The
+places are this machine, another machine on the local network, a cloud model behind a local
+server, and the cloud. An imported Claude Code session that records its
+model names the provider <code>anthropic</code>, and an imported GitHub Copilot session names
+<code>copilot</code> with the model its file records. A session imported with an older version shows the provider as not
+recorded until you import its file again. The last two sections name the report's limits and its method.
+The report reads only the recording, so it misses a file that a script opened and a credential of
+a shape its rules do not know. Such a secret can still print in a command when it stands in a
+place the report does not read and the masking of words does not hide it.</p>
 
 <h2 id="ch-tabs-text">The Text tab</h2>
 
@@ -2276,18 +2343,18 @@ sit an ordinary file picker and a paste box for everything else. Detection reads
 than the first line, because a real transcript opens with metadata records before its first
 message, and the first record naming a format decides which of three it is.</p>
 <ul>
-  <li><strong>Raw spectroscope JSONL</strong> — recognized by its event types, eighteen of them,
+  <li><strong>Raw spectroscope JSONL</strong>: recognized by its event types, eighteen of them,
       and replayed verbatim. Files from the TypeScript edition work identically (the format is
       the contract).</li>
-  <li><strong>Claude Code transcripts</strong> — recognized by their <code>message</code>
+  <li><strong>Claude Code transcripts</strong>: recognized by their <code>message</code>
       records and translated by an adapter: tool uses become <code>tool_call</code>s,
       <code>Task</code>/<code>Agent</code> spawns become <code>agent_spawn</code> + A2A messages,
       thinking becomes <code>thinking_delta</code>, sidechains fold under their owning task.
       You can watch a real Claude Code session step through the Lab's map.</li>
-  <li><strong>VS Code agent-mode exports</strong> — dotted type names over a <code>data</code>
-      object. That export records which tools ran and whether they succeeded, never what they
-      returned, so the dialog states it in one line rather than leaving a screen of empty tool
-      bodies to read as a broken import.</li>
+  <li><strong>VS Code agent-mode exports and GitHub Copilot session files</strong>: dotted type
+      names over a <code>data</code> object. The adapter reads what each tool returned when the
+      file records it. When some results carry no output, the dialog says how many of them, so
+      empty tool bodies do not read as a broken import.</li>
 </ul>
 
 <p>A file matching none of the three is refused by name: the message lists up to five of the type
@@ -6959,8 +7026,8 @@ Maven Central instead. On a machine without a full JDK/Node for the Electron ste
 <p>The two headless modules are published under the <strong>verified namespace</strong>
 <code>dev.spectroscope</code>. Depend on the orchestrator and you get the core transitively:</p>
 <pre>dependencies {
-  implementation("dev.spectroscope:spectro-core:0.16.0")
-  implementation("dev.spectroscope:spectro-orchestrator:0.16.0")  // POM pins spectro-core at 0.16.0
+  implementation("dev.spectroscope:spectro-core:0.16.1")
+  implementation("dev.spectroscope:spectro-orchestrator:0.16.1")  // POM pins spectro-core at 0.16.1
 }</pre>
 <p><code>v0.1.0</code> is the first published version. <strong>Maven Central is
 append-only</strong>: a published version cannot be pulled or overwritten, only superseded,
@@ -7144,20 +7211,22 @@ is reproducible from the repository.</p>
   <dt>Source of truth</dt><dd>the prose and the figures were verified against the
     <strong>v0.1.0</strong> source tree; gate at that time: 678 JUnit + 383 vitest, 0 failures.
     The cover carries the edition date, not a re-verification: this edition ships with
-    <strong>v0.16.0</strong>. The Files tab of chapter 6 was written against the branch of that
-    release on 2026-11-09, and its call times and break marks were checked against that tree on
+    <strong>v0.16.1</strong>. The files report and the pattern rows of the Files tab in chapter 6
+    and the Copilot import of chapter 8 were written against the branch of that release on
+    2026-11-10. The rest of the Files tab was written against the branch of the previous release
+    on 2026-11-09, and its call times and break marks were checked against that tree on
     2026-11-10. The explore row of chapter 14, the continuation line for a question to the
-    person and the decision values of chapter 27 were checked against the previous release's
-    tree on 2026-10-14. The run view in the Plan panel with its wide view, the opening of
+    person and the decision values of chapter 27 were checked against the tree of the release
+    before it on 2026-10-14. The run view in the Plan panel with its wide view, the opening of
     the documents a run wrote, the agent picker of the context ring and of the Plan and System
-    context panels, and the Plan of the model were checked against the tree of the release
-    before it on 2026-10-13.
+    context panels, and the Plan of the model were checked against the tree of an older release
+    on 2026-10-13.
     The playbook start from the chat with the playbook chip, the
     confirmation and the run lines in the chat, the playbook's skills, commands and agents in a
     session, the contents list without install states, the shared command list with
     <code>/help</code>, the terminal's <code>/clear</code>, the minimal density, the model picker
     of a stored session and Stop on a backend that does not answer were checked against the
-    tree of the release before that or the branches merged into it on 2026-10-12 and 2026-10-13. Messages between agents and
+    trees of older releases or the branches merged into them on 2026-10-12 and 2026-10-13. Messages between agents and
     background helpers, the goal and <code>/loop</code>, running a workflow, the bundle tabs of the
     playbook pane, the code graph rows and the <code>code_graph</code> tool, the dock's tabs
     default, the tool counts of chapter 12 and the config reference rows for agentMessaging,

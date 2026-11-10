@@ -6,16 +6,21 @@
 import { readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { isValidElement, type ReactNode } from "react";
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { RunEvent } from "../events";
 import { dict } from "../i18n/i18n";
 import { setLang } from "../state/lang";
 import { drive, type El, type Step } from "../testkit/driveComponent";
 import { read, stripComments } from "../testkit/source";
+import { buildFilesDigest } from "./digest";
 import { FilesDetail } from "./FilesDetail";
 import { FilesExplorer } from "./FilesExplorer";
+import { resetFilesAnalysis, stampOf, startFilesAnalysis } from "./filesAnalysis";
+import { FilesModelControls } from "./FilesModelControls";
+import { FilesReportSheet } from "./FilesReportSheet";
 import { FilesTimeline } from "./FilesTimeline";
 import { FilesView, type FilesViewProps } from "./FilesView";
+import { foldFiles, type FileLedger } from "./fold";
 
 const T0 = 1_760_000_000_000;
 
@@ -64,6 +69,7 @@ function props(over: Partial<FilesViewProps> = {}): FilesViewProps {
     onStartHandled: () => {},
     onFocusEvent: () => {},
     onOpenPath: () => {},
+    title: null,
     ...over,
   };
 }
@@ -302,6 +308,8 @@ describe("the files tab", () => {
       ...["read", "create", "change", "overwrite", "write", "append", "delete", "unknown"].map(
         (k) => `filesTab.kind.${k}`,
       ),
+      ...["pdf", "html", "csv"].map((k) => `filesTab.report.${k}`),
+      ...["critical", "sensitive", "unknown", "project"].map((l) => `filesTab.report.level.${l}`),
     ];
     const missing = [...literal.map((m) => m[1]), ...families].filter((key) => dict[key] === undefined);
     expect(missing).toEqual([]);
@@ -398,5 +406,135 @@ describe("the files tab", () => {
     const busy = run(props());
     expect(busy.some((el) => hasClass(el, "files-explorer"))).toBe(true);
     expect(busy.some((el) => textOf(el.props.children) === empty)).toBe(false);
+  });
+});
+
+describe("the report button", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    resetFilesAnalysis("s-1");
+  });
+
+  const sheetOf = (tree: El[]): El | undefined => tree.find((el) => el.type === FilesReportSheet);
+
+  const modelTouches = (ledger: FileLedger): number =>
+    ledger.calls.flatMap((c) => c.touches).filter((touch) => touch.sources.includes("model")).length;
+
+  it("theHeaderHasAReportButtonThatOpensTheSheet", () => {
+    const closed = run(props({ title: "Fix the build" }));
+    const button = action(closed, "report");
+    expect(textOf(button.props.children)).toBe("Report");
+    expect(button.props["aria-expanded"]).toBe(false);
+    expect(sheetOf(closed)).toBeUndefined();
+    // It stands in the header, after the model controls.
+    const toolbar = closed.find((el) => hasClass(el, "files-toolbar"));
+    const order = inside(toolbar!);
+    const controlsAt = order.findIndex((el) => el.type === FilesModelControls);
+    expect(controlsAt).toBeGreaterThan(-1);
+    expect(order.indexOf(button)).toBeGreaterThan(controlsAt);
+
+    const open = run(props({ title: "Fix the build" }), [press("report")]);
+    const sheet = sheetOf(open);
+    expect(sheet).toBeDefined();
+    expect(sheet!.props.events).toBe(EVENTS);
+    expect(sheet!.props.sessionId).toBe("s-1");
+    expect(sheet!.props.title).toBe("Fix the build");
+    expect(sheet!.props.lang).toBe("en");
+    expect(action(open, "report").props["aria-expanded"]).toBe(true);
+  });
+
+  it("closingTheSheetReturnsTheFocusToTheButton", () => {
+    const focus = vi.fn();
+    const tree = run(props(), [
+      (t) => {
+        (action(t, "report").props.ref as { current: unknown }).current = { focus };
+        action(t, "report").props.onClick?.();
+      },
+      (t) => {
+        expect(focus).not.toHaveBeenCalled();
+        (sheetOf(t)!.props.onClose as () => void)();
+      },
+    ]);
+    expect(sheetOf(tree)).toBeUndefined();
+    expect(focus).toHaveBeenCalledTimes(1);
+  });
+
+  it("aSessionWithoutFileCallsStillHasTheReport", () => {
+    // Prompts, steering messages and tool results can hold findings of their own.
+    const quiet = stamp([
+      { type: "run_start", runId: "r1", agentId: "main", prompt: "go", workspace: "/ws" },
+      call("w1", "web_fetch", { url: "https://example.com" }),
+      result("w1"),
+    ]);
+    const closed = run(props({ events: quiet, title: "Look around" }));
+    expect(closed.some((el) => textOf(el.props.children) === dict["filesTab.empty"]?.en)).toBe(true);
+    expect(textOf(action(closed, "report").props.children)).toBe("Report");
+    const focus = vi.fn();
+    let sheet: El | undefined;
+    const after = run(props({ events: quiet, title: "Look around" }), [
+      (t) => {
+        (action(t, "report").props.ref as { current: unknown }).current = { focus };
+        action(t, "report").props.onClick?.();
+      },
+      (t) => {
+        sheet = sheetOf(t);
+        (sheet?.props.onClose as () => void)();
+      },
+    ]);
+    expect(sheet).toBeDefined();
+    expect(sheet!.props.events).toBe(quiet);
+    expect((sheet!.props.ledger as FileLedger).calls).toEqual([]);
+    expect(sheet!.props.title).toBe("Look around");
+    expect(sheet!.props.sessionId).toBe("s-1");
+    expect(sheetOf(after)).toBeUndefined();
+    expect(focus).toHaveBeenCalledTimes(1);
+    // A tab with no events at all has nothing to report.
+    expect(run(props({ events: [] })).some((el) => el.props["data-action"] === "report")).toBe(false);
+  });
+
+  it("theSheetGetsTheLedgerTheTabShows", async () => {
+    const heuristic = foldFiles(EVENTS);
+    const shell = heuristic.calls.find((c) => c.shell);
+    expect(shell).toBeDefined();
+    const answer = JSON.stringify({
+      files: [
+        { callIndex: shell!.callIndex, path: "out/y.txt", kind: "create", reason: "the output names it" },
+      ],
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            [{ meta: { provider: "ollama", model: "qwen2.5:7b" } }, { delta: answer }, { done: true }]
+              .map((line) => JSON.stringify(line) + "\n")
+              .join(""),
+            { status: 200 },
+          ),
+      ),
+    );
+    const digest = buildFilesDigest(heuristic);
+    await startFilesAnalysis(
+      "s-1",
+      digest.text,
+      { provider: "ollama", model: "qwen2.5:7b" },
+      "en",
+      stampOf(heuristic, digest, EVENTS),
+    );
+    const showModel: Step = (tree) =>
+      (tree.find((el) => el.type === FilesModelControls)?.props.onMode as (mode: string) => void)("model");
+    const shownLedger = (tree: El[]): FileLedger =>
+      tree.find((el) => el.type === FilesDetail)?.props.ledger as FileLedger;
+
+    // With the model's reading on screen, the sheet reports the merged ledger the panes show.
+    const merged = run(props(), [showModel, press("report")]);
+    const mergedLedger = sheetOf(merged)!.props.ledger as FileLedger;
+    expect(mergedLedger).toBe(shownLedger(merged));
+    expect(modelTouches(mergedLedger)).toBeGreaterThan(0);
+    // Without it, the heuristic ledger, with no model entry in it.
+    const plain = run(props(), [press("report")]);
+    const plainLedger = sheetOf(plain)!.props.ledger as FileLedger;
+    expect(plainLedger).toBe(shownLedger(plain));
+    expect(modelTouches(plainLedger)).toBe(0);
   });
 });

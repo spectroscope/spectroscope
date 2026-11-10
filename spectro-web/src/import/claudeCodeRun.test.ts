@@ -10,6 +10,7 @@ import { detectAndLoad } from "./detect";
 import { groupPickedFiles, importClaudeCodeRun } from "./claudeCodeRun";
 import { spawnTree } from "../lab/spawnTree";
 import type { RunEvent } from "../events";
+import { t } from "../i18n/i18n";
 
 // ---- synthetic fixtures --------------------------------------------------
 // A 3-line main stream (user prompt, one response spawning two Tasks, one
@@ -573,13 +574,28 @@ describe("groupPickedFiles", () => {
     ).toEqual({ kind: "none" });
   });
 
-  it("two session candidates are ambiguous, not a coin toss", () => {
+  it("two session candidates are ambiguous, not a coin toss, and the group says how many (task 11 item 7)", () => {
     expect(
       groupPickedFiles([
         { name: "one.jsonl", relativePath: "" },
         { name: "two.jsonl", relativePath: "" },
       ]),
-    ).toEqual({ kind: "none" });
+    ).toEqual({ kind: "many", count: 2 });
+    expect(
+      groupPickedFiles(
+        ["a", "b", "c", "d"].map((n) => ({ name: `events-${n}.jsonl`, relativePath: `s/${n}/events.jsonl` })),
+      ),
+    ).toEqual({ kind: "many", count: 4 });
+  });
+
+  it("says how many session files a pick holds, and none when it holds none", () => {
+    expect(t("en", "imp.err.manySessions", { n: 4 })).toBe(
+      "This folder holds 4 session files. Pick the folder of one session.",
+    );
+    expect(t("de", "imp.err.manySessions", { n: 4 })).toBe(
+      "Dieser Ordner enthält 4 Session-Dateien. Wähle den Ordner einer Session.",
+    );
+    expect(t("en", "imp.err.noSession")).toBe("No session .jsonl found in the selection.");
   });
 });
 
@@ -649,7 +665,7 @@ describe("groupPickedFiles — a session folder that holds workflow runs", () =>
         { name: "sess.jsonl", relativePath: "proj/sess.jsonl" },
         { name: "journal.jsonl", relativePath: "proj/journal.jsonl" },
       ]).kind,
-    ).toBe("none");
+    ).toBe("many");
   });
 });
 

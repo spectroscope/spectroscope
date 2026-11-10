@@ -77,6 +77,7 @@ function props(over: Partial<FilesViewProps> = {}): FilesViewProps {
     onStartHandled: () => {},
     onFocusEvent: () => {},
     onOpenPath: () => {},
+    title: null,
     ...over,
   };
 }

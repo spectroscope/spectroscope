@@ -8,7 +8,7 @@
 import type { CSSProperties, JSX } from "react";
 import { t, type Lang } from "../i18n/i18n";
 import type { FileRow, Source } from "./fold";
-import type { TouchKind } from "./shell";
+import type { ShellTouch, TouchKind } from "./shell";
 
 /** The kinds that say a file's content or existence moved, as fold.ts counts them. */
 export const CHANGE_KINDS: ReadonlySet<TouchKind> = new Set<TouchKind>([
@@ -58,9 +58,23 @@ export function sourceTags(lang: Lang, sources: readonly Source[]): JSX.Element[
   ));
 }
 
-/** A path as the explorer and the detail name it: a folder ends in a slash, a pattern does not. */
-export function shownPath(label: string, folder: boolean): string {
-  return folder && !label.endsWith("/") && !/[*?[\]{}]/.test(label) ? `${label}/` : label;
+/** The glob characters; a pattern row splits off at its first segment that holds one. */
+const GLOB = /[*?[\]{}]/;
+
+/**
+ * A path as the tab names it, given the touches behind it: a folder ends in a
+ * slash, a pattern does not. The fold marks a pattern by its source (card 605),
+ * so a real folder named `[id]` keeps its slash.
+ */
+export function shownPath(label: string, touches: readonly Pick<ShellTouch, "folder" | "pattern">[]): string {
+  const folder = touches.some((touch) => touch.folder);
+  const pattern = touches.some((touch) => touch.pattern === true);
+  return folder && !pattern && !label.endsWith("/") ? `${label}/` : label;
+}
+
+/** A row that names a pattern: a touch the fold marked as one. */
+function isPattern(row: FileRow): boolean {
+  return row.touches.some((touch) => touch.pattern === true);
 }
 
 export interface FilesExplorerProps {
@@ -106,18 +120,20 @@ interface Node {
   children: Map<string, Node>;
 }
 
-function segmentsOf(label: string): string[] {
+/** The tree's segments of a label. A pattern is one segment from its first glob segment on. */
+function segmentsOf(label: string, pattern: boolean): string[] {
   const parts = label.split("/").filter((part) => part !== "");
   if (parts.length === 0) return [label];
   if (label.startsWith("/")) parts[0] = `/${parts[0]}`;
-  return parts;
+  const at = pattern ? parts.findIndex((part) => GLOB.test(part)) : -1;
+  return at < 0 ? parts : [...parts.slice(0, at), parts.slice(at).join("/")];
 }
 
 function tree(rows: readonly FileRow[]): Node {
   const root: Node = { name: "", rows: [], children: new Map() };
   for (const row of rows) {
     let node = root;
-    for (const part of segmentsOf(row.label)) {
+    for (const part of segmentsOf(row.label, isPattern(row))) {
       let next = node.children.get(part);
       if (next === undefined) {
         next = { name: part, rows: [], children: new Map() };
@@ -169,7 +185,6 @@ function rowLine(
   const sources = letterSources(row);
   const guess = !sources.includes("recorded");
   const selected = props.selected === row.path;
-  const folder = row.touches.some((touch) => touch.folder);
   const later = row.firstCall > props.limit;
   const classes = ["files-row"];
   if (selected) classes.push("files-row--sel");
@@ -185,7 +200,10 @@ function rowLine(
       style={depthStyle}
       onClick={() => props.onSelect(row)}
     >
-      <span className="files-row__name">{shownPath(name, folder)}</span>
+      <span className="files-row__name">{shownPath(name, row.touches)}</span>
+      {isPattern(row) && (
+        <span className="files-row__pattern">{t(props.lang, "filesTab.explorer.pattern")}</span>
+      )}
       {later ? (
         <span className="files-row__right files-row__when">
           {t(props.lang, "filesTab.timeline.at", { when: props.firstSeen(row) })}

@@ -9,7 +9,7 @@
 // imported file.
 import { describe, expect, it } from "vitest";
 import type { RunEvent } from "../events";
-import { t } from "../i18n/i18n";
+import { dict, t } from "../i18n/i18n";
 import { detectAndLoad } from "../import/detect";
 import ccFollowup from "../import/fixtures/cc-followup.jsonl?raw";
 import vscodeAgentExport from "../import/fixtures/vscode-agent.jsonl?raw";
@@ -22,6 +22,7 @@ import {
   importBarText,
   shownImportBar,
   subagentNote,
+  toolOutputNote,
   type ImportBarState,
 } from "./importBar";
 
@@ -434,12 +435,22 @@ describe("the notes for special kinds of file", () => {
     expect(importBarText("en", unmatched).said).toMatch(/not saved\.$/);
   });
 
-  it("puts the VS Code note after the bar's own sentences", () => {
+  it("puts the count of tool results without output after the bar's own sentences", () => {
+    const toolOutputs = { missing: 3, total: 3 };
     for (const lang of LANGS) {
-      const note = importBarNote(lang, { kind: "vscode-agent" });
-      expect(note).toBe(t(lang, "imp.vscodeNote"));
-      after(lang, { kind: "vscode-agent" });
+      const note = importBarNote(lang, { kind: "vscode-agent", toolOutputs });
+      expect(note).toBe(toolOutputNote(lang, toolOutputs));
+      after(lang, { kind: "vscode-agent", toolOutputs });
     }
+  });
+
+  it("says nothing about tool output when every result recorded one, or the import counted none", () => {
+    // Card 605, task 10: the Copilot files record the output, so the format alone is no reason for a note.
+    expect(importBarNote("en", { kind: "vscode-agent" })).toBeNull();
+    expect(importBarNote("en", { kind: "vscode-agent", toolOutputs: { missing: 0, total: 8 } })).toBeNull();
+    expect(importBarNote("de", { kind: "vscode-agent", toolOutputs: null })).toBeNull();
+    expect(toolOutputNote("en", undefined)).toBeNull();
+    expect(toolOutputNote("en", { missing: 0, total: 0 })).toBeNull();
   });
 
   it("puts the subagent note after the bar's own sentences", () => {
@@ -471,15 +482,27 @@ describe("the notes for special kinds of file", () => {
 
   it("adds nothing for an empty fall-back sentence", () => {
     expect(importBarNote("en", { kind: "claude-code", extra: "" })).toBeNull();
-    expect(importBarNote("en", { kind: "vscode-agent", extra: "" })).toBe(t("en", "imp.vscodeNote"));
+    const toolOutputs = { missing: 1, total: 4 };
+    expect(importBarNote("en", { kind: "vscode-agent", extra: "", toolOutputs })).toBe(
+      toolOutputNote("en", toolOutputs),
+    );
   });
 
   it("keeps every note when a file wants more than one, in a fixed order", () => {
     const sub = { agentId: "a0b476c3c018" };
     const summary = { workspace: null, childrenMerged: 1, childrenSkipped: 0, childrenUnrecorded: 0 };
-    const note = importBarNote("en", { kind: "vscode-agent", subagent: sub, run: summary, extra: "Last." });
+    const toolOutputs = { missing: 2, total: 9 };
+    const note = importBarNote("en", {
+      kind: "vscode-agent",
+      subagent: sub,
+      run: summary,
+      extra: "Last.",
+      toolOutputs,
+    });
     expect(note).toBe(
-      [t("en", "imp.vscodeNote"), subagentNote("en", sub), childrenNote("en", summary), "Last."].join(" "),
+      [toolOutputNote("en", toolOutputs), subagentNote("en", sub), childrenNote("en", summary), "Last."].join(
+        " ",
+      ),
     );
   });
 });
@@ -549,5 +572,47 @@ describe("what the bar calls a subagent transcript", () => {
     expect(importBarAbout("en", { kind: "claude-code", subagent: sub }).agentTranscript).toBe(true);
     expect(importBarAbout("en", { kind: "claude-code", subagent: null }).agentTranscript).toBe(false);
     expect(importBarAbout("en", { kind: "claude-code" }).agentTranscript).toBe(false);
+  });
+});
+
+// Card 605, task 10: the note counts the results whose record held no output.
+describe("the note about tool results without output", () => {
+  it("says how many, in both languages, singular forms too", () => {
+    expect(toolOutputNote("en", { missing: 2, total: 5 })).toBe(
+      "2 of 5 tool results in this file recorded no output; those stay empty.",
+    );
+    expect(toolOutputNote("en", { missing: 1, total: 5 })).toBe(
+      "1 of 5 tool results in this file recorded no output; it stays empty.",
+    );
+    expect(toolOutputNote("en", { missing: 1, total: 1 })).toBe(
+      "1 of 1 tool result in this file recorded no output; it stays empty.",
+    );
+    expect(toolOutputNote("de", { missing: 2, total: 5 })).toBe(
+      "2 von 5 Werkzeugergebnissen in dieser Datei haben keine Ausgabe festgehalten; sie bleiben leer.",
+    );
+    expect(toolOutputNote("de", { missing: 1, total: 5 })).toBe(
+      "1 von 5 Werkzeugergebnissen in dieser Datei hat keine Ausgabe festgehalten; es bleibt leer.",
+    );
+    expect(toolOutputNote("de", { missing: 1, total: 1 })).toBe(
+      "1 von 1 Werkzeugergebnis in dieser Datei hat keine Ausgabe festgehalten; es bleibt leer.",
+    );
+    // Grouped like every other count of the bar.
+    expect(toolOutputNote("en", { missing: 1200, total: 3400 })).toMatch(/^1,200 of 3,400 /);
+  });
+
+  it("is the note the bar shows for the old VS Code export, whose results recorded nothing", () => {
+    const { source } = detectAndLoad(vscodeAgentExport);
+    expect(source.toolOutputs).toEqual({ missing: 3, total: 3 });
+    expect(importBarNote("en", { kind: "vscode-agent", toolOutputs: source.toolOutputs })).toBe(
+      "3 of 3 tool results in this file recorded no output; those stay empty.",
+    );
+  });
+
+  it("no dictionary entry says a VS Code or Copilot file records no tool output", () => {
+    expect(Object.keys(dict)).not.toContain("imp.vscodeNote");
+    const claims = Object.entries(dict).filter(([, e]) =>
+      /not what they returned|nicht, was sie zurückgaben|records only success or failure/.test(e.en + e.de),
+    );
+    expect(claims.map(([k]) => k)).toEqual([]);
   });
 });

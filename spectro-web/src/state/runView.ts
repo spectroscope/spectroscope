@@ -5,7 +5,13 @@
 // state as it was.
 
 import type { RunEvent } from "../events";
-import { CC_DISK_WRITE, NATIVE_DISK_WRITE, ROOT_AGENT, SHELL_TOOLS } from "../lab/labScene";
+import {
+  CC_DISK_WRITE,
+  COPILOT_DISK_WRITE,
+  NATIVE_DISK_WRITE,
+  ROOT_AGENT,
+  SHELL_TOOLS,
+} from "../lab/labScene";
 
 type RunStepLine = Extract<RunEvent, { type: "run_step" }>;
 
@@ -297,8 +303,11 @@ function joinEvent(run: RunTrack, event: RunEvent): RunTrack {
           entry.agents.includes(event.agentId) ? { ...entry, shellCalls: entry.shellCalls + 1 } : entry,
         );
       }
-      const path =
-        NATIVE_DISK_WRITE.has(event.name) || CC_DISK_WRITE.has(event.name) ? pathOf(event.input) : null;
+      const writes =
+        NATIVE_DISK_WRITE.has(event.name) ||
+        CC_DISK_WRITE.has(event.name) ||
+        COPILOT_DISK_WRITE.has(event.name);
+      const path = writes ? pathOf(event.input) : null;
       if (path === null) return run;
       return patchOpen(run, (entry) =>
         entry.agents.includes(event.agentId) && entry.fileCalls[event.callId] !== path

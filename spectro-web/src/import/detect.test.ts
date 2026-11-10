@@ -6,6 +6,9 @@ import { describe, expect, it } from "vitest";
 import ccLinear from "./fixtures/cc-linear.jsonl?raw";
 import ccModern from "./fixtures/cc-modern.jsonl?raw";
 import vscodeAgent from "./fixtures/vscode-agent.jsonl?raw";
+import copilotCli from "./fixtures/copilot-cli.jsonl?raw";
+import copilotIde from "./fixtures/copilot-ide.jsonl?raw";
+import { importClaudeCodeRun } from "./claudeCodeRun";
 import type { RunEvent } from "../events";
 import { detectAndLoad } from "./detect";
 
@@ -45,8 +48,8 @@ describe("detectAndLoad", () => {
     const { kind, events } = detectAndLoad(vscodeAgent);
     expect(kind).toBe("vscode-agent");
     expect(events[0].type).toBe("run_start");
-    // The caller shows a note about the missing tool output off this kind, so a
-    // VS Code export must never come back labelled as one of the other two.
+    // The adapter decides what a tool result holds, so a VS Code export must
+    // never come back labelled as one of the other two.
     expect(kind).not.toBe("claude-code");
   });
 
@@ -134,5 +137,71 @@ describe("detectAndLoad", () => {
     }
     expect(message).not.toContain("\n");
     expect(message).not.toContain("");
+  });
+});
+
+// Card 605, task 10 item 2: the import counts the tool results whose record
+// held no output, and the count travels with the source to the dialog and the bar.
+describe("the count of tool results without output", () => {
+  it("rides on the source of a Copilot or VS Code file", () => {
+    expect(detectAndLoad(vscodeAgent).source.toolOutputs).toEqual({ missing: 3, total: 3 });
+    expect(detectAndLoad(copilotIde).source.toolOutputs).toEqual({ missing: 0, total: 6 });
+    expect(detectAndLoad(copilotCli).source.toolOutputs).toEqual({ missing: 0, total: 11 });
+  });
+
+  it("is absent for the other formats, which say nothing of the kind", () => {
+    expect(detectAndLoad(ccLinear).source.toolOutputs).toBeUndefined();
+    const raw = JSON.stringify({ type: "run_start", runId: "r", agentId: "main", prompt: "p", ts: 1 });
+    expect(detectAndLoad(raw).source.toolOutputs).toBeUndefined();
+  });
+
+  it("survives the run door, which rebuilds the source", () => {
+    const run = importClaudeCodeRun({ sessionText: vscodeAgent, sidecars: [] });
+    expect(run.source.toolOutputs).toEqual({ missing: 3, total: 3 });
+  });
+});
+
+// Card 605, task 10 item 6: four local CLI sessions hold only session.start,
+// session.model_change and session.shutdown, none of the six names, and were
+// refused. The first record's producer says what the file is.
+describe("a Copilot file is recognised by the producer of its first record", () => {
+  const file = (...records: object[]) => records.map((r) => JSON.stringify(r)).join("\n");
+  const start = (data: unknown) => ({
+    type: "session.start",
+    data,
+    id: "1",
+    timestamp: "2026-11-10T09:00:00.000Z",
+  });
+  const quiet = [
+    { type: "session.model_change", data: { newModel: "gpt-5" }, id: "2" },
+    { type: "session.shutdown", data: {}, id: "3" },
+  ];
+
+  it("takes a session that did nothing, whose first record is a copilot-agent session.start", () => {
+    const loaded = detectAndLoad(
+      file(start({ producer: "copilot-agent", context: { cwd: "/w" } }), ...quiet),
+    );
+    expect(loaded.kind).toBe("vscode-agent");
+    expect(loaded.events.map((e) => e.type as string)).toEqual(["ground_info"]);
+    expect(loaded.source.toolOutputs).toEqual({ missing: 0, total: 0 });
+  });
+
+  it("still refuses the same records under another producer, or with session.start later or without data", () => {
+    for (const text of [
+      file(start({ producer: "someone-else" }), ...quiet),
+      file(start({}), ...quiet),
+      file(start("copilot-agent"), ...quiet),
+      file(...quiet, start({ producer: "copilot-agent" })),
+      file({ type: "session.start", producer: "copilot-agent" }, ...quiet),
+      file({ type: "session.resume", data: { producer: "copilot-agent" } }, ...quiet),
+    ]) {
+      expect(() => detectAndLoad(text)).toThrow(
+        /This is not a spectroscope session, a Claude Code transcript or a VS Code agent export/,
+      );
+    }
+  });
+
+  it("keeps the six names as the way in for a file without that first record", () => {
+    expect(detectAndLoad(vscodeAgent).kind).toBe("vscode-agent");
   });
 });

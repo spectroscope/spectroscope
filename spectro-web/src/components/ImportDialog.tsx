@@ -16,21 +16,33 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, DragEvent } from "react";
 import type { RunEvent } from "../events";
 import type { ImportKind, ImportSource } from "../import/detect";
-import { detectAndLoad } from "../import/detect";
 import {
   groupPickedFiles,
   importClaudeCodeRun,
   runSummary,
   type ImportedRunSummary,
+  type PickedCopilotFolder,
   type RunStateText,
   type SidecarText,
 } from "../import/claudeCodeRun";
+import {
+  copilotSideFile,
+  copilotStoreRows,
+  loadCopilotFolder,
+  loadEvents,
+  pickedAlone,
+  pickedOnItsOwn,
+  readCopilotFolder,
+  replacesShown,
+  type CopilotStoreRow,
+} from "../import/copilotFolder";
 import { reportBrowserError } from "../state/browserLog";
-import { t } from "../i18n/i18n";
+import { t, type Lang } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { relativeTime } from "../format";
-import { rowState, listingNotice } from "../import/rowState";
+import { formatBytes, rowState, listingNotice } from "../import/rowState";
 import { StoreRow } from "./StoreRow";
+import { toolOutputNote } from "./importBar";
 import type { TranscriptRow, StoreLimits } from "../import/rowState";
 import { onLoadArgs, openFromStore, type StoreDoor } from "../import/storeDoor";
 import type { SubagentTranscript } from "../import/subagentFile";
@@ -49,6 +61,60 @@ import {
 
 /** How long revealed rows are collected before one batched facts ask goes out. */
 const REVEAL_FLUSH_MS = 40;
+
+/**
+ * The list a folder of Copilot session folders opens (card 605, task 12):
+ * one button per session folder, newest first, each with its name, when it
+ * was created, its client, the size of its events.jsonl and a mark when a
+ * lock file marked it as in use. A press chooses the folder; nothing loads before that.
+ */
+export function CopilotStoreList(props: {
+  lang: Lang;
+  rows: readonly CopilotStoreRow[];
+  /** Folders with the layout and no events.jsonl, counted and not listed. */
+  skipped: number;
+  /** "now" for the relative time, passed so the list renders one clock. */
+  now: number;
+  /** A load is in flight: every row waits. */
+  busy: boolean;
+  onPick: (session: number) => void;
+}) {
+  const { lang, rows, skipped } = props;
+  const lead = [t(lang, "imp.copilot.store", { n: rows.length })];
+  if (skipped > 0)
+    lead.push(
+      t(lang, skipped === 1 ? "imp.copilot.storeSkippedOne" : "imp.copilot.storeSkipped", { n: skipped }),
+    );
+  return (
+    <div className="import-copilot-store">
+      <p className="import-store-note">{lead.join(" ")}</p>
+      <div className="import-store" role="list" aria-label={lead[0]}>
+        {rows.map((row) => (
+          <div key={row.session} className="import-store-line" role="listitem">
+            <button
+              type="button"
+              className="import-store-row"
+              title={new Date(row.created).toISOString()}
+              disabled={props.busy}
+              onClick={() => props.onPick(row.session)}
+            >
+              <span className="import-store-file">
+                {row.name ?? t(lang, "imp.copilot.unnamed", { id: row.id }).trim()}
+              </span>
+              <span className="import-store-meta">
+                {row.client !== null && <span className="import-store-project mono">{row.client}</span>}
+                <span className="tabular">
+                  {relativeTime(row.created, props.now, lang)} · {formatBytes(row.bytes)}
+                </span>
+                {row.live && <span className="import-store-brings">{t(lang, "imp.copilot.liveMark")}</span>}
+              </span>
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export function ImportDialog(props: {
   onLoad: (
@@ -76,8 +142,17 @@ export function ImportDialog(props: {
     /** Card 473: what came with a spectroscope session file: a bundle's
      *  entries, or wires picked or dropped beside it. */
     wires?: ImportWires,
+    /** Card 605, task 12: a Copilot folder load of the session already on
+     *  screen, by its session id, so it replaces that session. */
+    replace?: boolean,
   ) => void;
   onClose: () => void;
+  /** Files picked before the dialog opened (the import bar's folder pick),
+   *  taken once as a pick when the dialog mounts. */
+  initialFiles?: File[];
+  /** The session id of the Copilot session on screen whose folder the bar
+   *  asked for, or null. */
+  sameSession?: string | null;
 }) {
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -90,6 +165,13 @@ export function ImportDialog(props: {
   // rowState refuses nothing rather than guessing a number.
   const [limits, setLimits] = useState<StoreLimits | null>(null);
   const [filter, setFilter] = useState<FactsFilter>(emptyFilter());
+  /** A folder of Copilot session folders, listed and waiting for a choice (task 12 item 5). */
+  const [copilotStore, setCopilotStore] = useState<{
+    files: File[];
+    sessions: PickedCopilotFolder[];
+    skipped: number;
+    rows: CopilotStoreRow[];
+  } | null>(null);
   const lang = useLang();
   const fileRef = useRef<HTMLInputElement>(null);
   const dirRef = useRef<HTMLInputElement>(null);
@@ -230,14 +312,23 @@ export function ImportDialog(props: {
   // Every entry point clears the previous error before it starts. Without this
   // a failed pick left its red line standing while the next attempt succeeded,
   // and only the textarea's onChange ever cleared it.
-  const load = (raw: string, label: string, storePath?: string, note?: string, wires?: ImportWires): void => {
+  const load = (
+    raw: string,
+    label: string,
+    storePath?: string,
+    note?: string,
+    wires?: ImportWires,
+    /** A file picked or dropped on its own (task 12 item 6). */
+    picked = false,
+  ): void => {
     setError(null);
     try {
-      const { events, kind, source, subagent } = detectAndLoad(raw);
-      // The VS Code export records that a tool ran and whether it succeeded,
-      // never what it returned. Say that once, here, rather than leaving the
-      // reader to infer it from a screen of empty tool bodies.
-      setNote(kind === "vscode-agent" ? t(lang, "imp.vscodeNote") : null);
+      const loaded = loadEvents(raw);
+      const { events, kind, subagent } = loaded;
+      const source = picked ? pickedAlone(loaded.source) : loaded.source;
+      // Tool results whose record held no output stay empty; say how many
+      // once, here, rather than leaving a screen of empty tool bodies.
+      setNote(toolOutputNote(lang, source.toolOutputs));
       props.onLoad(events, label, kind, source, subagent, storePath, undefined, note, wires);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
@@ -281,10 +372,8 @@ export function ImportDialog(props: {
     setLoading(tr.path);
     openFromStore(tr, door, agents, lang)
       .then((result) => {
-        // The VS Code export records that a tool ran and whether it succeeded,
-        // never what it returned. Say that once rather than leaving the reader
-        // to infer it from a screen of empty tool bodies.
-        setNote(result.kind === "vscode-agent" ? t(lang, "imp.vscodeNote") : null);
+        // Tool results whose record held no output stay empty; say how many once.
+        setNote(toolOutputNote(lang, result.source.toolOutputs));
         props.onLoad(...onLoadArgs(result));
       })
       .catch((e) => {
@@ -309,9 +398,44 @@ export function ImportDialog(props: {
     takeFiles(Array.from(e.dataTransfer.files));
   };
 
+  /**
+   * One Copilot session folder (card 605, task 12): the files the grouping
+   * named are read, and the folder loads as a whole. A folder whose
+   * events.jsonl is not a Copilot session loads as whatever it is.
+   */
+  const loadCopilotPick = (list: File[], pick: PickedCopilotFolder): void => {
+    // One press, one load: a store row stays pressable while its folder reads.
+    if (loading !== null) return;
+    setError(null);
+    setLoading(`copilot:${pick.folder}`);
+    void readCopilotFolder(list, pick)
+      .then((texts) => {
+        const got = loadCopilotFolder(texts);
+        setNote(toolOutputNote(lang, got.source.toolOutputs));
+        props.onLoad(
+          got.events,
+          got.label,
+          got.kind,
+          got.source,
+          got.subagent,
+          undefined,
+          got.run,
+          undefined,
+          undefined,
+          replacesShown(got.source, props.sameSession),
+        );
+      })
+      .catch((err: unknown) => {
+        setError(err instanceof Error ? err.message : String(err));
+        reportBrowserError("import", err);
+      })
+      .finally(() => setLoading(null));
+  };
+
   const takeFiles = (list: File[]): void => {
     if (list.length === 0) return;
     setError(null);
+    setCopilotStore(null);
     // Card 473: a bundle, or a session with its wires beside it, goes first.
     // A pick with neither falls through to the grouping below, unchanged.
     if (list.some((f) => /\.(spectro\.zip|llm\.jsonl|browser\.jsonl)$/.test(f.name))) {
@@ -343,6 +467,26 @@ export function ImportDialog(props: {
       setError(t(lang, "imp.err.noSession"));
       return;
     }
+    if (group.kind === "many") {
+      setError(t(lang, "imp.err.manySessions", { n: group.count }));
+      return;
+    }
+    if (group.kind === "copilot") {
+      loadCopilotPick(list, group.session);
+      return;
+    }
+    if (group.kind === "copilot-store") {
+      // A list, not a load: only the workspace.yaml files are read to build it.
+      void copilotStoreRows(list, group.sessions)
+        .then((rows) =>
+          setCopilotStore({ files: list, sessions: group.sessions, skipped: group.skipped, rows }),
+        )
+        .catch((err: unknown) => {
+          setError(err instanceof Error ? err.message : String(err));
+          reportBrowserError("import", err);
+        });
+      return;
+    }
     if (group.kind === "single") {
       // ONE file takes today's path byte for byte (card 291 pins the
       // grouping; the read-and-load below is untouched card-152 territory).
@@ -353,15 +497,27 @@ export function ImportDialog(props: {
         .text()
         // Card 473: the file's own name, so an old session finds its wire on
         // this machine by the id convention.
-        .then((raw) =>
-          load(raw, file.name, undefined, undefined, {
-            sessionFileName: file.name,
-            llm: null,
-            browser: null,
-            children: [],
-            from: "files",
-          }),
-        )
+        .then((raw) => {
+          // A side file of a Copilot folder is named as one, not as invalid JSONL (task 12 item 7).
+          if (copilotSideFile(file.name, raw)) {
+            setError(t(lang, "imp.copilot.sideFile"));
+            return;
+          }
+          load(
+            raw,
+            file.name,
+            undefined,
+            undefined,
+            {
+              sessionFileName: file.name,
+              llm: null,
+              browser: null,
+              children: [],
+              from: "files",
+            },
+            pickedOnItsOwn(file),
+          );
+        })
         .catch(() => setError(t(lang, "imp.err.read", { name: file.name })));
       return;
     }
@@ -388,7 +544,7 @@ export function ImportDialog(props: {
         runStates.push({ runId: r.runId, json: await list[r.file].text().catch(() => "") });
       }
       const run = importClaudeCodeRun({ sessionText, sidecars, runStates });
-      setNote(run.kind === "vscode-agent" ? t(lang, "imp.vscodeNote") : null);
+      setNote(toolOutputNote(lang, run.source.toolOutputs));
       // The summary is built by the importer's own `runSummary`, never by a
       // literal here. A literal is where a measured field goes missing without
       // anything turning red — `declared` did exactly that (card 315).
@@ -401,6 +557,17 @@ export function ImportDialog(props: {
       reportBrowserError("import", err);
     });
   };
+
+  // The import bar's folder pick (task 12 item 6): its files are taken once,
+  // as if they had been picked here.
+  const tookInitial = useRef(false);
+  useEffect(() => {
+    if (props.initialFiles !== undefined && !tookInitial.current) {
+      tookInitial.current = true;
+      takeFiles(props.initialFiles);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const now = Date.now();
 
@@ -453,6 +620,17 @@ export function ImportDialog(props: {
         </div>
         <h2 id="import-title">{t(lang, "imp.title")}</h2>
         <p className="import-hint">{t(lang, "imp.hint", { path: "~/.claude/projects/…/*.jsonl" })}</p>
+
+        {copilotStore !== null && (
+          <CopilotStoreList
+            lang={lang}
+            rows={copilotStore.rows}
+            skipped={copilotStore.skipped}
+            now={now}
+            busy={loading !== null}
+            onPick={(i) => loadCopilotPick(copilotStore.files, copilotStore.sessions[i])}
+          />
+        )}
 
         {transcripts.length > 0 && (
           <>
@@ -645,7 +823,7 @@ export function ImportDialog(props: {
             <input
               ref={fileRef}
               type="file"
-              accept=".jsonl,.json,.txt,.zip"
+              accept=".jsonl,.json,.txt,.zip,.yaml,.md"
               multiple
               hidden
               onChange={onFile}

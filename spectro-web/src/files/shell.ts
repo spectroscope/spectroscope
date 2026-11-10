@@ -30,6 +30,9 @@ export interface ShellTouch {
   written: string; // the path as the command spells it, quotes removed
   path: string; // resolvePath(written, base at that point of the line)
   folder: boolean; // a folder or a pattern, not one file
+  pattern?: true; // a glob pattern: a glob tool's, a grep filter's or an unquoted shell glob word (card 605)
+  listing?: true; // a listing (ls, tree, list_dir): it names entries, it reads no content (card 605)
+  search?: true; // a search over a folder (find, a recursive grep, a glob tool): it names matches (card 605)
   kind: TouchKind;
   reason: string; // rule name plus the matched fragment, e.g. "redirect > out.txt"
   replaced?: { old: string; new: string }[];
@@ -44,7 +47,24 @@ export interface ShellReading {
 }
 
 export function shellTouches(command: string, cwd: string | null): ShellReading {
-  const out: ShellReading = { touches: [], script: null, inline: false };
+  const out = read(command, cwd);
+  delete out.runner;
+  return out;
+}
+
+/**
+ * What ran the first script or inline code of a command, as the line spells it,
+ * without the arguments: `python3 build.py`, `./gradlew`, `node -e` (card 605).
+ */
+export function scriptRunner(command: string, cwd: string | null): string | null {
+  return read(command, cwd).runner ?? null;
+}
+
+/** A reading with what ran its script, kept apart from ShellReading. */
+type Reading = ShellReading & { runner?: string };
+
+function read(command: string, cwd: string | null): Reading {
+  const out: Reading = { touches: [], script: null, inline: false };
   const outer: Base[] = [];
   let base: Base = cwd;
   for (const item of segments(command)) {
@@ -57,8 +77,9 @@ export function shellTouches(command: string, cwd: string | null): ShellReading 
 
 // Rules.
 
-// The base after a `cd` the heuristic cannot follow (`cd $DIR`, `cd -`, `cd ~`:
-// the home is not known). Relative paths after it name no file; absolute ones do.
+// The base after a `cd` the heuristic cannot follow (`cd $DIR`, `cd -`, a bare
+// `cd`). Relative paths after it name no file; absolute ones do. `cd ~/x` is
+// followed: its paths stay under `~` (fix round 2 item 5).
 const LOST = Symbol("lost base");
 type Base = string | null | typeof LOST;
 
@@ -70,9 +91,11 @@ function locate(text: string, base: Base): string | null {
 interface Ctx {
   base: Base;
   seg: Segment;
-  out: ShellReading;
+  out: Reading;
 }
-type Extra = Pick<ShellTouch, "replaced" | "content" | "appended"> & { folder?: boolean };
+type Extra = Pick<ShellTouch, "replaced" | "content" | "appended" | "listing" | "search"> & {
+  folder?: boolean;
+};
 
 const RESERVED = new Set(["!", "{", "}", "if", "then", "else", "elif", "while", "until", "do"]);
 
@@ -106,7 +129,8 @@ function segment(seg: Segment, base: Base, out: ShellReading): Base {
 
 function cdTarget(args: Word[], base: Base): Base {
   const dir = args.find((a) => !/^-[LPe@]+$/.test(a.text));
-  if (!dir || dir.dynamic || dir.text === "-" || dir.text === "~" || dir.text.startsWith("~/")) return LOST;
+  // A folder under the home folder is followed as `~/...`, the way the files tab shows it (fix round 2 item 5).
+  if (!dir || dir.dynamic || dir.text === "-") return LOST;
   return locate(dir.text, base) ?? LOST;
 }
 
@@ -158,6 +182,7 @@ function add(
     written: text,
     path,
     folder: folder === true || word.glob || looksLikeFolder,
+    ...(word.glob ? { pattern: true as const } : {}),
     kind,
     reason,
     ...rest,
@@ -539,6 +564,8 @@ function pip(args: Word[], c: Ctx): void {
 interface Reader extends OptSpec {
   pattern?: string[];
   folder?: true | string[];
+  listing?: true; // its operands are listed, not read
+  names?: string; // with this option it lists file names, it reads no content (rg --files)
   files?: string[]; // options whose value is a file the verb reads
   base?: true | string[]; // without a path and without input on stdin, it searches the folder it runs in (always, or with one of these options)
 }
@@ -580,6 +607,7 @@ const READERS: Record<string, Reader> = {
     pattern: ["-e", "-f", "--regexp", "--file", "--files", "--type-list"],
     files: ["-f", "--file"],
     base: true,
+    names: "--files",
   },
   awk: { values: "Ffv", pattern: ["-f"], files: ["-f"] },
   jq: {
@@ -591,8 +619,8 @@ const READERS: Record<string, Reader> = {
   },
   // BSD ls on macOS has no option that takes a value. An operand is a folder
   // only when it says so (a trailing slash, `.` or `..`): `ls -la f.jsonl` is a file.
-  ls: {},
-  tree: { values: "LIPo", folder: true },
+  ls: { listing: true },
+  tree: { values: "LIPo", folder: true, listing: true },
 };
 
 function reader(name: string, spec: Reader, args: Word[], c: Ctx): void {
@@ -604,10 +632,21 @@ function reader(name: string, spec: Reader, args: Word[], c: Ctx): void {
     const v = o.flags.get(f);
     if (v) add(c, v, "read", `${name} ${v.text}`);
   }
-  for (const a of operands) if (!a.text.startsWith("+")) add(c, a, "read", `${name} ${a.text}`, { folder });
+  // A content search (grep, rg) reads every file or folder it names, a secret
+  // one too; only `rg --files` lists names (fix round 2 item 2).
+  const names = spec.listing === true || (spec.names !== undefined && has(o, spec.names));
+  const listing = names ? { listing: true as const } : {};
+  for (const a of operands) {
+    if (a.text.startsWith("+")) continue;
+    add(c, a, "read", `${name} ${a.text}`, { folder, ...listing });
+  }
+  // Without a path it searches the folder it runs in: a search entry, no file read.
   const base = spec.base === true || (spec.base !== undefined && has(o, ...spec.base));
   if (base && operands.length === 0 && !fedStdin(c.seg)) {
-    add(c, ".", "read", pattern ? `${name} "${pattern.text}"` : name, { folder: true });
+    add(c, ".", "read", pattern ? `${name} "${pattern.text}"` : name, {
+      folder: true,
+      ...(names ? { listing: true as const } : { search: true as const }),
+    });
   }
 }
 
@@ -621,7 +660,7 @@ function find(args: Word[], c: Ctx): void {
   for (; k < args.length; k++) {
     const t = args[k].text;
     if (t.startsWith("-") || t === "(" || t === "!") break;
-    add(c, args[k], "read", `find ${t}`, { folder: true });
+    add(c, args[k], "read", `find ${t}`, { folder: true, search: true });
   }
 }
 
@@ -659,7 +698,8 @@ const INTERPRETERS: Record<string, Interpreter> = {
 
 function interpreter(label: string, spec: Interpreter, args: Word[], c: Ctx, depth: number): void {
   const o = getopt(args, { ...spec, posix: true });
-  if (has(o, ...spec.inline)) return inlineScript(c);
+  const flag = spec.inline.find((f) => o.flags.has(f));
+  if (flag !== undefined) return inlineScript(c, `${label} ${flag}`);
   const mod = spec.module ? value(o, "-m") : null;
   if (mod) {
     if (RULES.has(mod.text)) return dispatch([mod, ...o.operands], c, depth + 1);
@@ -669,15 +709,21 @@ function interpreter(label: string, spec: Interpreter, args: Word[], c: Ctx, dep
   const [script, ...rest] = o.operands;
   if (script && script.text !== "-") return runScript(script, rest, label, c);
   const fed = c.seg.docs.length > 0 || c.seg.piped || c.seg.redirects.some((r) => r.op === "<<<");
-  if (fed || script) return inlineScript(c);
+  if (fed || script) return inlineScript(c, label);
   const from = c.seg.redirects.find((r) => r.op === "<" && r.target && !r.target.dynamic)?.target;
   const path = from ? locate(from.text, c.base) : null;
-  if (path !== null && c.out.script === null) c.out.script = path;
+  if (path !== null && c.out.script === null && from) {
+    c.out.script = path;
+    c.out.runner ??= `${label} < ${from.text}`;
+  }
 }
 
 function runScript(script: Word, rest: Word[], label: string, c: Ctx): void {
   const t = add(c, script, "read", `script ${label}`);
-  if (t && c.out.script === null) c.out.script = t.path;
+  if (t && c.out.script === null) {
+    c.out.script = t.path;
+    c.out.runner ??= label === script.text ? label : `${label} ${script.text}`;
+  }
   for (const a of rest) {
     const eq = a.text.indexOf("=");
     const v = a.text.startsWith("-") && eq > 0 ? part(a, a.text.slice(eq + 1)) : a;
@@ -685,8 +731,9 @@ function runScript(script: Word, rest: Word[], label: string, c: Ctx): void {
   }
 }
 
-function inlineScript(c: Ctx): void {
+function inlineScript(c: Ctx, runner: string): void {
   c.out.inline = true;
+  c.out.runner ??= runner;
   const here = locate(".", c.base);
   if (here !== null && !c.out.touches.some((t) => t.reason === "inline script" && t.path === here)) {
     add(c, ".", "unknown", "inline script", { folder: true });

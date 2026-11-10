@@ -243,6 +243,7 @@ import {
 } from "./components/importBar";
 import { ImportNoteBar } from "./components/ImportNoteBar";
 import type { ImportedRunSummary } from "./import/claudeCodeRun";
+import { copilotName, holdCopilotSnapshots, importViewId } from "./import/copilotFolder";
 import { importedPhasesOf, type WorkflowDeclaration } from "./lab/workflowGraph";
 import { withCommandMarks } from "./lab/labChatState";
 import { collectImages, imageLines, indexOf, withSourceLines } from "./state/sessionImages";
@@ -1487,6 +1488,8 @@ export function App() {
   // Session import (spectroscope JSONL or an adapted Claude Code transcript): the
   // loaded stream takes the SAME replay path as a stored session.
   const [importOpen, setImportOpen] = useState(false);
+  // Card 605, task 12: the folder the import bar picked, handed to the dialog once.
+  const [importPick, setImportPick] = useState<{ files: File[]; sameSession: string | null } | null>(null);
   // What the loaded file was, in its own numbers. Shown for EVERY import: until
   // now only a VS Code export said anything, so a Claude Code transcript was
   // labelled "Archive" and read as a session this machine had produced.
@@ -1576,14 +1579,18 @@ export function App() {
     wires?: ImportWires,
   ): Promise<void> => {
     const ticket = navNonce.issue(); // an import supersedes any in-flight session open
-    const sessionId = `import:${kind}:${label}`;
+    // Card 605, task 12: a Copilot session's id is part of it, so two of one name get two views.
+    const sessionId = importViewId(kind, label, source);
     // Card 473: only the import on screen holds wires; the last one lets go.
     releaseHeldWires();
+    // Card 605, task 12: and only it holds the count of its Copilot file snapshots.
+    holdCopilotSnapshots(sessionId, source.copilot?.snapshots?.length ?? 0);
     // Card 431: an import can be as large as a recorded session (the store
     // serves up to 128 MiB), so its fold runs in slices under the same sign.
     // The dialog closes first, or it would stand over the sign.
     setOpening({ ticket, sessionId, title: label });
     setImportOpen(false);
+    setImportPick(null);
     // Card 473: a spectroscope session finds its wires (the bundle's, the
     // dropped ones, or this machine's by the referenced name) and reads them
     // under the same sign, in slices, so a 50 MB wire never freezes the page.
@@ -1665,24 +1672,32 @@ export function App() {
       cause,
     );
     // The dialog is gone by the time this bar matters, so it belongs to the
-    // session, not to the dialog. The VS Code note keeps its own sentence: that
-    // export records that each tool ran and whether it succeeded, never what it
-    // returned, and without saying so the empty tool bodies read as a broken
-    // import.
+    // session, not to the dialog. The tool output note keeps its own sentence:
+    // it counts the tool results a VS Code or Copilot file recorded no output
+    // for (card 605, task 10), and without it the empty tool bodies read as a
+    // broken import.
     setImportBar({
-      sessionId: `import:${kind}:${label}`,
+      sessionId,
       file: label,
       stats: sourceStats(source),
       // Card 440: the bar counts the conversation as the chat shows it.
       counts: conversationCounts(events),
-      // The VS Code note (a FORMAT's limits), the subagent note (what THIS
+      // The tool output note (what the file did not record), the subagent note (what THIS
       // file is), what a run import carried (card 291) and what it could NOT
       // carry: a store row whose run is over the server's ceiling loads the
       // session file instead, and says so rather than passing for a normal
       // load (card 318). The same call says whether the file is one agent's
       // transcript, so the bar does not call that file a session (card 152).
       // Card 473: and what came with the session file, said once.
-      ...importBarAbout(lang, { kind, subagent, run, extra: note, found: foundNote }),
+      ...importBarAbout(lang, {
+        kind,
+        subagent,
+        run,
+        extra: note,
+        found: foundNote,
+        toolOutputs: source.toolOutputs,
+        copilot: source.copilot,
+      }),
     });
   };
 
@@ -2792,12 +2807,15 @@ export function App() {
   const askVisible = enteredFleet === null && viewingLive && live.pendingAsks.length > 0;
 
   const firstUser = view.turns.find((turn) => turn.kind === "user");
+  // Card 605, task 12: an imported Copilot folder is titled by its yaml name, as the bar names it.
+  const importedName = enteredFleet === null && replay !== null ? copilotName(replay.source) : null;
   const title =
-    firstUser !== undefined && firstUser.kind === "user"
+    importedName ??
+    (firstUser !== undefined && firstUser.kind === "user"
       ? firstUser.text
       : viewingLive
         ? t(lang, "hdr.newSession")
-        : t(lang, "hdr.archivedSession");
+        : t(lang, "hdr.archivedSession"));
 
   /* The views that take the WHOLE surface. None belongs to one run: a
      state graph is a topology, a playbook is a folder (card 481) and the
@@ -2892,10 +2910,26 @@ export function App() {
       )}
       {importOpen && (
         <ImportDialog
-          onLoad={(events, label, kind, source, subagent, storePath, run, note, wires) =>
-            void openImport(events, label, kind, source, subagent, storePath, run, note, "gesture", wires)
+          onLoad={(events, label, kind, source, subagent, storePath, run, note, wires, replace) =>
+            void openImport(
+              events,
+              label,
+              kind,
+              source,
+              subagent,
+              storePath,
+              run,
+              note,
+              replace ? "apply" : "gesture",
+              wires,
+            )
           }
-          onClose={() => setImportOpen(false)}
+          onClose={() => {
+            setImportOpen(false);
+            setImportPick(null);
+          }}
+          initialFiles={importPick?.files}
+          sameSession={importPick?.sameSession ?? null}
         />
       )}
       {scenariosOpen && <ScenarioDialog onPick={openScenario} onClose={() => setScenariosOpen(false)} />}
@@ -3520,6 +3554,9 @@ export function App() {
               onStartHandled={() => setFilesFocus(null)}
               onFocusEvent={focusInTrace}
               onOpenPath={onOpenFilesPath}
+              title={shownSessionId !== null ? sessionTitleOf(shownSessionId) : null}
+              // Card 605, task 12: a Copilot folder's snapshots travel beside the import's events.
+              snapshots={enteredFleet === null ? replay?.source?.copilot?.snapshots : undefined}
             />
           ) : null}
         </ChunkBoundary>
@@ -3727,6 +3764,12 @@ export function App() {
           lang={lang}
           bar={shownBar}
           onClose={() => setImportBar(null)}
+          // Card 605, task 12: the folder of a Copilot file that arrived alone
+          // opens in the import dialog, which loads it or lists its sessions.
+          onPickFolder={(files) => {
+            setImportPick({ files, sameSession: shownBar.copilotFolder?.sessionId ?? null });
+            setImportOpen(true);
+          }}
         />
       )}
       {localNoticeOpen && (

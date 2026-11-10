@@ -357,19 +357,23 @@ describe("claudeCode adapter (which model ran)", () => {
     expect((start as { model?: string }).model).toBe("claude-opus-5");
   });
 
-  it("invents neither host nor provider — a transcript records neither", () => {
-    // A Claude model id names the model, not the endpoint that served it
-    // (Anthropic API, Bedrock, Vertex). Unknown must read as unknown.
+  it("invents no host, and names the provider anthropic only on run_start (card 605)", () => {
+    // provider_info stays as the transcript has it: no host, no provider. The
+    // run_start of a run with a model names anthropic, so the files report
+    // says where the content went (final wave item 5).
     for (const p of providerInfos(events)) {
       expect(p.host ?? "").toBe("");
       expect(p.provider ?? "").toBe("");
     }
     const start = events.find((e) => e.type === "run_start");
-    expect((start as { provider?: string }).provider).toBeUndefined();
+    expect(start).toMatchObject({ provider: "anthropic", model: "claude-opus-5" });
   });
 
-  it("stays silent when the transcript names no model", () => {
-    expect(providerInfos(parseTranscript(ccLinear))).toEqual([]);
+  it("stays silent when the transcript names no model, and names no provider then", () => {
+    const linear = parseTranscript(ccLinear);
+    expect(providerInfos(linear)).toEqual([]);
+    const start = linear.find((e) => e.type === "run_start");
+    expect((start as { provider?: string }).provider).toBeUndefined();
   });
 });
 

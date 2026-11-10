@@ -142,8 +142,9 @@ describe("the VS Code writer", () => {
   });
 
   it("loses the tool OUTPUT, exactly as warned", () => {
-    // The format has nowhere to put it: tool.execution_complete carries only
-    // { toolCallId, success }.
+    // This writer puts no result on tool.execution_complete. The format has
+    // one (data.result.content, read by the importer since card 605, task 10);
+    // the writer does not fill it.
     const source = sampleEvents();
     const warned = formatLosses("vscode", streamFacts(source));
     expect(warned.find((l) => l.code === "tool-output")?.count).toBe(1);

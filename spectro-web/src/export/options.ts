@@ -100,15 +100,19 @@ export interface StreamFacts {
   /** Frames an import read around the conversation. Same rule, different
    *  sentence: these carry something the reader saw on screen. */
   importedFrames: number;
+  /** A Copilot session folder's file snapshots (card 605, task 12). They
+   *  travel beside the import, not in the stream, so the caller passes them. */
+  snapshots: number;
 }
 
 /**
  * What a stream contains that a target format might not be able to hold.
  *
  * @param events the stream about to be written
+ * @param side   what the import carried beside the stream: a Copilot folder's snapshot count
  * @return counts, all of them derived — never a guess, never a constant
  */
-export function streamFacts(events: readonly RunEvent[]): StreamFacts {
+export function streamFacts(events: readonly RunEvent[], side: { snapshots?: number } = {}): StreamFacts {
   const agents = new Set<string>();
   const facts: StreamFacts = {
     events: events.length,
@@ -121,6 +125,7 @@ export function streamFacts(events: readonly RunEvent[]): StreamFacts {
     images: 0,
     socketFrames: 0,
     importedFrames: 0,
+    snapshots: side.snapshots ?? 0,
   };
   for (const event of events) {
     // Read before the switch, because these types are not in the RunEvent union
@@ -166,6 +171,16 @@ export interface Loss {
   de: string;
 }
 
+/** A Copilot folder's file snapshots: no writer has a line for them, in any format. */
+const SNAPSHOTS_LOSS = {
+  code: "copilot-snapshots",
+  of: (f: StreamFacts) => f.snapshots,
+  en: (n: number) =>
+    `${n} file ${n === 1 ? "snapshot" : "snapshots"} of the Copilot folder: no export writes ${n === 1 ? "it" : "them"}`,
+  de: (n: number) =>
+    `${n} ${n === 1 ? "Dateischnappschuss" : "Dateischnappschüsse"} des Copilot-Ordners: kein Export schreibt ${n === 1 ? "ihn" : "sie"}`,
+};
+
 /** One entry per thing a foreign shape cannot carry, with the fact that decides
  *  whether it applies to THIS stream. A loss with a count of zero is never
  *  printed: a session with no subagents loses no subagents, and warning anyway
@@ -204,6 +219,7 @@ const LOSSES: Record<
       de: (n) =>
         `${n} importierte ${n === 1 ? "Frame" : "Frames"}, die rund um das Gespräch gelesen wurden: auch dafür hat das Draht-Format keine Zeile`,
     },
+    SNAPSHOTS_LOSS,
   ],
   "claude-code": [
     {
@@ -218,15 +234,18 @@ const LOSSES: Record<
       en: (n) => `${n} generated ${n === 1 ? "image" : "images"} — no counterpart in that format`,
       de: (n) => `${n} generierte ${n === 1 ? "Grafik" : "Grafiken"} — kein Gegenstück in dem Format`,
     },
+    SNAPSHOTS_LOSS,
   ],
   vscode: [
     {
       code: "tool-output",
       of: (f) => f.toolOutputs,
-      // Measured in the real export: tool.execution_complete carries only
-      // { toolCallId, success }. There is nowhere to put the output.
-      en: (n) => `${n} tool ${n === 1 ? "output" : "outputs"} — the format records only success or failure`,
-      de: (n) => `${n} Tool-${n === 1 ? "Ausgabe" : "Ausgaben"} — das Format kennt nur Erfolg oder Fehler`,
+      // This writer puts no result on tool.execution_complete. The format has
+      // one (data.result.content, read by the importer since card 605), the
+      // writer does not fill it.
+      en: (n) => `${n} tool ${n === 1 ? "output" : "outputs"}: this export writes only success or failure`,
+      de: (n) =>
+        `${n} Tool-${n === 1 ? "Ausgabe" : "Ausgaben"}: dieser Export schreibt nur Erfolg oder Fehler`,
     },
     {
       code: "permissions",
@@ -241,19 +260,23 @@ const LOSSES: Record<
     {
       code: "subagents",
       of: (f) => f.subagents,
-      // Their prose is folded into the one lane the format has, so the words
-      // survive and the attribution does not. Saying "lost" would be wrong in
-      // the other direction.
+      // This writer folds their prose into one lane, so the words survive and
+      // the attribution does not. The Copilot format has lanes (a record's
+      // agentId, read by the importer since card 605); the writer does not
+      // write them.
       en: (n) =>
-        `${n} ${n === 1 ? "subagent lane" : "subagent lanes"} — that format has one lane, so their work folds into it`,
+        `${n} ${n === 1 ? "subagent lane" : "subagent lanes"}: this export writes one lane, so their work folds into it`,
       de: (n) =>
-        `${n} Subagenten-${n === 1 ? "Spur" : "Spuren"} — dieses Format hat eine Spur, ihre Arbeit landet darin`,
+        `${n} Subagenten-${n === 1 ? "Spur" : "Spuren"}: dieser Export schreibt eine Spur, ihre Arbeit landet darin`,
     },
     {
       code: "usage",
       of: (f) => f.usage,
-      en: (n) => `${n} token ${n === 1 ? "count" : "counts"} — not carried by that format`,
-      de: (n) => `${n} Token-${n === 1 ? "Zählung" : "Zählungen"} — das Format trägt sie nicht`,
+      // The format has session.usage_record, read by the importer since card
+      // 605; this writer writes none.
+      en: (n) =>
+        `${n} token ${n === 1 ? "count" : "counts"}: this export does not write ${n === 1 ? "it" : "them"}`,
+      de: (n) => `${n} Token-${n === 1 ? "Zählung" : "Zählungen"}: dieser Export schreibt sie nicht`,
     },
     {
       code: "images",
@@ -261,6 +284,7 @@ const LOSSES: Record<
       en: (n) => `${n} generated ${n === 1 ? "image" : "images"} — no counterpart in that format`,
       de: (n) => `${n} generierte ${n === 1 ? "Grafik" : "Grafiken"} — kein Gegenstück in dem Format`,
     },
+    SNAPSHOTS_LOSS,
   ],
 };
 

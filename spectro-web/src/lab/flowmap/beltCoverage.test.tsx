@@ -23,7 +23,7 @@
 //     `case "…":` labels in toolViews.ts (card 314's sourceBlock technique);
 //   - every name in the station cases is read out of the sets labScene
 //     exports (NATIVE_DISK_READ, NATIVE_DISK_WRITE, CC_DISK_READ, CC_DISK_WRITE,
-//     SHELL_TOOLS).
+//     COPILOT_DISK_READ, COPILOT_DISK_WRITE, SHELL_TOOLS).
 //
 // Names ARE typed below, and the sentence is kept narrow enough to be true: the
 // three the owner is looking at (their own cases, so a failure names the tool
@@ -52,6 +52,8 @@ import {
   initialScene,
   CC_DISK_READ,
   CC_DISK_WRITE,
+  COPILOT_DISK_READ,
+  COPILOT_DISK_WRITE,
   NATIVE_DISK_READ,
   NATIVE_DISK_WRITE,
   ROOT_AGENT,
@@ -105,6 +107,28 @@ const sourceBlock = (src: string, opener: string, closer: string): string => {
 };
 
 const DESCRIBE_TOOL = sourceBlock(TOOL_VIEWS, "export function describeTool(", "\n}");
+
+/** The view kinds, as the keys of the belt's own kind table. */
+const KIND_KEYS: ReadonlySet<string> = new Set(Object.keys(CHIP_FOR_KIND ?? {}));
+const declaredIn = (code: string): Set<string> =>
+  new Set([...code.matchAll(/\b(?:const|let|var|function)\s+([A-Za-z_$][\w$]*)/g)].map((m) => m[1]));
+/** A tool name that is also a word of the code: a view kind, or a name the code declares. */
+const codeWord = (name: string, code = BELT_CODE): boolean =>
+  KIND_KEYS.has(name) || declaredIn(code).has(name);
+
+/**
+ * Whether `code` spells a tool name. A bare word for most names, because a key
+ * carries no quotes. Card 605 brought names that are words of belt.ts itself:
+ * the Copilot CLI's `view` is a local there and its `edit` a key of the kind
+ * table. For such a name a bare word proves nothing, so only a quoted spelling
+ * or an object key outside the kind table counts.
+ */
+function spellsIn(code: string, name: string): boolean {
+  if (!codeWord(name, code)) return new RegExp(`\\b${name}\\b`).test(code);
+  const rest = code.replace(sourceBlock(code, "export const CHIP_FOR_KIND", "\n};"), " ");
+  return new RegExp(`["'\`]${name}["'\`]|\\b${name}\\s*:`).test(rest);
+}
+const spells = (name: string): boolean => spellsIn(BELT_CODE, name);
 
 /**
  * Every `case "…":` run in describeTool, grouped by the body it shares.
@@ -318,11 +342,23 @@ describe("the coverage is derived from describeTool, not listed (card 321)", () 
       ...NATIVE_DISK_WRITE,
       ...CC_DISK_READ,
       ...CC_DISK_WRITE,
+      ...COPILOT_DISK_READ,
+      ...COPILOT_DISK_WRITE,
       ...SHELL_TOOLS,
     ];
+    let words = 0;
     for (const name of new Set(searched)) {
       if (own.has(name)) continue;
-      expect(new RegExp(`\\b${name}\\b`).test(BELT_CODE), `belt.ts names ${name} in its code`).toBe(false);
+      if (codeWord(name)) words++;
+      expect(spells(name), `belt.ts names ${name} in its code`).toBe(false);
+    }
+    // The premise of the narrower search: the Copilot CLI's view and edit are such words (card 605).
+    expect(words, "no tool name is also a word of belt.ts's code").toBeGreaterThanOrEqual(2);
+  });
+
+  it("and the narrower search still sees a tool name planted as a string or a key", () => {
+    for (const plant of ['new Set(["view"])', '{ view: "read_file" }', "case 'edit':", "`create`"]) {
+      expect(spellsIn(`${BELT_CODE}\n${plant}`, plant.match(/view|edit|create/)![0]), plant).toBe(true);
     }
   });
 });
@@ -429,7 +465,9 @@ const STATION_CHIPS: Record<string, string[]> = {
 //
 // (2026-08-30, whole corpus). Closing it means teaching the FOLD about `Grep`,
 // which is card 301's vocabulary and not this card's. Written down rather than
-// quietly widened.
+// quietly widened. Card 605 did it: `Grep` is in CC_DISK_READ, and the other
+// direction is guarded in diskVocabulary.drift.test.ts, where every name the
+// classifier draws as disk or shell work needs a lab set or a stated reason.
 describe("every name the fold routes to a station lights a chip of it (card 321)", () => {
   it("every name the fold routes to a station lights a chip of that station", () => {
     const routed = [
@@ -437,10 +475,12 @@ describe("every name the fold routes to a station lights a chip of it (card 321)
       ...NATIVE_DISK_WRITE,
       ...CC_DISK_READ,
       ...CC_DISK_WRITE,
+      ...COPILOT_DISK_READ,
+      ...COPILOT_DISK_WRITE,
       ...SHELL_TOOLS,
     ];
-    // Floor: 5 + 2 + 2 + 3 + 2 on 2026-11-09 (labScene.ts, card 604).
-    expect(routed.length).toBeGreaterThanOrEqual(14);
+    // Floor: 5 + 2 + 2 + 3 + 1 + 2 + 4 on 2026-11-10 (labScene.ts, cards 604 and 605).
+    expect(routed.length).toBeGreaterThanOrEqual(19);
     for (const name of routed) {
       const where = routedTo(name);
       const allowed = STATION_CHIPS[where];
