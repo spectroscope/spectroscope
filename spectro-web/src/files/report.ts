@@ -14,6 +14,7 @@ import { shortenPath } from "../lab/fileTree";
 import { elapsedAt } from "../state/stepper";
 import {
   destinations as destinationsOf,
+  hostWhere,
   reachedBy,
   reachIndex,
   type Destination,
@@ -127,6 +128,8 @@ export interface FilesReport {
   counts: Record<Level, Record<Counted, number>>;
   placeholders: number;
   personal: { email: number; iban: number };
+  /** True when the session ran PowerShell, which the report reads for a few cmdlets only. */
+  powershell: boolean;
 }
 
 export interface ReportInput {
@@ -238,7 +241,9 @@ export function buildReport(input: ReportInput): FilesReport {
         );
       }
       for (const use of risk.network) {
-        let level: Level = "sensitive";
+        // A host on this machine keeps the command at project level (final wave item 4c).
+        let level: Level =
+          use.host !== null && hostWhere(use.host, "") === "this-machine" ? "project" : "sensitive";
         for (const sent of use.sends) {
           addMark(sent, { call, kind: "sent", sources: ["probable"] });
           level = higher(level, pathLevel(sent, workspace));
@@ -341,8 +346,14 @@ export function buildReport(input: ReportInput): FilesReport {
     counts: tally,
     placeholders: scan.placeholders,
     personal: scan.personal,
+    powershell: ledger.calls.some(
+      (c) => POWERSHELL_TOOL.test(c.tool) || (c.shell && POWERSHELL_LINE.test(c.line)),
+    ),
   };
 }
+
+const POWERSHELL_TOOL = /^(?:powershell|pwsh)$/i;
+const POWERSHELL_LINE = /(?:^|[\s;&|(])(?:powershell|pwsh)(?:\.exe)?(?=\s|$)/i;
 
 // ---- Credentials ----------------------------------------------------------------
 

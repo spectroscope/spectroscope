@@ -73,11 +73,18 @@ const within = (p: Place, start: number, end: number): Place =>
 function readLine(line: string, cwd: string | null, out: ShellRisk, depth: number, place: Place): void {
   if (depth > MAX_DEPTH) return;
   const ctx: Ctx = { line, place };
-  for (const item of riskSegments(line)) {
-    if (item === "(" || item === ")") continue;
+  const items = riskSegments(line);
+  items.forEach((item, at) => {
+    if (item === "(" || item === ")") return;
     readSubs(item, cwd, out, depth, place); // a substitution runs before the command that holds it
-    run(item.words, item, cwd, out, depth, ctx);
-  }
+    run(item.words, item, cwd, out, depth, ctx, { items, at });
+  });
+}
+
+/** The items of the line a segment stands in, and its index: PowerShell's `-Body (Get-Content f)` reads ahead. */
+interface Next {
+  items: readonly (Segment | "(" | ")")[];
+  at: number;
 }
 
 /** Reads the substitutions of a segment as lines; an arithmetic body only for the substitutions in it. */
@@ -361,15 +368,56 @@ function commandName(text: string): string | null {
   return text.startsWith("/") ? (text.split("/").pop() ?? null) : null;
 }
 
-function run(words: Word[], seg: Segment, cwd: string | null, out: ShellRisk, depth: number, ctx: Ctx): void {
+function run(
+  words: Word[],
+  seg: Segment,
+  cwd: string | null,
+  out: ShellRisk,
+  depth: number,
+  ctx: Ctx,
+  next: Next | null,
+): void {
   const [head, ...args] = commandWords(words);
+  if (head && printsEnvVariable(head, args, ctx)) dumped(out, "$env:");
   if (!head || head.dynamic || depth > MAX_DEPTH) return;
-  const name = commandName(head.text);
-  if (name === null) return;
+  const written = commandName(head.text);
+  if (written === null) return;
+  // `curl.exe` and the other Windows names count as their tool.
+  const name = written.replace(/\.exe$/i, "");
+  const lower = name.toLowerCase();
   if (name === "env") {
     const rest = parse(args, ENV).operands;
     if (commandWords(rest).length === 0) dumped(out, "env");
-    else run(rest, seg, cwd, out, depth + 1, ctx);
+    else run(rest, seg, cwd, out, depth + 1, ctx, next);
+    return;
+  }
+  if (name === "xargs") {
+    const p = parse(args, XARGS);
+    const repl = values(p, "-I", "-J", "--replace").map((w) => w.text);
+    if (has(p, "-i")) repl.push("{}");
+    return runFed(p.operands, repl, seg, cwd, out, depth, ctx, next);
+  }
+  if (name === "find") {
+    for (const clause of execClauses(args)) runFed(clause, ["{}"], seg, cwd, out, depth, ctx, next);
+    return;
+  }
+  if (name === "eval") {
+    if (args.length === 0 || args.some((w) => w.dynamic)) return;
+    const first = args[0];
+    const last = args[args.length - 1];
+    const place =
+      args.length === 1
+        ? placeOf(first, ctx)
+        : within(ctx.place, first.start ?? 0, last.end ?? ctx.line.length);
+    return readLine(args.map((w) => w.text).join(" "), cwd, out, depth + 1, place);
+  }
+  if (lower === "powershell" || lower === "pwsh") return powershell(args, cwd, out, depth, ctx);
+  const psDump = psDumpOf(lower, args);
+  if (psDump !== null) dumped(out, psDump);
+  const web = PS_WEB.get(lower);
+  if (web !== undefined) {
+    out.network.push(psWeb(web, args, cwd, next));
+    for (const w of args) urlValues(out, ctx, w);
     return;
   }
   if (name === "sshpass") {
@@ -380,13 +428,13 @@ function run(words: Word[], seg: Segment, cwd: string | null, out: ShellRisk, de
       const from = o.inline ? o.from.text.length - o.value.text.length : 0;
       secretValue(out, ctx, holder, from, holder.text.length, shapeText(o.value), "plain");
     }
-    return run(p.operands, seg, cwd, out, depth + 1, ctx);
+    return run(p.operands, seg, cwd, out, depth + 1, ctx, next);
   }
   const wrapper = WRAPPERS.get(name);
   if (wrapper) {
     const p = parse(args, wrapper);
     if (name === "command" && has(p, "-v", "-V")) return; // a lookup, not a run
-    return run(p.operands.slice(wrapper.skip ?? 0), seg, cwd, out, depth + 1, ctx);
+    return run(p.operands.slice(wrapper.skip ?? 0), seg, cwd, out, depth + 1, ctx, next);
   }
   if (SHELLS.has(name)) {
     const p = parse(args, SHELL);
@@ -496,7 +544,184 @@ const WRAPPERS = new Map<string, Spec>([
   ["command", { posix: true }],
   ["nice", { short: "n", long: ["adjustment"], posix: true }],
   ["timeout", { short: "sk", long: ["signal", "kill-after"], posix: true, skip: 1 }],
+  ["doas", { short: "aCu", posix: true }],
+  ["stdbuf", { short: "ioe", long: ["input", "output", "error"], posix: true }],
+  ["watch", { short: "nq", long: ["interval", "equexit"], posix: true }],
+  ["caffeinate", { short: "tw", posix: true }],
 ]);
+const XARGS: Spec = {
+  short: "adEIJLnPRSs",
+  optional: "eil",
+  long: ["arg-file", "delimiter", "eof", "replace", "max-lines", "max-args", "max-procs", "max-chars"],
+  posix: true,
+};
+
+/**
+ * Runs a command that xargs or `find -exec` builds: a replacement word (`{}`,
+ * the value of `-I`) stands for paths the line does not spell, and xargs adds
+ * the words of its input, so every network use it makes sends files the line
+ * does not name.
+ */
+function runFed(
+  words: Word[],
+  repl: readonly string[],
+  seg: Segment,
+  cwd: string | null,
+  out: ShellRisk,
+  depth: number,
+  ctx: Ctx,
+  next: Next | null,
+): void {
+  const fed = words.map((w) => (repl.includes(w.text) ? { ...w, dynamic: true } : w));
+  const before = out.network.length;
+  run(fed, seg, cwd, out, depth + 1, ctx, next);
+  for (const u of out.network.slice(before)) u.sendsNamed = false;
+}
+
+/** The commands of `find`'s `-exec`, `-execdir`, `-ok` and `-okdir`, each up to its `;` or `+`. */
+function execClauses(args: Word[]): Word[][] {
+  const out: Word[][] = [];
+  for (let k = 0; k < args.length; k++) {
+    if (!["-exec", "-execdir", "-ok", "-okdir"].includes(args[k].text)) continue;
+    const clause: Word[] = [];
+    for (k++; k < args.length && args[k].text !== ";" && args[k].text !== "+"; k++) clause.push(args[k]);
+    out.push(clause);
+  }
+  return out;
+}
+
+// PowerShell (final wave item 4b), read for a few cmdlets only: the web
+// cmdlets as network commands, the Env: drive and $env: as dumps, and the
+// command of `powershell -Command` or `pwsh -c` as a line.
+
+const PS_WEB = new Map<string, string>([
+  ["invoke-webrequest", "Invoke-WebRequest"],
+  ["iwr", "Invoke-WebRequest"],
+  ["invoke-restmethod", "Invoke-RestMethod"],
+  ["irm", "Invoke-RestMethod"],
+]);
+const PS_VALUES = new Set([
+  "uri",
+  "method",
+  "infile",
+  "outfile",
+  "body",
+  "headers",
+  "contenttype",
+  "credential",
+  "websession",
+  "sessionvariable",
+  "form",
+  "timeoutsec",
+  "maximumredirection",
+  "proxy",
+  "proxycredential",
+  "useragent",
+  "certificatethumbprint",
+  "transferencoding",
+  "custommethod",
+  "path",
+  "literalpath",
+]);
+const PS_READERS = new Set(["get-content", "gc", "type", "cat"]);
+const ENV_DRIVE = /^env:/i;
+const ENV_VARIABLE = /^\$(?:env:[A-Za-z_]\w*|\{env:[^}]+\})$/i;
+const PS_PRINT = new Set(["echo", "write-output", "write-host", "write", "out-host", "write-information"]);
+
+/** PowerShell parameters: `-Name value` for the names that take one, `-Name:value`, and switches. */
+function psParams(args: Word[]): { params: Map<string, Word | null>; operands: Word[] } {
+  const params = new Map<string, Word | null>();
+  const operands: Word[] = [];
+  for (let k = 0; k < args.length; k++) {
+    const m = /^-([A-Za-z][\w-]*)(?::(.*))?$/s.exec(args[k].text);
+    if (!m || args[k].dynamic) {
+      operands.push(args[k]);
+      continue;
+    }
+    const key = m[1].toLowerCase();
+    if (m[2] !== undefined) params.set(key, part(args[k], m[2]));
+    else params.set(key, PS_VALUES.has(key) ? (args[++k] ?? null) : null);
+  }
+  return { params, operands };
+}
+
+/** The files a Get-Content (gc, type, cat) reads; unnamed when it is another command or a path is dynamic. */
+function psContentFiles(words: Word[], cwd: string | null): { files: string[]; unnamed: boolean } {
+  const [head, ...args] = words;
+  if (!head || !PS_READERS.has(head.text.toLowerCase())) return { files: [], unnamed: true };
+  const p = psParams(args);
+  const paths = [...p.operands, ...["path", "literalpath"].flatMap((k) => p.params.get(k) ?? [])];
+  return {
+    files: paths.filter((w) => !w.dynamic).map((w) => resolvePath(w.text, cwd)),
+    unnamed: paths.some((w) => w.dynamic),
+  };
+}
+
+/** Invoke-WebRequest and Invoke-RestMethod: the host of -Uri or the first URL, -InFile, and a -Body read from a file. */
+function psWeb(tool: string, args: Word[], cwd: string | null, next: Next | null): NetworkUse {
+  const p = psParams(args);
+  const uri = p.params.get("uri");
+  const u = networkUse(tool, firstHost(uri ? [uri] : p.operands, true));
+  const inFile = p.params.get("infile");
+  if (inFile) send(u, inFile, cwd);
+  if (!p.params.has("body")) return u;
+  const body = p.params.get("body") ?? null;
+  const read: { files: string[]; unnamed: boolean } = { files: [], unnamed: false };
+  if (body === null) {
+    // `-Body (Get-Content f)`: the parenthesis opens the next item of the line.
+    const after = next?.items[next.at + 2];
+    const inner = next?.items[next.at + 1] === "(" && after !== undefined && typeof after !== "string";
+    const r = inner ? psContentFiles(after.words, cwd) : { files: [], unnamed: true };
+    read.files.push(...r.files);
+    read.unnamed = r.unnamed;
+  } else if (body.dynamic) {
+    // `-Body $(Get-Content f)` reads the file; a variable can hold anything.
+    const subs = subsOf(body);
+    if (varsOf(body) && subs.length === 0) read.unnamed = true;
+    for (const line of subs) {
+      for (const seg of riskSegments(line)) {
+        if (typeof seg === "string") continue;
+        const r = psContentFiles(seg.words, cwd);
+        read.files.push(...r.files);
+        if (r.unnamed) read.unnamed = true;
+      }
+    }
+  }
+  for (const f of read.files) addSend(u, f);
+  if (read.unnamed) u.sendsNamed = false;
+  return u;
+}
+
+/** Get-ChildItem Env:, Get-Item Env:NAME and their aliases print variables. */
+function psDumpOf(lower: string, args: Word[]): string | null {
+  if (!args.some((w) => ENV_DRIVE.test(w.text))) return null;
+  if (["get-childitem", "gci", "dir", "ls"].includes(lower)) return "Get-ChildItem Env:";
+  if (["get-item", "gi"].includes(lower)) return "Get-Item Env:";
+  return null;
+}
+
+/** `$env:NAME` on its own or as what echo or Write-Output prints; `$env:NAME = x` sets it. */
+function printsEnvVariable(head: Word, args: Word[], ctx: Ctx): boolean {
+  const raw = (w: Word) =>
+    w.start === undefined || w.end === undefined ? "" : ctx.line.slice(w.start, w.end);
+  if (ENV_VARIABLE.test(raw(head))) return !args[0]?.text.startsWith("=");
+  return PS_PRINT.has(head.text.toLowerCase()) && args.some((w) => ENV_VARIABLE.test(raw(w)));
+}
+
+/** `powershell -Command ...` and `pwsh -c ...`: the rest of the words is one line. An encoded command is not read. */
+function powershell(args: Word[], cwd: string | null, out: ShellRisk, depth: number, ctx: Ctx): void {
+  const at = args.findIndex((w) => /^-(?:c|com|comm|comma|comman|command)(?::.*)?$/i.test(w.text));
+  if (at < 0) return;
+  const rest = args.slice(at + 1);
+  if (rest.length === 0 || rest.some((w) => w.dynamic)) return;
+  const first = rest[0];
+  const last = rest[rest.length - 1];
+  const place =
+    rest.length === 1
+      ? placeOf(first, ctx)
+      : within(ctx.place, first.start ?? 0, last.end ?? ctx.line.length);
+  readLine(rest.map((w) => w.text).join(" "), cwd, out, depth + 1, place);
+}
 const SHELLS = new Set(["sh", "bash", "zsh", "dash", "ksh"]);
 const SHELL: Spec = { short: "o", long: ["rcfile", "init-file"], posix: true };
 const SSHPASS: Spec = { short: "fdpP", posix: true };

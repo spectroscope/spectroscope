@@ -154,6 +154,7 @@ interface Words {
   folded: (n: string) => string;
   limits: string[];
   limitModel: string;
+  limitPowershell: string;
   method: (placeholders: number, count: string) => string[];
   footer: (version: string | null) => string;
 }
@@ -446,6 +447,8 @@ const EN: Words = {
   ],
   limitModel:
     "A model's reading of a command is a guess. Its entries are marked model and do not count toward the verdict.",
+  limitPowershell:
+    "PowerShell is read for a few cmdlets only: Invoke-WebRequest and Invoke-RestMethod (and their aliases iwr and irm) as network commands, Get-ChildItem Env:, Get-Item Env: and $env: as environment dumps. Other PowerShell commands are not read.",
   method: (placeholders, count) => [
     `Secret files by name: ${SECRET_NAMES}, ${code("id_rsa")} and the other SSH keys, ${SECRET_TAIL}, anything under ${code(".ssh/")}, ${code(".aws/")} or ${code(".gnupg/")}. Templates such as ${code(".env.example")} stay project files.`,
     `Credentials by shape: ten of the twelve redaction rules spectroscope applies to recorded state. One more rule finds assignments to names that say password, secret, token or key, such as ${code("DB_PASSWORD")}. The other two redaction rules count email addresses and IBANs as personal data.`,
@@ -723,6 +726,8 @@ const DE: Words = {
   ],
   limitModel:
     "Die Lesart eines Modells ist eine Vermutung. Ihre Einträge sind als Modell markiert und zählen nicht für das Urteil.",
+  limitPowershell:
+    "PowerShell wird nur für wenige Cmdlets gelesen: Invoke-WebRequest und Invoke-RestMethod (mit ihren Aliasen iwr und irm) als Netzwerkbefehle, Get-ChildItem Env:, Get-Item Env: und $env: als Ausgaben der Umgebung. Andere PowerShell-Befehle werden nicht gelesen.",
   // The German noun is the same in the singular and the plural.
   method: (_placeholders, count) => [
     `Geheime Dateien nach Namen: ${SECRET_NAMES}, ${code("id_rsa")} und die anderen SSH-Schlüssel, ${SECRET_TAIL}, alles unter ${code(".ssh/")}, ${code(".aws/")} oder ${code(".gnupg/")}. Vorlagen wie ${code(".env.example")} bleiben Projektdateien.`,
@@ -1171,7 +1176,11 @@ function limitsSection(lang: Lang, report: FilesReport): string {
   const anyModel =
     report.findings.some((f) => f.source === "model") ||
     report.files.some((f) => f.sources.includes("model"));
-  const items = [...w.limits, ...(anyModel ? [w.limitModel] : [])].map((l) => `<li>${esc(l)}</li>`);
+  const items = [
+    ...w.limits,
+    ...(report.powershell ? [w.limitPowershell] : []),
+    ...(anyModel ? [w.limitModel] : []),
+  ].map((l) => `<li>${esc(l)}</li>`);
   return `<section data-section="limits">
 <h2>${esc(w.headings.limits)}</h2>
 <ol class="limits">

@@ -809,3 +809,13 @@ describe("searches and listings in the document", () => {
     expect(html).not.toContain('data-section="searches"');
   });
 });
+
+describe("the PowerShell limit", () => {
+  it("is in the limits only when the session ran PowerShell", () => {
+    const ps = build(new Rec().start(W).tool("powershell", { command: "iwr https://a.example.com" }).events);
+    expect(reportHtml(ps, "en")).toContain("PowerShell is read for a few cmdlets only");
+    expect(reportHtml(ps, "de")).toContain("PowerShell wird nur für wenige Cmdlets gelesen");
+    const plain = build(new Rec().start(W).tool("Bash", { command: "ls" }).events);
+    expect(reportHtml(plain, "en")).not.toContain("PowerShell");
+  });
+});

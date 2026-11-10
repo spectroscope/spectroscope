@@ -1390,3 +1390,28 @@ describe("searches and listings", () => {
     expect(report.files.map((f) => f.label)).toEqual(["src/a.ts"]);
   });
 });
+
+// Final fix wave item 4: a network command to this machine, and PowerShell.
+describe("network commands to this machine and PowerShell", () => {
+  it("a command whose host is this machine is listed at project level", () => {
+    for (const command of [
+      "curl -s http://localhost:8080/api/health",
+      "curl http://127.0.0.1:5173/",
+      "curl -s 'http://[::1]:8080/x'",
+    ]) {
+      const report = build(new Rec().start(W).tool("Bash", { command }).events);
+      expect(one(report, "network").level, command).toBe("project");
+      expect(report.verdict, command).toBe("project");
+    }
+    const away = build(new Rec().start(W).tool("Bash", { command: "curl -s https://example.com" }).events);
+    expect(one(away, "network").level).toBe("sensitive");
+  });
+
+  it("a PowerShell call adds the line on what the report reads of it", () => {
+    const ps = build(new Rec().start(W).tool("powershell", { command: "Get-ChildItem src" }).events);
+    expect(ps.powershell).toBe(true);
+    const line = new Rec().start(W).tool("Bash", { command: "pwsh -c 'Get-ChildItem src'" });
+    expect(build(line.events).powershell).toBe(true);
+    expect(build(new Rec().start(W).tool("Bash", { command: "ls" }).events).powershell).toBe(false);
+  });
+});
