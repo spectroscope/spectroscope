@@ -264,3 +264,21 @@ describe("the dialog and the sidebar name the Copilot format (item 8)", () => {
     }
   });
 });
+
+describe("the bar says a half-written last line was left out (fix round 1 item 5)", () => {
+  it("says it in both languages, after the lock's note", () => {
+    const copilot = { sessionId: "s-1", live: { records: 3 }, torn: true as const };
+    expect(importBarNote("en", { kind: "vscode-agent", copilot })).toBe(
+      "A lock file marked this session as in use when it was picked. If it was still running, the import holds the 3 records written up to then. The last line of the file was incomplete and was left out.",
+    );
+    expect(
+      importBarNote("de", { kind: "vscode-agent", copilot: { sessionId: null, torn: true as const } }),
+    ).toBe("Die letzte Zeile der Datei war unvollständig und wurde weggelassen.");
+  });
+
+  it("the dialog reads a file through the same tolerant load", () => {
+    const dialog = read("./ImportDialog.tsx", import.meta.url);
+    expect(dialog).toMatch(/const loaded = loadEvents\(raw\);/);
+    expect(dialog).not.toMatch(/detectAndLoad\(raw\)/);
+  });
+});

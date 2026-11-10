@@ -224,8 +224,9 @@ function isoDate(time: string): string | null {
 /**
  * What the bar says about a GitHub Copilot session (card 605, task 12): who
  * recorded the folder and when, from its workspace.yaml; that the file is part
- * of a folder when it arrived alone; and that a lock file beside its events
- * marked it as in use when it was picked.
+ * of a folder when it arrived alone; that a lock file beside its events
+ * marked it as in use when it was picked; and that a half-written last line
+ * was left out.
  *
  * @param lang the chrome language
  * @param side what the Copilot session carried beside its events
@@ -243,6 +244,7 @@ export function copilotNote(lang: Lang, side: CopilotSide | null | undefined): s
     const n = side.live.records;
     parts.push(t(lang, n === 1 ? "imp.copilot.liveOne" : "imp.copilot.live", { n: grouped(n, lang) }));
   }
+  if (side.torn === true) parts.push(t(lang, "imp.copilot.torn"));
   return parts.length > 0 ? parts.join(" ") : null;
 }
 

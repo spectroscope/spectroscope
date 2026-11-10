@@ -16,7 +16,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, DragEvent } from "react";
 import type { RunEvent } from "../events";
 import type { ImportKind, ImportSource } from "../import/detect";
-import { detectAndLoad } from "../import/detect";
 import {
   groupPickedFiles,
   importClaudeCodeRun,
@@ -30,6 +29,7 @@ import {
   copilotSideFile,
   copilotStoreRows,
   loadCopilotFolder,
+  loadEvents,
   pickedAlone,
   pickedOnItsOwn,
   readCopilotFolder,
@@ -321,7 +321,7 @@ export function ImportDialog(props: {
   ): void => {
     setError(null);
     try {
-      const loaded = detectAndLoad(raw);
+      const loaded = loadEvents(raw);
       const { events, kind, subagent } = loaded;
       const source = picked ? pickedAlone(loaded.source) : loaded.source;
       // Tool results whose record held no output stay empty; say how many

@@ -12,6 +12,7 @@ import {
   copilotStoreRows,
   copilotWorkspace,
   loadCopilotFolder,
+  loadEvents,
   pickedAlone,
   pickedOnItsOwn,
   placeSnapshots,
@@ -616,5 +617,45 @@ describe("a folder pick that holds only events.jsonl is a folder pick (fix round
     expect(pickedOnItsOwn({ webkitRelativePath: "" })).toBe(true);
     expect(pickedOnItsOwn({})).toBe(true);
     expect(pickedOnItsOwn({ webkitRelativePath: "c13/events.jsonl" })).toBe(false);
+  });
+});
+
+// ---- fix round 1, item 5 (review M1) ------------------------------------------------------
+
+describe("a half-written last line is left out (fix round 1 item 5)", () => {
+  const lastLine = FOLDER_EVENTS.trimEnd().split("\n").pop() ?? "";
+  const torn = `${FOLDER_EVENTS.trimEnd()}\n${lastLine.slice(0, 40)}`;
+
+  it("a folder loads without it, counts only the whole records and says so", () => {
+    expect(() => detectAndLoad(torn)).toThrow("invalid JSONL");
+    const got = loadCopilotFolder({ events: torn, workspace: null, snapshots: null, live: true });
+    expect(got.kind).toBe("vscode-agent");
+    expect(got.source.copilot?.live).toEqual({ records: 12 });
+    expect(got.source.copilot?.torn).toBe(true);
+    expect(got.events).toEqual(
+      loadCopilotFolder({ events: FOLDER_EVENTS, workspace: null, snapshots: null, live: true }).events,
+    );
+  });
+
+  it("a lone file of a Copilot session loads the same way", () => {
+    const got = loadEvents(torn);
+    expect(got.source.copilot).toEqual({ sessionId: "s-folder", torn: true });
+    expect(loadEvents(FOLDER_EVENTS).source.copilot).toEqual({ sessionId: "s-folder" });
+  });
+
+  it("any other line that does not parse still fails as today", () => {
+    const lines = FOLDER_EVENTS.trimEnd().split("\n");
+    lines[3] = lines[3].slice(0, 30);
+    expect(() => loadEvents(lines.join("\n"))).toThrow("invalid JSONL");
+    // A torn middle line beside a torn last line fails too.
+    expect(() => loadEvents(`${lines.join("\n")}\n{"type":"user.mess`)).toThrow("invalid JSONL");
+    expect(() =>
+      loadCopilotFolder({ events: lines.join("\n"), workspace: null, snapshots: null, live: true }),
+    ).toThrow("invalid JSONL");
+  });
+
+  it("a torn last line of a file that is no Copilot session fails as today", () => {
+    const claudeTorn = `${CLAUDE.trimEnd()}\n{"type":"user","mess`;
+    expect(() => loadEvents(claudeTorn)).toThrow("invalid JSONL");
   });
 });

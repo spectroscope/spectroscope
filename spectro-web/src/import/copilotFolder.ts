@@ -67,6 +67,8 @@ export interface CopilotSide {
   live?: { records: number };
   /** events.jsonl was picked or dropped on its own, without its folder (item 6). */
   alone?: true;
+  /** The file's last line did not parse and was left out (fix round 1 item 5). */
+  torn?: true;
 }
 
 /** A picked file as far as this module reads it; a browser File is one. */
@@ -129,6 +131,56 @@ function groundCwd(events: readonly RunEvent[]): string | null {
     if (f.type === "ground_info" && typeof f.cwd === "string" && f.cwd !== "") return f.cwd;
   }
   return null;
+}
+
+// ---- a half-written last line ----------------------------------------------------
+
+const parses = (line: string): boolean => {
+  try {
+    JSON.parse(line);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/** The text without its last record line when that line alone does not parse, else null. */
+function withoutTornTail(text: string): string | null {
+  const lines = text.split(/\r?\n/);
+  let last = lines.length - 1;
+  while (last >= 0 && lines[last].trim() === "") last--;
+  if (last < 0 || parses(lines[last])) return null;
+  // A line before it that does not parse fails the second read, and so the whole load.
+  return lines.slice(0, last).join("\n");
+}
+
+/**
+ * The importer, with one allowance for a Copilot session: a last line that
+ * does not parse (the file was read while Copilot was writing it) is left out
+ * and the source says so, instead of failing the import (fix round 1 item 5).
+ * Any other line that does not parse, and a torn last line of any other kind
+ * of file, fail as `detectAndLoad` does.
+ *
+ * @param text the file
+ * @return what detectAndLoad returns
+ * @throws Error what detectAndLoad throws for the whole text
+ */
+export function loadEvents(text: string): ReturnType<typeof detectAndLoad> {
+  try {
+    return detectAndLoad(text);
+  } catch (whole) {
+    const cut = withoutTornTail(text);
+    if (cut === null) throw whole;
+    let loaded: ReturnType<typeof detectAndLoad>;
+    try {
+      loaded = detectAndLoad(cut);
+    } catch {
+      throw whole;
+    }
+    const side = loaded.source.copilot;
+    if (side === undefined) throw whole;
+    return { ...loaded, source: { ...loaded.source, copilot: { ...side, torn: true } } };
+  }
 }
 
 // ---- workspace.yaml ---------------------------------------------------------------
@@ -338,7 +390,7 @@ function withGround(
  * @throws Error when events.jsonl is not a session the importer reads
  */
 export function loadCopilotFolder(texts: CopilotFolderTexts): CopilotFolderLoad {
-  const loaded = detectAndLoad(texts.events);
+  const loaded = loadEvents(texts.events);
   const plain = (): CopilotFolderLoad => ({
     events: loaded.events,
     kind: loaded.kind,

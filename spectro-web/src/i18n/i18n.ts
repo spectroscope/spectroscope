@@ -478,6 +478,10 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "This is a side file of a Copilot session folder. Pick the folder, or its events.jsonl.",
   },
   "imp.copilot.pickFolder": { de: "Session-Ordner wählen …", en: "Pick the session folder …" },
+  "imp.copilot.torn": {
+    de: "Die letzte Zeile der Datei war unvollständig und wurde weggelassen.",
+    en: "The last line of the file was incomplete and was left out.",
+  },
   "imp.copilot.store": {
     de: "{n} Copilot-Sessions in diesem Ordner.",
     en: "{n} Copilot sessions in this folder.",
