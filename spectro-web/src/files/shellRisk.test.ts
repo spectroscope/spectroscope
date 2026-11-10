@@ -680,6 +680,37 @@ describe("shellRisk", () => {
       expect(one(line).host, line).toBeNull();
   });
 
+  // Fix round 5, item 1: a bracketed host gives the bracketed host or null, never `[`.
+  it("a dynamic user before a bracketed host never names the host `[`", () => {
+    for (const line of [
+      'scp a.txt "$U@[::1]"',
+      'rsync -a d/ "$U@[::1]"',
+      'git push "$U@[::1]"',
+      'npm publish --registry "$U@[::1]"',
+      'ssh "$U@[::1]?q=$X"',
+      'sftp "$U@[::1]?x"',
+    ])
+      expect(one(line).host, line).toBeNull();
+    expect(one('scp a.txt "$U@[::1]:/tmp/"').host).toBe("[::1]");
+    expect(one('ssh "$U@[::1]"').host).toBe("[::1]");
+    expect(one('ssh "u@[::1]?q=x"').host).toBe("[::1]");
+    // scp reads `u@[::1]` without a `:` after the bracket as a local file.
+    expect(net("scp a.txt u@[::1]")).toEqual([]);
+  });
+
+  // Fix round 5, item 2: a registry is a URL, so a leading dynamic piece names no host.
+  it("npm publish reads --registry as a URL", () => {
+    expect(one('npm publish --registry "$U@registry.example.com:4873/"').host).toBeNull();
+    expect(one('curl "$U@registry.example.com:4873/"').host).toBeNull();
+    expect(one("npm publish --registry https://registry.example.com/").host).toBe("registry.example.com");
+  });
+
+  // Fix round 5, item 3: the guards of destination() for a dynamic word.
+  it("a dynamic ssh or sftp destination with a scheme or without a dynamic user names no host", () => {
+    for (const line of ['ssh "ssh://$U@h.example.com"', 'sftp "sftp://$U@h/p"', 'ssh "h.example.com:$X"'])
+      expect(one(line).host, line).toBeNull();
+  });
+
   // Fix round 4, item 3: checked against /usr/bin/xxd 2025-08-24 on this Mac.
   it("xxd reads --x as -x and matches its option names by prefix", () => {
     for (const body of [

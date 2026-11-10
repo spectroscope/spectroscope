@@ -440,7 +440,7 @@ function dumpOf(name: string, args: Word[]): string | null {
 // Hosts: `scheme://[user@]host[:port]` or a remote spec `[user@]host:path`, as written.
 
 const URL_HOST = /^[A-Za-z][A-Za-z0-9+.-]*:\/\/(?:[^@/?#]*@)?(\[[^\]/]*\]|[^:/?#]*)/;
-const REMOTE_HOST = /^(?:[^@/:]*@)?(\[[^\]/]*\]|[^:/@\s]+):/;
+const REMOTE_HOST = /^(?:[^@/:]*@)?(\[[^\]/]*\]|[^:/@\s[]+):/;
 // curl, wget and httpie take a target without a scheme: `example.com/api`.
 const BARE_HOST =
   /^(?:[^@/:\s]+@)?(localhost|[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+|\[[0-9A-Fa-f:.]+\])(?::\d+)?(?:[/?#]|$)/;
@@ -460,8 +460,10 @@ const isRemote = (w: Word) => {
  * names `h`. In a URL the authority ends at `/`, `?` or `#`. A word without a
  * scheme is a URL only for a tool that takes one (`urlish`), and there it must
  * start with a literal: `$CDN` can hold `scheme://host/` itself. Otherwise it is
- * a remote spec or an ssh destination, whose user sits before the first `:` and
- * holds no `/`: in scp `h:$D@x/y` the `:` ends the host.
+ * a remote spec or an ssh destination, whose user sits before the first `:`: in
+ * scp `h:$D@x/y` the `:` ends the host. A user with a `/` is not dropped. scp
+ * reads such a word as a local path; ssh takes a `/` in the user, and there the
+ * host is null on purpose.
  */
 function hostShape(w: Word, urlish: boolean): string | null {
   const s = shapeOf(w);
@@ -516,7 +518,7 @@ function destination(w: Word | undefined): string | null {
   if (w.dynamic) {
     const s = hostShape(w, false);
     if (s === null || s === shapeOf(w) || SCHEME.test(s)) return null;
-    return /^(\[[^\]\uE002]*\]|[^:@/\s\uE002]+)(?=$|[:/])/.exec(s)?.[1] ?? null;
+    return /^(\[[^\]\uE002]*\]|[^:@/\s\uE002[]+)(?=$|[:/])/.exec(s)?.[1] ?? null;
   }
   const url = URL_HOST.exec(w.text);
   if (url) return url[1] || null;
@@ -1070,7 +1072,11 @@ const NPM: Spec = {
 function npm(args: Word[]): NetworkUse | null {
   const p = parse(args, NPM);
   if (p.operands[0]?.text !== "publish") return null;
-  return networkUse("npm publish", firstHost(values(p, "--registry")), false);
+  // A registry is a URL: a value that starts with a dynamic piece names no host.
+  const host = values(p, "--registry")
+    .map((w) => hostOf(w, true))
+    .find((h) => h !== null);
+  return networkUse("npm publish", host ?? null, false);
 }
 
 const NETWORK = new Map<string, NetRule>([
