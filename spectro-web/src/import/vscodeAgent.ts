@@ -10,6 +10,7 @@
 //   tool.execution_complete  -> tool_result
 //   subagent.started         -> agent_spawn + the child's run_start
 //   subagent.completed       -> the child's run_end
+//   session.usage_record     -> usage
 //   session.start            -> ground_info {cwd} (the GitHub Copilot CLI's own
 //                               file, card 605; import-only, as in claudeCode.ts)
 // so a recorded Copilot session replays through the same reducers as a
@@ -35,6 +36,17 @@
 // turns; its run ends at subagent.completed, the child's own last record. Its
 // user.message is that same task (28 of 28 in the store) and gives no frame,
 // so it never reads as a prompt somebody typed.
+//
+// USAGE (card 605, task 10): the CLI store writes session.usage_record per
+// call, the IDE export none. Its data.usage.inputTokens counts the cache reads
+// and writes inside it: inputTokens >= cacheReadTokens + cacheWriteTokens on
+// 232 of 232 records, and on all 204 with a cache write the rest is smaller
+// than that write (census, 2026-11-10). The wire's inputTokens is the uncached
+// remainder, so the importer takes both out: inputTokens - cacheReadTokens -
+// cacheWriteTokens, never below zero; cacheReadTokens and, from
+// cacheWriteTokens, cacheCreationTokens ride beside it when the record names
+// them. aiCredits stays out: spectro-core's Copilot provider computes it from
+// copilotUsage.totalNanoAiu, no field of that name and meaning exists here.
 //
 // TOOL OUTPUT (card 605, task 10): tool.execution_complete records what the
 // tool returned in data.result.content (95 of 103 completions in the IDE
@@ -80,6 +92,8 @@ interface VsRecord {
     newModel?: unknown;
     /** subagent.started: the child's model. */
     model?: unknown;
+    /** session.usage_record: one call's bill. */
+    usage?: unknown;
   };
   id?: string;
   timestamp?: string;
@@ -103,6 +117,13 @@ const MAIN = "main";
 /** The lane of a record: its agentId when that names a child, else main. */
 const laneOf = (r: VsRecord): string =>
   typeof r.agentId === "string" && r.agentId !== "" && r.agentId !== MAIN ? r.agentId : MAIN;
+
+/** A count of a usage record: a finite number not below zero, else null. */
+function count(o: unknown, key: string): number | null {
+  if (typeof o !== "object" || o === null) return null;
+  const v = (o as Record<string, unknown>)[key];
+  return typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : null;
+}
 
 /** A model name: a non-empty string other than "auto", else null. */
 const modelName = (v: unknown): string | null =>
@@ -362,6 +383,26 @@ export function vscodeAgentWithOrigin(records: unknown[], base = 1_783_500_000_0
           prompt: task,
           provider: "copilot",
           ...(childModel === null ? {} : { model: childModel }),
+          ts,
+        });
+        break;
+      }
+
+      case "session.usage_record": {
+        const u = d?.usage;
+        const input = count(u, "inputTokens");
+        const output = count(u, "outputTokens");
+        if (input === null && output === null) break;
+        if (!started) openRun("", ts, i);
+        const read = count(u, "cacheReadTokens");
+        const written = count(u, "cacheWriteTokens");
+        out.push({
+          type: "usage",
+          agentId,
+          inputTokens: Math.max(0, (input ?? 0) - (read ?? 0) - (written ?? 0)),
+          outputTokens: output ?? 0,
+          ...(read === null ? {} : { cacheReadTokens: read }),
+          ...(written === null ? {} : { cacheCreationTokens: written }),
           ts,
         });
         break;

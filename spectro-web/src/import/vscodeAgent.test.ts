@@ -442,8 +442,8 @@ describe("a Copilot child works on its own lane (card 605)", () => {
       expect(f.agentId, `${String(f.type)} of ${records[origin[i]].id}`).toBe(lane);
       if (lane !== "main") child++;
     });
-    // The spawn and the child's run, its turn, the view and its result, its text.
-    expect(child).toBe(6);
+    // The spawn and the child's run, its turn, its usage, the view and its result, its text.
+    expect(child).toBe(7);
   });
 
   it("subagent.started gives the spawn and the child's own run, named by the parent's task call", () => {
@@ -635,5 +635,61 @@ describe("a Copilot run names the model in force for it (card 605)", () => {
     expect(spawn("auto").model).toBeUndefined();
     expect(spawn("").model).toBeUndefined();
     expect(spawn(7).model).toBeUndefined();
+  });
+});
+
+// Task 10 item 5: the CLI store writes session.usage_record per call. Its
+// inputTokens counts the cache reads and writes inside it (232 of 232 records
+// hold inputTokens >= cacheReadTokens + cacheWriteTokens); the wire's
+// inputTokens is the uncached remainder.
+describe("a Copilot usage record gives a usage frame on its lane (card 605)", () => {
+  const usage = (events: readonly unknown[]) =>
+    (events as Record<string, unknown>[]).filter((e) => e.type === "usage");
+  const one = (u: unknown) =>
+    usage(vscodeAgentToRunEvents([{ type: "session.usage_record", data: { usage: u } }]));
+
+  it("takes the four counts out of the CLI's records, the cache taken out of the input", () => {
+    expect(usage(parseVscodeAgentExport(copilotCli))).toEqual([
+      {
+        type: "usage",
+        agentId: "main",
+        inputTokens: 500,
+        outputTokens: 300,
+        cacheReadTokens: 9000,
+        cacheCreationTokens: 2500,
+        ts: Date.parse("2026-11-10T09:00:03.500Z"),
+      },
+      {
+        type: "usage",
+        agentId: "a-lex",
+        inputTokens: 400,
+        outputTokens: 120,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 3600,
+        ts: Date.parse("2026-11-10T09:00:25.500Z"),
+      },
+    ]);
+  });
+
+  it("names a cache count only when the record does, and never goes below zero", () => {
+    expect(one({ inputTokens: 70, outputTokens: 5 })).toMatchObject([{ inputTokens: 70, outputTokens: 5 }]);
+    expect(Object.keys(one({ inputTokens: 70, outputTokens: 5 })[0])).not.toContain("cacheReadTokens");
+    expect(one({ inputTokens: 10, outputTokens: 1, cacheReadTokens: 8, cacheWriteTokens: 9 })).toMatchObject([
+      { inputTokens: 0, cacheReadTokens: 8, cacheCreationTokens: 9 },
+    ]);
+    expect(one({ outputTokens: 4 })).toMatchObject([{ inputTokens: 0, outputTokens: 4 }]);
+  });
+
+  it("gives no frame for a record without token counts, and never an aiCredits", () => {
+    for (const u of [
+      undefined,
+      {},
+      { inputTokens: "12" },
+      "usage",
+      { inputTokens: -1, outputTokens: Number.NaN },
+    ]) {
+      expect(one(u), JSON.stringify(u)).toEqual([]);
+    }
+    expect(usage(parseVscodeAgentExport(copilotCli)).some((e) => "aiCredits" in e)).toBe(false);
   });
 });
