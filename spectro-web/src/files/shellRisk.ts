@@ -34,43 +34,71 @@ function readLine(line: string, cwd: string | null, out: ShellRisk, depth: numbe
   if (depth > MAX_DEPTH) return;
   for (const item of riskSegments(line)) {
     if (item === "(" || item === ")") continue;
-    // A substitution runs before the command that holds it.
-    for (const w of [...item.words, ...item.redirects.flatMap((r) => (r.target ? [r.target] : []))])
-      for (const body of subsOf(w)) readLine(body, cwd, out, depth + 1);
+    readSubs(item, cwd, out, depth); // a substitution runs before the command that holds it
     run(item.words, item, cwd, out, depth);
   }
 }
 
-// Substitutions. The tokenizer drops the text of `$(...)`, backticks and `<(...)`
-// and only marks the word dynamic. riskSegments swaps each one for a literal
-// marker first, with the tokenizer's own rules for quotes, comments, escapes and
-// heredocs, tokenizes the masked line and hangs the bodies back on their words.
+/** Reads the substitutions of a segment as lines; an arithmetic body only for the substitutions in it. */
+function readSubs(item: Segment, cwd: string | null, out: ShellRisk, depth: number): void {
+  for (const w of wordsOf(item)) {
+    for (const body of subsOf(w)) readLine(body, cwd, out, depth + 1);
+    for (const body of arithOf(w)) {
+      if (depth + 1 > MAX_DEPTH) continue;
+      for (const inner of riskSegments(body))
+        if (typeof inner !== "string") readSubs(inner, cwd, out, depth + 1);
+    }
+  }
+}
 
-/** A word with the substitutions it holds; `vars` is true when it also holds a variable. */
-type SWord = Word & { subs?: string[]; vars?: boolean };
+const wordsOf = (s: Segment): Word[] => [
+  ...s.words,
+  ...s.redirects.flatMap((r) => (r.target ? [r.target] : [])),
+];
+
+// Substitutions. The tokenizer drops the text of `$(...)`, backticks, `<(...)`
+// and every `$` form and only marks the word dynamic. riskSegments swaps each one
+// for a literal marker first, with the tokenizer's own rules for quotes, comments,
+// escapes and heredocs, tokenizes the masked line and hangs the bodies back on
+// their words, with the literal text before the first dynamic piece.
+
+/**
+ * A word with what made it dynamic: `subs` are the bodies of its command
+ * substitutions, `arith` of its `$((...))`, `vars` is true for a variable or
+ * parameter, `prefix` is the literal text before the first dynamic piece.
+ */
+type SWord = Word & { subs?: string[]; arith?: string[]; vars?: boolean; prefix?: string };
 const subsOf = (w: Word): string[] => (w as SWord).subs ?? [];
+const arithOf = (w: Word): string[] => (w as SWord).arith ?? [];
 const varsOf = (w: Word): boolean => (w as SWord).vars ?? w.dynamic;
+const prefixOf = (w: Word): string | null => (w.dynamic ? ((w as SWord).prefix ?? null) : w.text);
 
-const OPEN = "\uE000";
+const OPEN = "\uE000"; // a substitution: OPEN, its index, CLOSE
 const CLOSE = "\uE001";
-const MARK = /\uE000(\d+)\uE001/g;
-const HAS_SUBST = /`|\$\(|[<>]\(/;
+const VAR = "\uE002"; // a variable or parameter
+const MARK = /\uE000(\d+)\uE001|\uE002/g;
+const HAS_DYNAMIC = /[`$]|[<>]\(/;
 const META = " \t\r\n;&|()<>";
 const OPERATORS = ["<<<", "<<-", "&>>", ">>", "<<", "<>", "<&", ">&", ">|", "&>"];
 
-/** segments() with the body of every substitution kept as `subs` on its word. */
+/** segments() with what made each word dynamic kept on it (see SWord). */
 export function riskSegments(command: string): (Segment | "(" | ")")[] {
-  if (!HAS_SUBST.test(command) || command.includes(OPEN) || command.includes(CLOSE)) return segments(command);
+  if (!HAS_DYNAMIC.test(command) || /[\uE000-\uE002]/.test(command)) return segments(command);
   const docs = segments(command).flatMap((s) => (typeof s === "string" ? [] : s.docs));
-  const bodies: string[] = [];
+  const bodies: { text: string; arith: boolean }[] = [];
   const unmask = (w: Word): Word => {
-    if (!w.text.includes(OPEN)) return w;
+    const first = w.text.search(/[\uE000\uE002]/);
+    if (first < 0) return w;
     const subs: string[] = [];
-    const text = w.text.replace(MARK, (_m, n: string) => {
-      subs.push(bodies[Number(n)]);
+    const arith: string[] = [];
+    let vars = w.dynamic;
+    const text = w.text.replace(MARK, (m, n?: string) => {
+      if (m === VAR) vars = true;
+      else if (bodies[Number(n)].arith) arith.push(bodies[Number(n)].text);
+      else subs.push(bodies[Number(n)].text);
       return "";
     });
-    const out: SWord = { ...w, text, dynamic: true, vars: w.dynamic, subs };
+    const out: SWord = { ...w, text, dynamic: true, vars, subs, arith, prefix: w.text.slice(0, first) };
     return out;
   };
   return segments(mask(command, docs, bodies)).map((s) =>
@@ -84,7 +112,7 @@ export function riskSegments(command: string): (Segment | "(" | ")")[] {
   );
 }
 
-function mask(src: string, docs: Heredoc[], bodies: string[]): string {
+function mask(src: string, docs: Heredoc[], bodies: { text: string; arith: boolean }[]): string {
   let out = "";
   let i = 0;
   let pending = 0; // heredocs whose body starts after the next newline
@@ -94,24 +122,29 @@ function mask(src: string, docs: Heredoc[], bodies: string[]): string {
     out += src.slice(i, end);
     i = end;
   };
-  const sub = (end: number, body: string) => {
+  const sub = (end: number, body: string, arith = false) => {
     if (delimiter) return copy(end);
-    out += OPEN + String(bodies.push(body) - 1) + CLOSE;
+    out += OPEN + String(bodies.push({ text: body, arith }) - 1) + CLOSE;
+    i = end;
+  };
+  const variable = (end: number) => {
+    if (delimiter) return copy(end);
+    out += VAR;
     i = end;
   };
   const dollar = (inDouble: boolean) => {
     const n = src[i + 1];
-    // `$((...))` is masked too: its body holds no command, but it can hold a substitution.
     if (n === "(") {
+      // `$((...))` is arithmetic: kept apart, never read as a command line.
       const b = balanced(src, i + 1);
-      sub(b.end, src.slice(i + 2, b.closed ? b.end - 1 : src.length));
-    } else if (n === "{") copy(balanced(src, i + 1).end);
+      sub(b.end, src.slice(i + 2, b.closed ? b.end - 1 : src.length), src[i + 2] === "(");
+    } else if (n === "{") variable(balanced(src, i + 1).end);
     else if (/[A-Za-z_]/.test(n ?? "")) {
       let j = i + 2;
       while (j < src.length && /\w/.test(src[j])) j++;
-      copy(j);
+      variable(j);
     } else if (/[0-9@*#?$!-]/.test(n ?? ""))
-      copy(i + 2); // `$$(` is `$$` and a `(`
+      variable(i + 2); // `$$(` is `$$` and a `(`
     else if (!inDouble && n === "'") {
       let j = i + 2;
       while (j < src.length && src[j] !== "'") j += src[j] === "\\" ? 2 : 1;
@@ -250,7 +283,10 @@ function run(words: Word[], seg: Segment, cwd: string | null, out: ShellRisk, de
   const dump = dumpOf(name, args);
   if (dump !== null) dumped(out, dump);
   const found = NETWORK.get(name)?.(args, seg, cwd);
-  if (found) out.network.push(found);
+  if (found) {
+    subSends(found, name, args, seg, cwd);
+    out.network.push(found);
+  }
 }
 
 function dumped(out: ShellRisk, what: string): void {
@@ -266,12 +302,20 @@ interface Spec {
   skip?: number; // wrappers: operands to drop before the command (the duration of `timeout`)
 }
 interface Parsed {
-  options: { name: string; value: Word | null }[];
+  // `from` is the word that holds the option; `inline` when the value sits in it too (`--name=value`).
+  options: { name: string; value: Word | null; from: Word; inline: boolean }[];
   operands: Word[];
 }
 
-// The value part of `--name=value` or `-dvalue`, keeping the word's substitutions.
-const part = (w: Word, text: string): Word => ({ ...w, text });
+// The value part of `--name=value` or `-dvalue`, keeping the word's substitutions
+// and the part of its literal prefix that falls into the value.
+const part = (w: Word, text: string): Word => {
+  const prefix = (w as SWord).prefix;
+  const cut = w.text.length - text.length;
+  const out: SWord = { ...w, text };
+  if (prefix !== undefined) out.prefix = prefix.length >= cut ? prefix.slice(cut) : "";
+  return out;
+};
 
 function parse(args: Word[], spec: Spec): Parsed {
   const options: Parsed["options"] = [];
@@ -294,15 +338,17 @@ function parse(args: Word[], spec: Spec): Parsed {
       const eq = t.indexOf("=");
       const name = eq < 0 ? t : t.slice(0, eq);
       const takes = spec.long?.includes(name.slice(2)) ?? false;
-      options.push({ name, value: eq >= 0 ? part(a, t.slice(eq + 1)) : takes ? (args[++k] ?? null) : null });
+      const value = eq >= 0 ? part(a, t.slice(eq + 1)) : takes ? (args[++k] ?? null) : null;
+      options.push({ name, value, from: a, inline: eq >= 0 });
     } else {
       for (let q = 1; q < t.length; q++) {
         if (!spec.short?.includes(t[q])) {
-          options.push({ name: "-" + t[q], value: null });
+          options.push({ name: "-" + t[q], value: null, from: a, inline: false });
           continue;
         }
-        const value = q + 1 < t.length ? part(a, t.slice(q + 1)) : (args[++k] ?? null);
-        options.push({ name: "-" + t[q], value });
+        const inline = q + 1 < t.length;
+        const value = inline ? part(a, t.slice(q + 1)) : (args[++k] ?? null);
+        options.push({ name: "-" + t[q], value, from: a, inline });
         break;
       }
     }
@@ -359,11 +405,17 @@ function dumpOf(name: string, args: Word[]): string | null {
     const [sub] = ops({ short: "p" });
     return sub !== undefined && SECURITY.has(sub) ? `security ${sub}` : null;
   }
-  if (name === "declare") {
+  if (name === "declare" || name === "typeset") {
     if (!args.every((a) => /^-[px]+$/.test(a.text))) return null;
-    return ["declare", ...args.map((a) => a.text)].join(" ");
+    return [name, ...args.map((a) => a.text)].join(" ");
   }
-  if (name === "compgen") return has(parse(args, { short: "AGWXPSFCo" }), "-v") ? "compgen -v" : null;
+  if (name === "compgen") {
+    const p = parse(args, { short: "AGWXPSFCo" });
+    if (has(p, "-v")) return "compgen -v";
+    if (has(p, "-e")) return "compgen -e";
+    const action = values(p, "-A").find((w) => w.text === "variable" || w.text === "export");
+    return action ? `compgen -A ${action.text}` : null;
+  }
   const [a, b] = ops(name === "aws" ? AWS : name === "op" ? OP : {});
   if (name === "gh" && a === "auth" && b === "token") return "gh auth token";
   if (name === "aws" && a === "configure" && (b === "get" || b === "export-credentials"))
@@ -382,12 +434,20 @@ const REMOTE_HOST = /^(?:[^@/:]*@)?(\[[^\]/]*\]|[^:/@\s]+):/;
 const BARE_HOST =
   /^(?:[^@/:\s]+@)?(localhost|[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+|\[[0-9A-Fa-f:.]+\])(?::\d+)?(?:[/?#]|$)/;
 
-const isRemote = (w: Word) => !w.dynamic && (URL_HOST.test(w.text) || REMOTE_HOST.test(w.text));
+// A dynamic word is read up to its first dynamic piece (prefixOf).
+const isRemote = (w: Word) => {
+  const t = prefixOf(w);
+  return t !== null && (URL_HOST.test(t) || REMOTE_HOST.test(t));
+};
 
 function hostOf(w: Word | null | undefined, bare = false): string | null {
-  if (!w || w.dynamic) return null;
-  const m = URL_HOST.exec(w.text) ?? REMOTE_HOST.exec(w.text) ?? (bare ? BARE_HOST.exec(w.text) : null);
-  return m && m[1] !== "" ? m[1] : null;
+  const t = w ? prefixOf(w) : null;
+  if (t === null) return null;
+  const m = URL_HOST.exec(t) ?? REMOTE_HOST.exec(t) ?? (bare ? BARE_HOST.exec(t) : null);
+  if (!m || m[1] === "") return null;
+  // The host must end before the first dynamic piece: `https://h$X` names no host.
+  if (w?.dynamic && m[0].length === t.length && !/[:/?#]$/.test(m[0])) return null;
+  return m[1];
 }
 
 /** The host of the first word that names one; with `bare`, a later pass takes a target without a scheme. */
@@ -420,37 +480,121 @@ function networkUse(tool: string, host: string | null, sendsNamed = true): Netwo
   return { tool, host, sends: [], sendsNamed };
 }
 
+const addSend = (u: NetworkUse, path: string) => {
+  if (!u.sends.includes(path)) u.sends.push(path);
+};
+
 /** Adds a file the command sends; a word the line does not spell makes the use unnamed. */
 function send(u: NetworkUse, w: Word, cwd: string | null, text = w.text): void {
   if (w.dynamic) u.sendsNamed = false;
-  else if (text !== "" && text !== "-") {
-    const path = resolvePath(text, cwd);
-    if (!u.sends.includes(path)) u.sends.push(path);
-  }
+  else if (text !== "" && text !== "-") addSend(u, resolvePath(text, cwd));
 }
 
 /**
- * A value the command sends as data. The files its substitutions read are sent;
- * a variable, or a substitution that reads no file the line names, leaves the
- * use unnamed (a value the line does not spell can be `@file`).
+ * A value the command sends as data (its files are sent by subSends). A
+ * variable, or a substitution that reads no file the line names, leaves the use
+ * unnamed: a value the line does not spell can be `@file`. Arithmetic is a
+ * number and changes nothing.
  */
 function data(u: NetworkUse, w: Word, cwd: string | null): void {
   if (!w.dynamic) return;
   if (varsOf(w)) u.sendsNamed = false;
   for (const body of subsOf(w)) {
-    const r = shellTouches(body, cwd);
-    const reads = r.touches.filter((t) => t.kind === "read" && !t.folder && t.path !== r.script);
-    if (reads.length === 0 || r.script !== null || r.inline) u.sendsNamed = false;
-    for (const t of reads) if (!u.sends.includes(t.path)) u.sends.push(t.path);
+    const r = subFiles(body, cwd, 1);
+    if (r.files.length === 0 || r.unnamed) u.sendsNamed = false;
   }
 }
 
-/** A command that sends its standard input: a `<` file is sent, a pipe carries data the line does not name. */
+/**
+ * A command that sends its standard input: a `<` file is sent, a here-string is
+ * a data value, a pipe carries data the line does not name.
+ */
 function sendStdin(u: NetworkUse, seg: Segment, cwd: string | null): void {
-  for (const r of seg.redirects)
-    if (r.op === "<" && (r.fd === null || r.fd === 0) && r.target) send(u, r.target, cwd);
+  for (const r of seg.redirects) {
+    if (!r.target || !(r.fd === null || r.fd === 0)) continue;
+    if (r.op === "<") send(u, r.target, cwd);
+    else if (r.op === "<<<") data(u, r.target, cwd);
+  }
   if (seg.piped) u.sendsNamed = false;
 }
+
+/**
+ * Review round 2, rule 1: in a network command the files a substitution reads
+ * are sent, wherever it stands (an operand, any option value, a here-string),
+ * except in an option that names where the output goes.
+ */
+function subSends(u: NetworkUse, name: string, args: Word[], seg: Segment, cwd: string | null): void {
+  const output = OUTPUTS.get(name);
+  const skip = new Set<Word>();
+  if (output) {
+    for (const o of parse(args, output.spec).options) {
+      if (!o.value || !output.is(o.name)) continue;
+      skip.add(o.inline ? o.from : o.value);
+    }
+  }
+  const strings = seg.redirects.flatMap((r) => (r.op === "<<<" && r.target ? [r.target] : []));
+  for (const w of [...args, ...strings]) {
+    if (skip.has(w)) continue;
+    for (const body of subsOf(w)) {
+      const r = subFiles(body, cwd, 1);
+      for (const f of r.files) addSend(u, f);
+      if (r.unnamed) u.sendsNamed = false;
+    }
+  }
+}
+
+interface SubRead {
+  files: string[];
+  unnamed: boolean;
+}
+
+/**
+ * What a substitution body reads: the files shell.ts sees it read, those of the
+ * content printers below and those of nested substitutions. A dynamic word, a
+ * nested substitution or a script in it makes the use unnamed (round 2, rule 3).
+ */
+function subFiles(body: string, cwd: string | null, depth: number): SubRead {
+  if (depth > MAX_DEPTH) return { files: [], unnamed: true };
+  const res: SubRead = { files: [], unnamed: false };
+  const add = (p: string) => {
+    if (!res.files.includes(p)) res.files.push(p);
+  };
+  const r = shellTouches(body, cwd);
+  if (r.script !== null || r.inline) res.unnamed = true;
+  for (const t of r.touches) if (t.kind === "read" && !t.folder && t.path !== r.script) add(t.path);
+  for (const item of riskSegments(body)) {
+    if (typeof item === "string") continue;
+    for (const w of wordsOf(item)) {
+      if (varsOf(w) || subsOf(w).length > 0) res.unnamed = true;
+      for (const nested of subsOf(w)) {
+        const n = subFiles(nested, cwd, depth + 1);
+        n.files.forEach(add);
+        if (n.unnamed) res.unnamed = true;
+      }
+    }
+    const [head, ...args] = commandWords(item.words);
+    const printer = head && !head.dynamic ? PRINTERS.get(commandName(head.text) ?? "") : undefined;
+    for (const w of printer?.(args) ?? [])
+      if (!w.dynamic && w.text !== "" && !w.text.startsWith("-")) add(resolvePath(w.text, cwd));
+  }
+  return res;
+}
+
+// Commands that print a file's bytes, encoded or not, and that shell.ts does not read.
+const PRINTERS = new Map<string, (args: Word[]) => Word[]>([
+  [
+    "base64",
+    (a) => {
+      // macOS reads `-i file`; GNU takes `-i` as a flag and the file as an operand.
+      const p = parse(a, { short: "bwio", long: ["break", "wrap", "input", "output"] });
+      return [...values(p, "-i", "--input"), ...p.operands];
+    },
+  ],
+  ["xxd", (a) => parse(a, { short: "cgl" }).operands.slice(0, 1)], // the second operand is the output
+  ["od", (a) => parse(a, { short: "AjNt" }).operands],
+  ["hexdump", (a) => parse(a, { short: "efns" }).operands],
+  ["strings", (a) => parse(a, { short: "nte" }).operands],
+]);
 
 const CURL: Spec = {
   short: "AbcCdDeEFHKmoPQrTtuUwxXyYz",
@@ -556,6 +700,10 @@ function curl(args: Word[], seg: Segment, cwd: string | null): NetworkUse {
       const m = /^[^=]*=[@<]([^;]*)/s.exec(w.text);
       if (m) file(w, m[1]);
       else data(u, w, cwd);
+    } else if ((name === "-H" || name === "--header") && w.text.startsWith("@")) file(w, w.text.slice(1));
+    else if (name === "--url-query") {
+      const m = /^[^=@]*@(.*)$/s.exec(w.text); // `@file` and `name@file`, as --data-urlencode
+      if (m) file(w, m[1]);
     }
   }
   if (stdin) sendStdin(u, seg, cwd);
@@ -617,6 +765,14 @@ function wget(args: Word[], _seg: Segment, cwd: string | null): NetworkUse {
   const u = networkUse("wget", firstHost(p.operands, true));
   for (const w of values(p, "--post-file", "--body-file")) send(u, w, cwd);
   if (has(p, "-i", "--input-file")) u.sendsNamed = false; // the requests are named in a file
+  if (has(p, "--config")) u.sendsNamed = false; // a wgetrc can name uploads too
+  // `-e` runs a wgetrc command; wgetrc ignores case, `-` and `_` in its names.
+  for (const w of values(p, "-e", "--execute")) {
+    const m = /^\s*([A-Za-z_-]+)\s*=\s*(.*?)\s*$/s.exec(w.text);
+    const command = m?.[1].toLowerCase().replace(/[-_]/g, "");
+    if (m && (command === "postfile" || command === "bodyfile")) send(u, part(w, m[2]), cwd);
+    else u.sendsNamed = false;
+  }
   return u;
 }
 
@@ -652,17 +808,20 @@ const HTTPIE: Spec = {
 // httpie request items that read a file: `field@file`, `field=@file`, `field:=@file`, `@file`.
 const HTTPIE_FILE = /^[^=:@]*(?::=@|=@|@)(.+)$/s;
 
-function httpie(args: Word[], seg: Segment, cwd: string | null): NetworkUse {
-  const p = parse(args, HTTPIE);
-  const ops = p.operands;
-  const method = ops.length > 1 && !ops[0].dynamic && /^[A-Za-z]+$/.test(ops[0].text) ? 1 : 0;
-  const u = networkUse("http", firstHost(ops.slice(method, method + 1), true));
-  for (const w of ops.slice(method + 1)) {
-    const m = HTTPIE_FILE.exec(w.text);
-    if (m) send(u, w, cwd, m[1]);
-  }
-  if (!has(p, "-I", "--ignore-stdin")) sendStdin(u, seg, cwd);
-  return u;
+/** httpie, as `http` or `https`. */
+function httpie(tool: string): NetRule {
+  return (args, seg, cwd) => {
+    const p = parse(args, HTTPIE);
+    const ops = p.operands;
+    const method = ops.length > 1 && !ops[0].dynamic && /^[A-Za-z]+$/.test(ops[0].text) ? 1 : 0;
+    const u = networkUse(tool, firstHost(ops.slice(method, method + 1), true));
+    for (const w of ops.slice(method + 1)) {
+      const m = HTTPIE_FILE.exec(w.text);
+      if (m) send(u, w, cwd, m[1]);
+    }
+    if (!has(p, "-I", "--ignore-stdin")) sendStdin(u, seg, cwd);
+    return u;
+  };
 }
 
 const SCP: Spec = { short: "cDFiJloPSX" };
@@ -779,6 +938,15 @@ function nc(tool: string): NetRule {
   };
 }
 
+const TELNET: Spec = { short: "beklnSX" };
+
+function telnet(args: Word[], seg: Segment, cwd: string | null): NetworkUse {
+  const target = parse(args, TELNET).operands[0];
+  const u = networkUse("telnet", !target || target.dynamic ? null : target.text);
+  sendStdin(u, seg, cwd);
+  return u;
+}
+
 const GIT: Spec = {
   short: "Cc",
   long: ["git-dir", "work-tree", "namespace", "config-env"],
@@ -808,13 +976,35 @@ function npm(args: Word[]): NetworkUse | null {
 const NETWORK = new Map<string, NetRule>([
   ["curl", curl],
   ["wget", wget],
-  ["http", httpie],
+  ["http", httpie("http")],
+  ["https", httpie("https")],
   ["scp", copy("scp", SCP)],
   ["rsync", copy("rsync", RSYNC)],
   ["sftp", sftp],
   ["ssh", ssh],
   ["nc", nc("nc")],
   ["ncat", nc("ncat")],
+  ["telnet", telnet],
   ["git", git],
   ["npm", npm],
+]);
+
+// Options that name where the output goes; a substitution there sends nothing (subSends).
+const CURL_OUT = new Set(["-o", "--output", "-O", "-D", "--dump-header", "-c", "--cookie-jar", "--stderr"]);
+const WGET_OUT = new Set([
+  "-O",
+  "--output-document",
+  "-o",
+  "--output-file",
+  "-a",
+  "--append-output",
+  "-P",
+  "--directory-prefix",
+]);
+const HTTPIE_OUT = new Set(["-o", "--output"]);
+const OUTPUTS = new Map<string, { spec: Spec; is: (name: string) => boolean }>([
+  ["curl", { spec: CURL, is: (n) => CURL_OUT.has(n) || n.startsWith("--trace") }],
+  ["wget", { spec: WGET, is: (n) => WGET_OUT.has(n) }],
+  ["http", { spec: HTTPIE, is: (n) => HTTPIE_OUT.has(n) }],
+  ["https", { spec: HTTPIE, is: (n) => HTTPIE_OUT.has(n) }],
 ]);
