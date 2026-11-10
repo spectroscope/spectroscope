@@ -5,12 +5,16 @@
 import { describe, expect, it } from "vitest";
 import {
   CREDENTIAL_RULES,
+  INPUT_RULES,
+  KEY_BODY_RULE,
   PASSWORD_RULE,
   REDACTION_RULES,
   countPersonalData,
   findCredentials,
+  innerKeyLines,
   isPlaceholder,
   keyBlockHits,
+  keyBlockKeys,
   keyBlockLines,
   maskCredentials,
   ruleMatches,
@@ -33,6 +37,42 @@ describe("the rule tables", () => {
     expect(CREDENTIAL_RULES).toHaveLength(11);
     expect(CREDENTIAL_RULES[10]).toBe(PASSWORD_RULE);
     for (const rule of [...REDACTION_RULES, PASSWORD_RULE]) expect(rule.pattern.flags).not.toContain("g");
+  });
+
+  it("key-body is a rule of the report, read on inputs only and not in the twin", () => {
+    expect(INPUT_RULES.map((r) => r.name)).toEqual([...CREDENTIAL_RULES.map((r) => r.name), "key-body"]);
+    expect(INPUT_RULES[INPUT_RULES.length - 1]).toBe(KEY_BODY_RULE);
+    expect(KEY_BODY_RULE.pattern.flags).not.toContain("g");
+    expect(REDACTION_RULES.map((r) => r.name)).not.toContain("key-body");
+    expect(CREDENTIAL_RULES.map((r) => r.name)).not.toContain("key-body");
+  });
+});
+
+describe("the key-body rule", () => {
+  const half = ["MIIEowIBAAKCAQEAx9Ym4Qz7Rt2Lp8Wk", "Nb3Vc6Hs1Jd5Gf0AhkiG9w0BAQEFAASC"];
+  const line = half.join("");
+  const asInput = (text: string) =>
+    findCredentials(text, [], INPUT_RULES).hits.map((h) => [h.rule, h.secret]);
+
+  it("a long mixed-case base64 run in an input is key material", () => {
+    expect(asInput(`echo "${line}" >> k.pem`)).toEqual([["key-body", line]]);
+    expect(asInput(`grep -c ${line} k.pem`)).toEqual([["key-body", line]]);
+    expect(asInput(`KEY=${line}==`)).toEqual([["key-body", `${line}==`]]);
+    // Forty characters is the shortest.
+    expect(asInput(`x ${line.slice(0, 40)} y`)).toEqual([["key-body", line.slice(0, 40)]]);
+    expect(asInput(`x ${line.slice(0, 39)} y`)).toEqual([]);
+  });
+
+  it("a hex hash, one-case runs and earlier hits are no key body", () => {
+    const sha = "9fceb02d0ae598e95dc970b74767f19372d61af8";
+    expect(asInput(`git show ${sha}`)).toEqual([]);
+    expect(asInput(`git show ${sha.toUpperCase()}`)).toEqual([]);
+    expect(asInput(`x ${"abcdefgh".repeat(6)} y`)).toEqual([]);
+    // A run inside a hit of an earlier rule stays that hit.
+    const pat = "ghp_" + "ABCDEFGHIJKLMNOPQRSTUVWXYZ" + "abcdefghijklmnop0123";
+    expect(asInput(`push ${pat}`)).toEqual([["github-pat", pat]]);
+    // Results, prompts and the mask use CREDENTIAL_RULES, without key-body.
+    expect(findCredentials(`echo "${line}"`).hits).toEqual([]);
   });
 });
 
@@ -399,6 +439,48 @@ describe("private keys", () => {
       const numbered = [head("RSA "), ...lines].map((l, i) => `${String(i + 1).padStart(6)}${mark}${l}`);
       expect(bodyLines(numbered.join("\n")), JSON.stringify(mark)).toEqual(lines);
     }
+  });
+
+  it("every listing's line numbers are taken off a body line", () => {
+    const lines = ["MIIEowIBAAKCAQEAx9Ym4Qz7Rt2Lp8Wk", "Nb3Vc6Hs1Jd5Gf0AhkiG9w0BAQEFAASC"];
+    const listed: [string, (n: number) => string][] = [
+      ["grep -rn", (n) => `id_rsa:${n}:`],
+      ["grep -n -A", (n) => (n === 1 ? "1:" : `${n}-`)],
+      ["blanks before a bar", (n) => `   ${n} | `],
+      ["bat", (n) => `   ${n}   │ `],
+      ["less -N", (n) => `${String(n).padStart(7)} `],
+    ];
+    for (const [name, mark] of listed) {
+      const text = [head("RSA "), ...lines].map((l, i) => mark(i + 1) + l).join("\n");
+      expect(keyBlockLines(findCredentials(text).hits[0]), name).toEqual(lines);
+    }
+    // A header field whose value starts with a number is still a field, not a numbered line.
+    const field = `${head("RSA ")}\nComment: 2048-bit key\n\n${lines.join("\n")}`;
+    expect(keyBlockLines(findCredentials(field).hits[0])).toEqual(lines);
+  });
+
+  it("what a nest of open blocks holds is found in one flat scan", () => {
+    // `head -n 2` of six keys and an env file: each header opens a block to the end.
+    const line = (i: number) => `MIIEowIBAAKCAQEAx9Ym4Qz7Rt2Kq${i}Wz${i}`;
+    const keys = Array.from(
+      { length: 6 },
+      (_, i) => `==> id_${i + 1} <==\n${head("RSA ")}\n${line(i + 1)}\n\n`,
+    );
+    const url = "postgres://app:" + "Hx7pLq2vZw" + "@db.internal/app";
+    const [block, ...more] = findCredentials(`${keys.join("")}==> prod.env <==\nDATABASE_URL=${url}\n`).hits;
+    expect(more).toEqual([]);
+    // Headers inside the block take no room in that scan.
+    expect(keyBlockHits(block).map((h) => h.rule)).toEqual(["url-userinfo"]);
+    // One level of keys at a time, and the body lines of every header below its own.
+    const inner = keyBlockKeys(block);
+    expect(inner.map((h) => [h.rule, h.start])).toEqual([
+      ["private-key", block.match.indexOf(head("RSA "), 1) + block.start],
+    ]);
+    expect(keyBlockKeys(inner[0])).toHaveLength(1);
+    expect(keyBlockLines(block)).toEqual([line(1)]);
+    expect(innerKeyLines(block)).toEqual([2, 3, 4, 5, 6].map(line));
+    expect(keyBlockHits(findCredentials(`x ${AKID}`).hits[0])).toEqual([]);
+    expect(keyBlockKeys(findCredentials(`x ${AKID}`).hits[0])).toEqual([]);
   });
 
   it("what an open block covers is found inside it", () => {

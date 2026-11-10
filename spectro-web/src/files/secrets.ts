@@ -2,9 +2,9 @@
 // of the rule table in spectro-core's Redaction.java: same names, same order,
 // same pattern strings, a leading (?i) written as the i flag (design B3).
 // secrets.drift.test.ts reads the Java source and holds the two equal. The
-// report adds one rule of its own for password assignments, and a placeholder
-// list (design B4) so that documentation keys and template values do not count
-// as found credentials.
+// report adds two rules of its own, for password assignments and for key
+// bodies in tool inputs, and a placeholder list (design B4) so that
+// documentation keys and template values do not count as found credentials.
 //
 // Nothing here keeps or prints a value: callers get positions, rule names and
 // size bands, and decide what to show.
@@ -46,6 +46,22 @@ export const CREDENTIAL_RULES: readonly CredentialRule[] = [
   PASSWORD_RULE,
 ];
 
+/**
+ * A rule of the report, not of the Java twin: a run of 40 or more base64
+ * characters (with `=` padding) holding upper- and lower-case letters is key
+ * material, such as a key body a command writes or searches line by line
+ * (`echo "<line>" >> k.pem`, `grep -c <line> k.pem`). A hex hash has one case
+ * and stays out. It reads tool inputs only (INPUT_RULES); the mask finds such a
+ * run again as a known value.
+ */
+export const KEY_BODY_RULE: CredentialRule = {
+  name: "key-body",
+  pattern: /(?<![A-Za-z0-9+/])(?=[A-Za-z0-9+/]*[a-z])(?=[A-Za-z0-9+/]*[A-Z])[A-Za-z0-9+/]{40,}={0,2}/,
+};
+
+/** Every rule the report names, as a tool input is read: CREDENTIAL_RULES, then key-body. */
+export const INPUT_RULES: readonly CredentialRule[] = [...CREDENTIAL_RULES, KEY_BODY_RULE];
+
 /** One credential found in a text. `start` and `end` bound `match`; `secret` is the part that is the credential. */
 export interface CredentialHit {
   rule: string;
@@ -62,6 +78,9 @@ const ruleNamed = (name: string): CredentialRule => {
 };
 const EMAIL = ruleNamed("email");
 const IBAN = ruleNamed("iban");
+const PRIVATE_KEY = ruleNamed("private-key");
+/** The rules a block's own scan asks: private-key headers inside it take no room there. */
+const NON_KEY_RULES = CREDENTIAL_RULES.filter((r) => r !== PRIVATE_KEY);
 
 // ---- Matching in linear time ----------------------------------------------------
 //
@@ -233,8 +252,14 @@ const DASHES = "-----";
 const BASE64 = charTable(/[A-Za-z0-9+/=]/);
 const PEM_FIELD = /^[A-Za-z][A-Za-z0-9-]*: /;
 const BODY_LINE = /^[A-Za-z0-9+/=]{20,}$/;
-/** The line number `cat -n`, `grep -n` and a numbered Read put before a line: blanks, digits, then a tab, arrow, colon or bar. */
-const LINE_NUMBER = /[ \t]*\d+[\t\u2192:|]/y;
+/**
+ * The line number a listing puts before a line: blanks, a `path:` right before
+ * the digits (`grep -rn`), digits, then blanks and a tab, arrow, colon, bar, box
+ * bar (bat) or `-` (a `grep -A` context line), or blanks alone (`less -N`).
+ */
+const LINE_NUMBER_SOURCE = String.raw`[ \t]*(?:[^\s:]+:(?=\d))?\d+(?:[ \t]*[\t\u2192:|\u2502-]|[ \t]+)`;
+const LINE_NUMBER = new RegExp(LINE_NUMBER_SOURCE, "y");
+const LEADING_LINE_NUMBER = new RegExp(`^${LINE_NUMBER_SOURCE}`);
 /** What may follow the base64 start of a body line that ends a block: the end of a quoted or bracketed value. */
 const CLOSERS = new Set(["'", '"', "`", ")", "]", "}", ",", ";"]);
 
@@ -335,16 +360,36 @@ function headerEndIn(block: string): number {
 /** The text of a block after its header. */
 const afterHeader = (block: string): string => block.slice(headerEndIn(block));
 
-/**
- * The credentials inside a private-key block, after its header. The block's own
- * mask covers them in place; each is still a value of its own that can come back
- * elsewhere. Positions are those of the whole text.
- */
-export function keyBlockHits(hit: CredentialHit): CredentialHit[] {
+/** A block's hits found by `rules` after its header, at the positions of the whole text. */
+function insideBlock(hit: CredentialHit, rules: readonly CredentialRule[]): CredentialHit[] {
   if (hit.rule !== "private-key") return [];
   const rest = afterHeader(hit.match);
   const offset = hit.start + hit.match.length - rest.length;
-  return findCredentials(rest).hits.map((h) => ({ ...h, start: h.start + offset, end: h.end + offset }));
+  return findCredentials(rest, [], rules).hits.map((h) => ({
+    ...h,
+    start: h.start + offset,
+    end: h.end + offset,
+  }));
+}
+
+/**
+ * The credentials inside a private-key block other than keys, at any depth: one
+ * flat scan after its header in which the key headers inside take no room. The
+ * block's own mask covers them in place; each is still a value of its own that
+ * can come back elsewhere.
+ */
+export const keyBlockHits = (hit: CredentialHit): CredentialHit[] => insideBlock(hit, NON_KEY_RULES);
+
+/** The key blocks right inside a private-key block: one level of a nest. */
+export const keyBlockKeys = (hit: CredentialHit): CredentialHit[] => insideBlock(hit, [PRIVATE_KEY]);
+
+/** The base64 lines of 20 or more characters in the PEM body after the header that ends at `headerEnd`. */
+function bodyLines(block: string, headerEnd: number): string[] {
+  return block
+    .slice(headerEnd, bodyEnd(block, headerEnd, block.length))
+    .split(/\r\n|\r|\n|\\r\\n|\\n/)
+    .map((line) => line.replace(LEADING_LINE_NUMBER, "").trim())
+    .filter((line) => BODY_LINE.test(line));
 }
 
 /**
@@ -353,14 +398,17 @@ export function keyBlockHits(hit: CredentialHit): CredentialHit[] {
  * block covers after its body (a hash, a log line) is not a body line.
  */
 export function keyBlockLines(hit: CredentialHit): string[] {
+  return hit.rule === "private-key" ? bodyLines(hit.match, headerEndIn(hit.match)) : [];
+}
+
+/** The body lines of every key header inside a block after its own, at any depth. */
+export function innerKeyLines(hit: CredentialHit): string[] {
   if (hit.rule !== "private-key") return [];
-  const block = hit.match;
-  const start = headerEndIn(block);
-  return block
-    .slice(start, bodyEnd(block, start, block.length))
-    .split(/\r\n|\r|\n|\\r\\n|\\n/)
-    .map((line) => line.replace(/^[ \t]*\d+[\t\u2192:|]/, "").trim())
-    .filter((line) => BODY_LINE.test(line));
+  const out: string[] = [];
+  for (const m of ruleMatches(PRIVATE_KEY, hit.match)) {
+    if (m.index > 0) out.push(...bodyLines(hit.match, m.index + m[0].length));
+  }
+  return out;
 }
 
 /**
@@ -372,10 +420,12 @@ export function keyBlockLines(hit: CredentialHit): string[] {
  * end of its string (keyBlockEnd), as match and as secret; the placeholder test
  * still reads the header alone. `stops`, ascending, are offsets a block never
  * runs past: the end of each string value of a text built from several.
+ * `rules` defaults to CREDENTIAL_RULES; a tool input is read with INPUT_RULES.
  */
 export function findCredentials(
   text: string,
   stops: readonly number[] = [],
+  rules: readonly CredentialRule[] = CREDENTIAL_RULES,
 ): { hits: CredentialHit[]; placeholders: number } {
   const hits: CredentialHit[] = [];
   const taken: [number, number][] = [];
@@ -383,7 +433,7 @@ export function findCredentials(
   const markers = new Markers(text);
   let stop = 0;
   let placeholders = 0;
-  for (const rule of CREDENTIAL_RULES) {
+  for (const rule of rules) {
     const isKey = rule.name === "private-key";
     for (const m of ruleMatches(rule, text)) {
       const start = m.index;

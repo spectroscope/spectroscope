@@ -775,6 +775,165 @@ describe("buildReport", () => {
         Array.from({ length: 5 }, () => "private-key"),
       );
     });
+
+    it("the nesting cap counts key blocks, not what they hold", () => {
+      // Seven blocks, one inside the other, with a value in the innermost.
+      const output = `${Array.from({ length: 7 }, () => head).join("\n")}\n${body[0]}\nDATABASE_URL=${url}\n${Array.from(
+        { length: 7 },
+        () => tail,
+      ).join("\n")}\n`;
+      const report = build(new Rec().start(W).tool("Bash", { command: "cat nest.pem" }, { output }).events);
+
+      // The block and four levels below it, then the value seven blocks deep.
+      expect(one(report, "credential-result").credentials.map((c) => c.rule)).toEqual([
+        ...Array.from({ length: 5 }, () => "private-key"),
+        "url-userinfo",
+      ]);
+    });
+
+    it("what follows a nest of open keys is registered at any depth", () => {
+      const line = (i: number) => `${body[0].slice(0, 27)}Kq${i}Wz${i}`;
+      const keys = (n: number) =>
+        Array.from(
+          { length: n },
+          (_, i) => `==> /home/u/.ssh/id_${i + 1} <==\n${head}\n${line(i + 1)}\n\n`,
+        ).join("");
+      const grepped = Array.from({ length: 5 }, (_, i) => `keys/k${i + 1}.pem:1:${head}`).join("\n");
+      const probes: [string, string, string, string, string][] = [
+        [
+          "head -n 2 ~/.ssh/id_* prod.env",
+          `${keys(5)}==> prod.env <==\nDATABASE_URL=${url}\n`,
+          `curl -u app:${DB_PW} https://hooks.example.com/x`,
+          "url-userinfo",
+          DB_PW,
+        ],
+        [
+          'grep -rnE "PRIVATE KEY|PASSWORD" .',
+          `${grepped}\n.env:3:DB_PASSWORD=${DB_PW}\n`,
+          `curl -u app:${DB_PW} https://db.example.com/`,
+          "password-assignment",
+          DB_PW,
+        ],
+        ["head -n 2 ~/.ssh/id_*", keys(6), `echo '${line(6)}' >> k.pem`, "private-key", line(6)],
+      ];
+      for (const [shown, output, later, rule, value] of probes) {
+        const rec = new Rec()
+          .start(W)
+          .tool("Bash", { command: shown }, { output })
+          .tool("Bash", { command: later });
+        const report = build(rec.events);
+
+        const uses = ofKind(report, "credential-used");
+        expect(uses, shown).toHaveLength(1);
+        const used = uses[0];
+        expect(used, shown).toMatchObject({ callIndex: 3, firstSeenCall: 1 });
+        expect(
+          used.credentials.map((c) => c.rule),
+          shown,
+        ).toEqual([rule]);
+        const label = `[${used.credentials[0].label}: ${rule}]`;
+        expect(used.command, shown).toBe(later.replace(value, label));
+        expect(leaks(report, [value]), shown).toEqual([]);
+      }
+    });
+
+    it("a key inside a key keeps the label of its own body lines", () => {
+      const rec = new Rec()
+        .start(W)
+        .tool(
+          "Bash",
+          { command: "cat a.pem b.pem" },
+          { output: `${head}\n${body[0]}\n${head}\n${body[1]}\n` },
+        )
+        .tool("Bash", { command: `echo '${body[1]}' >> k2.pem` });
+      const report = build(rec.events);
+
+      expect(one(report, "credential-used")).toMatchObject({
+        credentials: [{ label: "credential 2", rule: "private-key" }],
+        command: "echo '[credential 2: private-key]' >> k2.pem",
+      });
+    });
+
+    it("a numbered body line comes back masked in every listing's form", () => {
+      const listed: [string, (n: number) => string][] = [
+        ['grep -rn "" .', (n) => `./id_rsa:${n}:`],
+        ["grep -n -A2 PRIVATE id_rsa", (n) => (n === 1 ? "1:" : `${n}-`)],
+        ["nl -s ' | ' id_rsa", (n) => `   ${n} | `],
+        ["bat id_rsa", (n) => `   ${n}   │ `],
+        ["less -N id_rsa", (n) => `${String(n).padStart(7)} `],
+      ];
+      for (const [command, mark] of listed) {
+        const output = [head, ...body].map((l, i) => mark(i + 1) + l).join("\n");
+        const rec = new Rec()
+          .start(W)
+          .tool("Bash", { command }, { output })
+          .tool("Bash", { command: `echo '${body[1]}' >> k2.pem` });
+        const report = build(rec.events);
+
+        expect(one(report, "credential-used"), command).toMatchObject({
+          callIndex: 3,
+          credentials: [{ label: "credential 1", rule: "private-key" }],
+          command: "echo '[credential 1: private-key]' >> k2.pem",
+        });
+        expect(leaks(report, body), command).toEqual([]);
+      }
+    });
+  });
+
+  describe("key bodies in commands", () => {
+    const head = ["-----BEGIN RSA ", "PRIVATE KEY-----"].join("");
+    const tail = ["-----END RSA ", "PRIVATE KEY-----"].join("");
+    const halves = ["MIIEowIBAAKCAQEAx9Ym4Qz7Rt2Lp8Wk", "Nb3Vc6Hs1Jd5Gf0AhkiG9w0BAQEFAASC"];
+    const lines = [halves.join(""), [...halves].reverse().join("")];
+
+    it("a key written line by line across calls prints no body line", () => {
+      const rec = new Rec()
+        .start(W)
+        .tool("Bash", { command: `echo "${head}" > k.pem` })
+        .tool("Bash", { command: `echo "${lines[0]}" >> k.pem` })
+        .tool("Bash", { command: `echo "${lines[1]}" >> k.pem` })
+        .tool("Bash", { command: `echo "${tail}" >> k.pem` })
+        .tool("Bash", { command: `grep -c ${lines[0]} k.pem` });
+      const report = build(rec.events);
+
+      expect(ofKind(report, "credential-input").map((f) => [f.callIndex, f.credentials])).toEqual([
+        // The open header masks to the end of its string value.
+        [1, [{ label: "credential 1", rule: "private-key", band: sizeBand(`${head}" > k.pem`) }]],
+        [3, [{ label: "credential 2", rule: "key-body", band: "33-64" }]],
+        [5, [{ label: "credential 3", rule: "key-body", band: "33-64" }]],
+      ]);
+      const commands = ofKind(report, "secret-file").map((f) => [f.callIndex, f.command]);
+      expect(commands).toContainEqual([3, 'echo "[credential 2: key-body]" >> k.pem']);
+      expect(commands).toContainEqual([5, 'echo "[credential 3: key-body]" >> k.pem']);
+      // The grep names a line seen before: a use of it.
+      expect(one(report, "credential-used")).toMatchObject({
+        callIndex: 9,
+        firstSeenCall: 3,
+        credentials: [{ label: "credential 2", rule: "key-body" }],
+        command: "grep -c [credential 2: key-body] k.pem",
+      });
+      expect(leaks(report, [...lines, ...halves])).toEqual([]);
+    });
+
+    it("a grep for a body line never seen before is a credential input", () => {
+      const report = build(new Rec().start(W).tool("Bash", { command: `grep -c ${lines[1]} k.pem` }).events);
+
+      expect(one(report, "credential-input").credentials).toEqual([
+        { label: "credential 1", rule: "key-body", band: "33-64" },
+      ]);
+      expect(one(report, "secret-file").command).toBe("grep -c [credential 1: key-body] k.pem");
+      expect(leaks(report, [lines[1], ...halves])).toEqual([]);
+    });
+
+    it("a hex hash in a command stays visible", () => {
+      const sha = "9fceb02d0ae598e95dc970b74767f19372d61af8";
+      const report = build(
+        new Rec().start(W).tool("Bash", { command: `cat .env && git show ${sha}` }).events,
+      );
+
+      expect(ofKind(report, "credential-input")).toEqual([]);
+      expect(one(report, "secret-file").command).toBe(`cat .env && git show ${sha}`);
+    });
   });
 
   it("a title that ends inside a value keeps no part of it", () => {
@@ -805,5 +964,24 @@ describe("buildReport", () => {
     // Seven characters of the value are below the rule's eight and stay.
     const short = `${prompt.slice(0, 28)}...`;
     expect(build(rec.events, undefined, short).title).toBe(short);
+  });
+
+  it("a title keeps no prefix between quotes, brackets or commas", () => {
+    const rec = new Rec().start(W, { prompt: `use ${PAT}` });
+    const cut = PAT.slice(0, 14);
+    for (const [title, masked] of [
+      [`push (${cut}) now`, "push ([credential 1: github-pat]) now"],
+      [`push "${cut}..." now`, 'push "[credential 1: github-pat]..." now'],
+      [`push '${cut}…', then tag`, "push '[credential 1: github-pat]…', then tag"],
+      [`push [${cut}] now`, "push [[credential 1: github-pat]] now"],
+      [`push ${cut}, then tag`, "push [credential 1: github-pat], then tag"],
+    ]) {
+      const report = build(rec.events, undefined, title);
+      expect(report.title, title).toBe(masked);
+      expect(leaks(report, [PAT.slice(0, 8)]), title).toEqual([]);
+    }
+    // Seven characters stay, as they do between blanks.
+    const seven = `push (${PAT.slice(0, 7)}) now`;
+    expect(build(rec.events, undefined, seven).title).toBe(seven);
   });
 });

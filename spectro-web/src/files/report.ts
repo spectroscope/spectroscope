@@ -24,7 +24,10 @@ import { higher, LEVEL_ORDER, outsideWorkspace, pathLevel, type Level } from "./
 import {
   countPersonalData,
   findCredentials,
+  INPUT_RULES,
+  innerKeyLines,
   keyBlockHits,
+  keyBlockKeys,
   keyBlockLines,
   sizeBand,
   type CredentialHit,
@@ -300,6 +303,7 @@ interface Sighting {
   ref: CredentialRef;
   event: number; // event index of the first sight; -1 when only a mask saw it
   call: number | null; // the call of the first sight; null for a prompt
+  deep?: boolean; // a body line of a key inside the block it is registered under
 }
 
 const WORD = /[A-Za-z0-9_]/;
@@ -312,8 +316,10 @@ const isWordAt = (text: string, at: number) => at >= 0 && at < text.length && WO
 const MASK_INSIDE_WORDS = 6;
 /** The shortest start of a value that a cut title is masked for. */
 const MIN_CUT = 8;
-/** How many times withInner reads a block found inside a block again: a nest of any depth costs four scans. */
+/** How many levels of key blocks inside a key block withInner reads: a nest of any depth costs four scans. */
 const MAX_NESTING = 4;
+/** A mask label, kept whole, or a title word: quotes, brackets, parentheses and commas end a word too. */
+const TITLE_WORD = /\[credential \d+: [a-z-]+\]|[^\s"'`()[\]{}<>,]+/g;
 
 /** The start of every occurrence of `value` in `text`; with `asWord`, only those with no word character beside them. */
 function occurrences(text: string, value: string, asWord: boolean): number[] {
@@ -348,8 +354,11 @@ class Credentials {
   /**
    * The sighting of a hit's secret, registered at `event` when new. A key block
    * also registers, on its first sight, each base64 body line under its own
-   * label, because a body line can come back without its header. The
-   * credentials inside a block come as hits of their own (withInner).
+   * label, because a body line can come back without its header, and the body
+   * lines of every key inside it that no label holds yet: a key below the
+   * nesting cap has no label of its own. A key inside, when it gets its own
+   * label, takes its own body lines over. The credentials inside a block come
+   * as hits of their own (withInner).
    */
   see(hit: CredentialHit, event: number, call: number | null): Sighting {
     const known = this.bySecret.get(hit.secret);
@@ -359,24 +368,30 @@ class Credentials {
     this.bySecret.set(hit.secret, s);
     this.longest = null;
     for (const line of keyBlockLines(hit)) {
-      if (!this.bySecret.has(line)) this.bySecret.set(line, { secret: line, ref, event, call });
+      const prev = this.bySecret.get(line);
+      if (prev === undefined || prev.deep === true)
+        this.bySecret.set(line, { secret: line, ref, event, call });
+    }
+    for (const line of innerKeyLines(hit)) {
+      if (!this.bySecret.has(line)) this.bySecret.set(line, { secret: line, ref, event, call, deep: true });
     }
     return s;
   }
 
   /**
    * The title masked, and a word cut short in it: the title is cut upstream, so
-   * it can end in the start of a value. A whitespace-delimited word of eight or
-   * more characters (opening quotes or brackets and a closing ellipsis aside)
-   * that a known value starts with takes that value's label.
+   * it can end in the start of a value. A word of eight or more characters
+   * (ended by a blank, quote, bracket, parenthesis or comma; a closing ellipsis
+   * aside) that a known value starts with takes that value's label.
    */
   maskTitle(text: string): string {
-    const words = this.mask(text).replace(/\S+/g, (word) => {
-      const [, open = "", core = "", ellipsis = ""] = /^(["'`([{<]*)(.*?)(\u2026|\.\.\.)?$/.exec(word) ?? [];
+    const words = this.mask(text).replace(TITLE_WORD, (word) => {
+      if (word.startsWith("[")) return word;
+      const [, core = "", ellipsis = ""] = /^(.*?)(\u2026|\.\.\.)?$/s.exec(word) ?? [];
       if (core.length < MIN_CUT) return word;
       for (const s of this.bySecret.values()) {
         if (s.secret.length > core.length && s.secret.startsWith(core)) {
-          return `${open}[${s.ref.label}: ${s.ref.rule}]${ellipsis}`;
+          return `[${s.ref.label}: ${s.ref.rule}]${ellipsis}`;
         }
       }
       return word;
@@ -504,8 +519,9 @@ interface Scan {
 }
 
 /**
- * One pass in event order over tool_call inputs, tool_result outputs, the
- * ledger's prompts and every steering_message (B8): the credential findings,
+ * One pass in event order over tool_call inputs (read with INPUT_RULES, which
+ * add key-body), tool_result outputs, the ledger's prompts and every
+ * steering_message (B8): the credential findings,
  * the placeholder count, the personal-data counts and the result of each call.
  */
 function scanEvents(
@@ -561,7 +577,7 @@ function scanEvents(
         else stack.push({ index: i, name });
 
         const { text, ends } = inputText(e.input);
-        const found = findCredentials(text, ends);
+        const found = findCredentials(text, ends, INPUT_RULES);
         placeholders += found.placeholders;
         const hits = found.hits.flatMap(withInner);
         const inHits = new Set(hits.map((h) => h.secret));
@@ -642,15 +658,21 @@ function scanEvents(
 // ---- Small builders and readers ---------------------------------------------------
 
 /**
- * A hit and, for a key block, the credentials inside it, down to MAX_NESTING
- * blocks deep. The block's mask covers them in place; each is still registered
- * under a label of its own and masked wherever it comes back.
+ * A hit and, for a key block, the credentials inside it: every one that is not
+ * a key from one flat scan of the block, at any depth, and the key blocks
+ * inside it down to MAX_NESTING levels. The block's mask covers them in place;
+ * each is still registered under a label of its own and masked wherever it
+ * comes back. In text order, the order of first sight.
  */
-const withInner = (hit: CredentialHit): CredentialHit[] => nested(hit, 0);
-
-function nested(hit: CredentialHit, depth: number): CredentialHit[] {
-  if (depth >= MAX_NESTING || hit.rule !== "private-key") return [hit];
-  return [hit, ...keyBlockHits(hit).flatMap((inner) => nested(inner, depth + 1))];
+function withInner(hit: CredentialHit): CredentialHit[] {
+  if (hit.rule !== "private-key") return [hit];
+  const out = [hit, ...keyBlockHits(hit)];
+  let level = [hit];
+  for (let depth = 0; depth < MAX_NESTING && level.length > 0; depth++) {
+    level = level.flatMap(keyBlockKeys);
+    out.push(...level);
+  }
+  return out.sort((a, b) => a.start - b.start);
 }
 
 /** What one path saw in one call: a touch of the fold, or a file a network command sent. */
