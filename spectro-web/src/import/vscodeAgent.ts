@@ -8,7 +8,8 @@
 //   assistant.message        -> thinking_delta / text_delta / tool_call
 //   tool.execution_start     -> tool_call
 //   tool.execution_complete  -> tool_result
-//   subagent.started         -> agent_spawn + the child's run_start
+//   subagent.started         -> agent_spawn + a task agent_message with the
+//                               child's name + the child's run_start
 //   subagent.completed       -> the child's run_end
 //   session.usage_record     -> usage
 //   session.error            -> error {message}
@@ -415,9 +416,22 @@ export function vscodeAgentWithOrigin(records: unknown[], base = 1_783_500_000_0
         const childRun = `vscode-${agentId}`;
         childRuns.set(agentId, childRun);
         const childModel = modelName(d?.model);
+        // The readable name of the child, as the Claude Code importer gives one:
+        // the roster and the spectrum lane read it off the task message (task 11 item 13).
+        const label = strField(d, "agentDisplayName") || strField(d, "agentName") || "task";
         emitInRun(
           [
             { type: "agent_spawn", agentId, parentId, task, ts },
+            {
+              type: "agent_message",
+              from: parentId,
+              to: agentId,
+              role: "task",
+              state: "submitted",
+              text: task,
+              label,
+              ts,
+            },
             {
               type: "run_start",
               runId: childRun,

@@ -449,7 +449,8 @@ describe("a Copilot child works on its own lane (card 605)", () => {
 
   it("subagent.started gives the spawn and the child's own run, named by the parent's task call", () => {
     const at = frames.filter((_, i) => origin[i] === line("e22")).map((f) => f.type);
-    expect(at).toEqual(["agent_spawn", "run_start"]);
+    // The task message carries the child's readable name (task 11 item 13).
+    expect(at).toEqual(["agent_spawn", "agent_message", "run_start"]);
     expect(frames.find((f) => f.type === "agent_spawn")).toEqual({
       type: "agent_spawn",
       agentId: "a-lex",
@@ -834,10 +835,10 @@ describe("records before the first person's turn (task 11 item 9)", () => {
   it("a held frame follows the run's start, before the run's first turn", () => {
     for (const name of ["session.usage_record", "subagent.started"]) {
       const types = vscodeAgentToRunEvents([START, LEAD[name], ...TURN]).map((e) => e.type);
-      expect(types.slice(0, 4), name).toEqual(
+      expect(types.slice(0, 5), name).toEqual(
         name === "subagent.started"
-          ? ["run_start", "agent_spawn", "run_start", "turn_start"]
-          : ["run_start", "usage", "turn_start", "text_delta"],
+          ? ["run_start", "agent_spawn", "agent_message", "run_start", "turn_start"]
+          : ["run_start", "usage", "turn_start", "text_delta", "run_end"],
       );
     }
   });
@@ -846,5 +847,39 @@ describe("records before the first person's turn (task 11 item 9)", () => {
     expect(vscodeAgentToRunEvents([START, LEAD["session.usage_record"]]).map((e) => e.type)).toEqual([
       "usage",
     ]);
+  });
+});
+
+// Task 11 item 13 (review M7): a Copilot child gets a readable name, the way
+// the Claude Code importer gives one: a task message with a label.
+describe("a Copilot child's readable name (task 11 item 13)", () => {
+  const records = copilotCli
+    .split(/\r?\n/)
+    .filter((l) => l.trim())
+    .map((l) => JSON.parse(l) as { type: string; agentId?: string; data?: Record<string, unknown> });
+  const child = records.find((r) => r.type === "subagent.started")?.agentId ?? "";
+  const roster = (rs: object[]) => reduceAll(initialState, vscodeAgentToRunEvents(rs)).agents;
+  const named = (data: Record<string, unknown>) =>
+    roster(
+      records.map((r) => (r.type === "subagent.started" ? { ...r, data: { ...r.data, ...data } } : r)),
+    ).find((a) => a.id === child)?.label;
+
+  it("takes agentDisplayName, else agentName, else task", () => {
+    expect(child).not.toBe("");
+    expect(roster(records).find((a) => a.id === child)?.label).toBe("lexer");
+    expect(named({ agentDisplayName: undefined })).toBe("explore");
+    expect(named({ agentDisplayName: "", agentName: 7 })).toBe("task");
+  });
+
+  it("sends it as the task message to the child, after the spawn", () => {
+    const events = vscodeAgentToRunEvents(records);
+    const spawn = events.findIndex((e) => e.type === "agent_spawn");
+    expect(events[spawn + 1]).toMatchObject({
+      type: "agent_message",
+      from: "main",
+      to: child,
+      role: "task",
+      label: "lexer",
+    });
   });
 });
