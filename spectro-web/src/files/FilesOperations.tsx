@@ -126,10 +126,7 @@ export function FilesOpList(props: FilesOpListProps): JSX.Element {
     path === null
       ? t(lang, "filesTab.ops.allFiles")
       : row !== undefined
-        ? shownPath(
-            row.label,
-            row.touches.some((touch) => touch.folder),
-          )
+        ? shownPath(row.label, row.touches)
         : shortenPath(path, ledger.workspace);
   return (
     <div className="files-panel files-oplist">
@@ -242,7 +239,7 @@ const callLine = (call: FileCall): string => (call.shell ? `$ ${call.line}` : ca
  * keep the path.
  */
 export function fileNameOf(touch: FileTouch): string {
-  if (/[*?[\]{}]/.test(touch.path)) return touch.written;
+  if (touch.pattern === true) return touch.written;
   const bare = touch.path.replace(/\/+$/, "");
   const name = bare.slice(bare.lastIndexOf("/") + 1);
   if (name === "") return touch.path;
@@ -272,7 +269,7 @@ function files(lang: Lang, call: FileCall): JSX.Element[] {
     const sources = touch.sources.map((source) => t(lang, `filesTab.source.${source}`)).join(" · ");
     return (
       <span key={i} className="files-ops__fx">
-        <span className={nameClass(touch)} title={`${shownPath(touch.path, touch.folder)} · ${sources}`}>
+        <span className={nameClass(touch)} title={`${shownPath(touch.path, [touch])} · ${sources}`}>
           {fileNameOf(touch)}
         </span>{" "}
         {sourceTags(lang, touch.sources)} {t(lang, `filesTab.kind.${touch.kind}`)}

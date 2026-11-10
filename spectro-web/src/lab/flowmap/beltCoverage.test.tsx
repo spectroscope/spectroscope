@@ -465,7 +465,9 @@ const STATION_CHIPS: Record<string, string[]> = {
 //
 // (2026-08-30, whole corpus). Closing it means teaching the FOLD about `Grep`,
 // which is card 301's vocabulary and not this card's. Written down rather than
-// quietly widened.
+// quietly widened. Card 605 did it: `Grep` is in CC_DISK_READ, and the other
+// direction is guarded in diskVocabulary.drift.test.ts, where every name the
+// classifier draws as disk or shell work needs a lab set or a stated reason.
 describe("every name the fold routes to a station lights a chip of it (card 321)", () => {
   it("every name the fold routes to a station lights a chip of that station", () => {
     const routed = [

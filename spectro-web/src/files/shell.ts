@@ -30,6 +30,7 @@ export interface ShellTouch {
   written: string; // the path as the command spells it, quotes removed
   path: string; // resolvePath(written, base at that point of the line)
   folder: boolean; // a folder or a pattern, not one file
+  pattern?: true; // a glob pattern: a glob tool's, a grep filter's or an unquoted shell glob word (card 605)
   kind: TouchKind;
   reason: string; // rule name plus the matched fragment, e.g. "redirect > out.txt"
   replaced?: { old: string; new: string }[];
@@ -158,6 +159,7 @@ function add(
     written: text,
     path,
     folder: folder === true || word.glob || looksLikeFolder,
+    ...(word.glob ? { pattern: true as const } : {}),
     kind,
     reason,
     ...rest,

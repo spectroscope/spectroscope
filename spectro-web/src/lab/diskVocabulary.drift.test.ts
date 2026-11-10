@@ -15,6 +15,7 @@
 // is the shape the shell vocabulary was rid of in card 301.
 
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { relative } from "node:path";
 import { srcFiles, srcText } from "../testkit/tree";
@@ -75,11 +76,74 @@ describe("the lab's disk names read as the same kind in the tool views (card 604
     }
 
     // Floors, so an emptied set cannot turn the loops into a scan over nothing:
-    // 5 + 2 + 1 reads, 2 + 3 + 2 writes less MultiEdit, 4 shell verbs on
-    // 2026-11-10 (card 605 added the Copilot CLI's view, create, edit, bash, powershell).
-    expect(reads).toBeGreaterThanOrEqual(8);
+    // 5 + 3 + 1 reads, 2 + 3 + 2 writes less MultiEdit, 5 shell verbs on
+    // 2026-11-10 (card 605 added the Copilot CLI's view, create, edit, bash,
+    // powershell, and Claude Code's Grep and VS Code's run_in_terminal).
+    expect(reads).toBeGreaterThanOrEqual(9);
     expect(writes).toBeGreaterThanOrEqual(6);
-    expect(shells).toBeGreaterThanOrEqual(4);
+    expect(shells).toBeGreaterThanOrEqual(5);
+  });
+});
+
+/** The kinds the lab has a station for: a file read, a write, an edit, a command. */
+const STATION_KINDS = [...READ_KINDS, ...WRITE_KINDS, "command"];
+
+/**
+ * The names describeTool draws with a station kind that the lab leaves dark
+ * on purpose, each with its reason. A name here must not be in a lab set.
+ */
+const LAB_LEAVES_OUT: Record<string, string> = {
+  // A background wait: its command is the condition it waits for (card 604
+  // plan, C15), and the belt draws it as a launch.
+  Monitor: "launch",
+  // VS Code agent mode names its file `filePath` or searches by `query` and
+  // `includePattern`; the lab has no VS Code set, and one means new sets and
+  // readers in the map, the footprint and the run view.
+  create_file: "vscode",
+  replace_string_in_file: "vscode",
+  grep_search: "vscode",
+  file_search: "vscode",
+};
+
+/** Every `case "…":` label of describeTool, read out of its source. */
+function caseLabels(): string[] {
+  const src = readFileSync(new URL("../components/toolViews.ts", import.meta.url), "utf8");
+  const at = src.indexOf("export function describeTool(");
+  const end = src.indexOf("\n}", at);
+  expect(at, "describeTool is not in toolViews.ts").toBeGreaterThan(-1);
+  return [...src.slice(at, end).matchAll(/^\s*case "([^"]+)":/gm)].map((m) => m[1]);
+}
+
+describe("every name the tool views draw as disk or shell work has a lab entry (card 605)", () => {
+  it("everyStationKindNameIsInALabSetOrLeftOutOnPurpose", () => {
+    const lab = new Set([
+      ...NATIVE_DISK_READ,
+      ...NATIVE_DISK_WRITE,
+      ...CC_DISK_READ,
+      ...CC_DISK_WRITE,
+      ...COPILOT_DISK_READ,
+      ...COPILOT_DISK_WRITE,
+      ...SHELL_TOOLS,
+    ]);
+    const labels = caseLabels();
+    let checked = 0;
+    for (const name of labels) {
+      if (!STATION_KINDS.includes(viewKindOf(name))) continue;
+      expect(
+        lab.has(name) || name in LAB_LEAVES_OUT,
+        `describeTool draws ${name} as ${viewKindOf(name)}; the lab has no set for it and no reason to leave it out`,
+      ).toBe(true);
+      checked++;
+    }
+    // A floor: 25 names of a station kind among describeTool's labels on 2026-11-10.
+    expect(checked).toBeGreaterThanOrEqual(25);
+
+    // The list cannot go stale: each name is a label of a station kind and in no lab set.
+    for (const name of Object.keys(LAB_LEAVES_OUT)) {
+      expect(labels, `${name} is no longer a label of describeTool`).toContain(name);
+      expect(STATION_KINDS, `${name} is no longer drawn with a station kind`).toContain(viewKindOf(name));
+      expect(lab.has(name), `${name} is in a lab set and left out at once`).toBe(false);
+    }
   });
 });
 

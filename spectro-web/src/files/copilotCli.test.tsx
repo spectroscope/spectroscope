@@ -4,9 +4,12 @@
 // describeTool. Before the card, `view`, `create`, `edit` and `bash` were
 // unknown names and the tab showed nothing but the glob.
 
+import { isValidElement, type ReactNode } from "react";
 import { describe, expect, it } from "vitest";
 import copilotCli from "../import/fixtures/copilot-cli.jsonl?raw";
 import { parseVscodeAgentExport } from "../import/vscodeAgent";
+import { drive, type El } from "../testkit/driveComponent";
+import { FilesExplorer } from "./FilesExplorer";
 import { fileRows, foldFiles, summarize } from "./fold";
 
 const events = parseVscodeAgentExport(copilotCli);
@@ -73,4 +76,87 @@ describe("a Copilot CLI session in the files tab (card 605)", () => {
       "/w/src/parser/test/EmptyLineTest.cpp",
     ]);
   });
+
+  it("takes the workspace from session.start, so the explorer labels are relative to it", () => {
+    expect(ledger.workspace).toBe("/w");
+    expect(rows.map((r) => r.label)).toEqual([
+      "src/parser/test/ParserTest.cpp",
+      "src/parser/Parser.cpp",
+      "src/parser/**/*Mock*",
+      "build/test.log",
+      "out/head.txt",
+      "src/parser/test/EmptyLineTest.cpp",
+    ]);
+  });
+
+  it("draws the explorer as folders, files and one pattern row", () => {
+    const tree = drive(
+      <FilesExplorer
+        lang="en"
+        rows={rows}
+        selected={null}
+        limit={Number.MAX_SAFE_INTEGER}
+        firstSeen={() => ""}
+        onSelect={() => {}}
+      />,
+      [FilesExplorer],
+      [],
+    );
+    expect(groupLines(tree, "changed")).toEqual([
+      "0 out/",
+      "1 head.txt",
+      "0 src/parser/",
+      "1 Parser.cpp",
+      "1 test/",
+      "2 EmptyLineTest.cpp",
+    ]);
+    expect(groupLines(tree, "read")).toEqual([
+      "0 build/",
+      "1 test.log",
+      "0 src/parser/",
+      "1 **/*Mock* [pattern]",
+      "1 test/",
+      "2 ParserTest.cpp",
+    ]);
+  });
 });
+
+/** The lines of one explorer group as "<depth> <name>", a pattern row marked. */
+function groupLines(tree: El[], group: "changed" | "read"): string[] {
+  const box = tree.find((el) => el.props["data-group"] === group);
+  if (box === undefined) throw new Error(`no group ${group}`);
+  return below(box)
+    .filter((el) => hasClass(el, "files-row"))
+    .map((line) => {
+      const parts = below(line);
+      const name = textOf(parts.find((el) => hasClass(el, "files-row__name"))?.props.children);
+      const pattern = parts.some((el) => hasClass(el, "files-row__pattern")) ? " [pattern]" : "";
+      const depth = String((line.props.style as Record<string, unknown>)["--files-depth"]);
+      return `${depth} ${name}${pattern}`;
+    });
+}
+
+function below(el: El): El[] {
+  const out: El[] = [];
+  const walk = (node: ReactNode): void => {
+    if (Array.isArray(node)) {
+      for (const child of node) walk(child as ReactNode);
+      return;
+    }
+    if (!isValidElement(node)) return;
+    out.push(node as El);
+    walk((node as El).props.children);
+  };
+  walk(el.props.children);
+  return out;
+}
+
+function textOf(node: ReactNode): string {
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map((c) => textOf(c as ReactNode)).join("");
+  if (isValidElement(node)) return textOf((node as El).props.children);
+  return "";
+}
+
+const hasClass = (el: El, name: string): boolean =>
+  typeof el.props.className === "string" && el.props.className.split(/\s+/).includes(name);

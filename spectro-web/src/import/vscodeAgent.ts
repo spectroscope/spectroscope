@@ -8,6 +8,8 @@
 //   assistant.message        -> thinking_delta / text_delta / tool_call
 //   tool.execution_start     -> tool_call
 //   tool.execution_complete  -> tool_result
+//   session.start            -> ground_info {cwd} (the GitHub Copilot CLI's own
+//                               file, card 605; import-only, as in claudeCode.ts)
 // so a recorded Copilot session replays through the same reducers as a
 // spectroscope run. Unrecognized records are skipped, never fatal.
 //
@@ -39,6 +41,7 @@ interface VsRecord {
     toolName?: string;
     arguments?: unknown;
     success?: boolean;
+    context?: { cwd?: unknown };
   };
   id?: string;
   timestamp?: string;
@@ -113,6 +116,8 @@ export function vscodeAgentWithOrigin(records: unknown[], base = 1_783_500_000_0
   let started = false;
   let turn = 0;
   let lastTs = base;
+  /** The folder the last session.start named, so a resume in the same folder adds nothing. */
+  let cwd: string | null = null;
 
   const emitCall = (callId: string, name: string, input: unknown, ts: number): void => {
     if (emittedCalls.has(callId)) return;
@@ -134,6 +139,20 @@ export function vscodeAgentWithOrigin(records: unknown[], base = 1_783_500_000_0
     const d = r.data;
 
     switch (r.type) {
+      case "session.start": {
+        // An absolute POSIX path only: the files tab joins relative paths with `/`.
+        const at = d?.context?.cwd;
+        if (typeof at !== "string" || !at.startsWith("/") || at === cwd) break;
+        out.push({
+          type: "ground_info",
+          cwd: at,
+          ...(cwd === null ? {} : { from: { cwd } }),
+          ts,
+        } as unknown as RunEvent);
+        cwd = at;
+        break;
+      }
+
       case "user.message": {
         // Re-opening the run under the SAME runId is what puts a user bubble in
         // the chat; the reducer draws one per root run_start.

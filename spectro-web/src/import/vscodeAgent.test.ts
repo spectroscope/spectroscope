@@ -11,7 +11,9 @@
 import { describe, expect, it } from "vitest";
 // Vite-native raw import: the fixture arrives as a plain string, no fs/paths.
 import vscodeAgent from "./fixtures/vscode-agent.jsonl?raw";
-import { parseVscodeAgentExport, vscodeAgentToRunEvents } from "./vscodeAgent";
+import copilotCli from "./fixtures/copilot-cli.jsonl?raw";
+import { isWireEvent } from "../wire/nonWire";
+import { parseVscodeAgentExport, vscodeAgentToRunEvents, vscodeAgentWithOrigin } from "./vscodeAgent";
 import { advanceScene, initialScene } from "../lab/labScene";
 
 const events = parseVscodeAgentExport(vscodeAgent);
@@ -194,5 +196,64 @@ describe("tool arguments announced as a JSON string", () => {
     const events = vscodeAgentToRunEvents([JSON.parse(raw)]);
     const call = events.find((e) => e.type === "tool_call");
     expect(call!.input).toBe("not json {");
+  });
+});
+
+describe("the Copilot CLI's session.start names the folder the session ran in (card 605)", () => {
+  // The CLI's own session file opens with `session.start`, whose
+  // `data.context.cwd` is the folder the session ran in. The importer hands it
+  // on as the import-only `ground_info` frame the Claude Code importer writes,
+  // and the files tab reads that frame as the workspace.
+  const start = (context: unknown) => ({
+    type: "session.start",
+    data: { sessionId: "s", context },
+    id: "a",
+    timestamp: "2026-11-10T09:00:00.000Z",
+  });
+  const user = {
+    type: "user.message",
+    data: { content: "go" },
+    id: "b",
+    timestamp: "2026-11-10T09:00:01.000Z",
+  };
+  const grounds = (events: readonly { type: string }[]) => events.filter((e) => e.type === "ground_info");
+
+  it("emits one ground_info with the cwd, charged to the session.start line", () => {
+    const records = copilotCli
+      .split(/\r?\n/)
+      .filter((l) => l.trim())
+      .map((l) => JSON.parse(l));
+    const { events: cli, origin } = vscodeAgentWithOrigin(records);
+    const at = cli.findIndex((e) => (e as { type: string }).type === "ground_info");
+    expect(grounds(cli)).toEqual([
+      { type: "ground_info", cwd: "/w", ts: Date.parse("2026-11-10T09:00:00.000Z") },
+    ]);
+    expect(origin[at]).toBe(0);
+    // The run still opens on the first user message.
+    expect(cli.find((e) => e.type === "run_start")).toMatchObject({
+      prompt: expect.stringMatching(/parser test/),
+    });
+  });
+
+  it("never writes the frame to a session file", () => {
+    const events = parseVscodeAgentExport(copilotCli);
+    expect(grounds(events)).toHaveLength(1);
+    expect(grounds(events.filter(isWireEvent))).toEqual([]);
+  });
+
+  it("emits nothing for a cwd that is missing, empty or not absolute, and nothing for a VS Code export", () => {
+    for (const context of [undefined, {}, { cwd: "" }, { cwd: "w/src" }, { cwd: 7 }, "/w"]) {
+      expect(grounds(vscodeAgentToRunEvents([start(context), user])), JSON.stringify(context)).toEqual([]);
+    }
+    expect(grounds(events)).toEqual([]);
+    // The positive twin: the same records with an absolute cwd carry the frame.
+    expect(grounds(vscodeAgentToRunEvents([start({ cwd: "/w/src" }), user]))).toHaveLength(1);
+  });
+
+  it("names a later session.start that moved, and not one that stayed", () => {
+    const later = (cwd: string) => ({ ...start({ cwd }), id: "c", timestamp: "2026-11-10T10:00:00.000Z" });
+    const moved = vscodeAgentToRunEvents([start({ cwd: "/w" }), user, later("/w"), later("/v")]);
+    expect(grounds(moved).map((e) => (e as { cwd?: string }).cwd)).toEqual(["/w", "/v"]);
+    expect(grounds(moved)[1]).toMatchObject({ from: { cwd: "/w" } });
   });
 });

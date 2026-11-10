@@ -50,8 +50,8 @@ describe("the shell verbs are declared once and read twice", () => {
   it("declares every vocabulary's shell verbs, so the set is not half a set", () => {
     // The premise of the two checks above: a set that lost a member would pass
     // them and take the map and the tree quietly down together. Card 605 added
-    // the GitHub Copilot CLI's two shell tools.
-    expect([...SHELL_TOOLS].sort()).toEqual(["Bash", "bash", "powershell", "run_command"]);
+    // the GitHub Copilot CLI's two shell tools and VS Code's run_in_terminal.
+    expect([...SHELL_TOOLS].sort()).toEqual(["Bash", "bash", "powershell", "run_command", "run_in_terminal"]);
   });
 });
 

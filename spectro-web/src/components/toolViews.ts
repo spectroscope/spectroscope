@@ -47,7 +47,15 @@ export type ToolView =
       at: string | null;
     }
   | { kind: "listing"; path: string; entries: string[] }
-  | { kind: "matches"; pattern: string; path: string | null; lines: string[] }
+  | {
+      kind: "matches";
+      pattern: string;
+      /** Where it searched; a grep's glob filter is joined into it (card 605). */
+      path: string | null;
+      /** The glob filter a grep was narrowed by, as the call wrote it, or null. */
+      filter: string | null;
+      lines: string[];
+    }
   | {
       kind: "command";
       command: string;
@@ -531,6 +539,10 @@ const FILE_BODY_KEYS = new Set([
   "newString",
   "old_string",
   "oldString",
+  // The GitHub Copilot CLI's create and edit (card 605).
+  "file_text",
+  "old_str",
+  "new_str",
 ]);
 
 /** Keys whose value IS the thing a tool acts on, and the only fields a language
@@ -1619,16 +1631,18 @@ export function describeTool(
       const where = searchPlace(input);
       if (where === undefined) return generic;
       // A grep narrowed by a file glob searched the files under its path that
-      // match it, so the glob stands as the call wrote it, under that path.
+      // match it. Ripgrep matches a glob without a slash at any depth, so that
+      // one stands under `**/`; a glob with a slash is joined as written.
       const glob = name === "grep" || name === "Grep" ? str(input, "glob") : null;
       const filter = glob === "" ? null : glob;
+      const under = filter === null || filter.includes("/") ? filter : `**/${filter}`;
       const path =
-        filter === null
+        under === null
           ? where
           : where === null || where === ""
-            ? filter
-            : `${where.replace(/\/+$/, "")}/${filter}`;
-      return { kind: "matches", pattern, path, lines: lines(out) };
+            ? under
+            : `${where.replace(/\/+$/, "")}/${under}`;
+      return { kind: "matches", pattern, path, filter, lines: lines(out) };
     }
 
     case "Bash":

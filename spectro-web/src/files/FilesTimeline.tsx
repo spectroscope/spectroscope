@@ -344,12 +344,7 @@ export function FilesTimeline(props: FilesTimelineProps): JSX.Element {
               title={row.path}
               onClick={() => props.onSelectRow(row)}
             >
-              {fitted(
-                shownPath(
-                  row.label,
-                  row.touches.some((touch) => touch.folder),
-                ),
-              )}
+              {fitted(shownPath(row.label, row.touches))}
             </button>
           ))}
           <div className={lane("files-tl__label", drawn.length, "files-tl__label--shell")}>

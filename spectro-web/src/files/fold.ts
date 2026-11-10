@@ -361,6 +361,7 @@ function onePerPath(touches: readonly ReadTouch[]): ReadTouch[] {
       folder: first.folder || touch.folder,
       sources: SOURCE_ORDER.filter((s) => first.sources.includes(s) || touch.sources.includes(s)),
     };
+    if (touch.pattern === true) merged.pattern = true;
     if (first.replaced !== undefined || touch.replaced !== undefined)
       merged.replaced = [...(first.replaced ?? []), ...(touch.replaced ?? [])];
     const content = filled(first.content) ?? filled(touch.content);
@@ -435,11 +436,18 @@ function matches(name: string, view: Extract<ToolView, { kind: "matches" }>, bas
   if (GLOB_TOOLS.has(name)) {
     // Not resolved against the base: the pattern stays as the tool matched it.
     const joined = path === null || isRooted(pattern) ? pattern : `${path.replace(/\/+$/, "")}/${pattern}`;
-    return recorded(joined, null, "read", `files matching ${pattern}`, { folder: true });
+    return recorded(joined, null, "read", `files matching ${pattern}`, { folder: true, pattern: true });
   }
   if (path === null) {
     // A grep without a path searched the folder the call ran in; the call's line keeps the pattern.
     return { ...recorded(".", base, "read", `${name} "${pattern}"`, { folder: true }), line: pattern };
+  }
+  // A grep narrowed by a glob filter searched a pattern (describeTool joined it into the path).
+  if (view.filter !== null) {
+    return recorded(path, base, "read", `search for ${pattern} in ${view.filter}`, {
+      folder: true,
+      pattern: true,
+    });
   }
   // A grep on a plain path searched that file or folder; only the path itself can say folder.
   return recorded(path, base, "read", `search for ${pattern}`, { folder: saysFolder(path) });
@@ -486,7 +494,7 @@ function recorded(
   base: string | null,
   kind: TouchKind,
   reason: string,
-  extra: Partial<Pick<ShellTouch, "folder" | "replaced" | "content" | "appended">> = {},
+  extra: Partial<Pick<ShellTouch, "folder" | "pattern" | "replaced" | "content" | "appended">> = {},
 ): Reading {
   const { folder = false, ...rest } = extra;
   return {

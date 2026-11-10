@@ -130,6 +130,15 @@ describe("fileFootprint, the imported GitHub Copilot CLI vocabulary (card 605)",
     }
     expect(fp.shellCalls).toBe(2);
   });
+
+  it("folds Claude Code's Grep on a path as a read and counts VS Code's run_in_terminal", () => {
+    const fp = fileFootprint([
+      call("main", "Grep", { pattern: "TODO", path: "/w/src" }, 10),
+      call("main", "run_in_terminal", { command: "npm test" }, 20),
+    ]);
+    expect(fp.touches.map((t) => [t.path, t.readers.size, t.writers.size])).toEqual([["/w/src", 1, 0]]);
+    expect(fp.shellCalls).toBe(1);
+  });
 });
 
 describe("fileFootprint — the three spellings of the path key", () => {

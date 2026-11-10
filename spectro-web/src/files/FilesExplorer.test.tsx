@@ -31,6 +31,8 @@ const EVENTS = stamp([
   ...used("glob", { pattern: "**/RTK.md", path: "/w" }),
   ...used("list_dir", { path: "/w/docs" }),
   ...used("view", { path: "/w/app/[id]/page.tsx" }),
+  ...used("list_dir", { path: "/w/app/[id]" }),
+  ...used("Bash", { command: "cat lib/*.d.ts" }),
 ]);
 
 function explorer(lang: Lang = "en"): El[] {
@@ -132,7 +134,21 @@ describe("pattern rows in the explorer (card 605)", () => {
     const page = lineOf(lines, "/w/app/[id]/page.tsx");
     expect(nameOf(page)).toBe("page.tsx");
     expect(noteOf(page)).toBeUndefined();
-    expect(nameOf(lines[lines.indexOf(page) - 1])).toBe("app/[id]/");
+    expect(lines[lines.indexOf(page) - 1].props["data-path"]).toBe("/w/app/[id]");
+  });
+
+  it("draws a listed folder named with a bracket as a folder, with its slash and no note", () => {
+    const folder = lineOf(readLines(explorer()), "/w/app/[id]");
+    expect(nameOf(folder)).toBe("app/[id]/");
+    expect(noteOf(folder)).toBeUndefined();
+  });
+
+  it("draws a shell glob word as a pattern row under its literal folder", () => {
+    const lines = readLines(explorer());
+    const types = lineOf(lines, "/w/lib/*.d.ts");
+    expect(nameOf(types)).toBe("*.d.ts");
+    expect(noteOf(types)).toBeDefined();
+    expect(nameOf(lines[lines.indexOf(types) - 1])).toBe("lib/");
   });
 
   it("says pattern in German as Muster", () => {

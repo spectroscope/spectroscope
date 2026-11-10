@@ -323,17 +323,46 @@ describe("GitHub Copilot CLI tool names (card 605)", () => {
     expect([v.pattern, v.path]).toEqual(["**/*Mock*", "/w/src"]);
   });
 
-  it("reads a grep's glob as the files it searched, under its path when it has one", () => {
-    const both = describeTool("grep", { pattern: "TODO", path: "/w/src", glob: "*.ts" }, "", false);
-    if (both.kind !== "matches") throw new Error("kind");
-    expect([both.pattern, both.path]).toEqual(["TODO", "/w/src/*.ts"]);
-    const alone = describeTool("grep", { pattern: "TODO", glob: "**/*.ts" }, "", false);
-    if (alone.kind !== "matches") throw new Error("kind");
-    expect(alone.path).toBe("**/*.ts");
-    // The twin: a grep without a glob keeps its path as it was.
-    const plain = describeTool("grep", { pattern: "TODO", path: "/w/src" }, "", false);
-    if (plain.kind !== "matches") throw new Error("kind");
-    expect(plain.path).toBe("/w/src");
+  // Fix round 1: ripgrep matches a glob without a slash at any depth under the
+  // path, so the drawn pattern is the superset `path/**/glob`; a glob with a
+  // slash is anchored and keeps the plain join.
+  const searched = (name: string, input: object): [string | null, string | null] => {
+    const v = describeTool(name, input, "", false);
+    if (v.kind !== "matches") throw new Error(`${name}: ${v.kind}`);
+    return [v.path, v.filter];
+  };
+
+  it("reads a grep's slashless glob as any depth under its path, for grep and Grep", () => {
+    for (const name of ["grep", "Grep"]) {
+      expect(searched(name, { pattern: "TODO", path: "/w/src", glob: "*.ts" }), name).toEqual([
+        "/w/src/**/*.ts",
+        "*.ts",
+      ]);
+      expect(searched(name, { pattern: "TODO", path: "/w/src/", glob: "*.ts" }), name).toEqual([
+        "/w/src/**/*.ts",
+        "*.ts",
+      ]);
+      expect(searched(name, { pattern: "TODO", glob: "*.{ts,tsx}" }), name).toEqual([
+        "**/*.{ts,tsx}",
+        "*.{ts,tsx}",
+      ]);
+    }
+  });
+
+  it("joins a grep's glob with a slash as written, for grep and Grep", () => {
+    for (const name of ["grep", "Grep"]) {
+      expect(searched(name, { pattern: "TODO", path: "/w/src", glob: "lib/*.ts" }), name).toEqual([
+        "/w/src/lib/*.ts",
+        "lib/*.ts",
+      ]);
+      expect(searched(name, { pattern: "TODO", glob: "**/*.ts" }), name).toEqual(["**/*.ts", "**/*.ts"]);
+    }
+  });
+
+  it("keeps the path of a grep without a glob, and names no filter for a glob tool", () => {
+    expect(searched("grep", { pattern: "TODO", path: "/w/src" })).toEqual(["/w/src", null]);
+    expect(searched("grep", { pattern: "TODO", path: "/w/src", glob: "" })).toEqual(["/w/src", null]);
+    expect(searched("glob", { pattern: "*.ts", path: "/w/src", glob: "*.md" })).toEqual(["/w/src", null]);
   });
 
   it("reads the CLI's paths field when it names one place, and stays generic when it names more", () => {
@@ -343,6 +372,16 @@ describe("GitHub Copilot CLI tool names (card 605)", () => {
       expect(v.path, JSON.stringify(paths)).toBe("/w/src");
     }
     expect(describeTool("grep", { pattern: "x", paths: ["/w/a", "/w/b"] }, "", false).kind).toBe("generic");
+  });
+
+  it("colours the CLI's file bodies by the file's name", () => {
+    const input = { path: "/w/a.py", file_text: "import os\nprint(1)", old_str: "a\nb", new_str: "c\nd" };
+    const langs = splitInput("create", input).blocks.map((b) => [b.key, b.lang]);
+    expect(langs).toEqual([
+      ["file_text", "python"],
+      ["old_str", "python"],
+      ["new_str", "python"],
+    ]);
   });
 });
 

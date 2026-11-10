@@ -625,6 +625,13 @@ describe("GitHub Copilot CLI tool names light the stations (card 605)", () => {
     }
   });
 
+  it("routes Claude Code's Grep to the disk as a read, and VS Code's run_in_terminal to the shell", () => {
+    const grep = play([runStart(), toolCall("Grep", { pattern: "TODO", path: "/w/src/a.ts" })]);
+    expect([grep.focus, grep.disk, grep.activeFile]).toEqual(["disk", "read", "a.ts"]);
+    const term = play([runStart(), toolCall("run_in_terminal", { command: "npm test", explanation: "x" })]);
+    expect([term.focus, term.activeCommand]).toEqual(["cmd", "npm test"]);
+  });
+
   it("leaves the shell session verbs at the agent", () => {
     for (const name of ["write_bash", "read_bash", "stop_bash", "list_bash", "write_powershell"]) {
       const s = play([runStart(), toolCall(name, { shellId: "s1", input: "y" })]);

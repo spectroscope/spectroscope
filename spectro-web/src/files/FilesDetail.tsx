@@ -119,10 +119,7 @@ function stepper(props: FilesDetailProps, call: FileCall): JSX.Element | null {
           {t(lang, "filesTab.detail.changeOf", {
             k: pos + 1,
             n: changes.length,
-            path: shownPath(
-              row.label,
-              row.touches.some((touch) => touch.folder),
-            ),
+            path: shownPath(row.label, row.touches),
           })}
         </span>
         <button
@@ -173,9 +170,7 @@ function touchBlock(props: FilesDetailProps, call: FileCall, touch: FileTouch, i
     <div key={i} className="files-touch">
       <div className="files-detail__tools">
         {sourceTags(lang, touch.sources)}
-        <span className="files-mono">
-          {shownPath(shortenPath(touch.path, ledger.workspace), touch.folder)}
-        </span>
+        <span className="files-mono">{shownPath(shortenPath(touch.path, ledger.workspace), [touch])}</span>
         <span>{t(lang, `filesTab.kind.${touch.kind}`)}</span>
         {diff !== null && (
           <span className="files-mono">

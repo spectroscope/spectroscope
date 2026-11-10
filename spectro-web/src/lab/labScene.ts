@@ -105,7 +105,7 @@ export const NATIVE_DISK_WRITE: ReadonlySet<string> = new Set(["write_file", "ed
 // would read as finished. WebFetch/WebSearch stay dark on purpose: the map has
 // no rail from the agent to the network stack, and lighting a station with no
 // path to it would claim an MCP chain that never ran.
-export const CC_DISK_READ = new Set(["Read", "Glob"]);
+export const CC_DISK_READ = new Set(["Read", "Glob", "Grep"]);
 export const CC_DISK_WRITE = new Set(["Write", "Edit", "MultiEdit"]);
 /** The GitHub Copilot CLI's file verbs (card 605). Each names its file `path`.
  *  Its `glob` and `grep` are the native names above, its shell verbs are in
@@ -119,8 +119,8 @@ export const COPILOT_DISK_WRITE: ReadonlySet<string> = new Set(["create", "edit"
  *  it can only be exactly that if there is one set. Both native names used to
  *  be spelled out as literals in `advanceLoop` below AND copied into
  *  fileTree.ts, which is three declarations of one vocabulary. `bash` and
- *  `powershell` are the Copilot CLI's (card 605). */
-export const SHELL_TOOLS = new Set(["run_command", "Bash", "bash", "powershell"]);
+ *  `powershell` are the Copilot CLI's, `run_in_terminal` is VS Code's (card 605). */
+export const SHELL_TOOLS = new Set(["run_command", "Bash", "bash", "powershell", "run_in_terminal"]);
 /** The input field a shell call carries its command in — the ONE declaration of
  *  it (card 320). The fold below reads the command out of this key, and the
  *  station that draws it has to ask the classifier about the SAME key or the
@@ -235,21 +235,14 @@ export function advanceLoop(loop: Loop, event: RunEvent): Loop {
       if (SHELL_TOOLS.has(event.name)) {
         return { ...base, focus: "cmd", activeCommand: inputStr(event.input, SHELL_COMMAND_KEY) };
       }
-      if (NATIVE_DISK_READ.has(event.name) || NATIVE_DISK_WRITE.has(event.name)) {
+      // The native names and the Copilot CLI's both name their file `path`.
+      const writes = NATIVE_DISK_WRITE.has(event.name) || COPILOT_DISK_WRITE.has(event.name);
+      if (writes || NATIVE_DISK_READ.has(event.name) || COPILOT_DISK_READ.has(event.name)) {
         const path = inputStr(event.input, "path");
         return {
           ...base,
           focus: "disk",
-          disk: NATIVE_DISK_WRITE.has(event.name) ? "write" : "read",
-          activeFile: path !== null ? fileLabel(path) : null,
-        };
-      }
-      if (COPILOT_DISK_READ.has(event.name) || COPILOT_DISK_WRITE.has(event.name)) {
-        const path = inputStr(event.input, "path");
-        return {
-          ...base,
-          focus: "disk",
-          disk: COPILOT_DISK_WRITE.has(event.name) ? "write" : "read",
+          disk: writes ? "write" : "read",
           activeFile: path !== null ? fileLabel(path) : null,
         };
       }

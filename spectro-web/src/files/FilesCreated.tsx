@@ -78,7 +78,7 @@ function card(props: FilesCreatedProps, row: FileRow, touch: FileTouch): JSX.Ele
       data-path={row.path}
     >
       <div className="files-card__head" title={row.path}>
-        {shownPath(row.label, touch.folder)}
+        {shownPath(row.label, [touch])}
       </div>
       <div className="files-card__meta">
         {sourceTags(lang, touch.sources)}

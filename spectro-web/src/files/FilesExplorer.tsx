@@ -8,7 +8,7 @@
 import type { CSSProperties, JSX } from "react";
 import { t, type Lang } from "../i18n/i18n";
 import type { FileRow, Source } from "./fold";
-import type { TouchKind } from "./shell";
+import type { ShellTouch, TouchKind } from "./shell";
 
 /** The kinds that say a file's content or existence moved, as fold.ts counts them. */
 export const CHANGE_KINDS: ReadonlySet<TouchKind> = new Set<TouchKind>([
@@ -58,17 +58,23 @@ export function sourceTags(lang: Lang, sources: readonly Source[]): JSX.Element[
   ));
 }
 
-/** The glob characters: a folder touch whose path holds one names a pattern. */
+/** The glob characters; a pattern row splits off at its first segment that holds one. */
 const GLOB = /[*?[\]{}]/;
 
-/** A path as the explorer and the detail name it: a folder ends in a slash, a pattern does not. */
-export function shownPath(label: string, folder: boolean): string {
-  return folder && !label.endsWith("/") && !GLOB.test(label) ? `${label}/` : label;
+/**
+ * A path as the tab names it, given the touches behind it: a folder ends in a
+ * slash, a pattern does not. The fold marks a pattern by its source (card 605),
+ * so a real folder named `[id]` keeps its slash.
+ */
+export function shownPath(label: string, touches: readonly Pick<ShellTouch, "folder" | "pattern">[]): string {
+  const folder = touches.some((touch) => touch.folder);
+  const pattern = touches.some((touch) => touch.pattern === true);
+  return folder && !pattern && !label.endsWith("/") ? `${label}/` : label;
 }
 
-/** A row that names a pattern: a folder touch with a glob character in its path (card 605). */
+/** A row that names a pattern: a touch the fold marked as one. */
 function isPattern(row: FileRow): boolean {
-  return row.touches.some((touch) => touch.folder) && GLOB.test(row.label);
+  return row.touches.some((touch) => touch.pattern === true);
 }
 
 export interface FilesExplorerProps {
@@ -179,7 +185,6 @@ function rowLine(
   const sources = letterSources(row);
   const guess = !sources.includes("recorded");
   const selected = props.selected === row.path;
-  const folder = row.touches.some((touch) => touch.folder);
   const later = row.firstCall > props.limit;
   const classes = ["files-row"];
   if (selected) classes.push("files-row--sel");
@@ -195,7 +200,7 @@ function rowLine(
       style={depthStyle}
       onClick={() => props.onSelect(row)}
     >
-      <span className="files-row__name">{shownPath(name, folder)}</span>
+      <span className="files-row__name">{shownPath(name, row.touches)}</span>
       {isPattern(row) && (
         <span className="files-row__pattern">{t(props.lang, "filesTab.explorer.pattern")}</span>
       )}
