@@ -14,37 +14,44 @@ export function higher(a: Level, b: Level): Level {
   return LEVEL_ORDER.indexOf(a) <= LEVEL_ORDER.indexOf(b) ? a : b;
 }
 
-// Segments compared in lower case: the default macOS file system opens `.ENV` as `.env`.
+// Names and folders compared in lower case: the default macOS file system opens `.ENV` as `.env`.
 // A segment here marks a folder on the way or the name itself.
-const SECRET_SEGMENTS = new Set([".ssh", ".aws", ".gnupg", "secrets", "credentials", "keychains"]);
-const SECRET_NAMES = new Set([
-  ".netrc",
-  ".npmrc",
-  ".pypirc",
-  ".git-credentials",
-  "credentials.json",
-  "kubeconfig",
-]);
+const KEY_STORE_SEGMENTS = new Set([".ssh", ".aws", ".gnupg", "keychains"]);
+// These two, and the names secrets.* and credentials.*, do not count for source code or prose.
+const DATA_SEGMENTS = new Set(["secrets", "credentials"]);
+const CODE_EXTENSIONS = new Set(
+  "ts tsx js jsx mjs cjs java kt py go rs rb swift c h cpp cs php scala md".split(" "),
+);
+const SECRET_NAMES = new Set([".netrc", ".npmrc", ".pypirc", ".git-credentials", "kubeconfig"]);
 const SECRET_EXTENSIONS = [".pem", ".key", ".p12", ".pfx", ".keystore", ".jks", ".kdbx"];
 const SSH_KEY_NAME = /^id_(?:rsa|ed25519|ecdsa|dsa)/;
 const TEMPLATE_SUFFIXES = new Set(["example", "sample", "template", "dist", "defaults"]);
 
 // Call B1: the folders that count as sensitive when no workspace was recorded.
-const SYSTEM_FOLDERS = new Set(["etc", "var", "private", "usr", "Library", "System"]);
-const HOME_FOLDERS = new Set(["Users", "home"]);
+const SYSTEM_FOLDERS = new Set(["etc", "var", "private", "tmp", "usr", "library", "system"]);
+const HOME_FOLDERS = new Set(["users", "home"]);
 
-/** True when the path's name or a folder on its way is secret-shaped. */
+/** True when the path's name or a folder on its way is secret-shaped. A `*.pub` public key never is. */
 export function isSecretPath(path: string): boolean {
   const segments = segmentsOf(normal(path)).map((s) => s.toLowerCase());
-  if (segments.some((s) => SECRET_SEGMENTS.has(s))) return true;
-  return isSecretName(segments[segments.length - 1] ?? "");
+  const name = segments[segments.length - 1] ?? "";
+  const ext = extensionOf(name);
+  if (ext === "pub") return false;
+  if (segments.some((s) => KEY_STORE_SEGMENTS.has(s))) return true;
+  const code = CODE_EXTENSIONS.has(ext);
+  if (!code && segments.some((s) => DATA_SEGMENTS.has(s))) return true;
+  return isSecretName(name, code);
 }
 
 /** The level of one path. Never `unknown`: that level belongs to scripts, not to paths. */
 export function pathLevel(path: string, workspace: string | null): Level {
   if (isSecretPath(path)) return "critical";
-  if (workspaceRoot(workspace) !== null) return outsideWorkspace(path, workspace) ? "sensitive" : "project";
-  return isSystemOrHomeDot(normal(path)) ? "sensitive" : "project";
+  const p = normal(path);
+  const root = workspaceRoot(workspace);
+  if (root === null) return isSystemFolder(p) || isHomeDot(p) ? "sensitive" : "project";
+  if (outsideWorkspace(path, workspace)) return "sensitive";
+  // A home folder's dot files stay sensitive in a workspace that holds the home folder.
+  return isHomeDot(p) && !isHomeDot(root) ? "sensitive" : "project";
 }
 
 /**
@@ -77,19 +84,29 @@ function workspaceRoot(workspace: string | null): string | null {
   return isRooted(root) && root !== "/" ? root : null;
 }
 
-function isSecretName(name: string): boolean {
+// The part after the last dot, or "" for a name without a dot.
+function extensionOf(name: string): string {
   const dot = name.lastIndexOf(".");
-  if (dot >= 0 && TEMPLATE_SUFFIXES.has(name.slice(dot + 1))) return false;
-  if (name === ".env" || name.startsWith(".env.") || name.startsWith("secrets.")) return true;
+  return dot >= 0 ? name.slice(dot + 1) : "";
+}
+
+function isSecretName(name: string, code: boolean): boolean {
+  if (TEMPLATE_SUFFIXES.has(extensionOf(name))) return false;
+  if (name === ".env" || name.startsWith(".env.")) return true;
+  if (!code && (name.startsWith("secrets.") || name.startsWith("credentials."))) return true;
   if (SECRET_EXTENSIONS.some((ext) => name.endsWith(ext))) return true;
   return SSH_KEY_NAME.test(name) || SECRET_NAMES.has(name);
 }
 
-function isSystemOrHomeDot(p: string): boolean {
+function isSystemFolder(p: string): boolean {
+  return p.startsWith("/") && SYSTEM_FOLDERS.has((segmentsOf(p)[0] ?? "").toLowerCase());
+}
+
+// `/Users/<n>/.x`, `/home/<n>/.x` or `~/.x`, and anything below such a dot folder.
+function isHomeDot(p: string): boolean {
   const s = segmentsOf(p);
   if (p.startsWith("/")) {
-    if (SYSTEM_FOLDERS.has(s[0])) return true;
-    return HOME_FOLDERS.has(s[0]) && s.length >= 3 && s[2].startsWith(".");
+    return HOME_FOLDERS.has((s[0] ?? "").toLowerCase()) && s.length >= 3 && s[2].startsWith(".");
   }
   return s[0] === "~" && s.length >= 2 && s[1].startsWith(".");
 }

@@ -43,6 +43,57 @@ describe("pathLevel", () => {
       expect(pathLevel(p, null), p).toBe("critical");
       expect(isSecretPath(p), p).toBe(true);
     }
+    // *.key stays critical, though Keynote documents share the extension.
+    expect(pathLevel("/w/server.key", "/w")).toBe("critical");
+  });
+
+  it("source and prose named after secrets stay project", () => {
+    for (const p of [
+      "src/files/secrets.ts",
+      "src/files/secrets.test.ts",
+      "app/secrets/vault.py",
+      "docs/credentials.md",
+    ]) {
+      expect(pathLevel(p, "/w"), p).toBe("project");
+      expect(pathLevel(`/w/${p}`, "/w"), p).toBe("project");
+      expect(pathLevel(p, null), p).toBe("project");
+      expect(isSecretPath(p), p).toBe(false);
+    }
+    const data = [
+      "secrets.yaml",
+      "secrets.json",
+      "credentials.json",
+      "credentials.yaml",
+      "credentials",
+      "secrets/prod.env",
+      "credentials/token.txt",
+    ];
+    for (const p of data) {
+      expect(pathLevel(p, "/w"), p).toBe("critical");
+      expect(pathLevel(p, null), p).toBe("critical");
+    }
+  });
+
+  it("a key store folder is critical whatever the extension", () => {
+    for (const p of [
+      "/u/.ssh/helper.py",
+      "~/.aws/notes.md",
+      "/u/.gnupg/agent.ts",
+      "/Users/a/Library/Keychains/x.js",
+    ]) {
+      expect(pathLevel(p, "/w"), p).toBe("critical");
+      expect(pathLevel(p, null), p).toBe("critical");
+    }
+  });
+
+  it("a public key is never critical", () => {
+    for (const p of ["~/.ssh/id_rsa.pub", "/u/.ssh/id_ed25519.pub"]) {
+      expect(pathLevel(p, "/w"), p).toBe("sensitive");
+      expect(isSecretPath(p), p).toBe(false);
+    }
+    expect(pathLevel("~/.ssh/id_rsa.pub", null)).toBe("sensitive");
+    expect(pathLevel("/w/keys/deploy.pub", "/w")).toBe("project");
+    expect(pathLevel("~/.ssh/id_rsa", "/w")).toBe("critical");
   });
 
   it("templates stay project", () => {
@@ -85,6 +136,7 @@ describe("pathLevel", () => {
       "/etc/hosts",
       "/var/log/x",
       "/private/tmp/x",
+      "/tmp/x",
       "/usr/local/x",
       "/Library/x",
       "/System/x",
@@ -93,7 +145,23 @@ describe("pathLevel", () => {
       "~/.bash_history",
     ];
     for (const p of sensitive) expect(pathLevel(p, null), p).toBe("sensitive");
-    for (const p of ["/Users/a/p/src/x.ts", "src/x.ts"]) expect(pathLevel(p, null), p).toBe("project");
+    for (const p of ["/Users/a/p/src/x.ts", "src/x.ts", "/"]) expect(pathLevel(p, null), p).toBe("project");
+  });
+
+  it("system and home folder names ignore case", () => {
+    expect(pathLevel("/library/x", null)).toBe("sensitive");
+    expect(pathLevel("/users/a/.zshrc", null)).toBe("sensitive");
+  });
+
+  it("a home folder's dot files stay sensitive in a workspace that holds the home folder", () => {
+    for (const ws of ["/Users/a", "/Users"]) {
+      expect(pathLevel("/Users/a/.zsh_history", ws), ws).toBe("sensitive");
+      expect(pathLevel("/Users/a/.config/gh/hosts.yml", ws), ws).toBe("sensitive");
+      expect(pathLevel("/Users/a/notes.md", ws), ws).toBe("project");
+    }
+    expect(pathLevel("~/.zshrc", "~")).toBe("sensitive");
+    // A workspace inside the dot folder keeps its own files project.
+    expect(pathLevel("/Users/a/.config/nvim/init.lua", "/Users/a/.config/nvim")).toBe("project");
   });
 
   it("a folded path and a trailing slash do not move the border", () => {
