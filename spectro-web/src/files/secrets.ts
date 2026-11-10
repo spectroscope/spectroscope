@@ -210,9 +210,18 @@ function isCode(value: string): boolean {
 }
 
 /**
+ * A password-assignment value made only of letters, `_` and `.` names code (`string`,
+ * `isPassword`, `process.env.API_KEY`), not a credential. Asked after isPlaceholder,
+ * so `changeme` and `password` still count as placeholders.
+ */
+const isIdentifier = (value: string): boolean => /^[A-Za-z_.]+$/.test(value);
+
+/**
  * Every credential in a text, in text order. The rules are asked in the order of
  * CREDENTIAL_RULES, and a match that overlaps an earlier hit or placeholder is
- * skipped, so an earlier rule wins. A placeholder is counted, not returned.
+ * skipped, so an earlier rule wins. A placeholder is counted, not returned. A
+ * password-assignment value that is code or a plain identifier is skipped without
+ * counting.
  */
 export function findCredentials(text: string): { hits: CredentialHit[]; placeholders: number } {
   const hits: CredentialHit[] = [];
@@ -226,8 +235,10 @@ export function findCredentials(text: string): { hits: CredentialHit[]; placehol
       const isPassword = rule === PASSWORD_RULE;
       const secret = isPassword ? (m[1] ?? m[0]) : secretPart(rule.name, m[0]);
       if (isPassword && isCode(secret)) continue;
+      const placeholder = isPlaceholder(rule.name, secret);
+      if (isPassword && !placeholder && isIdentifier(secret)) continue;
       taken.push([start, end]);
-      if (isPlaceholder(rule.name, secret)) placeholders++;
+      if (placeholder) placeholders++;
       else hits.push({ rule: rule.name, match: m[0], secret, start, end });
     }
   }

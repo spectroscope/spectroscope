@@ -91,6 +91,28 @@ describe("findCredentials", () => {
     }
   });
 
+  it("a value shaped like a plain identifier is code, after the placeholder test", () => {
+    for (const code of [
+      "password: string",
+      "secret: string",
+      "token = isPassword",
+      "API_KEY=process.env.API_KEY",
+      "self.token = config.secret",
+    ]) {
+      expect(findCredentials(code), code).toEqual({ hits: [], placeholders: 0 });
+    }
+    const values: [string, string, string][] = [
+      ["DB_PASSWORD=", "s3cr3t-Pa55", ""],
+      ['"password": "', "hunter2hunter2", '"'],
+      ["SECRET_KEY = '", "q9w8e7r6t5", "'"],
+    ];
+    for (const [head, value, tail] of values) {
+      expect(rulesAndSecrets(head + value + tail), head).toEqual([["password-assignment", value]]);
+    }
+    // Letters only, but a placeholder: the placeholder test comes first.
+    expect(findCredentials("DB_PASSWORD=changeme")).toEqual({ hits: [], placeholders: 1 });
+  });
+
   it("placeholders are counted, not returned", () => {
     for (const text of [
       "AKIA" + "IOSFODNN7EXAMPLE",
@@ -260,6 +282,10 @@ describe("ruleMatches", () => {
         "}",
         "a-b",
         "x",
+        // Upper and mixed case for the i flag, a double hyphen for the start that skips hyphens.
+        "PASS",
+        "--",
+        "Api",
       ],
     };
     const rand = seeded(605);

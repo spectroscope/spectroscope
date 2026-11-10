@@ -59,7 +59,9 @@ function unescapeJava(body: string): string {
 }
 
 const LITERAL = String.raw`"(?:[^"\\]|\\.)*"`;
-const CONCAT = new RegExp(String.raw`^\s*${LITERAL}(?:\s*\+\s*${LITERAL})*\s*$`);
+/** String literals joined by `+`: one value. */
+const LITERAL_GROUP = String.raw`${LITERAL}(?:\s*\+\s*${LITERAL})*`;
+const CONCAT = new RegExp(String.raw`^\s*${LITERAL_GROUP}\s*$`);
 
 /** The value of an expression made only of string literals joined by `+`, or null for anything else. */
 function literalValue(expr: string): string | null {
@@ -182,15 +184,22 @@ describe("the twin of Redaction.java", () => {
       if (value === null || rule === null || rest.length > 0) skipped++;
       else parsed.push({ value, rule });
     }
-    // Positive guard against a parser that reads nothing.
-    expect(parsed.length, `${skipped} rows could not be read statically`).toBeGreaterThanOrEqual(12);
+    // Nothing dropped: every row is read, they are all the `new Row(` of the file, and there are
+    // at least as many as the twelve rules.
+    expect(skipped, "rows that could not be read statically").toBe(0);
+    expect(parsed.length).toBe(TEST.match(/\bnew Row\(/g)?.length ?? 0);
+    expect(parsed.length).toBeGreaterThanOrEqual(12);
     parsed.forEach(({ value, rule }, i) => {
       expect(firstRule(value), `reviewed row ${i + 1} (${rule})`).toBe(rule);
     });
 
-    const misses = splitArgs(listOf(TEST, "NEAR_MISSES"))
-      .map(literalValue)
-      .filter((v): v is string => v !== null);
+    const missList = listOf(TEST, "NEAR_MISSES");
+    const entries = splitArgs(missList);
+    const misses = entries.map(literalValue).filter((v): v is string => v !== null);
+    // Nothing dropped: every entry is a literal, and the entries are as many as the literal
+    // groups (literals joined by `+`) the list holds.
+    expect(misses.length, "near misses that could not be read statically").toBe(entries.length);
+    expect(entries.length).toBe(missList.match(new RegExp(LITERAL_GROUP, "g"))?.length ?? 0);
     expect(misses.length).toBeGreaterThanOrEqual(5);
     misses.forEach((value, i) => {
       expect(firstRule(value), `near miss ${i + 1}`).toBeNull();
