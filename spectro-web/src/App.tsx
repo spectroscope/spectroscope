@@ -243,7 +243,7 @@ import {
 } from "./components/importBar";
 import { ImportNoteBar } from "./components/ImportNoteBar";
 import type { ImportedRunSummary } from "./import/claudeCodeRun";
-import { copilotName, holdCopilotSnapshots } from "./import/copilotFolder";
+import { copilotName, holdCopilotSnapshots, importViewId } from "./import/copilotFolder";
 import { importedPhasesOf, type WorkflowDeclaration } from "./lab/workflowGraph";
 import { withCommandMarks } from "./lab/labChatState";
 import { collectImages, imageLines, indexOf, withSourceLines } from "./state/sessionImages";
@@ -1579,7 +1579,8 @@ export function App() {
     wires?: ImportWires,
   ): Promise<void> => {
     const ticket = navNonce.issue(); // an import supersedes any in-flight session open
-    const sessionId = `import:${kind}:${label}`;
+    // Card 605, task 12: a Copilot session's id is part of it, so two of one name get two views.
+    const sessionId = importViewId(kind, label, source);
     // Card 473: only the import on screen holds wires; the last one lets go.
     releaseHeldWires();
     // Card 605, task 12: and only it holds the count of its Copilot file snapshots.
@@ -1676,7 +1677,7 @@ export function App() {
     // for (card 605, task 10), and without it the empty tool bodies read as a
     // broken import.
     setImportBar({
-      sessionId: `import:${kind}:${label}`,
+      sessionId,
       file: label,
       stats: sourceStats(source),
       // Card 440: the bar counts the conversation as the chat shows it.

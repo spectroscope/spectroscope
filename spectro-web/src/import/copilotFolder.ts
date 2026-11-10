@@ -69,6 +69,8 @@ export interface CopilotSide {
   alone?: true;
   /** The file's last line did not parse and was left out (fix round 1 item 5). */
   torn?: true;
+  /** The session folder's name, when the import came from a folder (fix round 1 item 7). */
+  folderId?: string;
 }
 
 /** A picked file as far as this module reads it; a browser File is one. */
@@ -86,6 +88,8 @@ export interface CopilotFolderTexts {
   snapshots: string | null;
   /** An inuse.*.lock sat beside events.jsonl. */
   live: boolean;
+  /** The folder's path inside the pick, when it had one: its name keys the view (fix round 1 item 7). */
+  folder?: string;
 }
 
 /** What a folder load hands the dialog: the same parts a file load hands it, plus the run summary. */
@@ -121,6 +125,7 @@ export async function readCopilotFolder(
     workspace: await side(pick.workspace),
     snapshots: await side(pick.snapshots),
     live: pick.live,
+    folder: pick.folder,
   };
 }
 
@@ -409,8 +414,10 @@ export function loadCopilotFolder(texts: CopilotFolderTexts): CopilotFolderLoad 
   const records = texts.snapshots === null ? null : readSnapshotIndex(texts.snapshots);
   const snapshots =
     records === null ? [] : placeSnapshots(records, events, { lines: loaded.source.lines, origin });
+  const folderId = texts.folder === undefined ? "" : folderName(texts.folder);
   const copilot: CopilotSide = {
     ...side,
+    ...(folderId !== "" ? { folderId } : {}),
     ...(workspace !== null ? { workspace } : {}),
     ...(snapshots.length > 0 ? { snapshots } : {}),
     ...(texts.live
@@ -523,6 +530,21 @@ export function heldCopilotSnapshots(sessionId: string | null | undefined): numb
 
 /** The last segment of a folder path inside a pick. */
 const folderName = (folder: string): string => folder.slice(folder.lastIndexOf("/") + 1);
+
+/**
+ * The view id of an import: `import:<kind>:<label>`, and for a Copilot session
+ * its folder name, else its session id, after a `#` (fix round 1 item 7), so
+ * two sessions of the same name or file name do not share a view.
+ *
+ * @param kind   the format the importer read
+ * @param label  the name the import goes by
+ * @param source what the importer carried beside the stream
+ * @return the replay id
+ */
+export function importViewId(kind: string, label: string, source: Pick<ImportSource, "copilot">): string {
+  const id = source.copilot?.folderId ?? source.copilot?.sessionId ?? null;
+  return id === null ? `import:${kind}:${label}` : `import:${kind}:${label}#${id}`;
+}
 
 /** The yaml name of an imported Copilot folder, the header's title (fix round 1 item 6), or null. */
 export function copilotName(source: Pick<ImportSource, "copilot"> | undefined): string | null {

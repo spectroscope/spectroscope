@@ -9,6 +9,7 @@ import type { RunEvent } from "../events";
 import { detectAndLoad } from "./detect";
 import {
   copilotName,
+  importViewId,
   copilotSideFile,
   copilotStoreRows,
   copilotWorkspace,
@@ -67,6 +68,7 @@ describe("reading a Copilot session folder (item 1)", () => {
       workspace: "name: x\n",
       snapshots: '{"schema":1,"snapshots":[]}',
       live: true,
+      folder: "s01",
     });
     expect(files.map((f) => f.reads)).toEqual([1, 1, 1, 0, 0]);
   });
@@ -694,5 +696,54 @@ describe("a session without a name is told apart by its folder (fix round 1 item
     const plain = loadCopilotFolder({ events: FOLDER_EVENTS, workspace: null, snapshots: null, live: false });
     expect(copilotName(plain.source)).toBeNull();
     expect(copilotName(undefined)).toBeNull();
+  });
+});
+
+// ---- fix round 1, item 7 (review M4) -------------------------------------------------------
+
+describe("each Copilot session has its own view (fix round 1 item 7)", () => {
+  it("two store rows of the same name loaded one after the other get two views", async () => {
+    const yaml = "name: demo name 3\n";
+    const sessions: PickedCopilotFolder[] = [
+      { folder: "st/aaaa1111-x", events: 0, workspace: 1, snapshots: null, live: false },
+      { folder: "st/bbbb2222-y", events: 2, workspace: 3, snapshots: null, live: false },
+    ];
+    const files = [
+      file("events.jsonl", FOLDER_EVENTS),
+      file("workspace.yaml", yaml),
+      file("events.jsonl", FOLDER_EVENTS.replace('"sessionId":"s-folder"', '"sessionId":"s-other"')),
+      file("workspace.yaml", yaml),
+    ];
+    const first = loadCopilotFolder(await readCopilotFolder(files, sessions[0]));
+    const second = loadCopilotFolder(await readCopilotFolder(files, sessions[1]));
+    expect(first.label).toBe(second.label);
+    const a = importViewId(first.kind, first.label, first.source);
+    const b = importViewId(second.kind, second.label, second.source);
+    expect(a).not.toBe(b);
+    expect(a).toBe("import:vscode-agent:demo name 3#aaaa1111-x");
+    // The same session again keeps its view.
+    expect(
+      importViewId(
+        first.kind,
+        first.label,
+        loadCopilotFolder(await readCopilotFolder(files, sessions[0])).source,
+      ),
+    ).toBe(a);
+  });
+
+  it("a lone events.jsonl takes the id of its session.start, any other import keeps today's id", () => {
+    const lone = detectAndLoad(FOLDER_EVENTS);
+    expect(importViewId(lone.kind, "events.jsonl", lone.source)).toBe(
+      "import:vscode-agent:events.jsonl#s-folder",
+    );
+    const claude = detectAndLoad(CLAUDE);
+    expect(importViewId(claude.kind, "x.jsonl", claude.source)).toBe("import:claude-code:x.jsonl");
+  });
+
+  it("App names the view and the bar by it", () => {
+    const app = readFileSync(new URL("../App.tsx", import.meta.url), "utf8");
+    expect(app).toMatch(/const sessionId = importViewId\(kind, label, source\);/);
+    expect(app).toMatch(/setImportBar\(\{\s*sessionId,/);
+    expect(app).not.toMatch(/`import:\$\{kind\}:\$\{label\}`/);
   });
 });
