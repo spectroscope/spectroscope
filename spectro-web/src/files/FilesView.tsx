@@ -14,8 +14,8 @@
 // never changes the route.
 //
 // Card 605: a Report button after the model controls opens the report sheet
-// (FilesReportSheet.tsx) over the ledger the panes show; closing it returns
-// the focus to the button.
+// (FilesReportSheet.tsx) over the ledger the panes show. Closing the sheet
+// returns the focus to the button.
 
 import {
   useEffect,

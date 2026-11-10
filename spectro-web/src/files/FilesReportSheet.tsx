@@ -1,15 +1,15 @@
 // Card 605: the sheet behind the files tab's Report button (design section 6).
-// It shows the session's verdict level and sentence, and three outputs of one
-// report: PDF through the print dialog of a hidden frame, the way
-// components/ExportDialog.tsx prints, and HTML and CSV through saveTextFile.
+// It shows the session's verdict level and sentence and offers three outputs
+// of one report. PDF goes through the print dialog of a hidden frame, as
+// components/ExportDialog.tsx prints. HTML and CSV go through saveTextFile.
 // The report covers the whole session; the tab's filters do not apply (R6).
 //
 // The report is built once, from the events and the ledger the sheet opened
 // with. The build takes about 300 ms on the largest real session, so the sheet
 // shows first and builds after it was painted. The version line comes from
-// GET /api/bundles, asked once. Both run in openReportSheet, which the
-// container starts from an effect and a test can call by hand; the panel
-// keeps no state of its own besides the print frame.
+// GET /api/bundles, asked once. Both run in openReportSheet. The container
+// starts it from an effect, and a test can call it by hand. The panel keeps
+// no state of its own besides the print frame.
 
 import { useEffect, useRef, useState, type JSX, type KeyboardEvent, type Ref } from "react";
 import { createPortal } from "react-dom";
