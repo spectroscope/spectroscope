@@ -48,7 +48,7 @@ describe("the files report leaks no credential", () => {
   it("every position and terminator value made a credential finding at its call", () => {
     // Positive guard for the index check below: a value that no rule and no
     // position found would also be absent from the outputs, and pass it.
-    expect(LEAK_CALLS.length).toBe(18);
+    expect(LEAK_CALLS.length).toBe(27);
     const missing = LEAK_CALLS.filter(
       ({ call }) =>
         !report.findings.some(

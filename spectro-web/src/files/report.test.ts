@@ -1178,6 +1178,39 @@ describe("credentials in commands", () => {
           .start(W)
           .tool("Bash", { command: `psql postgres://bob:${s[0]}@db.example.com/x -c 'select 1'` }).events,
     ],
+    // Task 11 item 1: the re-review's probes, a terminator in the first six
+    // characters, a value in the word after its name and one in a comment.
+    ...[",", '"', ";", ")"].map((mark): [string, string[], (s: string[]) => RunEvent[]] => [
+      `a password whose head before ${mark} is short`,
+      [["Ab", mark, "Cd2Ef3xQz"].join("")],
+      (s) =>
+        new Rec().start(W).tool("Bash", { command: `curl -d 'password=${s[0]}' https://a.example.com` })
+          .events,
+    ]),
+    [
+      "a token for --data-urlencode with a short head",
+      [["Ab", ",Cd2Ef3xQz"].join("")],
+      (s) =>
+        new Rec()
+          .start(W)
+          .tool("Bash", { command: `curl --data-urlencode 'token=${s[0]}' https://a.example.com` }).events,
+    ],
+    [
+      "a mysql password with two terminators",
+      [["Ab1", ",Cd2", ";Ef3x"].join("")],
+      (s) => new Rec().start(W).tool("Bash", { command: `mysql --password='${s[0]}' -e 'select 1'` }).events,
+    ],
+    ...["password=", "token:"].map((name): [string, string[], (s: string[]) => RunEvent[]] => [
+      `a value in the word after ${name}`,
+      [["Ab1Cd2", ",Ef3xQz"].join("")],
+      (s) => new Rec().start(W).tool("Bash", { command: `curl -d ${name} ${s[0]}` }).events,
+    ]),
+    [
+      "a password in a comment",
+      [["Ab1Cd2", ",Ef3xQz"].join("")],
+      (s) =>
+        new Rec().start(W).tool("Bash", { command: `curl https://a.example.com # password=${s[0]}` }).events,
+    ],
   ];
 
   for (const [name, secrets, events] of cases) {

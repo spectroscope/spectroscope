@@ -51,6 +51,80 @@ describe("a password assignment in a command", () => {
   });
 });
 
+// Task 11 item 1: a password value is the rest of its shell word, the next
+// word after a name that ends in its sign, and the rest of a comment token,
+// however short its part before the first terminator is.
+describe("a password value however short its head (task 11 item 1)", () => {
+  const SHORT = ["Ab"].join("");
+  const REST = ["Cd2", "Ef3xQz"].join("");
+  const ranged = (command: string) =>
+    read(command).hits.map((h) => [h.rule, command.slice(h.start, h.end), h.secret]);
+
+  it("runs to the end of the shell word past a terminator in its first six characters (1a)", () => {
+    for (const mark of [",", '"', ";", ")"]) {
+      const value = `${SHORT}${mark}${REST}`;
+      const command = `curl -d 'password=${value}' https://api.example.com/login`;
+      expect(ranged(command), mark).toEqual([["password-assignment", `password=${value}`, value]]);
+    }
+    const token = `${SHORT},${REST}`;
+    const urlencode = `curl --data-urlencode 'token=${token}' https://api.example.com/login`;
+    expect(ranged(urlencode)).toEqual([["password-assignment", `token=${token}`, token]]);
+    const mysql = ["Ab1", ",Cd2", ";Ef3x"].join("");
+    const login = `mysql --password='${mysql}' -e 'select 1'`;
+    expect(ranged(login)).toEqual([["password-assignment", `password='${mysql}`, mysql]]);
+  });
+
+  it("counts only a whole value of six or more characters", () => {
+    expect(read(`curl -d 'password=${SHORT},Cd' https://api.example.com/login`).hits).toEqual([]);
+  });
+
+  it("takes the next word when the word that holds the name ends in its sign (1b)", () => {
+    for (const head of [["Ab1", "Cd2"].join(""), SHORT]) {
+      const value = `${head},${["Ef3", "xQz"].join("")}`;
+      for (const name of ["password=", "token:"]) {
+        const command = `curl -d ${name} ${value} https://api.example.com/login`;
+        expect(ranged(command), `${name} ${head.length}`).toEqual([
+          ["password-assignment", `${name} ${value}`, value],
+        ]);
+      }
+    }
+  });
+
+  it("masks a hit in a comment to the end of its token (1c)", () => {
+    for (const head of [["Ab1", "Cd2"].join(""), SHORT]) {
+      const value = `${head},${["Ef3", "xQz"].join("")}`;
+      const command = `curl https://a.example.com # password=${value} more`;
+      expect(ranged(command), String(head.length)).toEqual([
+        ["password-assignment", `password=${value}`, value],
+      ]);
+    }
+    // Any rule's hit in a comment runs to the end of its token.
+    const pat = ["gh", "p_", "Zq4Lm8Rt2Vx6Bn0Ck3Hs7Jd1Wf5Gy9Pa2Ue6"].join("");
+    const command = `git push # with ${pat},${REST} done`;
+    expect(read(command).hits.map((h) => [h.rule, command.slice(h.start, h.end)])).toEqual([
+      ["github-pat", `${pat},${REST}`],
+    ]);
+  });
+
+  it("a value that holds another rule's credential is masked whole under that rule's label", () => {
+    const pat = ["gh", "p_", "Zq4Lm8Rt2Vx6Bn0Ck3Hs7Jd1Wf5Gy9Pa2Ue6"].join("");
+    const value = `${SHORT},${pat}`;
+    const command = `curl -d 'token=${value}' https://api.example.com/login`;
+    const { hits } = read(command);
+    expect(hits.map((h) => [h.rule, command.slice(h.start, h.end), h.secret, h.aliases])).toEqual([
+      ["github-pat", value, pat, [value]],
+    ]);
+  });
+
+  it("a whole value decides once: a placeholder head of a real value counts no placeholder", () => {
+    const value = `${"a".repeat(6)},${REST}`;
+    const reading = read(`curl -d 'password=${value}' https://api.example.com/login`);
+    expect([reading.hits.map((h) => h.secret), reading.placeholders]).toEqual([[value], 0]);
+    // A variable stays one placeholder, whichever reader sees it.
+    expect(read("curl -d token=$TOKEN https://a.example.com").placeholders).toBe(1);
+  });
+});
+
 describe("a URL's userinfo in a command", () => {
   it("masks from after :// to the last @ of the authority, the host stays", () => {
     const at = `${HEAD}@${TAIL}`;

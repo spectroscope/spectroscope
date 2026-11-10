@@ -6,7 +6,9 @@
 // one value in each credential position of a network command (item 1b) and
 // one password with each terminator a rule stops at (item 1a). Since task 10
 // (item 9) it holds three values in positions that say nothing of a
-// credential: they are masked in every output and make no finding.
+// credential: they are masked in every output and make no finding. Since
+// task 11 (item 1) it holds one password per probe of the re-review, each
+// with fewer than six characters before its first terminator.
 //
 // Test support only: no module outside a test imports it, which
 // FilesReportSheet.test.tsx pins, so it never reaches the shipped bundle.
@@ -117,6 +119,77 @@ const TERMINATED: readonly [string, string, string, (v: string) => string][] = [
     (v) => `curl -d 'password=${v}' https://a.example.com`,
   ],
 ];
+/**
+ * Task 11 item 1: one password per probe of the re-review, its head before the
+ * first terminator shorter than six characters: the head, the terminator, the
+ * rest, and the command.
+ */
+const SHORT_HEAD: readonly [string, string, string, string, (v: string) => string][] = [
+  [
+    "short head, comma",
+    ["Kq4", "wZ"].join(""),
+    ",",
+    ["Zr8", "nPx2"].join(""),
+    (v) => `curl -d 'password=${v}' https://a.example.com`,
+  ],
+  [
+    "short head, quote",
+    ["Lm5", "x"].join(""),
+    '"',
+    ["Yt3", "bQw7"].join(""),
+    (v) => `curl -d 'password=${v}' https://a.example.com`,
+  ],
+  [
+    "short head, semicolon",
+    ["Nr6", "vC"].join(""),
+    ";",
+    ["Wp2", "kHs9"].join(""),
+    (v) => `curl -d 'password=${v}' https://a.example.com`,
+  ],
+  [
+    "short head, bracket",
+    ["Pz7", "q"].join(""),
+    ")",
+    ["Vd4", "mJr8"].join(""),
+    (v) => `curl -d 'password=${v}' https://a.example.com`,
+  ],
+  [
+    "short head, --data-urlencode",
+    ["Qx8", "rB"].join(""),
+    ",",
+    ["Ug5", "nLt3"].join(""),
+    (v) => `curl --data-urlencode 'token=${v}' https://a.example.com`,
+  ],
+  [
+    "short head, mysql --password",
+    ["Rw9", "s"].join(""),
+    ",",
+    ["Ty6", ";Kb2x"].join(""),
+    (v) => `mysql --password='${v}' -e 'select 1'`,
+  ],
+  [
+    "the word after password=",
+    ["Sv2", "tD"].join(""),
+    ",",
+    ["Rh7", "cMq4"].join(""),
+    (v) => `curl -d password= ${v} https://a.example.com`,
+  ],
+  [
+    "the word after token:",
+    ["Tu3", "y"].join(""),
+    ",",
+    ["Qf8", "zNw5"].join(""),
+    (v) => `curl -d token: ${v} https://a.example.com`,
+  ],
+  [
+    "a comment",
+    ["Vt4", "uE"].join(""),
+    ",",
+    ["Pk9", "aXr6"].join(""),
+    (v) => `curl https://a.example.com # password=${v}`,
+  ],
+];
+
 const MARKS: Record<string, string> = { comma: ",", quote: "'", semicolon: ";", "@": "@", "/": "/" };
 const terminated = (name: string, a: string, b: string) => `${a}${MARKS[name]}${b}`;
 
@@ -150,6 +223,7 @@ export const LEAK_RAW: readonly string[] = [
   ...POSITIONS.map(([, v]) => v),
   ...MASKED_ONLY.map(([, v]) => v),
   ...TERMINATED.flatMap(([name, a, b]) => [a, b, terminated(name, a, b)]),
+  ...SHORT_HEAD.flatMap(([, head, mark, rest]) => [head, rest, `${head}${mark}${rest}`]),
 ];
 
 /** A session written event by event, one second apart. */
@@ -190,8 +264,8 @@ class Rec {
   }
 }
 
-/** The session's events and, for each value of POSITIONS and TERMINATED, the event index of the call that
- *  holds it; `quiet` the same for MASKED_ONLY. */
+/** The session's events and, for each value of POSITIONS, TERMINATED and SHORT_HEAD, the event index of the
+ *  call that holds it; `quiet` the same for MASKED_ONLY. */
 function leakSession(): {
   events: RunEvent[];
   calls: { name: string; call: number }[];
@@ -235,6 +309,10 @@ function leakSession(): {
   for (const [name, a, b, command] of TERMINATED) {
     calls.push({ name: `terminator ${name}`, call: rec.events.length });
     rec.tool("Bash", { command: command(terminated(name, a, b)) });
+  }
+  for (const [name, head, mark, rest, command] of SHORT_HEAD) {
+    calls.push({ name, call: rec.events.length });
+    rec.tool("Bash", { command: command(`${head}${mark}${rest}`) });
   }
   for (const [name, value, command] of MASKED_ONLY) {
     quiet.push({ name, call: rec.events.length });

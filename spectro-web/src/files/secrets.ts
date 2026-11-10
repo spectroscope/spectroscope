@@ -38,6 +38,25 @@ export const PASSWORD_RULE: CredentialRule = {
     /\b[A-Za-z0-9_-]*(?:pass(?:word|wd|phrase)?|pwd|secret|token|api[_-]?key|access[_-]?key)(?:[_-]?key)?["']?\s*[:=]\s*["']?([^\s"'`;,)\]}]{6,})/i,
 };
 
+/**
+ * The name and sign of a password assignment, as PASSWORD_RULE reads them
+ * (global, from the start of a run of name characters). A shell command takes
+ * its value from what follows the sign (commandSecrets.ts, task 11 item 1);
+ * secrets.test.ts holds the two spellings of the names equal.
+ */
+export const PASSWORD_NAME =
+  /(?<![A-Za-z0-9_-])[A-Za-z0-9_-]*(?:pass(?:word|wd|phrase)?|pwd|secret|token|api[_-]?key|access[_-]?key)(?:[_-]?key)?["']?\s*[:=]/gi;
+
+/**
+ * What the password rule makes of a value: code (skipped without counting), a
+ * placeholder (counted), or a credential. A command reads a plain identifier
+ * as a credential, so this has no identifier skip.
+ */
+export function passwordValue(value: string): "code" | "placeholder" | "credential" {
+  if (isCode(value) || value.startsWith(DASHES + "BEGIN")) return "code";
+  return isPlaceholder(PASSWORD_RULE.name, value) ? "placeholder" : "credential";
+}
+
 const PERSONAL = new Set(["email", "iban"]);
 
 /** The credential rules of the twin (without email and iban), then the password rule. */

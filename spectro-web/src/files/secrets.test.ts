@@ -7,6 +7,7 @@ import {
   COMMAND_RULES,
   CREDENTIAL_RULES,
   KEY_BODY_RULE,
+  PASSWORD_NAME,
   PASSWORD_RULE,
   REDACTION_RULES,
   countPersonalData,
@@ -37,6 +38,14 @@ describe("the rule tables", () => {
     expect(CREDENTIAL_RULES).toHaveLength(11);
     expect(CREDENTIAL_RULES[10]).toBe(PASSWORD_RULE);
     for (const rule of [...REDACTION_RULES, PASSWORD_RULE]) expect(rule.pattern.flags).not.toContain("g");
+  });
+
+  it("a command's password names are the password rule's names (task 11 item 1)", () => {
+    const lookbehind = "(?<![A-Za-z0-9_-])";
+    expect(PASSWORD_NAME.source.startsWith(lookbehind)).toBe(true);
+    expect(
+      PASSWORD_RULE.pattern.source.startsWith(`\\b${PASSWORD_NAME.source.slice(lookbehind.length)}`),
+    ).toBe(true);
   });
 
   it("key-body is a rule of the report, read on shell commands only and not in the twin", () => {
