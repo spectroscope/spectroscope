@@ -816,7 +816,8 @@ export function importClaudeCodeRun(input: {
     events,
     kind: session.kind,
     ...(session.subagent !== undefined ? { subagent: session.subagent } : {}),
-    source: { lines: session.source.lines, origin },
+    // The file's own lines and what the importer counted in them; the origin is the merge's.
+    source: { ...session.source, origin },
     workspace,
     childrenMerged: mergedIds.length,
     childrenSkipped,

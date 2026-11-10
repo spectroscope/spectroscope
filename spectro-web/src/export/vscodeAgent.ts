@@ -4,9 +4,11 @@
 //
 // This is the LOSSY target, and the losses are structural, not bugs here:
 //
-//   tool output   the format's `tool.execution_complete` carries nothing but
-//                 { toolCallId, success }. There is no field for the result, so
-//                 a read_file that returned a whole file arrives as "it worked".
+//   tool output   this writer puts nothing on `tool.execution_complete` but
+//                 { toolCallId, success }. The format has a result field
+//                 (data.result.content, read by the importer since card 605);
+//                 writing it is not built, so a read_file that returned a
+//                 whole file arrives as "it worked".
 //   subagents     one lane, no spawn record. A subagent's prose is folded into
 //                 the main lane so the words survive; the attribution does not.
 //   token counts  no usage record anywhere in that shape.

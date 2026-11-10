@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 import { read, stripComments } from "../testkit/source";
 
 const app = stripComments(read("../App.tsx", import.meta.url));
+const dialog = stripComments(read("./ImportDialog.tsx", import.meta.url));
 
 function openImport(): string {
   const at = app.indexOf("  const openImport = ");
@@ -23,9 +24,10 @@ describe("App shows the import bar card 440 describes", () => {
   // One call gives the notes and whether the file is an agent's transcript, so
   // the bar cannot carry the subagent note and still call the file a session.
   it("builds the notes for special kinds of file in one place", () => {
-    // Card 473 added the found sentence as its own field, in the same call.
+    // Card 473 added the found sentence as its own field, in the same call, and
+    // card 605 (task 10) the count of tool results the file recorded no output for.
     expect(openImport()).toMatch(
-      /\.\.\.importBarAbout\(lang, \{ kind, subagent, run, extra: note, found: foundNote \}\),/,
+      /\.\.\.importBarAbout\(lang, \{\s*kind,\s*subagent,\s*run,\s*extra: note,\s*found: foundNote,\s*toolOutputs: source\.toolOutputs,?\s*\}\),/,
     );
     expect(openImport()).not.toContain("importBarNote(");
   });
@@ -36,5 +38,19 @@ describe("App shows the import bar card 440 describes", () => {
     );
     expect(app).not.toContain('"imp.bar"');
     expect(app).not.toContain('className="import-note-bar"');
+  });
+});
+
+// Card 605, task 10: the dialog says the count of tool results without output
+// for every way a file arrives (a paste or pick, a store row, a folder pick),
+// read off the source each one loaded, and never off the format alone.
+describe("the import dialog states the tool output note from the loaded source", () => {
+  it("sets the note from toolOutputNote on all three load paths", () => {
+    const calls = [...dialog.matchAll(/setNote\(toolOutputNote\(lang, (\w+(?:\.\w+)*)\)\)/g)].map(
+      (m) => m[1],
+    );
+    expect(calls).toEqual(["source.toolOutputs", "result.source.toolOutputs", "run.source.toolOutputs"]);
+    expect(dialog).not.toContain('kind === "vscode-agent"');
+    expect(dialog).not.toContain("imp.vscodeNote");
   });
 });

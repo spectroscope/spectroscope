@@ -447,9 +447,18 @@ export const dict: Record<string, { de: string; en: string }> = {
   "imp.found.llmNone": { de: "kein LLM-Wire", en: "no llm wire" },
   "imp.found.browserNone": { de: "kein Browser-Wire", en: "no browser wire" },
   "imp.found.noWire": { de: "Ein Wire kam nicht mit.", en: "No wire came with it." },
-  "imp.vscodeNote": {
-    de: "Dieser VS-Code-Export hält fest, welche Tools liefen und ob sie erfolgreich waren, aber nicht, was sie zurückgaben. Die Tool-Inhalte bleiben deshalb leer.",
-    en: "This VS Code export records which tools ran and whether they succeeded, but not what they returned. The tool bodies are empty for that reason.",
+  // Card 605, task 10: the tool results of an imported file whose record held no output.
+  "imp.noOutput": {
+    de: "{n} von {m} Werkzeugergebnissen in dieser Datei haben keine Ausgabe festgehalten; sie bleiben leer.",
+    en: "{n} of {m} tool results in this file recorded no output; those stay empty.",
+  },
+  "imp.noOutputOne": {
+    de: "{n} von {m} Werkzeugergebnissen in dieser Datei hat keine Ausgabe festgehalten; es bleibt leer.",
+    en: "{n} of {m} tool results in this file recorded no output; it stays empty.",
+  },
+  "imp.noOutputOnly": {
+    de: "{n} von {m} Werkzeugergebnis in dieser Datei hat keine Ausgabe festgehalten; es bleibt leer.",
+    en: "{n} of {m} tool result in this file recorded no output; it stays empty.",
   },
   "imp.err.read": {
     de: "Der Browser konnte „{name}“ nicht lesen. Liegt die Datei noch da, und darf er sie sehen?",

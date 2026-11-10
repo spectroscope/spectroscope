@@ -21,8 +21,9 @@
 // export, 294 of 297 in the CLI store), and a failure its data.error. The
 // output is that content, plus one line "<code>: <message>" of a failure's
 // error. A completion without either leaves `output` empty: a phrase like "(no
-// output recorded)" would read as a tool that really returned that text. Two
-// fields have no wire field and stay unread: result.detailedContent (the file
+// output recorded)" would read as a tool that really returned that text, so the
+// adapter counts them (ToolOutputCount) and the import says how many, once
+// (components/importBar.ts). Two fields have no wire field and stay unread: result.detailedContent (the file
 // diff of an edit or create) and shellExecution.exitCode. The counts are a
 // census of both local corpora on 2026-11-10 (task 10 report).
 
@@ -92,15 +93,28 @@ function strField(o: unknown, key: string): string | null {
   return typeof v === "string" ? v : null;
 }
 
-/** What a completion recorded the tool returned: result.content, then a failure's "code: message". */
-function toolOutput(d: VsRecord["data"]): string {
+/** What a completion recorded the tool returned: result.content, then a failure's "code: message".
+ *  `recorded` is false when the record held neither, so the output is an absence, not a value. */
+function toolOutput(d: VsRecord["data"]): { output: string; recorded: boolean } {
   const filled = (parts: (string | null)[]) => parts.filter((x): x is string => x !== null && x !== "");
-  const lines = filled([strField(d?.result, "content")]);
+  const content = strField(d?.result, "content");
+  const lines = filled([content]);
   if (d?.success === false) {
     const said = filled([strField(d.error, "code"), strField(d.error, "message")]);
     if (said.length > 0) lines.push(said.join(": "));
   }
-  return lines.join("\n");
+  return { output: lines.join("\n"), recorded: content !== null || lines.length > 0 };
+}
+
+/** How many tool results of a file the record held no output for, of all of them. */
+export interface ToolOutputCount {
+  missing: number;
+  total: number;
+}
+
+/** The stream, the line of each frame and the count of results without output. */
+export interface VscodeImport extends ImportedEvents {
+  toolOutputs: ToolOutputCount;
 }
 
 export function vscodeAgentToRunEvents(records: unknown[], base = 1_783_500_000_000): RunEvent[] {
@@ -108,7 +122,7 @@ export function vscodeAgentToRunEvents(records: unknown[], base = 1_783_500_000_
 }
 
 /** The stream plus the line each frame came from; see {@link ImportedEvents}. */
-export function vscodeAgentWithOrigin(records: unknown[], base = 1_783_500_000_000): ImportedEvents {
+export function vscodeAgentWithOrigin(records: unknown[], base = 1_783_500_000_000): VscodeImport {
   // As in the Claude Code adapter: a dropped record still occupies a line.
   const recs: VsRecord[] = [];
   const recLine: number[] = [];
@@ -155,6 +169,7 @@ export function vscodeAgentWithOrigin(records: unknown[], base = 1_783_500_000_0
   let lastTs = base;
   /** The folder the last session.start named, so a resume in the same folder adds nothing. */
   let cwd: string | null = null;
+  const toolOutputs: ToolOutputCount = { missing: 0, total: 0 };
 
   const emitCall = (callId: string, name: string, input: unknown, ts: number): void => {
     if (emittedCalls.has(callId)) return;
@@ -249,11 +264,14 @@ export function vscodeAgentWithOrigin(records: unknown[], base = 1_783_500_000_0
         const callId = d?.toolCallId;
         if (typeof callId !== "string") break;
         const startTs = callStartTs.get(callId);
+        const { output, recorded } = toolOutput(d);
+        toolOutputs.total++;
+        if (!recorded) toolOutputs.missing++;
         out.push({
           type: "tool_result",
           agentId,
           callId,
-          output: toolOutput(d),
+          output,
           isError: d?.success === false,
           durationMs: startTs === undefined ? 0 : Math.max(0, ts - startTs),
           // The CLI's create writes a new file: 17 of 17 local creates answer "Created file" (card 605).
@@ -277,7 +295,7 @@ export function vscodeAgentWithOrigin(records: unknown[], base = 1_783_500_000_0
 
   if (started) out.push({ type: "run_end", runId, stopReason: "end_turn", ts: lastTs });
   chargeTo(-1); // the closing run_end is the importer's own
-  return { events: out, origin: Int32Array.from(origin) };
+  return { events: out, origin: Int32Array.from(origin), toolOutputs };
 }
 
 export function parseVscodeAgentExport(text: string): RunEvent[] {

@@ -31,6 +31,7 @@ import { useLang } from "../state/lang";
 import { relativeTime } from "../format";
 import { rowState, listingNotice } from "../import/rowState";
 import { StoreRow } from "./StoreRow";
+import { toolOutputNote } from "./importBar";
 import type { TranscriptRow, StoreLimits } from "../import/rowState";
 import { onLoadArgs, openFromStore, type StoreDoor } from "../import/storeDoor";
 import type { SubagentTranscript } from "../import/subagentFile";
@@ -234,10 +235,9 @@ export function ImportDialog(props: {
     setError(null);
     try {
       const { events, kind, source, subagent } = detectAndLoad(raw);
-      // The VS Code export records that a tool ran and whether it succeeded,
-      // never what it returned. Say that once, here, rather than leaving the
-      // reader to infer it from a screen of empty tool bodies.
-      setNote(kind === "vscode-agent" ? t(lang, "imp.vscodeNote") : null);
+      // Tool results whose record held no output stay empty; say how many
+      // once, here, rather than leaving a screen of empty tool bodies.
+      setNote(toolOutputNote(lang, source.toolOutputs));
       props.onLoad(events, label, kind, source, subagent, storePath, undefined, note, wires);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
@@ -281,10 +281,8 @@ export function ImportDialog(props: {
     setLoading(tr.path);
     openFromStore(tr, door, agents, lang)
       .then((result) => {
-        // The VS Code export records that a tool ran and whether it succeeded,
-        // never what it returned. Say that once rather than leaving the reader
-        // to infer it from a screen of empty tool bodies.
-        setNote(result.kind === "vscode-agent" ? t(lang, "imp.vscodeNote") : null);
+        // Tool results whose record held no output stay empty; say how many once.
+        setNote(toolOutputNote(lang, result.source.toolOutputs));
         props.onLoad(...onLoadArgs(result));
       })
       .catch((e) => {
@@ -388,7 +386,7 @@ export function ImportDialog(props: {
         runStates.push({ runId: r.runId, json: await list[r.file].text().catch(() => "") });
       }
       const run = importClaudeCodeRun({ sessionText, sidecars, runStates });
-      setNote(run.kind === "vscode-agent" ? t(lang, "imp.vscodeNote") : null);
+      setNote(toolOutputNote(lang, run.source.toolOutputs));
       // The summary is built by the importer's own `runSummary`, never by a
       // literal here. A literal is where a measured field goes missing without
       // anything turning red — `declared` did exactly that (card 315).

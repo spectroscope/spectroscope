@@ -11,6 +11,7 @@ import { t, type Lang } from "../i18n/i18n";
 import type { ImportedRunSummary } from "../import/claudeCodeRun";
 import type { ImportKind } from "../import/detect";
 import type { SubagentTranscript } from "../import/subagentFile";
+import type { ToolOutputCount } from "../import/vscodeAgent";
 import type { SourceStats } from "../state/traceSource";
 
 /** The conversation, in the units a reader counts it in (card 440). */
@@ -196,14 +197,28 @@ export function importBarText(lang: Lang, bar: ImportBarState): ImportBarText {
 }
 
 /**
+ * How many tool results of the file recorded no output (card 605, task 10),
+ * or null when every result recorded one or the import counted none.
+ *
+ * @param lang  the chrome language
+ * @param count the importer's count, from `ImportSource.toolOutputs`
+ * @return the sentence, or null
+ */
+export function toolOutputNote(lang: Lang, count: ToolOutputCount | null | undefined): string | null {
+  if (count == null || count.missing <= 0) return null;
+  const key = count.missing > 1 ? "imp.noOutput" : count.total > 1 ? "imp.noOutputOne" : "imp.noOutputOnly";
+  return t(lang, key, { n: grouped(count.missing, lang), m: grouped(count.total, lang) });
+}
+
+/**
  * The notes a special kind of file adds to the bar, in a fixed order.
  *
- * The VS Code note is about a FORMAT's limits (that export records that each
- * tool ran and whether it succeeded, never what it returned); the subagent note
- * is about what THIS file is (card 152); the children note is what a run import
- * carried (card 291); `extra` is a sentence the store owes the reader, such as
- * a run that fell back to its session file (card 318); `found` is what came
- * with a spectroscope session file: its wires and child sessions (card 473).
+ * The tool output note counts the results a VS Code or Copilot file recorded
+ * no output for (card 605, task 10); the subagent note is about what THIS file
+ * is (card 152); the children note is what a run import carried (card 291);
+ * `extra` is a sentence the store owes the reader, such as a run that fell
+ * back to its session file (card 318); `found` is what came with a
+ * spectroscope session file: its wires and child sessions (card 473).
  *
  * @param lang  the chrome language
  * @param about what the import knows about the file
@@ -218,10 +233,12 @@ export function importBarNote(
     extra?: string | null;
     /** Card 473: what came with a spectroscope session file, said once. */
     found?: string | null;
+    /** Card 605, task 10: the importer's count of results without output. */
+    toolOutputs?: ToolOutputCount | null;
   },
 ): string | null {
   const notes = [
-    about.kind === "vscode-agent" ? t(lang, "imp.vscodeNote") : null,
+    toolOutputNote(lang, about.toolOutputs),
     subagentNote(lang, about.subagent),
     childrenNote(lang, about.run),
     about.extra ?? null,

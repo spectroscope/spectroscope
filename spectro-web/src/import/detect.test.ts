@@ -6,6 +6,9 @@ import { describe, expect, it } from "vitest";
 import ccLinear from "./fixtures/cc-linear.jsonl?raw";
 import ccModern from "./fixtures/cc-modern.jsonl?raw";
 import vscodeAgent from "./fixtures/vscode-agent.jsonl?raw";
+import copilotCli from "./fixtures/copilot-cli.jsonl?raw";
+import copilotIde from "./fixtures/copilot-ide.jsonl?raw";
+import { importClaudeCodeRun } from "./claudeCodeRun";
 import type { RunEvent } from "../events";
 import { detectAndLoad } from "./detect";
 
@@ -45,8 +48,8 @@ describe("detectAndLoad", () => {
     const { kind, events } = detectAndLoad(vscodeAgent);
     expect(kind).toBe("vscode-agent");
     expect(events[0].type).toBe("run_start");
-    // The caller shows a note about the missing tool output off this kind, so a
-    // VS Code export must never come back labelled as one of the other two.
+    // The adapter decides what a tool result holds, so a VS Code export must
+    // never come back labelled as one of the other two.
     expect(kind).not.toBe("claude-code");
   });
 
@@ -134,5 +137,26 @@ describe("detectAndLoad", () => {
     }
     expect(message).not.toContain("\n");
     expect(message).not.toContain("");
+  });
+});
+
+// Card 605, task 10 item 2: the import counts the tool results whose record
+// held no output, and the count travels with the source to the dialog and the bar.
+describe("the count of tool results without output", () => {
+  it("rides on the source of a Copilot or VS Code file", () => {
+    expect(detectAndLoad(vscodeAgent).source.toolOutputs).toEqual({ missing: 3, total: 3 });
+    expect(detectAndLoad(copilotIde).source.toolOutputs).toEqual({ missing: 0, total: 4 });
+    expect(detectAndLoad(copilotCli).source.toolOutputs).toEqual({ missing: 0, total: 8 });
+  });
+
+  it("is absent for the other formats, which say nothing of the kind", () => {
+    expect(detectAndLoad(ccLinear).source.toolOutputs).toBeUndefined();
+    const raw = JSON.stringify({ type: "run_start", runId: "r", agentId: "main", prompt: "p", ts: 1 });
+    expect(detectAndLoad(raw).source.toolOutputs).toBeUndefined();
+  });
+
+  it("survives the run door, which rebuilds the source", () => {
+    const run = importClaudeCodeRun({ sessionText: vscodeAgent, sidecars: [] });
+    expect(run.source.toolOutputs).toEqual({ missing: 3, total: 3 });
   });
 });

@@ -1665,24 +1665,31 @@ export function App() {
       cause,
     );
     // The dialog is gone by the time this bar matters, so it belongs to the
-    // session, not to the dialog. The VS Code note keeps its own sentence: that
-    // export records that each tool ran and whether it succeeded, never what it
-    // returned, and without saying so the empty tool bodies read as a broken
-    // import.
+    // session, not to the dialog. The tool output note keeps its own sentence:
+    // it counts the tool results a VS Code or Copilot file recorded no output
+    // for (card 605, task 10), and without it the empty tool bodies read as a
+    // broken import.
     setImportBar({
       sessionId: `import:${kind}:${label}`,
       file: label,
       stats: sourceStats(source),
       // Card 440: the bar counts the conversation as the chat shows it.
       counts: conversationCounts(events),
-      // The VS Code note (a FORMAT's limits), the subagent note (what THIS
+      // The tool output note (what the file did not record), the subagent note (what THIS
       // file is), what a run import carried (card 291) and what it could NOT
       // carry: a store row whose run is over the server's ceiling loads the
       // session file instead, and says so rather than passing for a normal
       // load (card 318). The same call says whether the file is one agent's
       // transcript, so the bar does not call that file a session (card 152).
       // Card 473: and what came with the session file, said once.
-      ...importBarAbout(lang, { kind, subagent, run, extra: note, found: foundNote }),
+      ...importBarAbout(lang, {
+        kind,
+        subagent,
+        run,
+        extra: note,
+        found: foundNote,
+        toolOutputs: source.toolOutputs,
+      }),
     });
   };
 

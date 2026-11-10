@@ -141,7 +141,7 @@ describe("formatLosses", () => {
   it("counts what the VS Code shape cannot carry", () => {
     const losses = formatLosses("vscode", streamFacts(sampleEvents()));
     const codes = losses.map((l) => l.code);
-    // That export records no tool output anywhere and has no subagent record.
+    // This writer records no tool output and no subagent record.
     expect(codes).toContain("tool-output");
     expect(codes).toContain("subagents");
     expect(losses.find((l) => l.code === "tool-output")?.count).toBe(2);

@@ -223,10 +223,12 @@ const LOSSES: Record<
     {
       code: "tool-output",
       of: (f) => f.toolOutputs,
-      // Measured in the real export: tool.execution_complete carries only
-      // { toolCallId, success }. There is nowhere to put the output.
-      en: (n) => `${n} tool ${n === 1 ? "output" : "outputs"} — the format records only success or failure`,
-      de: (n) => `${n} Tool-${n === 1 ? "Ausgabe" : "Ausgaben"} — das Format kennt nur Erfolg oder Fehler`,
+      // This writer puts no result on tool.execution_complete. The format has
+      // one (data.result.content, read by the importer since card 605), the
+      // writer does not fill it.
+      en: (n) => `${n} tool ${n === 1 ? "output" : "outputs"}: this export writes only success or failure`,
+      de: (n) =>
+        `${n} Tool-${n === 1 ? "Ausgabe" : "Ausgaben"}: dieser Export schreibt nur Erfolg oder Fehler`,
     },
     {
       code: "permissions",

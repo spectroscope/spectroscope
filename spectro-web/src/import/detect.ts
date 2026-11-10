@@ -7,7 +7,7 @@
 import type { RunEvent } from "../events";
 import { claudeCodeWithOrigin } from "./claudeCode";
 import type { SubagentTranscript } from "./subagentFile";
-import { vscodeAgentWithOrigin } from "./vscodeAgent";
+import { vscodeAgentWithOrigin, type ToolOutputCount } from "./vscodeAgent";
 
 const SPECTRO_TYPES = new Set([
   "run_start",
@@ -84,6 +84,10 @@ export interface ImportSource {
    *  line, counted from zero), or -1 for a frame the importer built rather
    *  than read. */
   origin: Int32Array;
+  /** A VS Code or Copilot file only (card 605, task 10): how many of its tool
+   *  results the record held no output for. The import dialog and the bar
+   *  say the count; absent for the formats that say nothing of the kind. */
+  toolOutputs?: ToolOutputCount;
 }
 
 /** The file, cut into lines, and which of them carry a record.
@@ -162,8 +166,8 @@ export function detectAndLoad(text: string): {
       return { events: records as RunEvent[], kind: "spectroscope", source: { lines, origin: identity } };
     }
     if (VSCODE_AGENT_TYPES.has(r.type) && hasDataObject(r)) {
-      const { events, origin } = vscodeAgentWithOrigin(records);
-      return { events, kind: "vscode-agent", source: { lines, origin: inFile(origin) } };
+      const { events, origin, toolOutputs } = vscodeAgentWithOrigin(records);
+      return { events, kind: "vscode-agent", source: { lines, origin: inFile(origin), toolOutputs } };
     }
     if (r.message !== undefined) {
       const { events, origin, subagent } = claudeCodeWithOrigin(records);

@@ -396,4 +396,26 @@ describe("a Copilot completion carries what the tool returned (card 605)", () =>
     // An empty content is what the tool returned.
     expect(run({ success: true, result: { content: "" } })).toBe("");
   });
+
+  it("counts the results whose record held neither a content nor an error, of all results", () => {
+    const count = (...data: object[]) =>
+      vscodeAgentWithOrigin(
+        data.flatMap((d, i) => [
+          { type: "tool.execution_start", data: { toolCallId: `t${i}`, toolName: "view", arguments: {} } },
+          { type: "tool.execution_complete", data: { toolCallId: `t${i}`, ...d } },
+        ]),
+      ).toolOutputs;
+    expect(count({ success: true }, { success: false }, { success: true, result: { content: 7 } })).toEqual({
+      missing: 3,
+      total: 3,
+    });
+    // An empty content and an error line are both something the record held.
+    expect(
+      count({ success: true, result: { content: "" } }, { success: false, error: { code: "x" } }),
+    ).toEqual({ missing: 0, total: 2 });
+    // A completion without a call id makes no result and is not counted.
+    expect(
+      vscodeAgentWithOrigin([{ type: "tool.execution_complete", data: { success: true } }]).toolOutputs,
+    ).toEqual({ missing: 0, total: 0 });
+  });
 });
