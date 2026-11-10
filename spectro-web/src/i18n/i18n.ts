@@ -466,8 +466,8 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "Recorded by {client} on {date}.",
   },
   "imp.copilot.live": {
-    de: "Diese Session lief noch, als sie gewählt wurde; der Import enthält die {n} Einträge, die bis dahin geschrieben waren.",
-    en: "This session was still running when it was picked; the import holds the {n} records written up to then.",
+    de: "Eine Sperrdatei markierte diese Session beim Wählen als belegt. Lief sie noch, enthält der Import die {n} Einträge, die bis dahin geschrieben waren.",
+    en: "A lock file marked this session as in use when it was picked. If it was still running, the import holds the {n} records written up to then.",
   },
   "imp.copilot.alone": {
     de: "Diese Datei gehört zu einem Copilot-Session-Ordner. Wähle den Ordner, um auch Namen, Arbeitsordner und Dateischnappschüsse zu laden.",
@@ -491,10 +491,10 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "{n} folder without an events.jsonl is not listed.",
   },
   "imp.copilot.unnamed": { de: "Session ohne Namen", en: "unnamed session" },
-  "imp.copilot.liveMark": { de: "lief noch", en: "still running" },
+  "imp.copilot.liveMark": { de: "belegt", en: "in use" },
   "imp.copilot.liveOne": {
-    de: "Diese Session lief noch, als sie gewählt wurde; der Import enthält den {n} Eintrag, der bis dahin geschrieben war.",
-    en: "This session was still running when it was picked; the import holds the {n} record written up to then.",
+    de: "Eine Sperrdatei markierte diese Session beim Wählen als belegt. Lief sie noch, enthält der Import den {n} Eintrag, der bis dahin geschrieben war.",
+    en: "A lock file marked this session as in use when it was picked. If it was still running, the import holds the {n} record written up to then.",
   },
   "imp.err.read": {
     de: "Der Browser konnte „{name}“ nicht lesen. Liegt die Datei noch da, und darf er sie sehen?",

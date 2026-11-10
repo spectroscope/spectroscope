@@ -58,7 +58,7 @@ describe("the list of a Copilot store (item 5)", () => {
   it("gives each row its name, time, client, size and live mark, newest first as given", () => {
     const en = render("en");
     expect(en.indexOf("unnamed session")).toBeLessThan(en.indexOf("Parser test"));
-    expect(en).toContain("still running");
+    expect(en).toContain("in use");
     expect(en).toContain("copilot-intellij");
     expect(en).toContain("3.0 MB");
     expect(en).toContain("1 kB");
@@ -66,10 +66,10 @@ describe("the list of a Copilot store (item 5)", () => {
     expect(en).toContain("3 d ago");
     const de = render("de");
     expect(de).toContain("Session ohne Namen");
-    expect(de).toContain("lief noch");
+    expect(de).toContain("belegt");
     expect(de).toContain("vor 3 h");
     // Only the first row is live.
-    expect(en.match(/still running/g)).toHaveLength(1);
+    expect(en.match(/>in use</g)).toHaveLength(1);
   });
 
   it("makes every row a button the keyboard reaches", () => {

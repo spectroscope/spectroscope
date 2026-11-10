@@ -44,25 +44,25 @@ describe("the bar names who recorded a Copilot folder and when (item 2)", () => 
   });
 });
 
-describe("the bar says a session was still running when it was picked (item 4)", () => {
+describe("the bar says a lock file marked the session as in use (item 4, fix round 1 item 4)", () => {
   const copilot = { sessionId: "s-1", live: { records: 1234 } };
 
   it("says it in both languages, with the count of records", () => {
     expect(importBarNote("en", { kind: "vscode-agent", copilot })).toBe(
-      "This session was still running when it was picked; the import holds the 1,234 records written up to then.",
+      "A lock file marked this session as in use when it was picked. If it was still running, the import holds the 1,234 records written up to then.",
     );
     expect(importBarNote("de", { kind: "vscode-agent", copilot })).toBe(
-      "Diese Session lief noch, als sie gewählt wurde; der Import enthält die 1.234 Einträge, die bis dahin geschrieben waren.",
+      "Eine Sperrdatei markierte diese Session beim Wählen als belegt. Lief sie noch, enthält der Import die 1.234 Einträge, die bis dahin geschrieben waren.",
     );
   });
 
   it("counts one record in the singular", () => {
     const one = { sessionId: "s-1", live: { records: 1 } };
     expect(importBarNote("en", { kind: "vscode-agent", copilot: one })).toBe(
-      "This session was still running when it was picked; the import holds the 1 record written up to then.",
+      "A lock file marked this session as in use when it was picked. If it was still running, the import holds the 1 record written up to then.",
     );
     expect(importBarNote("de", { kind: "vscode-agent", copilot: one })).toBe(
-      "Diese Session lief noch, als sie gewählt wurde; der Import enthält den 1 Eintrag, der bis dahin geschrieben war.",
+      "Eine Sperrdatei markierte diese Session beim Wählen als belegt. Lief sie noch, enthält der Import den 1 Eintrag, der bis dahin geschrieben war.",
     );
   });
 
@@ -80,7 +80,7 @@ describe("the bar says a session was still running when it was picked (item 4)",
     };
     const html = renderToStaticMarkup(<ImportNoteBar lang="en" bar={bar} onClose={() => {}} />);
     expect(html).toContain(
-      "Recorded by github/cli on 2026-11-10. This session was still running when it was picked; the import holds the 1,234 records written up to then.",
+      "Recorded by github/cli on 2026-11-10. A lock file marked this session as in use when it was picked. If it was still running, the import holds the 1,234 records written up to then.",
     );
   });
 });

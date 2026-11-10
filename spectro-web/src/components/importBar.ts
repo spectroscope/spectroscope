@@ -224,8 +224,8 @@ function isoDate(time: string): string | null {
 /**
  * What the bar says about a GitHub Copilot session (card 605, task 12): who
  * recorded the folder and when, from its workspace.yaml; that the file is part
- * of a folder when it arrived alone; and that the session was still running
- * when it was picked, from the lock beside its events.
+ * of a folder when it arrived alone; and that a lock file beside its events
+ * marked it as in use when it was picked.
  *
  * @param lang the chrome language
  * @param side what the Copilot session carried beside its events

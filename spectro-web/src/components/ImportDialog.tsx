@@ -65,8 +65,8 @@ const REVEAL_FLUSH_MS = 40;
 /**
  * The list a folder of Copilot session folders opens (card 605, task 12):
  * one button per session folder, newest first, each with its name, when it
- * was created, its client, the size of its events.jsonl and a mark when it
- * was still running. A press chooses the folder; nothing loads before that.
+ * was created, its client, the size of its events.jsonl and a mark when a
+ * lock file marked it as in use. A press chooses the folder; nothing loads before that.
  */
 export function CopilotStoreList(props: {
   lang: Lang;

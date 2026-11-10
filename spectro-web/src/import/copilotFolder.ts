@@ -61,8 +61,9 @@ export interface CopilotSide {
   workspace?: CopilotWorkspace;
   /** The folder's recorded file snapshots; absent when it had none. */
   snapshots?: CopilotSnapshot[];
-  /** An inuse.*.lock sat beside events.jsonl (item 4): the session was still
-   *  running when it was picked, and the import holds this many records. */
+  /** An inuse.*.lock sat beside events.jsonl (item 4): a lock file marked the
+   *  session as in use when it was picked (a stale lock says the same), and
+   *  the import holds this many records. */
   live?: { records: number };
   /** events.jsonl was picked or dropped on its own, without its folder (item 6). */
   alone?: true;
