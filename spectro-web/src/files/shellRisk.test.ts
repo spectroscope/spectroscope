@@ -1182,8 +1182,8 @@ describe("which position values name a credential", () => {
     expect(named("wget --user=bob https://a.example.com/f")).toEqual([["bob", false]]);
     expect(named(`curl -u bob:${PW} https://a.example.com`)).toEqual([[`bob:${PW}`, true]]);
     expect(named(`curl --oauth2-bearer ${TOK} https://a.example.com`)).toEqual([[TOK, true]]);
-    // httpie's -a is its --auth.
-    expect(named(`http -a ${TOK} https://a.example.com`)).toEqual([[TOK, true]]);
+    // httpie's -a is its --auth, a user option: alone it names no credential (task 11 item 11).
+    expect(named(`http -a ${TOK} https://a.example.com`)).toEqual([[TOK, false]]);
     expect(named(`git push https://${TOK}@github.com/o/r.git main`)).toEqual([[TOK, false]]);
     expect(named(`curl https://bob:${PW}@a.example.com/x`)).toEqual([[`bob:${PW}`, true]]);
   });
@@ -1274,5 +1274,57 @@ describe("placeholders in positions that say nothing of a credential (task 11 it
   it("a named one still does", () => {
     expect(placeholders('curl "https://api.example.com/x?token=$TOKEN"')).toBe(1);
     expect(placeholders('curl -u "bob:$PASS" https://a.example.com')).toBe(1);
+  });
+});
+
+// Task 11 item 11 (review M3): a name counts by its words, split at every
+// character that is not a letter and at a case change, not by a substring;
+// a user option counts only its part after a colon.
+describe("names by their words, users by their password (task 11 item 11)", () => {
+  const TOK = ["Rk7", "Tq2Vw9", "Xz4Lm8"].join("");
+  const PW = ["Zk9", "wQ4", "tLm2x"].join("");
+  const named = (line: string) => shellRisk(line, W).values.map((v) => [line.slice(v.start, v.end), v.named]);
+
+  it("a query name counts by a whole word of it", () => {
+    expect(named(`curl "https://x.example.com/a?side=left&zipcode=12345"`)).toEqual([
+      ["left", false],
+      ["12345", false],
+    ]);
+    for (const [param, says] of [
+      ["access_token", true],
+      ["apiKey", true],
+      ["clientSecret", true],
+      ["refreshToken", true],
+      ["x-api-key", true],
+      ["APIKey", true],
+      ["authorization_code", true],
+      ["X-Amz-Signature", true],
+      ["oauth2_token", true],
+      ["apikey", true],
+      ["client_secrets", true],
+      ["passage", false],
+      ["keyboard", false],
+      ["sidebar", false],
+      ["codec", false],
+    ] as const)
+      expect(named(`curl "https://a.example.com/x?${param}=${TOK}"`), param).toEqual([[TOK, says]]);
+  });
+
+  it("a user option counts the part after a colon only", () => {
+    for (const line of [
+      "http -a alice https://a.example.com",
+      "http --auth alice https://a.example.com",
+      "curl --proxy-user alice https://a.example.com",
+      "wget --http-user alice https://a.example.com/f",
+      "curl -U alice https://a.example.com",
+    ])
+      expect(
+        named(line).map(([, n]) => n),
+        line,
+      ).toEqual([false]);
+    expect(named(`http -a alice:${PW} https://a.example.com`)).toEqual([[`alice:${PW}`, true]]);
+    expect(named(`wget --http-user alice:${PW} https://a.example.com/f`)).toEqual([[`alice:${PW}`, true]]);
+    // A bearer token is no user: it counts whole.
+    expect(named(`curl --oauth2-bearer ${TOK} https://a.example.com`)).toEqual([[TOK, true]]);
   });
 });

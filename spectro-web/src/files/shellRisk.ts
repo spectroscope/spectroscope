@@ -1593,16 +1593,51 @@ function addValue(
   else if (named) known.named = true;
 }
 
-/** A parameter or option name that says it holds a credential (task 10 item 9). */
-const SAYS_CREDENTIAL = /key|token|secret|pass|auth|sig|session|sid|code|credential|bearer/i;
+/** The words that say a query parameter holds a credential, alone or as a word of its name (task 11 item 11). */
+export const CREDENTIAL_NAME_WORDS: readonly string[] = [
+  "key",
+  "token",
+  "secret",
+  "pass",
+  "password",
+  "passwd",
+  "passphrase",
+  "pwd",
+  "auth",
+  "authorization",
+  "sig",
+  "signature",
+  "session",
+  "sid",
+  "code",
+  "credential",
+  "bearer",
+];
+/** Joined forms of those words that a name writes as one word. */
+export const CREDENTIAL_NAME_JOINED: readonly string[] = [
+  "apikey",
+  "accesskey",
+  "accesstoken",
+  "authtoken",
+  "secretkey",
+  "sessionid",
+];
+const CREDENTIAL_WORDS = new Set([...CREDENTIAL_NAME_WORDS, ...CREDENTIAL_NAME_JOINED]);
 
-/** A short user option by its long name, where the tool has one: httpie's -a is --auth. */
-const LONG_USER_OPTION = new Map<string, string>([
-  ["curl -u", "user"],
-  ["curl -U", "proxy-user"],
-  ["http -a", "auth"],
-  ["https -a", "auth"],
-]);
+/**
+ * Whether a query parameter's name says it holds a credential: a word of it,
+ * split at every character that is not a letter and at a case change
+ * (`apiKey`, `X-Api-Key`, `access_token`), is one of the words, or the word
+ * with a plural `s`. `side` and `zipcode` say nothing (task 11 item 11).
+ */
+export function saysCredential(name: string): boolean {
+  return name
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/([A-Z])([A-Z][a-z])/g, "$1 $2")
+    .split(/[^A-Za-z]+/)
+    .map((w) => w.toLowerCase())
+    .some((w) => CREDENTIAL_WORDS.has(w) || (w.endsWith("s") && CREDENTIAL_WORDS.has(w.slice(0, -1))));
+}
 
 const AUTH_SCHEME = /^\s*(?:bearer|basic|token|digest|negotiate|bot)\s+/i;
 
@@ -1613,8 +1648,8 @@ const AUTH_SCHEME = /^\s*(?:bearer|basic|token|digest|negotiate|bot)\s+/i;
  * itself for a literal word). `kind` says where the secret part is: after the
  * first `:` of a `user:password`, after the scheme word of a header, or the
  * whole value (a `query` value too). A dynamic holder is masked as a whole
- * word. A query value, and a user without a password, name a credential only
- * when `name` (the parameter or option name) says so.
+ * word. A query value names a credential only when `name` (the parameter's
+ * name) says so, and a user only with a password after its colon.
  */
 function secretValue(
   out: ShellRisk,
@@ -1629,8 +1664,9 @@ function secretValue(
   let secret = shape;
   const colon = shape.indexOf(":");
   if (kind === "user" && colon >= 0) secret = shape.slice(colon + 1);
-  const says = name !== null && SAYS_CREDENTIAL.test(name);
-  const named = kind === "query" ? says : kind === "user" ? colon >= 0 || says : true;
+  // A query value counts by its name, a user value by the password after its colon (task 11 item 11).
+  const named =
+    kind === "query" ? name !== null && saysCredential(name) : kind === "user" ? colon >= 0 : true;
   if (kind === "header") secret = secret.replace(AUTH_SCHEME, "");
   const literal = secret.split(DYN).join("").trim();
   const value = shape.split(DYN).join("");
@@ -1671,7 +1707,7 @@ const VALUE_SPECS = new Map<string, Spec>([
   ["npm", NPM],
 ]);
 const USER_OPTIONS = new Map<string, string[]>([
-  ["curl", ["-u", "--user", "-U", "--proxy-user", "--oauth2-bearer"]],
+  ["curl", ["-u", "--user", "-U", "--proxy-user"]],
   ["wget", ["--user", "--http-user", "--proxy-user"]],
   ["http", ["-a", "--auth"]],
   ["https", ["-a", "--auth"]],
@@ -1699,17 +1735,10 @@ function positionValues(name: string, args: Word[], ctx: Ctx, out: ShellRisk): v
     const from = o.inline ? o.from.text.length - o.value.text.length : 0;
     const to = holder.text.length;
     const shape = shapeText(o.value);
-    if (user.includes(o.name))
-      secretValue(
-        out,
-        ctx,
-        holder,
-        from,
-        to,
-        shape,
-        "user",
-        LONG_USER_OPTION.get(`${name} ${o.name}`) ?? o.name,
-      );
+    if (user.includes(o.name)) secretValue(out, ctx, holder, from, to, shape, "user");
+    else if (name === "curl" && o.name === "--oauth2-bearer")
+      // A bearer token, not a user: it counts whole.
+      secretValue(out, ctx, holder, from, to, shape, "plain");
     else if (header.includes(o.name)) headerValue(out, ctx, holder, from, shape);
     else if (name === "curl" && (o.name === "-b" || o.name === "--cookie") && shape.includes("="))
       secretValue(out, ctx, holder, from, to, shape, "plain");

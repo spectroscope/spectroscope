@@ -517,6 +517,23 @@ describe("reportHtml", () => {
       expect(de, part).toContain(part);
   });
 
+  it("the method states the word rule for names and the colon rule for users (task 11 item 11)", () => {
+    const report = build(new Rec().start().tool("read_file", { path: "README.md" }).events);
+    const en = reportHtml(report, "en");
+    expect(en).toContain(
+      "A query value counts only when a word of its name is key, token, secret, pass, password, passwd, passphrase, " +
+        "pwd, auth, authorization, sig, signature, session, sid, code, credential or bearer, or a joined form such as " +
+        "<code>apikey</code>, and a user name given alone does not count by its place;",
+    );
+    expect(en).not.toContain("their name holds");
+    const de = reportHtml(report, "de");
+    expect(de).toContain(
+      "Ein Wert einer Abfrage zählt nur, wenn ein Wort seines Namens key, token, secret, pass, password, passwd, " +
+        "passphrase, pwd, auth, authorization, sig, signature, session, sid, code, credential oder bearer ist oder " +
+        "eine zusammengeschriebene Form wie <code>apikey</code>, und ein Benutzername allein zählt nicht durch seine Stelle;",
+    );
+  });
+
   it("says when the workspace was not recorded", () => {
     const rec = new Rec().start(null).tool("read_file", { path: "/etc/hosts" });
     const html = reportHtml(build(rec.events), "en");
