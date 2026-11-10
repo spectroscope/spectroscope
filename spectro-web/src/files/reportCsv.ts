@@ -11,13 +11,13 @@
 import type { Lang } from "../i18n/i18n";
 import { clockText } from "./axis";
 import type { FilesReport, Finding, ReportFile } from "./report";
-import { cutNote, destinationName, placeShort, reachedDestinations, scrub } from "./reportHtml";
+import { cutNote, destinationName, findingEvent, placeShort, reachedDestinations, scrub } from "./reportHtml";
 
 export const CSV_HEADER: readonly string[] = [
   "level",
   "time_s",
   "clock",
-  "call",
+  "event",
   "agent",
   "tool",
   "what",
@@ -28,7 +28,7 @@ export const CSV_HEADER: readonly string[] = [
   "destination",
 ];
 
-const BOM = "﻿";
+const BOM = "\uFEFF";
 const EOL = "\r\n";
 const FORMULA_START = /^[=+\-@\t\r]/;
 const NEEDS_QUOTES = /[",\r\n]/;
@@ -60,8 +60,8 @@ interface Words {
 
 const W: Record<Lang, Words> = {
   en: {
-    lines: (n) => `${n} ${n === 1 ? "line" : "lines"}`,
-    fromCall: (n) => `from call ${n}`,
+    lines: (n) => (n === 0 ? "no output recorded" : `${n} ${n === 1 ? "line" : "lines"}`),
+    fromCall: (n) => `from event ${n}`,
     fromPerson: "first seen in a message from the person",
     noHost: "host not named",
     unnamed: "files not named by the command",
@@ -74,8 +74,8 @@ const W: Record<Lang, Words> = {
     modelOnly: "only a model's reading names it, not counted",
   },
   de: {
-    lines: (n) => `${n} ${n === 1 ? "Zeile" : "Zeilen"}`,
-    fromCall: (n) => `aus Aufruf ${n}`,
+    lines: (n) => (n === 0 ? "keine Ausgabe aufgezeichnet" : `${n} ${n === 1 ? "Zeile" : "Zeilen"}`),
+    fromCall: (n) => `aus Ereignis ${n}`,
     fromPerson: "zuerst in einer Nachricht der Person gesehen",
     noHost: "Host nicht genannt",
     unnamed: "Dateien, die der Befehl nicht nennt",
@@ -142,7 +142,7 @@ function findingRow(lang: Lang, report: FilesReport, f: Finding): string[] {
     f.level,
     timeS(f.t),
     clock(lang, report, f.t),
-    f.callIndex === null ? "" : String(f.callIndex),
+    String(findingEvent(f)),
     f.agentId === null ? "" : scrub(f.agentId),
     f.tool === null ? "" : scrub(f.tool),
     f.what.join(" "),

@@ -11,7 +11,7 @@ import { CSV_HEADER, csvCell, reportCsv } from "./reportCsv";
 
 const T0 = 1_760_000_000_000;
 const W = "/w";
-const BOM = "﻿";
+const BOM = "\uFEFF";
 
 /** A session written event by event, one second apart, so `t` is the index. */
 class Rec {
@@ -99,7 +99,7 @@ describe("reportCsv", () => {
   it("starts with the byte order mark and the exact header", () => {
     expect(csv.startsWith(BOM)).toBe(true);
     expect(csv.slice(1, csv.indexOf("\r\n"))).toBe(
-      "level,time_s,clock,call,agent,tool,what,source,file,finding,detail,destination",
+      "level,time_s,clock,event,agent,tool,what,source,file,finding,detail,destination",
     );
     expect(CSV_HEADER.join(",")).toBe(csv.slice(1, csv.indexOf("\r\n")));
   });
@@ -205,6 +205,51 @@ describe("reportCsv", () => {
     expect(en[0][10]).toContain(`cat > .env (${finding?.commandCut} more characters)`);
     const de = records(reportCsv(report, "de").slice(1)).slice(1).map(cells);
     expect(de[0][10]).toContain(`cat > .env (${finding?.commandCut} weitere Zeichen)`);
+  });
+});
+
+describe("reportCsv events and dumps", () => {
+  const rows = (report: FilesReport, lang: "en" | "de" = "en") =>
+    records(reportCsv(report, lang).slice(1)).slice(1).map(cells);
+
+  it("names a prompt finding by the event it was seen at", () => {
+    const AKID = ["AK", "IA", "Z7Q3M2X9", "K4W8P1N6"].join("");
+    const rec = new Rec()
+      .start()
+      .push({ type: "user_message", text: `use ${AKID}` })
+      .tool("Bash", { command: `aws s3 ls --access-key ${AKID}` });
+    const report = build(rec.events);
+    const all = rows(report);
+    const prompt = all.find((r) => r[9] === "credential-prompt");
+    expect(prompt?.[3]).toBe("1");
+    const used = all.find((r) => r[9] === "credential-used");
+    expect(used?.[3]).toBe("2");
+    expect(used?.[10].startsWith("credential 1 aws-akid 17-32 first seen in a message from the person")).toBe(
+      true,
+    );
+  });
+
+  it("says from which event a value came", () => {
+    const AKID = ["AK", "IA", "Z7Q3M2X9", "K4W8P1N6"].join("");
+    const rec = new Rec()
+      .start()
+      .tool("read_file", { path: "a.txt" }, `K=${AKID}`)
+      .tool("Bash", { command: `aws s3 ls --access-key ${AKID}` });
+    const used = rows(build(rec.events)).find((r) => r[9] === "credential-used");
+    expect(used?.[10].split("\n")[0]).toBe("credential 1 aws-akid 17-32 from event 1");
+    const de = rows(build(rec.events), "de").find((r) => r[9] === "credential-used");
+    expect(de?.[10].split("\n")[0]).toBe("credential 1 aws-akid 17-32 aus Ereignis 1");
+  });
+
+  it("an env dump without output says so, as the HTML does", () => {
+    const rec = new Rec().start();
+    rec.push({ type: "tool_call", agentId: "main", callId: "x1", name: "Bash", input: { command: "env" } });
+    const dump = rows(build(rec.events)).find((r) => r[9] === "env-dump");
+    expect(dump?.[10]).toBe("no output recorded\nenv");
+    const de = rows(build(rec.events), "de").find((r) => r[9] === "env-dump");
+    expect(de?.[10]).toBe("keine Ausgabe aufgezeichnet\nenv");
+    const two = new Rec().start().tool("Bash", { command: "printenv" }, "A=1\nB=2");
+    expect(rows(build(two.events)).find((r) => r[9] === "env-dump")?.[10]).toBe("2 lines\nprintenv");
   });
 });
 

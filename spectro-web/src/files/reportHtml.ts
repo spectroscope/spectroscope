@@ -78,10 +78,24 @@ interface Words {
   covers: string;
   level: Record<Level, string>;
   verdict: string;
-  headline: Record<Level, string>;
-  headlineNoFiles: string;
+  headline: {
+    secrets: string;
+    envDump: string;
+    secretSent: string;
+    sensitive: string;
+    unknown: string;
+    project: string;
+    noFiles: string;
+    noWorkspace: string;
+  };
+  /** The sensitive headline from the parts present, in the order given. */
+  sensitive: (parts: string[]) => string;
+  sensitiveParts: { outside: string; network: (n: number) => string; personal: string; homeOrSystem: string };
+  noCredential: string;
   noSecret: string;
   checked: string;
+  checkedNoWorkspace: string;
+  noWorkspaceLimit: string;
   wentTo: (list: string) => string;
   modelNote: (n: number) => string;
   kinds: Record<FindingKind, string>;
@@ -107,7 +121,7 @@ interface Words {
   notKnown: string;
   place: Record<Place, string>;
   noFinding: string;
-  call: (n: number) => string;
+  event: (n: number) => string;
   person: string;
   source: Record<Source, string>;
   rule: Record<string, string>;
@@ -126,7 +140,7 @@ interface Words {
   folded: (n: string) => string;
   limits: string[];
   limitModel: string;
-  method: (placeholders: string) => string[];
+  method: (placeholders: number, count: string) => string[];
   footer: (version: string | null) => string;
 }
 
@@ -184,17 +198,33 @@ const EN: Words = {
   level: { critical: "critical", sensitive: "sensitive", unknown: "unknown", project: "project" },
   verdict: "verdict",
   headline: {
-    critical: "Secrets appear in this session.",
+    secrets: "Secrets appear in this session.",
+    envDump: "A command printed the environment or a stored secret.",
+    secretSent: "A command sent a secret file over the network.",
     sensitive: "The session reached beyond the project.",
     unknown: "A script ran whose effect the recording does not show.",
     project: "The files the session touched lie in the project.",
+    noFiles: "The recording holds no file the session touched.",
+    noWorkspace: "The workspace was not recorded.",
   },
-  headlineNoFiles: "The recording holds no file the session touched.",
+  sensitive: (parts) => `The session ${andList(parts, "and")}.`,
+  sensitiveParts: {
+    outside: "touched files outside the project",
+    network: (n) => (n === 1 ? "ran a network command" : "ran network commands"),
+    personal: "received personal data in tool results",
+    homeOrSystem: "touched files in system folders or dot folders of a home folder",
+  },
+  noCredential: "No credential shape was found in the recorded results, inputs or messages.",
   noSecret: "No secret file, no credential and no environment dump was found.",
   checked:
-    "It checked for secret files by name, credentials by shape, environment and keychain dumps, " +
+    "This report checked for secret files by name, credentials by shape, environment and keychain dumps, " +
     "network commands, files outside the project, personal data and scripts with unknown effect, " +
     "and found none of these.",
+  checkedNoWorkspace:
+    "This report checked for secret files by name, credentials by shape, environment and keychain dumps, " +
+    "network commands, files in system folders and dot folders of a home folder, personal data and " +
+    "scripts with unknown effect, and found none of these.",
+  noWorkspaceLimit: "Without a workspace it cannot tell which other files belong to the project.",
   wentTo: (list) => `Content from these findings went to ${list}.`,
   modelNote: (n) =>
     n === 1
@@ -256,7 +286,7 @@ const EN: Words = {
     "this-machine": "this machine",
   },
   noFinding: "No finding.",
-  call: (n) => `call ${n}`,
+  event: (n) => `event ${n}`,
   person: "person",
   source: { recorded: "recorded", probable: "probable", model: "model" },
   rule: {
@@ -290,8 +320,9 @@ const EN: Words = {
       case "env-dump":
         return "Environment or keychain dump";
       case "network":
-        if (f.sends.length > 1) return "Files sent over the network";
-        return f.sends.length === 1 || !f.sendsNamed ? "File sent over the network" : "Network command";
+        // Files the command does not name may be more than one.
+        if (f.sends.length > 1 || !f.sendsNamed) return "Files sent over the network";
+        return f.sends.length === 1 ? "File sent over the network" : "Network command";
       case "outside": {
         const what = f.what.length === 0 ? "Touched" : andList(whatWords(EN_WHAT, f), "and");
         return `${what.charAt(0).toUpperCase()}${what.slice(1)} outside the project`;
@@ -321,7 +352,7 @@ const EN: Words = {
         const from =
           f.firstSeenCall === null
             ? "first seen in a message from the person,"
-            : `from call ${f.firstSeenCall}`;
+            : `from event ${f.firstSeenCall}`;
         return `${c.creds} ${from} appears again in the input of ${c.tool}.`;
       }
       case "env-dump": {
@@ -391,14 +422,14 @@ const EN: Words = {
   ],
   limitModel:
     "A model's reading of a command is a guess. Its entries are marked model and do not count toward the verdict.",
-  method: (placeholders) => [
+  method: (placeholders, count) => [
     `Secret files by name: ${SECRET_NAMES}, ${code("id_rsa")} and the other SSH keys, ${SECRET_TAIL}, anything under ${code(".ssh/")}, ${code(".aws/")} or ${code(".gnupg/")}. Templates such as ${code(".env.example")} stay project files.`,
     `Credentials by shape: ten of the twelve redaction rules spectroscope applies to recorded state. One more rule finds assignments to names that say password, secret, token or key, such as ${code("DB_PASSWORD")}. The other two redaction rules count email addresses and IBANs as personal data.`,
     "No credential is printed, nor its exact length or a hash of it. Each one gets a label that counts up in this report, and the same value keeps its label; its size is given as a band of bytes. The values stay in the recording on the machine that made it.",
-    `Placeholders such as the AWS documentation key ending in ${code("EXAMPLE")}, ${code(DOLLAR_NAME)}, a value in angle brackets or ${code("changeme")} are not counted. This session held ${placeholders}.`,
+    `Placeholders such as the AWS documentation key ending in ${code("EXAMPLE")}, ${code(DOLLAR_NAME)}, a value in angle brackets or ${code("changeme")} are not counted. This session held ${count} ${plural(placeholders, "placeholder", "placeholders")}.`,
     "Levels: critical for secrets, sensitive for files outside the project, network commands and personal data. A script whose effect the recording does not show is unknown, and files inside the workspace are project. The verdict is the highest level; a model's reading does not count.",
     "Sources: recorded when the tool reported the file, probable when the files tab's heuristic read it from a shell command, model when a model's reading named it.",
-    "Times count from the session's first event, as the files tab prints them. A call number is the index of its tool call in the recorded event list, counted from 0.",
+    "Times count from the session's first event, as the files tab prints them. An event number is the index of the event in the recording, counted from 0; the app's links use the same number.",
     "Destinations come from the recorded exchanges with a model; a session without them falls back to the provider and model the run started with.",
   ],
   footer: (version) => `spectroscope${version === null ? "" : ` ${version}`} · files report`,
@@ -427,17 +458,34 @@ const DE: Words = {
   level: { critical: "kritisch", sensitive: "sensibel", unknown: "unbekannt", project: "Projekt" },
   verdict: "Urteil",
   headline: {
-    critical: "In dieser Session kommen Geheimnisse vor.",
+    secrets: "In dieser Session kommen Geheimnisse vor.",
+    envDump: "Ein Befehl hat die Umgebung oder ein gespeichertes Geheimnis ausgegeben.",
+    secretSent: "Ein Befehl hat eine geheime Datei über das Netz gesendet.",
     sensitive: "Die Session ging über das Projekt hinaus.",
     unknown: "Ein Skript lief, dessen Wirkung die Aufzeichnung nicht zeigt.",
     project: "Die Dateien, die die Session berührt hat, liegen im Projekt.",
+    noFiles: "Die Aufzeichnung enthält keine Datei, die die Session berührt hat.",
+    noWorkspace: "Der Arbeitsordner wurde nicht aufgezeichnet.",
   },
-  headlineNoFiles: "Die Aufzeichnung enthält keine Datei, die die Session berührt hat.",
+  sensitive: (parts) => `Die Session hat ${andList(parts, "und")}.`,
+  sensitiveParts: {
+    outside: "Dateien außerhalb des Projekts berührt",
+    network: (n) => (n === 1 ? "einen Netzwerkbefehl ausgeführt" : "Netzwerkbefehle ausgeführt"),
+    personal: "personenbezogene Daten in Werkzeugergebnissen erhalten",
+    homeOrSystem: "Dateien in Systemordnern oder Punktordnern eines Home-Ordners berührt",
+  },
+  noCredential:
+    "In den aufgezeichneten Ergebnissen, Eingaben und Nachrichten wurde keine Form von Zugangsdaten gefunden.",
   noSecret: "Keine geheime Datei, keine Zugangsdaten und keine Ausgabe der Umgebung wurden gefunden.",
   checked:
-    "Geprüft wurden geheime Dateien nach Namen, Zugangsdaten nach Form, Ausgaben der Umgebung und " +
+    "Dieser Bericht hat geheime Dateien nach Namen, Zugangsdaten nach Form, Ausgaben der Umgebung und " +
     "des Schlüsselbunds, Netzwerkbefehle, Dateien außerhalb des Projekts, personenbezogene Daten " +
-    "und Skripte mit unbekannter Wirkung; nichts davon wurde gefunden.",
+    "und Skripte mit unbekannter Wirkung geprüft und nichts davon gefunden.",
+  checkedNoWorkspace:
+    "Dieser Bericht hat geheime Dateien nach Namen, Zugangsdaten nach Form, Ausgaben der Umgebung und " +
+    "des Schlüsselbunds, Netzwerkbefehle, Dateien in Systemordnern und Punktordnern eines Home-Ordners, " +
+    "personenbezogene Daten und Skripte mit unbekannter Wirkung geprüft und nichts davon gefunden.",
+  noWorkspaceLimit: "Ohne Arbeitsordner kann er nicht sagen, welche übrigen Dateien zum Projekt gehören.",
   wentTo: (list) => `Inhalt aus diesen Befunden ging an ${list}.`,
   modelNote: (n) =>
     n === 1
@@ -499,7 +547,7 @@ const DE: Words = {
     "this-machine": "dieser Rechner",
   },
   noFinding: "Kein Befund.",
-  call: (n) => `Aufruf ${n}`,
+  event: (n) => `Ereignis ${n}`,
   person: "Person",
   source: { recorded: "aufgezeichnet", probable: "wahrscheinlich", model: "Modell" },
   rule: {
@@ -535,8 +583,8 @@ const DE: Words = {
       case "env-dump":
         return "Umgebung oder Schlüsselbund ausgegeben";
       case "network":
-        if (f.sends.length > 1) return "Dateien über das Netz gesendet";
-        return f.sends.length === 1 || !f.sendsNamed ? "Datei über das Netz gesendet" : "Netzwerkbefehl";
+        if (f.sends.length > 1 || !f.sendsNamed) return "Dateien über das Netz gesendet";
+        return f.sends.length === 1 ? "Datei über das Netz gesendet" : "Netzwerkbefehl";
       case "outside":
         return `Außerhalb des Projekts ${f.what.length === 0 ? "berührt" : andList(whatWords(DE_WHAT, f), "und")}`;
       case "personal-data":
@@ -564,7 +612,7 @@ const DE: Words = {
         const from =
           f.firstSeenCall === null
             ? "zuerst in einer Nachricht der Person gesehen,"
-            : `aus Aufruf ${f.firstSeenCall}`;
+            : `aus Ereignis ${f.firstSeenCall}`;
         return `${c.creds} ${from} steht erneut in der Eingabe von ${c.tool}.`;
       }
       case "env-dump": {
@@ -575,9 +623,11 @@ const DE: Words = {
         return `Der Befehl gibt die Umgebung oder ein gespeichertes Geheimnis in sein Ergebnis aus. ${lines} Variablen tragen oft Tokens.`;
       }
       case "network": {
+        // A relative clause in the middle of the sentence closes with a comma.
+        const more = f.sends.length > 0 || !f.sendsNamed;
         const host =
           f.host === null
-            ? "einen Host, den die Zeile nicht nennt"
+            ? `einen Host, den die Zeile nicht nennt${more ? "," : ""}`
             : `<span class="path">${esc(f.host)}</span>`;
         const files = f.sends.map((s) => `<span class="path">${esc(s)}</span>`);
         let sends = "";
@@ -638,14 +688,15 @@ const DE: Words = {
   ],
   limitModel:
     "Die Lesart eines Modells ist eine Vermutung. Ihre Einträge sind als Modell markiert und zählen nicht für das Urteil.",
-  method: (placeholders) => [
+  // The German noun is the same in the singular and the plural.
+  method: (_placeholders, count) => [
     `Geheime Dateien nach Namen: ${SECRET_NAMES}, ${code("id_rsa")} und die anderen SSH-Schlüssel, ${SECRET_TAIL}, alles unter ${code(".ssh/")}, ${code(".aws/")} oder ${code(".gnupg/")}. Vorlagen wie ${code(".env.example")} bleiben Projektdateien.`,
     `Zugangsdaten nach Form: zehn der zwölf Schwärzungsregeln, die spectroscope auf aufgezeichneten Zustand anwendet. Eine weitere Regel findet Zuweisungen an Namen, die Passwort, Geheimnis, Token oder Schlüssel sagen (englisch geschrieben), etwa ${code("DB_PASSWORD")}. Die zwei übrigen Schwärzungsregeln zählen E-Mail-Adressen und IBANs als personenbezogene Daten.`,
     "Keine Zugangsdaten werden ausgegeben, weder ihre genaue Länge noch ein Hash davon. Jeder Wert bekommt ein Etikett, das in diesem Bericht hochzählt, und derselbe Wert behält sein Etikett; seine Größe steht als Spanne in Byte da. Die Werte bleiben in der Aufzeichnung auf dem Rechner, der sie gemacht hat.",
-    `Platzhalter wie der AWS-Dokumentationsschlüssel mit der Endung ${code("EXAMPLE")}, ${code(DOLLAR_NAME)}, ein Wert in spitzen Klammern oder ${code("changeme")} zählen nicht. Diese Session enthielt ${placeholders}.`,
+    `Platzhalter wie der AWS-Dokumentationsschlüssel mit der Endung ${code("EXAMPLE")}, ${code(DOLLAR_NAME)}, ein Wert in spitzen Klammern oder ${code("changeme")} zählen nicht. Diese Session enthielt ${count} Platzhalter.`,
     "Stufen: kritisch für Geheimnisse, sensibel für Dateien außerhalb des Projekts, Netzwerkbefehle und personenbezogene Daten. Ein Skript, dessen Wirkung die Aufzeichnung nicht zeigt, ist unbekannt, Dateien im Arbeitsordner sind Projekt. Das Urteil ist die höchste Stufe; die Lesart eines Modells zählt nicht.",
     "Quellen: aufgezeichnet, wenn das Werkzeug die Datei gemeldet hat, wahrscheinlich, wenn die Heuristik des Tabs files sie aus einem Shell-Befehl gelesen hat, Modell, wenn die Lesart eines Modells sie nennt.",
-    "Zeiten zählen ab dem ersten Ereignis der Session, so wie der Tab files sie zeigt. Eine Aufrufnummer ist der Index ihres Werkzeugaufrufs in der aufgezeichneten Ereignisliste, gezählt ab 0.",
+    "Zeiten zählen ab dem ersten Ereignis der Session, so wie der Tab files sie zeigt. Eine Ereignisnummer ist der Index des Ereignisses in der Aufzeichnung, gezählt ab 0; die Links der App verwenden dieselbe Nummer.",
     "Die Ziele kommen aus den aufgezeichneten Austauschen mit einem Modell; ohne sie nennt der Bericht Anbieter und Modell, mit denen der Lauf begann.",
   ],
   footer: (version) => `spectroscope${version === null ? "" : ` ${version}`} · Dateibericht`,
@@ -704,12 +755,15 @@ function sourceSpan(lang: Lang, source: Source): string {
   return `<span class="${cls}">${esc(W[lang].source[source])}</span>`;
 }
 
-/** "+3:12 · call 14 · main" for a finding; parts the finding does not have are left out. */
+/** The event a finding points at: its tool call, else where it was seen (a prompt, a steering message). */
+export const findingEvent = (f: Finding): number => f.callIndex ?? f.eventIndex;
+
+/** "+3:12 · event 14 · main" for a finding; parts the finding does not have are left out. */
 function when(lang: Lang, report: FilesReport, f: Finding): string {
   const w = W[lang];
   const parts: string[] = [];
   if (report.timed && f.t !== null) parts.push(`+${clockText(lang, f.t)}`);
-  if (f.callIndex !== null) parts.push(w.call(f.callIndex));
+  parts.push(w.event(findingEvent(f)));
   if (f.agentId !== null) parts.push(scrub(f.agentId));
   else if (f.kind === "credential-prompt") parts.push(w.person);
   return esc(parts.join(" · "));
@@ -780,30 +834,108 @@ function headerSection(lang: Lang, report: FilesReport): string {
 /** The findings a verdict counts: a model's reading does not (R6). */
 const counted = (report: FilesReport): Finding[] => report.findings.filter((f) => f.source !== "model");
 
+/** A sentence of the verdict, as plain text and as markup. */
+interface Sentence {
+  text: string;
+  html: string;
+}
+
+const plainSentence = (text: string): Sentence => ({ text, html: esc(text) });
+
+/** The critical headline from the kinds present: secrets first, then a dump, then a secret file sent. */
+function criticalHeadline(w: Words, real: readonly Finding[]): { headline: string; next: Sentence[] } {
+  const critical = real.filter((f) => f.level === "critical");
+  if (critical.some((f) => f.kind === "secret-file" || f.kind.startsWith("credential-"))) {
+    return { headline: w.headline.secrets, next: [] };
+  }
+  if (critical.some((f) => f.kind === "env-dump")) {
+    return { headline: w.headline.envDump, next: [plainSentence(w.noCredential)] };
+  }
+  if (critical.some((f) => f.kind === "network")) return { headline: w.headline.secretSent, next: [] };
+  return { headline: w.headline.secrets, next: [] };
+}
+
+/** The sensitive headline from the kinds present; a sensitive file without an outside finding is a B1 path. */
+function sensitiveHeadline(w: Words, report: FilesReport, real: readonly Finding[]): string {
+  const sensitive = real.filter((f) => f.level === "sensitive");
+  const outside = new Set(sensitive.filter((f) => f.kind === "outside").map((f) => f.file));
+  const network = sensitive.filter((f) => f.kind === "network").length;
+  const parts: string[] = [];
+  if (outside.size > 0) parts.push(w.sensitiveParts.outside);
+  const others = report.files.some(
+    (f) => f.level === "sensitive" && f.sources.some((s) => s !== "model") && !outside.has(f.label),
+  );
+  if (others) parts.push(w.sensitiveParts.homeOrSystem);
+  if (network > 0) parts.push(w.sensitiveParts.network(network));
+  if (sensitive.some((f) => f.kind === "personal-data")) parts.push(w.sensitiveParts.personal);
+  return parts.length === 0 ? w.headline.sensitive : w.sensitive(parts);
+}
+
+/** The verdict's headline and the sentences after it, chosen from the level and the kinds present. */
+function verdictText(lang: Lang, report: FilesReport): { headline: string; sentences: Sentence[] } {
+  const w = W[lang];
+  const real = counted(report);
+  const sentences: Sentence[] = [];
+  let headline: string;
+  switch (report.verdict) {
+    case "critical": {
+      const chosen = criticalHeadline(w, real);
+      headline = chosen.headline;
+      sentences.push(...chosen.next);
+      const reached = new Map<string, Destination>();
+      for (const f of real) {
+        if (f.level !== "critical") continue;
+        for (const d of reachedDestinations(report, f)) reached.set(d.key, d);
+      }
+      if (reached.size > 0) {
+        const list = [...reached.values()];
+        const text = list.map((d) => `${destinationName(lang, d)} (${placeShort(lang, d)})`).join(", ");
+        const html = list
+          .map((d) => `${code(destinationName(lang, d))} (${esc(placeShort(lang, d))})`)
+          .join(", ");
+        sentences.push({ text: w.wentTo(text), html: w.wentTo(html) });
+      }
+      break;
+    }
+    case "sensitive":
+      headline = sensitiveHeadline(w, report, real);
+      sentences.push(plainSentence(w.noSecret));
+      break;
+    case "unknown":
+      headline = w.headline.unknown;
+      sentences.push(plainSentence(w.noSecret));
+      break;
+    case "project": {
+      const noFiles = !report.files.some((f) => f.sources.some((s) => s !== "model"));
+      if (noFiles) headline = w.headline.noFiles;
+      else headline = report.workspace === null ? w.headline.noWorkspace : w.headline.project;
+      if (report.workspace === null) {
+        sentences.push(plainSentence(w.checkedNoWorkspace), plainSentence(w.noWorkspaceLimit));
+      } else {
+        sentences.push(plainSentence(w.checked));
+      }
+      break;
+    }
+  }
+  const model = report.findings.length - real.length;
+  if (model > 0) sentences.push(plainSentence(w.modelNote(model)));
+  return { headline, sentences };
+}
+
+/**
+ * The verdict's headline and its first sentence as plain text, for the
+ * report sheet of the files tab. It names models and labels, never a value.
+ */
+export function verdictLine(report: FilesReport, lang: Lang): string {
+  const { headline, sentences } = verdictText(lang, report);
+  return sentences.length === 0 ? headline : `${headline} ${sentences[0].text}`;
+}
+
 function verdictSection(lang: Lang, report: FilesReport): string {
   const w = W[lang];
   const real = counted(report);
-  const model = report.findings.length - real.length;
-  const noFiles =
-    report.verdict === "project" && !report.files.some((f) => f.sources.some((s) => s !== "model"));
-  const headline = noFiles ? w.headlineNoFiles : w.headline[report.verdict];
-  const lines: string[] = [`<b>${esc(headline)}</b>`];
-  if (report.verdict === "project") lines.push(esc(w.checked));
-  else if (report.verdict !== "critical") lines.push(esc(w.noSecret));
-  if (report.verdict === "critical") {
-    const reached = new Map<string, Destination>();
-    for (const f of real) {
-      if (f.level !== "critical") continue;
-      for (const d of reachedDestinations(report, f)) reached.set(d.key, d);
-    }
-    if (reached.size > 0) {
-      const list = [...reached.values()].map(
-        (d) => `${code(destinationName(lang, d))} (${esc(placeShort(lang, d))})`,
-      );
-      lines.push(w.wentTo(list.join(", ")));
-    }
-  }
-  if (model > 0) lines.push(esc(w.modelNote(model)));
+  const { headline, sentences } = verdictText(lang, report);
+  const lines = [`<b>${esc(headline)}</b>`, ...sentences.map((s) => s.html)];
 
   // One line per kind, in the order the findings stand (level, then time).
   const kinds: FindingKind[] = [];
@@ -933,7 +1065,7 @@ function fileRow(lang: Lang, report: FilesReport, f: ReportFile): string {
   const w = W[lang];
   const what = f.what.length === 0 ? w.whatNone : f.what.map((k) => w.what[k]).join(", ");
   const sources = f.sources.map((s) => sourceSpan(lang, s)).join(" ");
-  const first = report.timed && f.firstT !== null ? `+${clockText(lang, f.firstT)}` : w.call(f.firstCall);
+  const first = report.timed && f.firstT !== null ? `+${clockText(lang, f.firstT)}` : w.event(f.firstCall);
   return `<tr data-file><td>${levelBadge(lang, f.level)}</td><td class="path">${masked(f.label)}</td><td>${esc(what)}</td><td>${sources}</td><td>${esc(first)}</td><td class="num">${esc(f.calls.toLocaleString(lang))}</td></tr>`;
 }
 
@@ -982,7 +1114,8 @@ ${items.join("\n")}
 function methodSection(lang: Lang, report: FilesReport): string {
   const w = W[lang];
   // The method lines are this module's own markup; only the count is inserted.
-  const items = w.method(esc(report.placeholders.toLocaleString(lang))).map((l) => `<li>${l}</li>`);
+  const count = esc(report.placeholders.toLocaleString(lang));
+  const items = w.method(report.placeholders, count).map((l) => `<li>${l}</li>`);
   return `<section data-section="method">
 <h2>${esc(w.headings.method)}</h2>
 <ul class="method">
@@ -1034,6 +1167,7 @@ th{font:11px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var
 td{border-bottom:1px solid var(--line);padding:6px 8px;vertical-align:top}
 td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
 code,.path{font:12.5px var(--mono);overflow-wrap:anywhere}
+td code,td.path{overflow-wrap:break-word}
 .finding{border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin:8px 0;background:var(--bg-raise)}
 .finding header{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
 .finding header b{font-weight:600}
@@ -1051,6 +1185,7 @@ footer{margin-top:36px;font:12px var(--mono);color:var(--muted)}
   :root,:root[data-design]{--bg:#fff;--bg-raise:#fff;--line:#d4d0c6;--ink:#111;--muted:#555;--faint:#999;
     --sp-red:#B23A2E;--sp-amber:#8F6220;--sp-teal:#0C7F60;--sp-violet:#5847C9}
   .bar{display:none}
+  td code,td.path{overflow-wrap:anywhere}
   main{max-width:none;padding:0}
   .finding,.verdict,tr{break-inside:avoid}
   h2{break-after:avoid}
