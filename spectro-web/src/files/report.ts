@@ -318,8 +318,10 @@ const MASK_INSIDE_WORDS = 6;
 const MIN_CUT = 8;
 /** How many levels of key blocks inside a key block withInner reads: a nest of any depth costs four scans. */
 const MAX_NESTING = 4;
-/** A mask label, kept whole, or a title word: quotes, brackets, parentheses and commas end a word too. */
-const TITLE_WORD = /\[credential \d+: [a-z-]+\]|[^\s"'`()[\]{}<>,]+/g;
+/** A label the mask wrote; the title rule passes over it. */
+const MASK_LABEL = /\[credential \d+: [a-z-]+\]/y;
+/** What ends a title word: a blank, quote, bracket, parenthesis, comma, `:`, `=`, `/` or `@`. */
+const WORD_END = /[\s"'`()[\]{}<>,:=/@]/;
 
 /** The start of every occurrence of `value` in `text`; with `asWord`, only those with no word character beside them. */
 function occurrences(text: string, value: string, asWord: boolean): number[] {
@@ -379,24 +381,46 @@ class Credentials {
   }
 
   /**
-   * The title masked, and a word cut short in it: the title is cut upstream, so
-   * it can end in the start of a value. A word of eight or more characters
-   * (ended by a blank, quote, bracket, parenthesis or comma; a closing ellipsis
-   * aside) that a known value starts with takes that value's label.
+   * The title masked, and a value cut short in it: the title is cut upstream,
+   * and a person can paste part of a value. From every word start (after a
+   * WORD_END character), the longest start of a known value with eight or more
+   * characters takes that value's label. A mark inside the value does not split
+   * it, and what follows the cut (an ellipsis, a quote) stays.
    */
   maskTitle(text: string): string {
-    const words = this.mask(text).replace(TITLE_WORD, (word) => {
-      if (word.startsWith("[")) return word;
-      const [, core = "", ellipsis = ""] = /^(.*?)(\u2026|\.\.\.)?$/s.exec(word) ?? [];
-      if (core.length < MIN_CUT) return word;
-      for (const s of this.bySecret.values()) {
-        if (s.secret.length > core.length && s.secret.startsWith(core)) {
-          return `[${s.ref.label}: ${s.ref.rule}]${ellipsis}`;
-        }
+    const masked = this.mask(text);
+    let out = "";
+    let copied = 0;
+    for (let at = 0; at < masked.length;) {
+      MASK_LABEL.lastIndex = at;
+      if (MASK_LABEL.test(masked)) {
+        at = MASK_LABEL.lastIndex;
+        continue;
       }
-      return word;
-    });
-    return this.maskTail(words);
+      const cut = at === 0 || WORD_END.test(masked[at - 1]) ? this.longestStart(masked, at) : null;
+      if (cut === null) {
+        at++;
+        continue;
+      }
+      out += `${masked.slice(copied, at)}[${cut.ref.label}: ${cut.ref.rule}]`;
+      at += cut.length;
+      copied = at;
+    }
+    return this.maskTail(out + masked.slice(copied));
+  }
+
+  /** The known value that shares the longest start with `text` at `at`, when that start has MIN_CUT characters or more. */
+  private longestStart(text: string, at: number): { length: number; ref: CredentialRef } | null {
+    const first = text.charCodeAt(at);
+    let best: { length: number; ref: CredentialRef } | null = null;
+    for (const s of this.bySecret.values()) {
+      if (s.secret.charCodeAt(0) !== first) continue;
+      const max = Math.min(s.secret.length, text.length - at);
+      let n = 1;
+      while (n < max && s.secret.charCodeAt(n) === text.charCodeAt(at + n)) n++;
+      if (n >= MIN_CUT && (best === null || n > best.length)) best = { length: n, ref: s.ref };
+    }
+    return best;
   }
 
   /**

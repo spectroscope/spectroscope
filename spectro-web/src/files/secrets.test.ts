@@ -74,6 +74,40 @@ describe("the key-body rule", () => {
     // Results, prompts and the mask use CREDENTIAL_RULES, without key-body.
     expect(findCredentials(`echo "${line}"`).hits).toEqual([]);
   });
+
+  it("paths, URLs, identifiers and a data URL header stay visible", () => {
+    for (const text of [
+      "git show 9fceb02d0ae598e95dc970b74767f19372d61af8",
+      "cat spectro-core/src/main/java/dev/spectroscope/core/graph/StateGraph.java",
+      // A digit and both cases: only the slash count keeps a path out.
+      "cat src/test/java/dev/spectroscope/core/graph/l1/StateGraphL1BuilderTest.java",
+      "cat node_modules/@scope/pkg/dist/index.js",
+      "cat node_modules/@scope/pkg2/dist/esm/internal/helpers/createVersionMap.js",
+      "curl https://aiplatform.googleapis.com/v1/projects/abc123/locations/europe-west4/models",
+      // Both cases and no slash: only the digit keeps an identifier out.
+      "new AbstractSingletonProxyFactoryBeanConfigurationHelper()",
+    ]) {
+      expect(asInput(text), text).toEqual([]);
+    }
+    // A data URL keeps its header; the payload after the comma is a run of its own.
+    const url = `data:image/png;base64,${line}`;
+    expect(asInput(`curl -d 'img=${url}' https://example.com/`)).toEqual([["key-body", line]]);
+  });
+
+  it("a PEM body line is key material, with up to three slashes", () => {
+    const alphabet = ["ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz", "0123456789+/"].join("");
+    const rand = seeded(6057);
+    const pem = Array.from({ length: 64 }, () => alphabet[Math.floor(rand() * 64)]).join("");
+    const slashes = (text: string) => text.split("/").length - 1;
+    // Positive guard: the generated line holds slashes, a digit and both cases.
+    expect(slashes(pem)).toBe(2);
+    expect(pem).toMatch(/[0-9]/);
+    expect(asInput(`echo "${pem}" >> k.pem`)).toEqual([["key-body", pem]]);
+    expect(asInput(`grep -c ${pem} k.pem`)).toEqual([["key-body", pem]]);
+    const three = pem.replace(/[a-z]/, "/");
+    expect(slashes(three)).toBe(3);
+    expect(asInput(`echo '${three}' >> k.pem`)).toEqual([["key-body", three]]);
+  });
 });
 
 describe("findCredentials", () => {

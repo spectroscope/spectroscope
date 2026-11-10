@@ -717,6 +717,31 @@ describe("verdictLine", () => {
     expect(de.startsWith("Der Arbeitsordner wurde nicht aufgezeichnet. Dieser Bericht hat ")).toBe(true);
     expect(de).not.toContain("außerhalb des Projekts");
   });
+
+  it("says when the destination was not recorded", () => {
+    // No exchange and no run_start provider: the one destination row records nothing.
+    const report = build(new Rec().start().tool("read_file", { path: ".env" }, "DEBUG=1\n").events);
+    expect(report.destinations.map((d) => [d.provider, d.model])).toEqual([[null, null]]);
+    expect(verdictLine(report, "en")).toBe(
+      "Secrets appear in this session. Content from these findings went to a destination that was not recorded.",
+    );
+    expect(verdictLine(report, "de")).toBe(
+      "In dieser Session kommen Geheimnisse vor. Inhalt aus diesen Befunden ging an ein Ziel, das nicht aufgezeichnet wurde.",
+    );
+  });
+});
+
+describe("the rule words", () => {
+  it("names key-body as key material", () => {
+    const line = ["MIIEowIBAAKCAQEAx9Ym4Qz7Rt2Lp8Wk", "Nb3Vc6Hs1Jd5Gf0AhkiG9w0BAQEFAASC"].join("");
+    const report = build(new Rec().start().tool("Bash", { command: `grep -c ${line} k.pem` }).events);
+    expect(reportHtml(report, "en")).toContain(
+      '<span class="masked">credential 1</span> (key material, 33 to 64 bytes)',
+    );
+    expect(reportHtml(report, "de")).toContain(
+      '<span class="masked">credential 1</span> (Schlüsselmaterial, 33 bis 64 Byte)',
+    );
+  });
 });
 
 describe("reportFilename", () => {

@@ -934,6 +934,74 @@ describe("buildReport", () => {
       expect(ofKind(report, "credential-input")).toEqual([]);
       expect(one(report, "secret-file").command).toBe(`cat .env && git show ${sha}`);
     });
+
+    it("paths, URLs and a data URL header in inputs stay visible", () => {
+      const java = "src/test/java/dev/spectroscope/core/graph/l1/StateGraphL1BuilderTest.java";
+      const pkg = "node_modules/@scope/pkg2/dist/esm/internal/helpers/createVersionMap.js";
+      const api = "https://aiplatform.googleapis.com/v1/projects/abc123/locations/europe-west4/models";
+      const rec = new Rec()
+        .start(W)
+        .tool("read_file", { path: "spectro-core/src/main/java/dev/spectroscope/core/graph/StateGraph.java" })
+        .tool("read_file", { path: java })
+        .tool("Bash", { command: `cat ${pkg}` })
+        .tool("Bash", { command: `curl ${api}` })
+        .tool("Bash", { command: `curl -d 'img=data:image/png;base64,${lines[0]}' https://example.com/` });
+      const report = build(rec.events);
+
+      // Only the data URL's payload is key material; its header stays.
+      expect(ofKind(report, "credential-input").map((f) => [f.callIndex, f.credentials])).toEqual([
+        [9, [{ label: "credential 1", rule: "key-body", band: "33-64" }]],
+      ]);
+      expect(report.files.map((f) => f.label)).toEqual(
+        expect.arrayContaining([
+          "spectro-core/src/main/java/dev/spectroscope/core/graph/StateGraph.java",
+          java,
+          pkg,
+        ]),
+      );
+      expect(ofKind(report, "network").map((f) => f.command)).toEqual([
+        `curl ${api}`,
+        "curl -d 'img=data:image/png;base64,[credential 1: key-body]' https://example.com/",
+      ]);
+    });
+
+    it("a random PEM body line written and searched is masked", () => {
+      // 64 characters from a seeded generator, two of them slashes.
+      let s = 6057;
+      const rand = () => {
+        s = (s + 0x6d2b79f5) >>> 0;
+        let t = s;
+        t = Math.imul(t ^ (t >>> 15), t | 1);
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      };
+      const alphabet = ["ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz", "0123456789+/"].join("");
+      const pem = Array.from({ length: 64 }, () => alphabet[Math.floor(rand() * 64)]).join("");
+      expect(pem.split("/").length - 1).toBe(2);
+      const rec = new Rec()
+        .start(W)
+        .tool("Bash", { command: `echo "${head}" > k.pem` })
+        .tool("Bash", { command: `echo "${pem}" >> k.pem` })
+        .tool("Bash", { command: `echo "${tail}" >> k.pem` })
+        .tool("Bash", { command: `grep -c ${pem} k.pem` });
+      const report = build(rec.events);
+
+      expect(
+        ofKind(report, "credential-input").map((f) => [f.callIndex, f.credentials.map((c) => c.rule)]),
+      ).toEqual([
+        [1, ["private-key"]],
+        [3, ["key-body"]],
+      ]);
+      expect(ofKind(report, "secret-file").find((f) => f.callIndex === 3)?.command).toBe(
+        'echo "[credential 2: key-body]" >> k.pem',
+      );
+      expect(one(report, "credential-used")).toMatchObject({
+        callIndex: 7,
+        firstSeenCall: 3,
+        command: "grep -c [credential 2: key-body] k.pem",
+      });
+      expect(leaks(report, [pem, pem.slice(0, 20), pem.slice(-20)])).toEqual([]);
+    });
   });
 
   it("a title that ends inside a value keeps no part of it", () => {
@@ -983,5 +1051,35 @@ describe("buildReport", () => {
     // Seven characters stay, as they do between blanks.
     const seven = `push (${PAT.slice(0, 7)}) now`;
     expect(build(rec.events, undefined, seven).title).toBe(seven);
+  });
+
+  describe("a title word also ends at", () => {
+    const rec = new Rec().start(W, { prompt: `use ${PAT}` });
+    const cut = PAT.slice(0, 14);
+    const label = "[credential 1: github-pat]";
+    for (const [mark, title, masked] of [
+      [":", `push with:${cut} now`, `push with:${label} now`],
+      // `token=` would be a password assignment; `ref=` is no such name.
+      ["=", `push ref=${cut} now`, `push ref=${label} now`],
+      ["/", `clone https://x/${cut}/repo now`, `clone https://x/${label}/repo now`],
+      ["@", `push token@${cut} now`, `push token@${label} now`],
+    ]) {
+      it(mark, () => {
+        const report = build(rec.events, undefined, title);
+        expect(report.title).toBe(masked);
+        expect(leaks(report, [PAT.slice(0, 8)])).toEqual([]);
+      });
+    }
+
+    it("and a value that holds such a mark keeps no prefix", () => {
+      // The word starts where the value starts, so a mark inside the value does not split it.
+      const pw = ["Hx7p", "/Lq2vZw9", "Rt4"].join("");
+      const withPw = new Rec()
+        .start(W)
+        .tool("read_file", { path: "db.env" }, { output: `DB_PASSWORD=${pw}` });
+      const report = build(withPw.events, undefined, `rotate ${pw.slice(0, 10)}… now`);
+      expect(report.title).toBe("rotate [credential 1: password-assignment]… now");
+      expect(leaks(report, [pw.slice(0, 8)])).toEqual([]);
+    });
   });
 });

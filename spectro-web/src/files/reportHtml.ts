@@ -97,6 +97,8 @@ interface Words {
   checkedNoWorkspace: string;
   noWorkspaceLimit: string;
   wentTo: (list: string) => string;
+  /** A destination row that records neither provider nor model, as wentTo names it. */
+  unrecordedDestination: string;
   modelNote: (n: number) => string;
   kinds: Record<FindingKind, string>;
   headings: {
@@ -226,6 +228,7 @@ const EN: Words = {
     "scripts with unknown effect, and found none of these.",
   noWorkspaceLimit: "Without a workspace it cannot tell which other files belong to the project.",
   wentTo: (list) => `Content from these findings went to ${list}.`,
+  unrecordedDestination: "a destination that was not recorded",
   modelNote: (n) =>
     n === 1
       ? "A model's reading names 1 more finding; it is marked model and does not count."
@@ -301,6 +304,7 @@ const EN: Words = {
     jwt: "JSON web token",
     "url-userinfo": "password in a URL",
     "password-assignment": "password assignment",
+    "key-body": "key material",
   },
   band: (band) => (band === "129+" ? "more than 128 bytes" : `${band.replace("-", " to ")} bytes`),
   title: (f) => {
@@ -487,6 +491,7 @@ const DE: Words = {
     "personenbezogene Daten und Skripte mit unbekannter Wirkung geprüft und nichts davon gefunden.",
   noWorkspaceLimit: "Ohne Arbeitsordner kann er nicht sagen, welche übrigen Dateien zum Projekt gehören.",
   wentTo: (list) => `Inhalt aus diesen Befunden ging an ${list}.`,
+  unrecordedDestination: "ein Ziel, das nicht aufgezeichnet wurde",
   modelNote: (n) =>
     n === 1
       ? "Die Lesart eines Modells nennt 1 weiteren Befund; er ist als Modell markiert und zählt nicht."
@@ -562,6 +567,7 @@ const DE: Words = {
     jwt: "JSON Web Token",
     "url-userinfo": "Passwort in einer URL",
     "password-assignment": "Passwortzuweisung",
+    "key-body": "Schlüsselmaterial",
   },
   band: (band) => (band === "129+" ? "mehr als 128 Byte" : `${band.replace("-", " bis ")} Byte`),
   title: (f) => {
@@ -889,9 +895,19 @@ function verdictText(lang: Lang, report: FilesReport): { headline: string; sente
       }
       if (reached.size > 0) {
         const list = [...reached.values()];
-        const text = list.map((d) => `${destinationName(lang, d)} (${placeShort(lang, d)})`).join(", ");
+        // A row that records neither provider nor model is named as such, without a place.
+        const unrecorded = (d: Destination) => d.provider === null && d.model === null;
+        const text = list
+          .map((d) =>
+            unrecorded(d) ? w.unrecordedDestination : `${destinationName(lang, d)} (${placeShort(lang, d)})`,
+          )
+          .join(", ");
         const html = list
-          .map((d) => `${code(destinationName(lang, d))} (${esc(placeShort(lang, d))})`)
+          .map((d) =>
+            unrecorded(d)
+              ? esc(w.unrecordedDestination)
+              : `${code(destinationName(lang, d))} (${esc(placeShort(lang, d))})`,
+          )
           .join(", ");
         sentences.push({ text: w.wentTo(text), html: w.wentTo(html) });
       }

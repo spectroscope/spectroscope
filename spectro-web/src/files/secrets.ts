@@ -48,15 +48,17 @@ export const CREDENTIAL_RULES: readonly CredentialRule[] = [
 
 /**
  * A rule of the report, not of the Java twin: a run of 40 or more base64
- * characters (with `=` padding) holding upper- and lower-case letters is key
- * material, such as a key body a command writes or searches line by line
- * (`echo "<line>" >> k.pem`, `grep -c <line> k.pem`). A hex hash has one case
- * and stays out. It reads tool inputs only (INPUT_RULES); the mask finds such a
- * run again as a known value.
+ * characters (with `=` padding) that holds an upper-case letter, a lower-case
+ * letter and a digit, and at most three `/`, is key material, such as a key
+ * body a command writes or searches line by line (`echo "<line>" >> k.pem`,
+ * `grep -c <line> k.pem`). A hex hash has one case, a long identifier has no
+ * digit, and a path has more slashes; they stay out. It reads tool inputs only
+ * (INPUT_RULES); the mask finds such a run again as a known value.
  */
 export const KEY_BODY_RULE: CredentialRule = {
   name: "key-body",
-  pattern: /(?<![A-Za-z0-9+/])(?=[A-Za-z0-9+/]*[a-z])(?=[A-Za-z0-9+/]*[A-Z])[A-Za-z0-9+/]{40,}={0,2}/,
+  pattern:
+    /(?<![A-Za-z0-9+/])(?=[A-Za-z0-9+/]*[a-z])(?=[A-Za-z0-9+/]*[A-Z])(?=[A-Za-z0-9+/]*[0-9])(?!(?:[A-Za-z0-9+]*\/){4})[A-Za-z0-9+/]{40,}={0,2}/,
 };
 
 /** Every rule the report names, as a tool input is read: CREDENTIAL_RULES, then key-body. */
