@@ -143,8 +143,8 @@ first wildcard.</p>
 
 <p>Next to the letter, each entry carries a source tag. An entry tagged <em>recorded</em> comes
 from a file tool that named the file. The tab reads the file tools of spectroscope, Claude Code
-and VS Code, and the GitHub Copilot CLI's <code>view</code>, <code>create</code> and
-<code>edit</code>. An entry tagged <em>probable</em> comes from the heuristic, which finds files in
+and VS Code, the GitHub Copilot CLI's <code>view</code>, <code>create</code> and
+<code>edit</code>, and the Copilot IDE export's <code>apply_patch</code> and <code>rg</code>. An entry tagged <em>probable</em> comes from the heuristic, which finds files in
 shell commands, including the Copilot CLI's <code>bash</code> and <code>powershell</code> calls.
 It covers redirects (<code>echo text &gt; notes.txt</code>),
 file commands such as <code>cp</code>, <code>mv</code>, <code>rm</code> and <code>sed -i</code>,
@@ -187,15 +187,24 @@ says that it found none of it.</p>
 <p>A finding is one match of the report's rules in the recording. It can be a secret file such
 as <code>.env</code> or a key under <code>.ssh/</code>, or a credential in a tool result, a tool
 input or a prompt. In a network command, a value also counts as a credential by the place it
-stands in, whatever its shape. These places are a URL's user, password and query values, the
-values of <code>-u</code> and <code>--user</code>, and a cookie. They also include the value of an option
-whose name says password, token, secret or key, and of a header whose name says one of these or
-auth. The last place is the password of <code>sshpass -p</code>. A credential that a later call uses again is a finding of its own. So is
-a command that prints the environment or a stored secret. The one value that a command such as
-<code>gh auth token</code> printed is a credential as well. A network command is a finding too, shown with its host and the files it sends.
-One whose host is this machine stays at <em>project</em>. A search or a listing, such as a glob
-pattern, <code>ls</code>, <code>find</code> or <code>grep -r</code>, counts in no file row. The
-report lists it in a table of its own, with the level of the folder it starts in. It raises no
+stands in, whatever its shape. These places are a URL's password, the password after the colon
+in <code>-u</code> and <code>--user</code>, and a cookie. They also include the value of an option
+whose name says password, token, secret or key, and of a header whose name says token, key,
+secret, auth or pass. The options <code>--key</code>, <code>--key-type</code>, <code>--pubkey</code>
+and <code>--pinnedpubkey</code> do not count, because their values are paths or types. The last
+place is the password of <code>sshpass -p</code>. A query value counts when a word of its name
+says credential: <code>access_token</code> and <code>apiKey</code> count, <code>page</code> and
+<code>zipcode</code> do not. A user name given alone, and a query value whose name says nothing
+of a credential, are masked in the printed command and do not count. A credential that a later
+call uses again is a finding of its own, also when it is glued to an option such as
+<code>-p</code>. So is a command that prints the environment or a stored secret. The one value
+that a command such as <code>gh auth token</code> printed is a credential as well. That holds when
+the command printed it itself, not into a pipe or a substitution. A network command is a finding
+too, shown with its host and the files it sends. One whose host is this machine stays at
+<em>project</em>. A search or a listing, such as a glob pattern, <code>ls</code> or
+<code>find</code>, counts in no file row. A <code>grep -r</code> or an <code>rg</code> over a
+folder, or without a path, is a search, and one on a file is a read of that file. The report
+lists a search or a listing in a table of its own, with the level of the folder it starts in. It raises no
 finding about a file and does not count toward the verdict. Its result is checked like any other
 result. The remaining findings are a file outside the project, personal data
 such as email-shaped strings in tool results, and a script with unknown effect. Entries from a
@@ -204,8 +213,9 @@ model's reading carry the <em>model</em> tag and do not count toward the verdict
 <p>The report prints no file content, and no credential that its rules or these places in a
 command found. A credential appears only as its rule, a size band such as 17 to 32 bytes and a
 label such as <code>credential 1</code>. The band stands in for the exact length, and no hash of
-the value is written. In a printed command, the report masks a password to the end of its word,
-and a URL's user and password from <code>://</code> to the last <code>@</code>. The section
+the value is written. In a printed command, the report masks a password to the end of its word.
+When that word ends in <code>=</code> or <code>:</code>, it masks the next word too. It masks a
+URL's user and password from <code>://</code> to the last <code>@</code>. The section
 <em>Where the content went</em> lists each model the session called and says where it ran. The
 places are this machine, another machine on the local network, a cloud model behind a local
 server, and the cloud. An imported Claude Code session that records its
