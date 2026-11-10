@@ -501,7 +501,7 @@ pre.tree .hl { color: var(--sand); }
   </div>
   <div class="cover-foot">
     <span>spectroscope — the agent orchestrator you can watch</span>
-    <span>2026-10-14 · v0.15.5</span>
+    <span>2026-11-10 · v0.16.0</span>
   </div>
 </div>
 
@@ -1537,7 +1537,10 @@ it, so unknown event types are visible too.</p>
 <h2 id="ch-tabs-files-tab">The Files tab</h2>
 
 <p>The <strong>files</strong> tab shows what a run did to files: which file was read, created
-or changed, by which agent, and when, in seconds from the start of the run. For a recording
+or changed, by which agent, and when. A call's time counts from the start of the run and shows
+its seconds: <code>+7.4 s</code> under a minute, then <code>+12:05</code>, <code>+1:25:32</code>
+or <code>+3 d 04:12:05</code>. On the timeline a pause of more than two minutes shrinks to a
+short break mark, and pointing at the mark shows how long the pause was. For a recording
 without timestamps the tab counts calls instead. It reads only what the session recorded. The
 server records nothing extra for it, and nothing scans the working folder, so an imported
 session shows the files that its own calls named. A timeline draws one row per file and one row
@@ -6956,8 +6959,8 @@ Maven Central instead. On a machine without a full JDK/Node for the Electron ste
 <p>The two headless modules are published under the <strong>verified namespace</strong>
 <code>dev.spectroscope</code>. Depend on the orchestrator and you get the core transitively:</p>
 <pre>dependencies {
-  implementation("dev.spectroscope:spectro-core:0.15.5")
-  implementation("dev.spectroscope:spectro-orchestrator:0.15.5")  // POM pins spectro-core at 0.15.5
+  implementation("dev.spectroscope:spectro-core:0.16.0")
+  implementation("dev.spectroscope:spectro-orchestrator:0.16.0")  // POM pins spectro-core at 0.16.0
 }</pre>
 <p><code>v0.1.0</code> is the first published version. <strong>Maven Central is
 append-only</strong>: a published version cannot be pulled or overwritten, only superseded,
@@ -7141,25 +7144,27 @@ is reproducible from the repository.</p>
   <dt>Source of truth</dt><dd>the prose and the figures were verified against the
     <strong>v0.1.0</strong> source tree; gate at that time: 678 JUnit + 383 vitest, 0 failures.
     The cover carries the edition date, not a re-verification: this edition ships with
-    <strong>v0.15.5</strong>. The explore row of chapter 14, the continuation line for a
-    question to the person and the decision values of chapter 27 were checked against that tree
-    on 2026-10-14. The run view in the Plan panel with its wide view, the opening of
+    <strong>v0.16.0</strong>. The Files tab of chapter 6 was written against the branch of that
+    release on 2026-11-09, and its call times and break marks were checked against that tree on
+    2026-11-10. The explore row of chapter 14, the continuation line for a question to the
+    person and the decision values of chapter 27 were checked against the previous release's
+    tree on 2026-10-14. The run view in the Plan panel with its wide view, the opening of
     the documents a run wrote, the agent picker of the context ring and of the Plan and System
-    context panels, and the Plan of the model were checked against the previous release's tree
-    on 2026-10-13.
+    context panels, and the Plan of the model were checked against the tree of the release
+    before it on 2026-10-13.
     The playbook start from the chat with the playbook chip, the
     confirmation and the run lines in the chat, the playbook's skills, commands and agents in a
     session, the contents list without install states, the shared command list with
     <code>/help</code>, the terminal's <code>/clear</code>, the minimal density, the model picker
     of a stored session and Stop on a backend that does not answer were checked against the
-    tree of the release before it or the branches merged into it on 2026-10-12 and 2026-10-13. Messages between agents and
+    tree of the release before that or the branches merged into it on 2026-10-12 and 2026-10-13. Messages between agents and
     background helpers, the goal and <code>/loop</code>, running a workflow, the bundle tabs of the
     playbook pane, the code graph rows and the <code>code_graph</code> tool, the dock's tabs
     default, the tool counts of chapter 12 and the config reference rows for agentMessaging,
-    sttRunner and toolGroupsOff were checked against the tree of the release before that on 2026-10-11
+    sttRunner and toolGroupsOff were checked against the trees of older releases on 2026-10-11
     and 2026-10-12; the folder chooser in the Playbook segment, the row of tabs in developer, back
-    and forward in the header, and Spectrolyzr as one page with a new playbook option against the
-    tree of an older release on 2026-10-10; the rest has not been re-checked.
+    and forward in the header, and Spectrolyzr as one page with a new playbook option on
+    2026-10-10; the rest has not been re-checked.
     Where the guide and the product disagree, the product is right.</dd>
 </div>
 
