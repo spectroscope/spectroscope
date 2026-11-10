@@ -490,6 +490,11 @@ describe("one entry per call and file (C7)", () => {
       { path: "/ws/a", kind: "read", folder: false, sources: ["probable"] },
       { path: "/ws/b", kind: "write", folder: false, sources: ["probable"] },
     ]);
+    // In the other order too: the read comes first, the write still wins.
+    expect(touchesOf("cat b && cp a b").map(brief)).toEqual([
+      { path: "/ws/b", kind: "write", folder: false, sources: ["probable"] },
+      { path: "/ws/a", kind: "read", folder: false, sources: ["probable"] },
+    ]);
     // The row of b holds that one touch.
     const ledger = foldFiles(new Rec().start(W).tool("Bash", { command: "cp a b && cat b" }).events);
     expect(fileRows(ledger, null).find((row) => row.path === "/ws/b")?.touches).toHaveLength(1);
