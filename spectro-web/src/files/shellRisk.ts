@@ -60,22 +60,24 @@ const wordsOf = (s: Segment): Word[] => [
 // and every `$` form and only marks the word dynamic. riskSegments swaps each one
 // for a literal marker first, with the tokenizer's own rules for quotes, comments,
 // escapes and heredocs, tokenizes the masked line and hangs the bodies back on
-// their words, with the literal text before the first dynamic piece.
+// their words, with the word's shape.
 
 /**
  * A word with what made it dynamic: `subs` are the bodies of its command
  * substitutions, `arith` of its `$((...))`, `vars` is true for a variable or
- * parameter, `prefix` is the literal text before the first dynamic piece.
+ * parameter, `shape` is its text with each dynamic piece as one DYN character.
  */
-type SWord = Word & { subs?: string[]; arith?: string[]; vars?: boolean; prefix?: string };
+type SWord = Word & { subs?: string[]; arith?: string[]; vars?: boolean; shape?: string };
 const subsOf = (w: Word): string[] => (w as SWord).subs ?? [];
 const arithOf = (w: Word): string[] => (w as SWord).arith ?? [];
 const varsOf = (w: Word): boolean => (w as SWord).vars ?? w.dynamic;
-const prefixOf = (w: Word): string | null => (w.dynamic ? ((w as SWord).prefix ?? null) : w.text);
+/** The shape of a word; null for a dynamic word whose pieces are not known. */
+const shapeOf = (w: Word): string | null => (w.dynamic ? ((w as SWord).shape ?? null) : w.text);
 
 const OPEN = "\uE000"; // a substitution: OPEN, its index, CLOSE
 const CLOSE = "\uE001";
 const VAR = "\uE002"; // a variable or parameter
+const DYN = VAR; // one dynamic piece in a shape
 const MARK = /\uE000(\d+)\uE001|\uE002/g;
 const HAS_DYNAMIC = /[`$]|[<>]\(/;
 const META = " \t\r\n;&|()<>";
@@ -87,8 +89,7 @@ export function riskSegments(command: string): (Segment | "(" | ")")[] {
   const docs = segments(command).flatMap((s) => (typeof s === "string" ? [] : s.docs));
   const bodies: { text: string; arith: boolean }[] = [];
   const unmask = (w: Word): Word => {
-    const first = w.text.search(/[\uE000\uE002]/);
-    if (first < 0) return w;
+    if (!/[\uE000\uE002]/.test(w.text)) return w;
     const subs: string[] = [];
     const arith: string[] = [];
     let vars = w.dynamic;
@@ -98,7 +99,7 @@ export function riskSegments(command: string): (Segment | "(" | ")")[] {
       else subs.push(bodies[Number(n)].text);
       return "";
     });
-    const out: SWord = { ...w, text, dynamic: true, vars, subs, arith, prefix: w.text.slice(0, first) };
+    const out: SWord = { ...w, text, dynamic: true, vars, subs, arith, shape: w.text.replace(MARK, DYN) };
     return out;
   };
   return segments(mask(command, docs, bodies)).map((s) =>
@@ -297,6 +298,7 @@ function dumped(out: ShellRisk, what: string): void {
 
 interface Spec {
   short?: string; // short options that take a value
+  optional?: string; // short options whose value is optional and only attached (`od -w16`)
   long?: string[]; // long options that take a value
   posix?: boolean; // the first operand ends the options
   skip?: number; // wrappers: operands to drop before the command (the duration of `timeout`)
@@ -308,14 +310,21 @@ interface Parsed {
 }
 
 // The value part of `--name=value` or `-dvalue`, keeping the word's substitutions
-// and the part of its literal prefix that falls into the value.
+// and the part of its shape that falls into the value. Before the first dynamic
+// piece the shape is the text itself; a dynamic piece in the name leaves the value unknown.
 const part = (w: Word, text: string): Word => {
-  const prefix = (w as SWord).prefix;
-  const cut = w.text.length - text.length;
+  const shape = (w as SWord).shape;
   const out: SWord = { ...w, text };
-  if (prefix !== undefined) out.prefix = prefix.length >= cut ? prefix.slice(cut) : "";
+  if (shape !== undefined) {
+    const cut = w.text.length - text.length;
+    const first = shape.indexOf(DYN);
+    out.shape = first === -1 || first >= cut ? shape.slice(cut) : DYN;
+  }
   return out;
 };
+
+/** True when a dynamic piece starts at index `i` of the word (`-o"$(...)"` at 2). */
+const dynamicAt = (w: Word, i: number) => shapeOf(w)?.[i] === DYN;
 
 function parse(args: Word[], spec: Spec): Parsed {
   const options: Parsed["options"] = [];
@@ -342,12 +351,14 @@ function parse(args: Word[], spec: Spec): Parsed {
       options.push({ name, value, from: a, inline: eq >= 0 });
     } else {
       for (let q = 1; q < t.length; q++) {
-        if (!spec.short?.includes(t[q])) {
+        const optional = spec.optional?.includes(t[q]) ?? false;
+        if (!spec.short?.includes(t[q]) && !optional) {
           options.push({ name: "-" + t[q], value: null, from: a, inline: false });
           continue;
         }
-        const inline = q + 1 < t.length;
-        const value = inline ? part(a, t.slice(q + 1)) : (args[++k] ?? null);
+        // The value is attached when text or a dynamic piece follows the letter: `-o"$(...)"`.
+        const inline = q + 1 < t.length || dynamicAt(a, q + 1);
+        const value = inline ? part(a, t.slice(q + 1)) : optional ? null : (args[++k] ?? null);
         options.push({ name: "-" + t[q], value, from: a, inline });
         break;
       }
@@ -434,31 +445,56 @@ const REMOTE_HOST = /^(?:[^@/:]*@)?(\[[^\]/]*\]|[^:/@\s]+):/;
 const BARE_HOST =
   /^(?:[^@/:\s]+@)?(localhost|[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+|\[[0-9A-Fa-f:.]+\])(?::\d+)?(?:[/?#]|$)/;
 
-// A dynamic word is read up to its first dynamic piece (prefixOf).
+const SCHEME = /^[A-Za-z][A-Za-z0-9+.-]*:\/\//;
+const literalPart = (shape: string) => shape.split(DYN)[0];
+
+// A dynamic word is remote by the literal text before its first dynamic piece.
 const isRemote = (w: Word) => {
-  const t = prefixOf(w);
-  return t !== null && (URL_HOST.test(t) || REMOTE_HOST.test(t));
+  const s = shapeOf(w);
+  return s !== null && (URL_HOST.test(literalPart(s)) || REMOTE_HOST.test(literalPart(s)));
 };
 
-function hostOf(w: Word | null | undefined, bare = false): string | null {
-  const t = w ? prefixOf(w) : null;
-  if (t === null) return null;
+/**
+ * The shape a host is read from. When a dynamic piece stands before an `@` in
+ * the authority, the userinfo up to that `@` is dropped: `https://u:$P@h/x`
+ * names `h`. A word without a scheme gets this only from a tool that takes a
+ * URL (`urlish`); in scp `h:$D@x/y` the `:` ends the host.
+ */
+function hostShape(w: Word, urlish: boolean): string | null {
+  const s = shapeOf(w);
+  if (s === null) return null;
+  const scheme = SCHEME.exec(s)?.[0] ?? "";
+  if (scheme === "" && !urlish) return s;
+  const rest = s.slice(scheme.length);
+  const end = rest.search(/[/?#]/);
+  const authority = end < 0 ? rest : rest.slice(0, end);
+  const at = authority.lastIndexOf("@");
+  return at >= 0 && authority.slice(0, at).includes(DYN) ? scheme + rest.slice(at + 1) : s;
+}
+
+function hostOf(w: Word | null | undefined, urlish = false, bare = false): string | null {
+  const s = w ? hostShape(w, urlish) : null;
+  if (s === null) return null;
+  const t = literalPart(s);
   const m = URL_HOST.exec(t) ?? REMOTE_HOST.exec(t) ?? (bare ? BARE_HOST.exec(t) : null);
   if (!m || m[1] === "") return null;
   // The host must end before the first dynamic piece: `https://h$X` names no host.
-  if (w?.dynamic && m[0].length === t.length && !/[:/?#]$/.test(m[0])) return null;
+  if (s.includes(DYN) && m[0].length === t.length && !/[:/?#]$/.test(m[0])) return null;
   return m[1];
 }
 
-/** The host of the first word that names one; with `bare`, a later pass takes a target without a scheme. */
+/**
+ * The host of the first word that names one. With `bare` (curl, wget, httpie:
+ * tools that take a URL) a later pass also takes a target without a scheme.
+ */
 function firstHost(words: Word[], bare = false): string | null {
   for (const w of words) {
-    const h = hostOf(w);
+    const h = hostOf(w, bare);
     if (h !== null) return h;
   }
   if (!bare) return null;
   for (const w of words) {
-    const h = hostOf(w, true);
+    const h = hostOf(w, true, true);
     if (h !== null) return h;
   }
   return null;
@@ -590,11 +626,38 @@ const PRINTERS = new Map<string, (args: Word[]) => Word[]>([
       return [...values(p, "-i", "--input"), ...p.operands];
     },
   ],
-  ["xxd", (a) => parse(a, { short: "cgl" }).operands.slice(0, 1)], // the second operand is the output
-  ["od", (a) => parse(a, { short: "AjNt" }).operands],
+  ["xxd", xxdInput],
+  [
+    "od",
+    (a) =>
+      parse(a, {
+        short: "AjNtS",
+        optional: "w", // GNU `-w16`; a bare `-w` takes no value
+        long: ["address-radix", "skip-bytes", "read-bytes", "format", "endian"],
+      }).operands,
+  ],
   ["hexdump", (a) => parse(a, { short: "efns" }).operands],
   ["strings", (a) => parse(a, { short: "nte" }).operands],
 ]);
+
+// xxd reads each word as one option: `-ps` is a flag, `-s16` carries its value,
+// `-s 16`, `-seek 16` and `-cols 8` take the next word.
+const XXD_VALUES = "cglsonR";
+const XXD_LONG = new Set(["cols", "groupsize", "len", "seek", "skip", "name"]);
+
+function xxdInput(args: Word[]): Word[] {
+  const operands: Word[] = [];
+  for (let k = 0; k < args.length; k++) {
+    const s = shapeOf(args[k]) ?? args[k].text;
+    if (s === "--") {
+      operands.push(...args.slice(k + 1));
+      break;
+    }
+    if (!s.startsWith("-") || s === "-") operands.push(args[k]);
+    else if (XXD_VALUES.includes(s[1]) && (s.length === 2 || XXD_LONG.has(s.slice(1)))) k++;
+  }
+  return operands.slice(0, 1); // the second operand is the output
+}
 
 const CURL: Spec = {
   short: "AbcCdDeEFHKmoPQrTtuUwxXyYz",
@@ -673,6 +736,7 @@ const CURL: Spec = {
     "mail-auth",
     "request-target",
     "noproxy",
+    "etag-save",
   ],
 };
 const CURL_DATA = ["-d", "--data", "--data-ascii", "--data-binary", "--json"];
@@ -700,11 +764,15 @@ function curl(args: Word[], seg: Segment, cwd: string | null): NetworkUse {
       const m = /^[^=]*=[@<]([^;]*)/s.exec(w.text);
       if (m) file(w, m[1]);
       else data(u, w, cwd);
-    } else if ((name === "-H" || name === "--header") && w.text.startsWith("@")) file(w, w.text.slice(1));
-    else if (name === "--url-query") {
+    } else if (name === "-H" || name === "--header") {
+      const s = shapeOf(w) ?? "";
+      if (s.startsWith("@")) file(w, w.text.slice(1));
+      else if (w.dynamic && (s === "" || s.startsWith(DYN))) u.sendsNamed = false; // can expand to `@file`
+    } else if (name === "--url-query") {
       const m = /^[^=@]*@(.*)$/s.exec(w.text); // `@file` and `name@file`, as --data-urlencode
       if (m) file(w, m[1]);
-    }
+      else if (w.dynamic && !literalPart(shapeOf(w) ?? "").includes("=")) u.sendsNamed = false;
+    } else if ((name === "-b" || name === "--cookie") && !w.text.includes("=")) file(w, w.text); // a cookie file
   }
   if (stdin) sendStdin(u, seg, cwd);
   if (has(p, "-K", "--config")) u.sendsNamed = false; // a config file can hold more data and uploads
@@ -990,7 +1058,18 @@ const NETWORK = new Map<string, NetRule>([
 ]);
 
 // Options that name where the output goes; a substitution there sends nothing (subSends).
-const CURL_OUT = new Set(["-o", "--output", "-O", "-D", "--dump-header", "-c", "--cookie-jar", "--stderr"]);
+const CURL_OUT = new Set([
+  "-o",
+  "--output",
+  "--output-dir",
+  "-O",
+  "-D",
+  "--dump-header",
+  "-c",
+  "--cookie-jar",
+  "--etag-save",
+  "--stderr",
+]);
 const WGET_OUT = new Set([
   "-O",
   "--output-document",
@@ -1000,6 +1079,7 @@ const WGET_OUT = new Set([
   "--append-output",
   "-P",
   "--directory-prefix",
+  "--save-cookies",
 ]);
 const HTTPIE_OUT = new Set(["-o", "--output"]);
 const OUTPUTS = new Map<string, { spec: Spec; is: (name: string) => boolean }>([
