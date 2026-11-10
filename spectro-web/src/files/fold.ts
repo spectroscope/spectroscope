@@ -430,9 +430,11 @@ function patched(files: readonly PatchFile[], base: string | null): Reading {
   for (const f of files) {
     if (f.change === "add") touch(f.path, "create", "added by a patch");
     else if (f.change === "delete") touch(f.path, "delete", "deleted by a patch");
+    else if (f.movedTo === null) touch(f.path, "change", "patched");
     else {
-      touch(f.path, "change", "patched");
-      if (f.movedTo !== null) touch(f.movedTo, "change", "patched and moved here");
+      // A move leaves no file at the old path (task 11 item 14).
+      touch(f.path, "delete", "moved away by a patch");
+      touch(f.movedTo, "change", "patched and moved here");
     }
   }
   return {

@@ -688,13 +688,14 @@ describe("an apply_patch call (card 605)", () => {
     expect([call.tool, call.line, call.shell, call.status]).toEqual(["apply_patch", "src/a.ts", false, "ok"]);
     expect(call.touches.map((t) => [t.path, t.kind, t.sources, t.reason])).toEqual([
       ["/w/src/a.ts", "change", ["recorded"], "patched"],
-      ["/w/src/b.ts", "change", ["recorded"], "patched"],
+      // An Update with a Move leaves no file at the old path (task 11 item 14).
+      ["/w/src/b.ts", "delete", ["recorded"], "moved away by a patch"],
       ["/w/src/c.ts", "change", ["recorded"], "patched and moved here"],
       ["/w/src/d.ts", "create", ["recorded"], "added by a patch"],
       ["/w/src/e.ts", "delete", ["recorded"], "deleted by a patch"],
     ]);
     const letters = fileRows(foldFiles(session({ output: "", isError: false })), null).map((r) => r.letter);
-    expect(letters).toEqual(["M", "M", "M", "A", "D"]);
+    expect(letters).toEqual(["M", "D", "M", "A", "D"]);
   });
 
   it("touches nothing when the patch failed, and marks its touches pending without a result", () => {
