@@ -48,7 +48,8 @@ describe("a touch is a pattern by its source (card 605)", () => {
     expect(flags("view", { path: "/w/app/[id]/page.tsx" })).toEqual([["/w/app/[id]/page.tsx", false, false]]);
   });
 
-  it("keeps the mark when a call names one pattern twice", () => {
+  it("keeps the mark when a call names one pattern twice, quoted first and as a glob after", () => {
     expect(flags("Bash", { command: "cat src/*.ts src/*.ts" })).toEqual([["/w/src/*.ts", true, true]]);
+    expect(flags("Bash", { command: "cat 'src/*.ts' src/*.ts" })).toEqual([["/w/src/*.ts", true, true]]);
   });
 });
