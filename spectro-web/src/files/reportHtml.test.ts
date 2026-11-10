@@ -534,6 +534,19 @@ describe("reportHtml", () => {
     );
   });
 
+  it("the method says a password is masked into the next word after a name that ends in its sign (task 11 item 1)", () => {
+    const report = build(new Rec().start().tool("read_file", { path: "README.md" }).events);
+    expect(reportHtml(report, "en")).toContain(
+      "In a command, a password assignment is masked to the end of its word, or to the end of the next word " +
+        "when its word ends in = or :. A URL's user and password are masked from :// to the last @.",
+    );
+    expect(reportHtml(report, "de")).toContain(
+      "In einem Befehl wird eine Passwortzuweisung bis zum Ende ihres Worts geschwärzt, und wenn ihr Wort auf " +
+        "= oder : endet, bis zum Ende des nächsten Worts. Benutzer und Passwort einer URL werden von :// bis zum " +
+        "letzten @ geschwärzt.",
+    );
+  });
+
   it("says when the workspace was not recorded", () => {
     const rec = new Rec().start(null).tool("read_file", { path: "/etc/hosts" });
     const html = reportHtml(build(rec.events), "en");
