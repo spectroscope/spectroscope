@@ -1,4 +1,4 @@
-{"type":"session.start","data":{"sessionId":"s-605","version":1,"producer":"copilot-agent","copilotVersion":"1.0.0","startTime":"2026-11-10T09:00:00.000Z","context":{"cwd":"/w"}},"id":"e1","timestamp":"2026-11-10T09:00:00.000Z","parentId":null}
+{"type":"session.start","data":{"sessionId":"s-605","version":1,"producer":"copilot-agent","copilotVersion":"1.0.0","startTime":"2026-11-10T09:00:00.000Z","selectedModel":"claude-sonnet-4.5","context":{"cwd":"/w"}},"id":"e1","timestamp":"2026-11-10T09:00:00.000Z","parentId":null}
 {"type":"user.message","data":{"content":"The parser test fails on an empty line. Fix it.","transformedContent":"The parser test fails on an empty line. Fix it."},"id":"e2","timestamp":"2026-11-10T09:00:01.000Z","parentId":"e1"}
 {"type":"assistant.turn_start","data":{"turnId":"0"},"id":"e3","timestamp":"2026-11-10T09:00:02.000Z","parentId":"e2"}
 {"type":"assistant.message","data":{"messageId":"m1","content":"Reading the test first.","toolRequests":[{"toolCallId":"t1","name":"view","arguments":{"path":"/w/src/parser/test/ParserTest.cpp","view_range":[320,500]},"type":"function"}]},"id":"e4","timestamp":"2026-11-10T09:00:03.000Z","parentId":"e3"}

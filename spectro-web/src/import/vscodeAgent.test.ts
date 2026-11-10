@@ -257,3 +257,59 @@ describe("the Copilot CLI's session.start names the folder the session ran in (c
     expect(grounds(moved)[1]).toMatchObject({ from: { cwd: "/w" } });
   });
 });
+
+// Final fix wave item 5: an imported session says which provider and model
+// the content went to.
+describe("the Copilot importer names its provider and model (card 605)", () => {
+  const start = (data: object) => ({
+    type: "session.start",
+    data,
+    id: "a",
+    timestamp: "2026-11-10T09:00:00.000Z",
+  });
+  const user = (id: string) => ({
+    type: "user.message",
+    data: { content: "go" },
+    id,
+    timestamp: "2026-11-10T09:00:01.000Z",
+  });
+  const runStarts = (events: readonly unknown[]) =>
+    events.filter((e) => (e as { type: string }).type === "run_start") as {
+      provider?: string;
+      model?: string;
+    }[];
+
+  it("takes the model of session.start's selectedModel, with provider copilot", () => {
+    const cli = parseVscodeAgentExport(copilotCli);
+    expect(runStarts(cli).map((e) => [e.provider, e.model])).toEqual([["copilot", "claude-sonnet-4.5"]]);
+  });
+
+  it("names the provider without a model when selectedModel is missing or empty", () => {
+    for (const data of [
+      { sessionId: "s" },
+      { sessionId: "s", selectedModel: "" },
+      { sessionId: "s", selectedModel: 7 },
+    ]) {
+      const events = vscodeAgentToRunEvents([start(data), user("b")]);
+      expect(
+        runStarts(events).map((e) => [e.provider, e.model]),
+        JSON.stringify(data),
+      ).toEqual([["copilot", undefined]]);
+    }
+    // The VS Code agent export has no session.start; it is a Copilot session too.
+    expect(runStarts(events).every((e) => e.provider === "copilot" && e.model === undefined)).toBe(true);
+  });
+
+  it("a later session.start names the model of the runs after it", () => {
+    const events = vscodeAgentToRunEvents([
+      start({ selectedModel: "gpt-5" }),
+      user("b"),
+      start({ selectedModel: "claude-sonnet-4.5" }),
+      user("c"),
+    ]);
+    expect(runStarts(events).map((e) => e.model)).toEqual(["gpt-5", "claude-sonnet-4.5"]);
+    // A run before any session.start names no model: a later start is no record of it.
+    const late = vscodeAgentToRunEvents([user("b"), start({ selectedModel: "gpt-5" }), user("c")]);
+    expect(runStarts(late).map((e) => e.model)).toEqual([undefined, "gpt-5"]);
+  });
+});

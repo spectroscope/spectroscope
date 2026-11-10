@@ -927,6 +927,8 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
     .map(modelOf)
     .find((m) => m !== undefined);
 
+  // run_start names the provider anthropic when it names a model (card 605,
+  // final wave item 5: the files report says where the content went).
   // provider_info is the socket-only announcement of the active backend, and
   // the reducer takes the latest one. A transcript names its model per message,
   // so the file itself says when it changed: announce it once up front and
@@ -1613,7 +1615,7 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
             runId,
             agentId: owner,
             prompt: r.type === "user" ? asText(content, true) : "",
-            ...(firstModel !== undefined ? { model: firstModel } : {}),
+            ...(firstModel !== undefined ? { provider: "anthropic", model: firstModel } : {}),
             ts,
           });
           started = true;
@@ -1739,7 +1741,7 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
           runId,
           agentId: "main",
           prompt: asText(content, true),
-          ...(firstModel !== undefined ? { model: firstModel } : {}),
+          ...(firstModel !== undefined ? { provider: "anthropic", model: firstModel } : {}),
           ts,
         });
         started = true;

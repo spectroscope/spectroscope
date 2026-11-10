@@ -9,7 +9,10 @@
 //   tool.execution_start     -> tool_call
 //   tool.execution_complete  -> tool_result
 //   session.start            -> ground_info {cwd} (the GitHub Copilot CLI's own
-//                               file, card 605; import-only, as in claudeCode.ts)
+//                               file, card 605; import-only, as in claudeCode.ts);
+//                               its selectedModel names the model of run_start
+// Every run_start names the provider copilot (card 605, final wave item 5), so
+// the files report can say where the content went.
 // so a recorded Copilot session replays through the same reducers as a
 // spectroscope run. Unrecognized records are skipped, never fatal.
 //
@@ -42,6 +45,7 @@ interface VsRecord {
     arguments?: unknown;
     success?: boolean;
     context?: { cwd?: unknown };
+    selectedModel?: unknown;
   };
   id?: string;
   timestamp?: string;
@@ -111,6 +115,14 @@ export function vscodeAgentWithOrigin(records: unknown[], base = 1_783_500_000_0
     if (typeof id === "string") startedCallIds.add(id);
   }
 
+  /** A non-empty selectedModel of a session.start, else null. */
+  const selectedModel = (r: VsRecord): string | null =>
+    r.type === "session.start" && typeof r.data?.selectedModel === "string" && r.data.selectedModel !== ""
+      ? r.data.selectedModel
+      : null;
+  // The model of the last session.start; a run opened before any names none.
+  let model: string | null = null;
+
   const emittedCalls = new Set<string>();
   const callStartTs = new Map<string, number>();
   let started = false;
@@ -130,7 +142,15 @@ export function vscodeAgentWithOrigin(records: unknown[], base = 1_783_500_000_0
    *  because the request that started this slice is simply not in the file. */
   const openRun = (prompt: string, ts: number): void => {
     started = true;
-    out.push({ type: "run_start", runId, agentId, prompt, ts });
+    out.push({
+      type: "run_start",
+      runId,
+      agentId,
+      prompt,
+      provider: "copilot",
+      ...(model === null ? {} : { model }),
+      ts,
+    });
   };
 
   const handleRecord = (r: VsRecord, i: number): void => {
@@ -140,6 +160,7 @@ export function vscodeAgentWithOrigin(records: unknown[], base = 1_783_500_000_0
 
     switch (r.type) {
       case "session.start": {
+        model = selectedModel(r) ?? model;
         // An absolute POSIX path only: the files tab joins relative paths with `/`.
         const at = d?.context?.cwd;
         if (typeof at !== "string" || !at.startsWith("/") || at === cwd) break;
