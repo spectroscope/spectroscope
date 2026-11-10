@@ -148,6 +148,20 @@ describe("formatLosses", () => {
     expect(losses.find((l) => l.code === "subagents")?.count).toBe(1);
   });
 
+  it("says the VS Code writer drops lanes and token counts, which the Copilot format holds (task 11 item 7)", () => {
+    const facts = { ...streamFacts([]), subagents: 2, usage: 1 };
+    const said = formatLosses("vscode", facts)
+      .filter((l) => l.code === "subagents" || l.code === "usage")
+      .map((l) => [l.en, l.de]);
+    expect(said).toEqual([
+      [
+        "2 subagent lanes: this export writes one lane, so their work folds into it",
+        "2 Subagenten-Spuren: dieser Export schreibt eine Spur, ihre Arbeit landet darin",
+      ],
+      ["1 token count: this export does not write it", "1 Token-Zählung: dieser Export schreibt sie nicht"],
+    ]);
+  });
+
   it("says nothing about a loss the stream cannot suffer", () => {
     // A session with no subagents loses no subagents; a warning here would be
     // the app inventing a cost to sound careful.

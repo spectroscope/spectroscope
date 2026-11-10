@@ -661,6 +661,10 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Keine Session-.jsonl in der Auswahl gefunden.",
     en: "No session .jsonl found in the selection.",
   },
+  "imp.err.manySessions": {
+    de: "Dieser Ordner enthält {n} Session-Dateien. Wähle den Ordner einer Session.",
+    en: "This folder holds {n} session files. Pick the folder of one session.",
+  },
 
   // common
   "common.cancel": { de: "Abbrechen", en: "Cancel" },

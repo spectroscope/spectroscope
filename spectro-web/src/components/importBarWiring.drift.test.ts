@@ -54,3 +54,14 @@ describe("the import dialog states the tool output note from the loaded source",
     expect(dialog).not.toContain("imp.vscodeNote");
   });
 });
+
+// Card 605, task 11 item 7: a pick of several session files says how many it
+// holds; only a pick of none says no session was found.
+describe("the import dialog names a pick of several sessions", () => {
+  it("maps the many group to its own message with the count", () => {
+    expect(dialog).toMatch(
+      /group\.kind === "many"\) \{\s*setError\(t\(lang, "imp\.err\.manySessions", \{ n: group\.count \}\)\);/,
+    );
+    expect(dialog).toMatch(/group\.kind === "none"\) \{\s*setError\(t\(lang, "imp\.err\.noSession"\)\);/);
+  });
+});

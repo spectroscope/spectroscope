@@ -753,4 +753,23 @@ describe("a Copilot error, abort or warning (card 605)", () => {
       ["c1", "boom"],
     ]);
   });
+
+  it("an error before the first person's turn opens no run (task 11 item 7)", () => {
+    const frames = vscodeAgentToRunEvents([
+      { type: "session.start", data: { selectedModel: "auto", producer: "copilot-agent" } },
+      { type: "session.error", data: { message: "boom" } },
+      { type: "user.message", data: { content: "go" } },
+      { type: "assistant.turn_start", data: {} },
+      { type: "assistant.message", data: { content: "hi" } },
+    ]).map((e) => [e.type, (e as { prompt?: string }).prompt ?? (e as { message?: string }).message ?? null]);
+    expect(frames.slice(0, 3)).toEqual([
+      ["error", "boom"],
+      ["run_start", "go"],
+      ["turn_start", null],
+    ]);
+    // An error alone stands without a run.
+    expect(
+      vscodeAgentToRunEvents([{ type: "session.error", data: { message: "boom" } }]).map((e) => e.type),
+    ).toEqual(["error"]);
+  });
 });

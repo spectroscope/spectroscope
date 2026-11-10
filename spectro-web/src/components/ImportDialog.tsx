@@ -341,6 +341,10 @@ export function ImportDialog(props: {
       setError(t(lang, "imp.err.noSession"));
       return;
     }
+    if (group.kind === "many") {
+      setError(t(lang, "imp.err.manySessions", { n: group.count }));
+      return;
+    }
     if (group.kind === "single") {
       // ONE file takes today's path byte for byte (card 291 pins the
       // grouping; the read-and-load below is untouched card-152 territory).

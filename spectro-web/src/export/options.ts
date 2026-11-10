@@ -243,19 +243,23 @@ const LOSSES: Record<
     {
       code: "subagents",
       of: (f) => f.subagents,
-      // Their prose is folded into the one lane the format has, so the words
-      // survive and the attribution does not. Saying "lost" would be wrong in
-      // the other direction.
+      // This writer folds their prose into one lane, so the words survive and
+      // the attribution does not. The Copilot format has lanes (a record's
+      // agentId, read by the importer since card 605); the writer does not
+      // write them.
       en: (n) =>
-        `${n} ${n === 1 ? "subagent lane" : "subagent lanes"} — that format has one lane, so their work folds into it`,
+        `${n} ${n === 1 ? "subagent lane" : "subagent lanes"}: this export writes one lane, so their work folds into it`,
       de: (n) =>
-        `${n} Subagenten-${n === 1 ? "Spur" : "Spuren"} — dieses Format hat eine Spur, ihre Arbeit landet darin`,
+        `${n} Subagenten-${n === 1 ? "Spur" : "Spuren"}: dieser Export schreibt eine Spur, ihre Arbeit landet darin`,
     },
     {
       code: "usage",
       of: (f) => f.usage,
-      en: (n) => `${n} token ${n === 1 ? "count" : "counts"} — not carried by that format`,
-      de: (n) => `${n} Token-${n === 1 ? "Zählung" : "Zählungen"} — das Format trägt sie nicht`,
+      // The format has session.usage_record, read by the importer since card
+      // 605; this writer writes none.
+      en: (n) =>
+        `${n} token ${n === 1 ? "count" : "counts"}: this export does not write ${n === 1 ? "it" : "them"}`,
+      de: (n) => `${n} Token-${n === 1 ? "Zählung" : "Zählungen"}: dieser Export schreibt sie nicht`,
     },
     {
       code: "images",

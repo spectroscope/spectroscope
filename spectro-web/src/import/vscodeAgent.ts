@@ -428,7 +428,8 @@ export function vscodeAgentWithOrigin(records: unknown[], base = 1_783_500_000_0
       case "session.error": {
         const message = strField(d, "message") || strField(d, "errorType");
         if (!message) break;
-        if (!started) openRun("", ts, i);
+        // No run opens for it: an error before the first person's turn stands
+        // alone, and the chat draws it without one (task 11 item 7).
         out.push({ type: "error", agentId, message, ts });
         break;
       }

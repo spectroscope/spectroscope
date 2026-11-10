@@ -853,7 +853,9 @@ export type PickedGroup =
       /** Each workflow run's own state file, `workflows/<runId>.json`. */
       runStates: { runId: string; file: number }[];
     }
-  | { kind: "none" };
+  | { kind: "none" }
+  /** Several session candidates: nothing loads, and the dialog says how many (task 11 item 7). */
+  | { kind: "many"; count: number };
 
 const SIDECAR_NAME = /^agent-(.+)\.jsonl$/;
 const META_NAME = /^agent-(.+)\.meta\.json$/;
@@ -912,7 +914,8 @@ export function groupPickedFiles(files: PickedFile[]): PickedGroup {
     if (f.name.endsWith(".jsonl")) sessions.push(i);
   });
   // No session, or two: nothing to load rather than a coin toss.
-  if (sessions.length !== 1) return { kind: "none" };
+  if (sessions.length === 0) return { kind: "none" };
+  if (sessions.length > 1) return { kind: "many", count: sessions.length };
   const sidecars = [...sidecarByAgent.entries()].map(([agentKey, { index, runId }]) => ({
     jsonl: index,
     meta: metaByAgent.get(agentKey) ?? null,
