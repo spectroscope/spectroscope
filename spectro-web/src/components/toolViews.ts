@@ -1676,11 +1676,11 @@ export function describeTool(
     case "Grep":
     case "glob":
     case "grep":
-    // The GitHub Copilot IDE export's search (task 11 item 6): `pattern`, a
-    // `paths` list, and an optional `glob`, like grep.
     case "rg":
     case "grep_search":
     case "file_search": {
+      // `rg` is the GitHub Copilot IDE export's search (task 11 item 6):
+      // `pattern`, a `paths` list, and an optional `glob`, like grep.
       // A VS Code export says `query` and `includePattern` for the same two
       // fields. semantic_search is deliberately absent: its result is ranked
       // excerpts, and counting their lines would report a hit count the tool
