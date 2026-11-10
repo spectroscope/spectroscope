@@ -1,11 +1,13 @@
 // Card 605: environment dumps and network commands in one shell line, for the
 // files report (design section 3 and call B7). It reads the simple commands of
 // the shell heuristic's tokenizer (shellTokens.ts), so quoted text and heredoc
-// bodies are never commands. A `cd` inside the line is not followed: every path
-// resolves against `cwd`. Command substitutions are not read either.
+// bodies are never commands. The body of a `$(...)`, backtick or `<(...)`
+// substitution is read as a line of its own. A `cd` inside the line is not
+// followed: every path resolves against `cwd`.
 
 import { resolvePath } from "./paths";
-import { segments, type Segment, type Word } from "./shellTokens";
+import { shellTouches } from "./shell";
+import { segments, type Heredoc, type Segment, type Word } from "./shellTokens";
 
 export interface NetworkUse {
   tool: string; // "curl", "git push", "npm publish", ...
@@ -25,8 +27,183 @@ export function shellRisk(command: string, cwd: string | null): ShellRisk {
   return out;
 }
 
+// How deep substitutions, wrappers and `sh -c` lines are followed.
+const MAX_DEPTH = 4;
+
 function readLine(line: string, cwd: string | null, out: ShellRisk, depth: number): void {
-  for (const item of segments(line)) if (item !== "(" && item !== ")") run(item.words, item, cwd, out, depth);
+  if (depth > MAX_DEPTH) return;
+  for (const item of riskSegments(line)) {
+    if (item === "(" || item === ")") continue;
+    // A substitution runs before the command that holds it.
+    for (const w of [...item.words, ...item.redirects.flatMap((r) => (r.target ? [r.target] : []))])
+      for (const body of subsOf(w)) readLine(body, cwd, out, depth + 1);
+    run(item.words, item, cwd, out, depth);
+  }
+}
+
+// Substitutions. The tokenizer drops the text of `$(...)`, backticks and `<(...)`
+// and only marks the word dynamic. riskSegments swaps each one for a literal
+// marker first, with the tokenizer's own rules for quotes, comments, escapes and
+// heredocs, tokenizes the masked line and hangs the bodies back on their words.
+
+/** A word with the substitutions it holds; `vars` is true when it also holds a variable. */
+type SWord = Word & { subs?: string[]; vars?: boolean };
+const subsOf = (w: Word): string[] => (w as SWord).subs ?? [];
+const varsOf = (w: Word): boolean => (w as SWord).vars ?? w.dynamic;
+
+const OPEN = "\uE000";
+const CLOSE = "\uE001";
+const MARK = /\uE000(\d+)\uE001/g;
+const HAS_SUBST = /`|\$\(|[<>]\(/;
+const META = " \t\r\n;&|()<>";
+const OPERATORS = ["<<<", "<<-", "&>>", ">>", "<<", "<>", "<&", ">&", ">|", "&>"];
+
+/** segments() with the body of every substitution kept as `subs` on its word. */
+export function riskSegments(command: string): (Segment | "(" | ")")[] {
+  if (!HAS_SUBST.test(command) || command.includes(OPEN) || command.includes(CLOSE)) return segments(command);
+  const docs = segments(command).flatMap((s) => (typeof s === "string" ? [] : s.docs));
+  const bodies: string[] = [];
+  const unmask = (w: Word): Word => {
+    if (!w.text.includes(OPEN)) return w;
+    const subs: string[] = [];
+    const text = w.text.replace(MARK, (_m, n: string) => {
+      subs.push(bodies[Number(n)]);
+      return "";
+    });
+    const out: SWord = { ...w, text, dynamic: true, vars: w.dynamic, subs };
+    return out;
+  };
+  return segments(mask(command, docs, bodies)).map((s) =>
+    typeof s === "string"
+      ? s
+      : {
+          ...s,
+          words: s.words.map(unmask),
+          redirects: s.redirects.map((r) => ({ ...r, target: r.target && unmask(r.target) })),
+        },
+  );
+}
+
+function mask(src: string, docs: Heredoc[], bodies: string[]): string {
+  let out = "";
+  let i = 0;
+  let pending = 0; // heredocs whose body starts after the next newline
+  let next = 0; // the next of `docs`, in the tokenizer's order
+  let delimiter = false; // inside a heredoc delimiter word, which stays as written
+  const copy = (end: number) => {
+    out += src.slice(i, end);
+    i = end;
+  };
+  const sub = (end: number, body: string) => {
+    if (delimiter) return copy(end);
+    out += OPEN + String(bodies.push(body) - 1) + CLOSE;
+    i = end;
+  };
+  const dollar = (inDouble: boolean) => {
+    const n = src[i + 1];
+    // `$((...))` is masked too: its body holds no command, but it can hold a substitution.
+    if (n === "(") {
+      const b = balanced(src, i + 1);
+      sub(b.end, src.slice(i + 2, b.closed ? b.end - 1 : src.length));
+    } else if (n === "{") copy(balanced(src, i + 1).end);
+    else if (/[A-Za-z_]/.test(n ?? "")) {
+      let j = i + 2;
+      while (j < src.length && /\w/.test(src[j])) j++;
+      copy(j);
+    } else if (/[0-9@*#?$!-]/.test(n ?? ""))
+      copy(i + 2); // `$$(` is `$$` and a `(`
+    else if (!inDouble && n === "'") {
+      let j = i + 2;
+      while (j < src.length && src[j] !== "'") j += src[j] === "\\" ? 2 : 1;
+      copy(j + 1);
+    } else copy(i + 1);
+  };
+  const tick = () => {
+    let j = i + 1;
+    while (j < src.length && src[j] !== "`") j += src[j] === "\\" ? 2 : 1;
+    sub(j + 1, src.slice(i + 1, Math.min(j, src.length)));
+  };
+  let delimiterAt = -1;
+  let tokenStart = true; // where the tokenizer's main loop stands: `#` starts a comment only here
+  while (i < src.length) {
+    const c = src[i];
+    // A delimiter word ends at a metacharacter, except that it may start with `<(` or `>(`.
+    const procSub = (c === "<" || c === ">") && src[i + 1] === "(";
+    if (META.includes(c) && !(i === delimiterAt && procSub)) delimiter = false;
+    const wasStart: boolean = tokenStart;
+    tokenStart = (META.includes(c) && !procSub) || (c === "(" && src[i + 1] === "(");
+    if (c === "\\") {
+      if (src[i + 1] === "\n") tokenStart = wasStart; // a line continuation
+      copy(i + 2);
+    } else if (c === "\n") {
+      copy(i + 1);
+      for (; pending > 0; pending--) if (next < docs.length) copy(bodyEnd(src, i, docs[next++]));
+    } else if (c === "#" && wasStart) {
+      const nl = src.indexOf("\n", i);
+      copy(nl === -1 ? src.length : nl);
+    } else if (c === "'") {
+      const e = src.indexOf("'", i + 1);
+      copy(e === -1 ? src.length : e + 1);
+    } else if (c === '"') {
+      copy(i + 1);
+      while (i < src.length && src[i] !== '"') {
+        if (src[i] === "\\" && '$`"\\\n'.includes(src[i + 1] ?? "")) copy(i + 2);
+        else if (src[i] === "$") dollar(true);
+        else if (src[i] === "`") tick();
+        else copy(i + 1);
+      }
+      copy(i + 1);
+    } else if (c === "$") dollar(false);
+    else if (c === "`") tick();
+    else if (procSub) {
+      // `<` and `>` end a word, so the marker of `<(...)` must start one: `a>(b)` and `\|<(b)` are two words.
+      if (!delimiter) out += " ";
+      const b = balanced(src, i + 1);
+      sub(b.end, src.slice(i + 2, b.closed ? b.end - 1 : src.length));
+    } else if (c === "(" && src[i + 1] === "(") copy(balanced(src, i).end);
+    else {
+      const op = OPERATORS.find((o) => src.startsWith(o, i));
+      if (op === "<<" || op === "<<-") {
+        pending++;
+        copy(i + op.length);
+        while (src[i] === " " || src[i] === "\t") copy(i + 1);
+        delimiter = true;
+        delimiterAt = i;
+        tokenStart = false; // the delimiter word starts here: `<< #x` has the delimiter `#x`
+      } else copy(i + (op?.length ?? 1));
+    }
+  }
+  return out;
+}
+
+// The tokenizer's skipBalanced, telling also whether the closing bracket came.
+function balanced(src: string, i: number): { end: number; closed: boolean } {
+  const open = src[i];
+  const close = open === "(" ? ")" : "}";
+  let depth = 0;
+  for (; i < src.length; i++) {
+    const c = src[i];
+    if (c === "\\") i++;
+    else if (c === "'" || c === '"') {
+      let j = i + 1;
+      while (j < src.length && src[j] !== c) j += src[j] === "\\" && c === '"' ? 2 : 1;
+      i = j;
+    } else if (c === open) depth++;
+    else if (c === close && --depth === 0) return { end: i + 1, closed: true };
+  }
+  return { end: src.length, closed: false };
+}
+
+// The tokenizer's readBodies for one heredoc: the index after its terminator line.
+function bodyEnd(src: string, i: number, doc: Heredoc): number {
+  while (i < src.length) {
+    const nl = src.indexOf("\n", i);
+    const end = nl === -1 ? src.length : nl;
+    const line = doc.strip ? src.slice(i, end).replace(/^\t+/, "") : src.slice(i, end);
+    i = nl === -1 ? src.length : nl + 1;
+    if (line === doc.delimiter) break;
+  }
+  return i;
 }
 
 // The command name.
@@ -49,7 +226,7 @@ function commandName(text: string): string | null {
 
 function run(words: Word[], seg: Segment, cwd: string | null, out: ShellRisk, depth: number): void {
   const [head, ...args] = commandWords(words);
-  if (!head || head.dynamic || depth > 4) return;
+  if (!head || head.dynamic || depth > MAX_DEPTH) return;
   const name = commandName(head.text);
   if (name === null) return;
   if (name === "env") {
@@ -93,7 +270,8 @@ interface Parsed {
   operands: Word[];
 }
 
-const part = (w: Word, text: string): Word => ({ text, dynamic: w.dynamic, glob: w.glob });
+// The value part of `--name=value` or `-dvalue`, keeping the word's substitutions.
+const part = (w: Word, text: string): Word => ({ ...w, text });
 
 function parse(args: Word[], spec: Spec): Parsed {
   const options: Parsed["options"] = [];
@@ -181,6 +359,11 @@ function dumpOf(name: string, args: Word[]): string | null {
     const [sub] = ops({ short: "p" });
     return sub !== undefined && SECURITY.has(sub) ? `security ${sub}` : null;
   }
+  if (name === "declare") {
+    if (!args.every((a) => /^-[px]+$/.test(a.text))) return null;
+    return ["declare", ...args.map((a) => a.text)].join(" ");
+  }
+  if (name === "compgen") return has(parse(args, { short: "AGWXPSFCo" }), "-v") ? "compgen -v" : null;
   const [a, b] = ops(name === "aws" ? AWS : name === "op" ? OP : {});
   if (name === "gh" && a === "auth" && b === "token") return "gh auth token";
   if (name === "aws" && a === "configure" && (b === "get" || b === "export-credentials"))
@@ -243,6 +426,22 @@ function send(u: NetworkUse, w: Word, cwd: string | null, text = w.text): void {
   else if (text !== "" && text !== "-") {
     const path = resolvePath(text, cwd);
     if (!u.sends.includes(path)) u.sends.push(path);
+  }
+}
+
+/**
+ * A value the command sends as data. The files its substitutions read are sent;
+ * a variable, or a substitution that reads no file the line names, leaves the
+ * use unnamed (a value the line does not spell can be `@file`).
+ */
+function data(u: NetworkUse, w: Word, cwd: string | null): void {
+  if (!w.dynamic) return;
+  if (varsOf(w)) u.sendsNamed = false;
+  for (const body of subsOf(w)) {
+    const r = shellTouches(body, cwd);
+    const reads = r.touches.filter((t) => t.kind === "read" && !t.folder && t.path !== r.script);
+    if (reads.length === 0 || r.script !== null || r.inline) u.sendsNamed = false;
+    for (const t of reads) if (!u.sends.includes(t.path)) u.sends.push(t.path);
   }
 }
 
@@ -348,15 +547,19 @@ function curl(args: Word[], seg: Segment, cwd: string | null): NetworkUse {
     if (!w) continue;
     if (CURL_UPLOAD.includes(name)) file(w, w.text === "." ? "-" : w.text);
     else if (CURL_DATA.includes(name) && w.text.startsWith("@")) file(w, w.text.slice(1));
+    else if (CURL_DATA.includes(name) || name === "--data-raw") data(u, w, cwd);
     else if (name === "--data-urlencode") {
       const m = /^[^=@]*@(.*)$/s.exec(w.text);
       if (m) file(w, m[1]);
+      else data(u, w, cwd);
     } else if (CURL_FORM.includes(name)) {
       const m = /^[^=]*=[@<]([^;]*)/s.exec(w.text);
       if (m) file(w, m[1]);
+      else data(u, w, cwd);
     }
   }
   if (stdin) sendStdin(u, seg, cwd);
+  if (has(p, "-K", "--config")) u.sendsNamed = false; // a config file can hold more data and uploads
   return u;
 }
 
@@ -413,6 +616,7 @@ function wget(args: Word[], _seg: Segment, cwd: string | null): NetworkUse {
   const p = parse(args, WGET);
   const u = networkUse("wget", firstHost(p.operands, true));
   for (const w of values(p, "--post-file", "--body-file")) send(u, w, cwd);
+  if (has(p, "-i", "--input-file")) u.sendsNamed = false; // the requests are named in a file
   return u;
 }
 
