@@ -118,11 +118,17 @@ const PATCH_CHANGE = { Add: "add", Update: "update", Delete: "delete" } as const
  * `*** Delete File: p`. A body line starts with `+`, `-`, a space or `@@`, so
  * no body line reads as a header.
  *
- * @param input the call's input: the patch text, opening with `*** Begin Patch`
+ * @param input the call's input: the patch text, opening with `*** Begin Patch`,
+ *              or an object whose `input` field is that text (task 11 item 12)
  * @return the files in the order of their headers, or null for any other input
  */
 export function patchFiles(input: unknown): PatchFile[] | null {
-  if (typeof input !== "string" || !input.trimStart().startsWith(PATCH_BEGIN)) return null;
+  const text = typeof input === "string" ? input : str(input, "input");
+  if (text === null || !text.trimStart().startsWith(PATCH_BEGIN)) return null;
+  return patchHeaders(text);
+}
+
+function patchHeaders(input: string): PatchFile[] | null {
   const files: PatchFile[] = [];
   let updated: PatchFile | null = null;
   for (const raw of input.split("\n")) {

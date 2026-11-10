@@ -2039,12 +2039,29 @@ describe("apply_patch names its files by its headers (card 605)", () => {
     ]);
   });
 
+  it("reads the patch of an object's input field too (task 11 item 12)", () => {
+    for (const input of [
+      { input: patch("*** Update File: a.txt") },
+      { input: patch("*** Update File: a.txt"), explanation: "rename" },
+    ]) {
+      expect(patchFiles(input), JSON.stringify(input)).toEqual([
+        { path: "a.txt", change: "update", movedTo: null },
+      ]);
+      const view = describeTool("apply_patch", input, "", false);
+      expect(view.kind === "generic" ? view.patch : null).toEqual([
+        { path: "a.txt", change: "update", movedTo: null },
+      ]);
+    }
+  });
+
   it("is no patch without the envelope, without a file, or as anything but text", () => {
     for (const input of [
       "*** Update File: a.txt",
       patch(),
       patch("*** Update File:   "),
-      { input: patch("*** Update File: a.txt") },
+      { input: "*** Update File: a.txt" },
+      { input: 7 },
+      { patch: patch("*** Update File: a.txt") },
       null,
     ]) {
       expect(patchFiles(input), JSON.stringify(input)).toBeNull();
