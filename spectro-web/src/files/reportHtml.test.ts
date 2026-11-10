@@ -482,6 +482,21 @@ describe("reportHtml", () => {
     expect(verdictLine(two, "en")).not.toContain("network commands");
   });
 
+  it("the method says what an unnamed position value prints as (task 11 item 10)", () => {
+    const report = build(new Rec().start().tool("read_file", { path: "README.md" }).events);
+    const en = reportHtml(report, "en");
+    expect(en).toContain(
+      "otherwise they are not counted and print as <code>[value]</code>, " +
+        "or as written when they are a variable or a placeholder.",
+    );
+    expect(en).not.toContain("otherwise they print as");
+    const de = reportHtml(report, "de");
+    expect(de).toContain(
+      "sonst zählen sie nicht und stehen als <code>[value]</code> im Befehl, " +
+        "eine Variable oder ein Platzhalter so, wie sie geschrieben wurden.",
+    );
+  });
+
   it("says when the workspace was not recorded", () => {
     const rec = new Rec().start(null).tool("read_file", { path: "/etc/hosts" });
     const html = reportHtml(build(rec.events), "en");

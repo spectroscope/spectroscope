@@ -1635,7 +1635,8 @@ function secretValue(
   const literal = secret.split(DYN).join("").trim();
   const value = shape.split(DYN).join("");
   if (literal === "" || isPlaceholder("position", value) || isPlaceholder("position", literal)) {
-    out.placeholders++;
+    // Only a value that counts by its name is a placeholder of a credential (task 11 item 10).
+    if (named) out.placeholders++;
     return;
   }
   const r = textRange(holder, ctx, from, to);

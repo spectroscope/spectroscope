@@ -1258,3 +1258,21 @@ describe("getters and names (task 11 item 3)", () => {
     expect(spans(`curl -H "X-Db-Pass: ${v}" https://a.example.com`)).toEqual([v]);
   });
 });
+
+// Task 11 item 10 (review M2): only a value that counts by its name counts as
+// a placeholder; an unnamed one is no credential position at all.
+describe("placeholders in positions that say nothing of a credential (task 11 item 10)", () => {
+  const placeholders = (line: string) => shellRisk(line, W).placeholders;
+  it("an unnamed query value or a user alone adds no placeholder", () => {
+    for (const line of [
+      'curl "https://api.example.com/x?page=$PAGE"',
+      'curl "https://api.example.com/x?page=changeme"',
+      "curl -u $USER https://a.example.com",
+    ])
+      expect(placeholders(line), line).toBe(0);
+  });
+  it("a named one still does", () => {
+    expect(placeholders('curl "https://api.example.com/x?token=$TOKEN"')).toBe(1);
+    expect(placeholders('curl -u "bob:$PASS" https://a.example.com')).toBe(1);
+  });
+});
