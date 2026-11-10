@@ -954,10 +954,8 @@ describe("buildReport", () => {
         .tool("Bash", { command: `curl -d 'img=data:image/png;base64,${lines[0]}' https://example.com/` });
       const report = build(rec.events);
 
-      // Only the data URL's payload is key material; its header stays.
-      expect(ofKind(report, "credential-input").map((f) => [f.callIndex, f.credentials])).toEqual([
-        [9, [{ label: "credential 1", rule: "key-body", band: "33-64" }]],
-      ]);
+      // A data URL's payload is not key material either (final wave item 2c).
+      expect(ofKind(report, "credential-input")).toEqual([]);
       expect(report.files.map((f) => f.label)).toEqual(
         expect.arrayContaining([
           "spectro-core/src/main/java/dev/spectroscope/core/graph/StateGraph.java",
@@ -967,7 +965,7 @@ describe("buildReport", () => {
       );
       expect(ofKind(report, "network").map((f) => f.command)).toEqual([
         `curl ${api}`,
-        "curl -d 'img=data:image/png;base64,[credential 1: key-body]' https://example.com/",
+        `curl -d 'img=data:image/png;base64,${lines[0]}' https://example.com/`,
       ]);
     });
 
@@ -1240,5 +1238,65 @@ describe("credentials in commands", () => {
       [null, "node -e"],
       ["gradlew", "./gradlew"],
     ]);
+  });
+});
+
+// Final fix wave item 2: ordinary edits and commands give no false critical.
+// The streams are the whole-branch review's probes (C3).
+describe("key material in ordinary work", () => {
+  const JAVA = [
+    "package dev.example.auth;",
+    "public class AuthServiceTest {",
+    "  @Test void returnsHttp404WhenTheSessionDoesNotExistInTheStore() {}",
+    "  @Test void aBusySlotAnswers503WithRetryAfterAndTheBody() {}",
+    "}",
+  ].join("\n");
+  const LOCK = JSON.stringify({
+    packages: {
+      "node_modules/react": {
+        version: "18.3.1",
+        integrity: [
+          "sha512-",
+          "wS+hAgJShR0KhEvPJArfuPVN1+Hz1t0Y6n5jLrGQbkb4urgPE/0Rve+1kMB1v/oWgHgm4WIcV+i7F2pTVj+2iQ==",
+        ].join(""),
+      },
+    },
+  });
+  const PNG = [
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ",
+    "AAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==",
+  ].join("");
+  const BODY = ["MIIEowIBAAKCAQEAx9Ym4Qz7Rt2Lp8Wk", "Nb3Vc6Hs1Jd5Gf0AhkiG9w0BAQEFAASC"].join("");
+
+  it("edits, writes and test runs of a Java and TypeScript session", () => {
+    const rec = new Rec()
+      .start(W)
+      .tool("write_file", { path: "src/AuthServiceTest.java", content: JAVA })
+      .tool("Edit", {
+        file_path: "/w/src/AuthServiceTest.java",
+        old_string: "x",
+        new_string: "@Test void returnsHttp404WhenTheSessionDoesNotExistInTheStore() {}",
+      })
+      .tool("Bash", {
+        command: './gradlew test --tests "*returnsHttp404WhenTheSessionDoesNotExistInTheStore"',
+      })
+      .tool("Bash", { command: 'npx vitest run -t "aBusySlotAnswers503WithRetryAfterAndTheBody"' })
+      .tool("Write", { file_path: "/w/package-lock.json", content: LOCK })
+      .tool("Write", { file_path: "/w/a.css", content: `a{background:url(data:image/png;base64,${PNG})}` });
+    const report = build(rec.events);
+    expect(report.findings.filter((f) => f.kind.startsWith("credential-"))).toEqual([]);
+    expect(report.verdict).not.toBe("critical");
+  });
+
+  it("key-body reads commands only: a body line written to a file is not found by it", () => {
+    // The ruling's cost: a key pasted without its header is caught only in a command.
+    const rec = new Rec()
+      .start(W)
+      .tool("write_file", { path: "k.txt", content: BODY })
+      .tool("Bash", { command: `echo "${BODY}" >> k.txt` });
+    const report = build(rec.events);
+    expect(
+      ofKind(report, "credential-input").map((f) => [f.callIndex, f.credentials.map((c) => c.rule)]),
+    ).toEqual([[3, ["key-body"]]]);
   });
 });

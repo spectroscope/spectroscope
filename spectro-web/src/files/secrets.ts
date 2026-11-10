@@ -3,7 +3,7 @@
 // same pattern strings, a leading (?i) written as the i flag (design B3).
 // secrets.drift.test.ts reads the Java source and holds the two equal. The
 // report adds two rules of its own, for password assignments and for key
-// bodies in tool inputs, and a placeholder list (design B4) so that
+// bodies in shell commands, and a placeholder list (design B4) so that
 // documentation keys and template values do not count as found credentials.
 //
 // Nothing here keeps or prints a value: callers get positions, rule names and
@@ -49,20 +49,64 @@ export const CREDENTIAL_RULES: readonly CredentialRule[] = [
 /**
  * A rule of the report, not of the Java twin: a run of 40 or more base64
  * characters (with `=` padding) that holds an upper-case letter, a lower-case
- * letter and a digit, and at most three `/`, is key material, such as a key
- * body a command writes or searches line by line (`echo "<line>" >> k.pem`,
- * `grep -c <line> k.pem`). A hex hash has one case, a long identifier has no
- * digit, and a path has more slashes; they stay out. It reads tool inputs only
- * (INPUT_RULES); the mask finds such a run again as a known value.
+ * letter and a digit is key material, such as a key body a command writes or
+ * searches line by line (`echo "<line>" >> k.pem`, `grep -c <line> k.pem`),
+ * unless isKeyMaterial says it is a path, a name, a public key, an integrity
+ * hash or a data URL. It reads shell commands only (COMMAND_RULES); the mask
+ * finds such a run again as a known value.
  */
 export const KEY_BODY_RULE: CredentialRule = {
   name: "key-body",
   pattern:
-    /(?<![A-Za-z0-9+/])(?=[A-Za-z0-9+/]*[a-z])(?=[A-Za-z0-9+/]*[A-Z])(?=[A-Za-z0-9+/]*[0-9])(?!(?:[A-Za-z0-9+]*\/){4})[A-Za-z0-9+/]{40,}={0,2}/,
+    /(?<![A-Za-z0-9+/])(?=[A-Za-z0-9+/]*[a-z])(?=[A-Za-z0-9+/]*[A-Z])(?=[A-Za-z0-9+/]*[0-9])[A-Za-z0-9+/]{40,}={0,2}/,
 };
 
-/** Every rule the report names, as a tool input is read: CREDENTIAL_RULES, then key-body. */
-export const INPUT_RULES: readonly CredentialRule[] = [...CREDENTIAL_RULES, KEY_BODY_RULE];
+/** Every rule the report names, as a shell command is read: CREDENTIAL_RULES, then key-body. */
+export const COMMAND_RULES: readonly CredentialRule[] = [...CREDENTIAL_RULES, KEY_BODY_RULE];
+
+/** What stands before a base64 run that is public: an SSH public key, an integrity hash, a data URL. */
+const PUBLIC_BEFORE =
+  /(?:ssh-ed25519 |ssh-rsa |ecdsa-sha2-[A-Za-z0-9-]+ |sha(?:256|384|512)-|data:[^\s;,]*;base64,)$/;
+
+/** The class runs of a run (upper case, lower case, digits), counted inside each segment between `/` and `+`. */
+function classRuns(run: string): number {
+  let runs = 0;
+  let prev = 0;
+  for (let i = 0; i < run.length; i++) {
+    const c = run.charCodeAt(i);
+    const k = c >= 65 && c <= 90 ? 1 : c >= 97 && c <= 122 ? 2 : c >= 48 && c <= 57 ? 3 : 0;
+    if (k !== 0 && k !== prev) runs++;
+    prev = k;
+  }
+  return runs;
+}
+
+/**
+ * Whether a key-body match is key material (final wave item 2). Not a run
+ * after an SSH public key type, an integrity prefix or a data URL header. Not
+ * a path: four or more `/`, no `+` and at most 0.45 class runs per character.
+ * Not a name: a run without `+` or `/` whose letters are 75 % or more lower
+ * case (`aBusySlotAnswers503WithRetryAfterAndTheBody`). The last test stands
+ * in for the brief's "at least 3 digits", which flags names with three digits
+ * and misses more key lines (simulation in the final wave report).
+ */
+export function isKeyMaterial(match: string, before: string): boolean {
+  if (PUBLIC_BEFORE.test(before)) return false;
+  const run = match.replace(/=+$/, "");
+  let slashes = 0;
+  let plus = false;
+  let lower = 0;
+  let upper = 0;
+  for (let i = 0; i < run.length; i++) {
+    const c = run[i];
+    if (c === "/") slashes++;
+    else if (c === "+") plus = true;
+    else if (c >= "a" && c <= "z") lower++;
+    else if (c >= "A" && c <= "Z") upper++;
+  }
+  if (slashes >= 4 && !plus && classRuns(run) / run.length <= 0.45) return false;
+  return plus || slashes > 0 || lower / (lower + upper) < 0.75;
+}
 
 /** One credential found in a text. `start` and `end` bound `match`; `secret` is the part that is the credential. */
 export interface CredentialHit {
@@ -209,9 +253,11 @@ const PLACEHOLDER_WORDS = new Set(["password", "secret", "test", "admin", "root"
  * root (any case); an aws-akid whose body after the prefix holds no digit is an
  * upper-case word.
  */
+const REPEATED = /^(.)\1*$/su;
+
 export function isPlaceholder(rule: string, secret: string): boolean {
   if (secret.endsWith("EXAMPLE")) return true;
-  if (/^(.)\1*$/su.test(secret)) return true;
+  if (REPEATED.test(secret)) return true;
   if (/^\$\{[A-Za-z_][A-Za-z0-9_]*\}$/.test(secret) || /^\$[A-Za-z_][A-Za-z0-9_]*$/.test(secret)) return true;
   if (/^<[^<>]*>$/.test(secret)) return true;
   const lower = secret.toLowerCase();
@@ -241,6 +287,8 @@ const isIdentifier = (value: string): boolean => /^[A-Za-z_.]+$/.test(value);
 
 const KEY_HEADER = "-----BEGIN ";
 const DASHES = "-----";
+/** How much text before a key-body match isKeyMaterial reads. */
+const BEFORE = 64;
 
 // ---- Private-key blocks ----------------------------------------------------------
 //
@@ -424,7 +472,9 @@ export function innerKeyLines(hit: CredentialHit): string[] {
  * end of its string (keyBlockEnd), as match and as secret; the placeholder test
  * still reads the header alone. `stops`, ascending, are offsets a block never
  * runs past: the end of each string value of a text built from several.
- * `rules` defaults to CREDENTIAL_RULES; a tool input is read with INPUT_RULES.
+ * `rules` defaults to CREDENTIAL_RULES; a shell command is read with COMMAND_RULES.
+ * A password-assignment value that opens a key header is the header, not a
+ * password, and is skipped.
  * `identifiers: false` drops the plain-identifier skip: a shell command reads
  * `-d password=hunterpass` as a password (final wave item 1d).
  */
@@ -454,10 +504,14 @@ export function findCredentials(
         if (overlaps(start, end)) continue;
       }
       const match = isKey ? text.slice(start, end) : m[0];
+      if (rule === KEY_BODY_RULE && !isKeyMaterial(match, text.slice(Math.max(0, start - BEFORE), start)))
+        continue;
       const isPassword = rule === PASSWORD_RULE;
       const secret = isPassword ? (m[1] ?? m[0]) : secretPart(rule.name, match);
-      if (isPassword && isCode(secret)) continue;
-      const placeholder = isPlaceholder(rule.name, isKey ? m[0] : secret);
+      if (isPassword && (isCode(secret) || secret.startsWith(DASHES + "BEGIN"))) continue;
+      // Key material skips the placeholder parts: `xxxx` in any case stands in random base64 too.
+      const placeholder =
+        rule === KEY_BODY_RULE ? REPEATED.test(secret) : isPlaceholder(rule.name, isKey ? m[0] : secret);
       if (isPassword && !placeholder && identifiers && isIdentifier(secret)) continue;
       taken.push([start, end]);
       if (placeholder) placeholders++;

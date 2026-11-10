@@ -4,8 +4,8 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  COMMAND_RULES,
   CREDENTIAL_RULES,
-  INPUT_RULES,
   KEY_BODY_RULE,
   PASSWORD_RULE,
   REDACTION_RULES,
@@ -39,9 +39,9 @@ describe("the rule tables", () => {
     for (const rule of [...REDACTION_RULES, PASSWORD_RULE]) expect(rule.pattern.flags).not.toContain("g");
   });
 
-  it("key-body is a rule of the report, read on inputs only and not in the twin", () => {
-    expect(INPUT_RULES.map((r) => r.name)).toEqual([...CREDENTIAL_RULES.map((r) => r.name), "key-body"]);
-    expect(INPUT_RULES[INPUT_RULES.length - 1]).toBe(KEY_BODY_RULE);
+  it("key-body is a rule of the report, read on shell commands only and not in the twin", () => {
+    expect(COMMAND_RULES.map((r) => r.name)).toEqual([...CREDENTIAL_RULES.map((r) => r.name), "key-body"]);
+    expect(COMMAND_RULES[COMMAND_RULES.length - 1]).toBe(KEY_BODY_RULE);
     expect(KEY_BODY_RULE.pattern.flags).not.toContain("g");
     expect(REDACTION_RULES.map((r) => r.name)).not.toContain("key-body");
     expect(CREDENTIAL_RULES.map((r) => r.name)).not.toContain("key-body");
@@ -51,62 +51,111 @@ describe("the rule tables", () => {
 describe("the key-body rule", () => {
   const half = ["MIIEowIBAAKCAQEAx9Ym4Qz7Rt2Lp8Wk", "Nb3Vc6Hs1Jd5Gf0AhkiG9w0BAQEFAASC"];
   const line = half.join("");
-  const asInput = (text: string) =>
-    findCredentials(text, [], INPUT_RULES).hits.map((h) => [h.rule, h.secret]);
+  const asCommand = (text: string) =>
+    findCredentials(text, [], COMMAND_RULES).hits.map((h) => [h.rule, h.secret]);
+  const alphabet = ["ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz", "0123456789+/"].join("");
+  const pemLine = (rand: () => number, length: number) =>
+    Array.from({ length }, () => alphabet[Math.floor(rand() * 64)]).join("");
 
-  it("a long mixed-case base64 run in an input is key material", () => {
-    expect(asInput(`echo "${line}" >> k.pem`)).toEqual([["key-body", line]]);
-    expect(asInput(`grep -c ${line} k.pem`)).toEqual([["key-body", line]]);
-    expect(asInput(`KEY=${line}==`)).toEqual([["key-body", `${line}==`]]);
+  it("a long mixed-case base64 run in a command is key material", () => {
+    expect(asCommand(`echo "${line}" >> k.pem`)).toEqual([["key-body", line]]);
+    expect(asCommand(`grep -c ${line} k.pem`)).toEqual([["key-body", line]]);
+    expect(asCommand(`KEY=${line}== ./run`)).toEqual([["key-body", `${line}==`]]);
     // Forty characters is the shortest.
-    expect(asInput(`x ${line.slice(0, 40)} y`)).toEqual([["key-body", line.slice(0, 40)]]);
-    expect(asInput(`x ${line.slice(0, 39)} y`)).toEqual([]);
+    expect(asCommand(`x ${line.slice(0, 40)} y`)).toEqual([["key-body", line.slice(0, 40)]]);
+    expect(asCommand(`x ${line.slice(0, 39)} y`)).toEqual([]);
   });
 
   it("a hex hash, one-case runs and earlier hits are no key body", () => {
     const sha = "9fceb02d0ae598e95dc970b74767f19372d61af8";
-    expect(asInput(`git show ${sha}`)).toEqual([]);
-    expect(asInput(`git show ${sha.toUpperCase()}`)).toEqual([]);
-    expect(asInput(`x ${"abcdefgh".repeat(6)} y`)).toEqual([]);
+    expect(asCommand(`git show ${sha}`)).toEqual([]);
+    expect(asCommand(`git show ${sha.toUpperCase()}`)).toEqual([]);
+    expect(asCommand(`x ${"abcdefgh".repeat(6)} y`)).toEqual([]);
     // A run inside a hit of an earlier rule stays that hit.
     const pat = "ghp_" + "ABCDEFGHIJKLMNOPQRSTUVWXYZ" + "abcdefghijklmnop0123";
-    expect(asInput(`push ${pat}`)).toEqual([["github-pat", pat]]);
-    // Results, prompts and the mask use CREDENTIAL_RULES, without key-body.
+    expect(asCommand(`push ${pat}`)).toEqual([["github-pat", pat]]);
+    // Results, prompts, file content and the mask use CREDENTIAL_RULES, without key-body.
     expect(findCredentials(`echo "${line}"`).hits).toEqual([]);
   });
 
-  it("paths, URLs, identifiers and a data URL header stay visible", () => {
+  it("paths, URLs, names and test names stay visible", () => {
     for (const text of [
       "git show 9fceb02d0ae598e95dc970b74767f19372d61af8",
       "cat spectro-core/src/main/java/dev/spectroscope/core/graph/StateGraph.java",
-      // A digit and both cases: only the slash count keeps a path out.
       "cat src/test/java/dev/spectroscope/core/graph/l1/StateGraphL1BuilderTest.java",
       "cat node_modules/@scope/pkg/dist/index.js",
       "cat node_modules/@scope/pkg2/dist/esm/internal/helpers/createVersionMap.js",
       "curl https://aiplatform.googleapis.com/v1/projects/abc123/locations/europe-west4/models",
-      // Both cases and no slash: only the digit keeps an identifier out.
       "new AbstractSingletonProxyFactoryBeanConfigurationHelper()",
+      // camelCase test names: mostly lower-case letters, with or without a number.
+      'npx vitest run -t "aBusySlotAnswers503WithRetryAfterAndTheBody"',
+      './gradlew test --tests "*aBusySlotAnswers503WithRetryAfterAndTheBody"',
+      './gradlew test --tests "*returnsHttp404WhenTheSessionDoesNotExistInTheStore"',
     ]) {
-      expect(asInput(text), text).toEqual([]);
+      expect(asCommand(text), text).toEqual([]);
     }
-    // A data URL keeps its header; the payload after the comma is a run of its own.
-    const url = `data:image/png;base64,${line}`;
-    expect(asInput(`curl -d 'img=${url}' https://example.com/`)).toEqual([["key-body", line]]);
   });
 
-  it("a PEM body line is key material, with up to three slashes", () => {
-    const alphabet = ["ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz", "0123456789+/"].join("");
+  it("public keys, integrity hashes and data URLs are not key material", () => {
+    for (const prefix of [
+      "ssh-ed25519 ",
+      "ssh-rsa ",
+      "ecdsa-sha2-nistp256 ",
+      "sha256-",
+      "sha384-",
+      "sha512-",
+    ]) {
+      expect(asCommand(`echo '${prefix}${line}' >> f`), prefix).toEqual([]);
+    }
+    expect(asCommand(`curl -d 'img=data:image/png;base64,${line}' https://example.com/`)).toEqual([]);
+    // The same run anywhere else stays key material.
+    expect(asCommand(`echo 'ssh-ed25519 x ${line}' >> f`)).toEqual([["key-body", line]]);
+  });
+
+  it("four slashes keep a path out only without + and with few class runs", () => {
     const rand = seeded(6057);
-    const pem = Array.from({ length: 64 }, () => alphabet[Math.floor(rand() * 64)]).join("");
+    const pem = pemLine(rand, 64);
     const slashes = (text: string) => text.split("/").length - 1;
-    // Positive guard: the generated line holds slashes, a digit and both cases.
     expect(slashes(pem)).toBe(2);
-    expect(pem).toMatch(/[0-9]/);
-    expect(asInput(`echo "${pem}" >> k.pem`)).toEqual([["key-body", pem]]);
-    expect(asInput(`grep -c ${pem} k.pem`)).toEqual([["key-body", pem]]);
-    const three = pem.replace(/[a-z]/, "/");
-    expect(slashes(three)).toBe(3);
-    expect(asInput(`echo '${three}' >> k.pem`)).toEqual([["key-body", three]]);
+    expect(asCommand(`echo "${pem}" >> k.pem`)).toEqual([["key-body", pem]]);
+    // Four slashes in a random line: many class runs, so still key material.
+    const four = pem.replace(/[a-z]/, "/").replace(/[a-z]/, "/");
+    expect(slashes(four)).toBe(4);
+    expect(asCommand(`echo '${four}' >> k.pem`)).toEqual([["key-body", four]]);
+    // A path-like run of the same length and slashes, but long words, is no key.
+    const path = "srcMain/javaDevSpectroscope/coreGraph1/stateGraphL1/Builder";
+    expect(slashes(path)).toBe(4);
+    expect(asCommand(`cat ${path}`)).toEqual([]);
+  });
+
+  it("a seeded sample of PEM body lines is found but for a few in ten thousand", () => {
+    // Counted over 20,000 lines per length; the final wave report has 100,000 per seed.
+    for (const [length, seed] of [
+      [64, 6057],
+      [70, 6057],
+    ]) {
+      const rand = seeded(seed + length);
+      let missed = 0;
+      for (let k = 0; k < 20000; k++) {
+        const pem = pemLine(rand, length);
+        if (asCommand(`echo '${pem}' >> k.pem`).length !== 1) missed++;
+      }
+      expect(missed, String(length)).toBeLessThanOrEqual(2);
+    }
+  });
+
+  it("a body line that holds a placeholder part stays key material", () => {
+    // Random base64 spells xxxx in any case about six times in 100,000 lines.
+    const withX = `${line.slice(0, 20)}xXxX${line.slice(24)}`;
+    expect(asCommand(`echo '${withX}' >> k.pem`)).toEqual([["key-body", withX]]);
+    const withExample = `${line.slice(0, 20)}Example${line.slice(27)}`;
+    expect(asCommand(`echo '${withExample}' >> k.pem`)).toEqual([["key-body", withExample]]);
+  });
+
+  it("a password value that opens a key header is the header", () => {
+    const head = ["-----BEGIN ", "CERTIFICATE-----"].join("");
+    expect(findCredentials(`token=${head}`).hits).toEqual([]);
+    expect(findCredentials(`token=${head}`).placeholders).toBe(0);
   });
 });
 

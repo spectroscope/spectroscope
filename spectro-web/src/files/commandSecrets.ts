@@ -7,7 +7,7 @@
 // `position`; one that overlaps a rule's hit widens that hit instead of
 // standing beside it.
 
-import { findCredentials, INPUT_RULES, PASSWORD_RULE, type CredentialHit } from "./secrets";
+import { findCredentials, COMMAND_RULES, PASSWORD_RULE, type CredentialHit } from "./secrets";
 import { shellRisk, type ShellRisk } from "./shellRisk";
 import { segments, type Word } from "./shellTokens";
 
@@ -41,7 +41,7 @@ export function commandCredentials(
   command: string,
   risk: ShellRisk,
 ): { hits: CredentialHit[]; placeholders: number } {
-  const found = findCredentials(command, [], INPUT_RULES, { identifiers: false });
+  const found = findCredentials(command, [], COMMAND_RULES, { identifiers: false });
   const words = wordsOf(command);
   const hits = found.hits.map((h) => widen(command, h, words));
   for (const v of risk.values) {

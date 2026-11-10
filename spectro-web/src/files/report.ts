@@ -25,7 +25,6 @@ import { higher, LEVEL_ORDER, outsideWorkspace, pathLevel, type Level } from "./
 import {
   countPersonalData,
   findCredentials,
-  INPUT_RULES,
   innerKeyLines,
   keyBlockHits,
   keyBlockKeys,
@@ -588,8 +587,8 @@ function oneValue(output: string): string | null {
 }
 
 /**
- * One pass in event order over tool_call inputs (read with INPUT_RULES, which
- * add key-body), tool_result outputs, the ledger's prompts and every
+ * One pass in event order over tool_call inputs (a shell command read with
+ * COMMAND_RULES, which add key-body), tool_result outputs, the ledger's prompts and every
  * steering_message (B8): the credential findings,
  * the placeholder count, the personal-data counts and the result of each call.
  */
@@ -653,7 +652,8 @@ function scanEvents(
         // A command is read on its own (commandSecrets.ts); the other fields as written.
         const { text, ends } = inputText(e.input);
         const rest = shell === null ? { text, ends } : inputText(withoutCommand(e.input));
-        const found = findCredentials(rest.text, rest.ends, INPUT_RULES);
+        // Key material is read in commands only (final wave item 2a).
+        const found = findCredentials(rest.text, rest.ends);
         placeholders += found.placeholders + (shell?.placeholders ?? 0);
         const hits = [...found.hits, ...(shell?.hits ?? [])].flatMap(withInner);
         const inHits = new Set(hits.map((h) => h.secret));
