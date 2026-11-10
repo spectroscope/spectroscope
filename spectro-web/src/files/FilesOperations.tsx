@@ -14,8 +14,8 @@ import { shortenPath } from "../lab/fileTree";
 import { whenLabel } from "./cursor";
 import { shownPath, sourceTags } from "./FilesExplorer";
 import { KIND_CLASS } from "./FilesTimeline";
-import type { FileCall, FileLedger, FileRow, PromptMark } from "./fold";
-import { clip, fitLabel } from "./label";
+import type { FileCall, FileLedger, FileRow, FileTouch, PromptMark } from "./fold";
+import { clip } from "./label";
 import type { FilesSelection } from "./FilesView";
 import type { TouchKind } from "./shell";
 
@@ -103,7 +103,7 @@ export function FilesOperations(props: FilesOperationsProps): JSX.Element {
                 <td className="files-ops__line" title={callLine(call)}>
                   {clip(callLine(call), LINE_MAX)}
                 </td>
-                <td className="files-ops__files">{files(lang, ledger, call)}</td>
+                <td className="files-ops__files">{files(lang, call)}</td>
                 <td className="files-ops__tool files-hide-narrow">{call.tool}</td>
               </tr>
             ))}
@@ -234,25 +234,34 @@ function agentTag(agentId: string): JSX.Element {
 /** A call line shows at most this many characters in the table and the list; its title holds the rest. */
 export const LINE_MAX = 200;
 
-/** A path in the table's files cell takes at most this many characters, its file name kept (`fitLabel`). */
-export const OPS_PATH_CHARS = 32;
-
 const callLine = (call: FileCall): string => (call.shell ? `$ ${call.line}` : call.line);
 
 /**
- * Each file a call touched, one line each, with its sources and what happened
- * to it; a failed call has none. A long path keeps its file name and gives up
- * folders from the front; the title holds the whole path.
+ * What the table's files cell names: the last segment of the path, a folder's
+ * with its slash, a pattern as the call wrote it. The explorer and the detail
+ * keep the path.
  */
-function files(lang: Lang, ledger: FileLedger, call: FileCall): JSX.Element[] {
+export function fileNameOf(touch: FileTouch): string {
+  if (/[*?[\]{}]/.test(touch.path)) return touch.written;
+  const bare = touch.path.replace(/\/+$/, "");
+  const name = bare.slice(bare.lastIndexOf("/") + 1);
+  if (name === "") return touch.path;
+  return touch.folder ? `${name}/` : name;
+}
+
+/**
+ * Each file a call touched, one line each: its name, its sources and what
+ * happened to it; a failed call has none. The name comes first, so a narrow
+ * column cuts the tag before the name. The title holds the whole path.
+ */
+function files(lang: Lang, call: FileCall): JSX.Element[] {
   if (call.status === "failed") return [];
   return call.touches.map((touch, i) => (
     <span key={i} className="files-ops__fx">
-      {sourceTags(lang, touch.sources)}{" "}
       <span className="files-mono files-ops__path" title={shownPath(touch.path, touch.folder)}>
-        {fitLabel(shownPath(shortenPath(touch.path, ledger.workspace), touch.folder), OPS_PATH_CHARS)}
+        {fileNameOf(touch)}
       </span>{" "}
-      {t(lang, `filesTab.kind.${touch.kind}`)}
+      {sourceTags(lang, touch.sources)} {t(lang, `filesTab.kind.${touch.kind}`)}
     </span>
   ));
 }

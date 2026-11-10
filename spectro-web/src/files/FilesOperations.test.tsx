@@ -16,11 +16,10 @@ import { blockOf, read, rules } from "../testkit/source";
 import { FilesCreated } from "./FilesCreated";
 import { FilesDetail } from "./FilesDetail";
 import { FilesExplorer } from "./FilesExplorer";
-import { FilesOperations, FilesOpList, OPS_PATH_CHARS } from "./FilesOperations";
+import { FilesOperations, FilesOpList } from "./FilesOperations";
 import { FilesTimeline } from "./FilesTimeline";
 import { FilesView, type FilesViewProps } from "./FilesView";
 import { foldFiles } from "./fold";
-import { fitLabel } from "./label";
 
 const T0 = 1_760_000_000_000;
 
@@ -399,7 +398,7 @@ describe("the operations view", () => {
     expect(blockOf(css, ".files-ops__col--op")).toMatch(/width:\s*12em/);
   });
 
-  it("aLongPathKeepsItsFileNameWithTheWholePathInItsTitle", () => {
+  it("theFilesCellNamesTheFileWithTheWholePathInItsTitle", () => {
     const far =
       "/home/example/projects/spectro/spectro-server/src/main/java/dev/example/server/session/SessionConnection.java";
     const events = stamp([
@@ -408,22 +407,52 @@ describe("the operations view", () => {
       result("e1", { fileChange: "changed" }),
       call("r1", "read_file", { path: "src/a.ts" }),
       result("r1"),
+      call("d1", "run_command", { command: "rm -r build" }),
+      result("d1"),
+      call("g1", "run_command", { command: "rm -f *.log" }),
+      result("g1"),
     ]);
     const tree = run(props({ events }), [press("view-operations")]);
-    const paths = tableRows(tree).map(
-      (row) =>
+    const lines = tableRows(tree).map((row) =>
+      only(
+        inside(row).filter((el) => hasClass(el, "files-ops__fx")),
+        "line in the files cell",
+      ),
+    );
+    const names = lines.map(
+      (line) =>
         only(
-          inside(row).filter((el) => hasClass(el, "files-ops__path")),
-          "path in the files cell",
+          inside(line).filter((el) => hasClass(el, "files-ops__path")),
+          "name in the line",
         ).props,
     );
-    const shown = paths.map((p) => textOf(p.children as ReactNode));
-    // The file name stays, the folders give way from the front, the title holds the whole path.
-    expect(shown).toEqual([fitLabel(far, OPS_PATH_CHARS), "src/a.ts"]);
-    expect(shown[0].startsWith("…/")).toBe(true);
-    expect(shown[0].endsWith("/SessionConnection.java")).toBe(true);
-    expect(shown[0].length).toBeLessThanOrEqual(OPS_PATH_CHARS);
-    expect(paths.map((p) => p.title)).toEqual([far, "/ws/src/a.ts"]);
+    // The file name only: a folder keeps its slash, a pattern stays as written.
+    expect(names.map((p) => textOf(p.children as ReactNode))).toEqual([
+      "SessionConnection.java",
+      "a.ts",
+      "build/",
+      "*.log",
+    ]);
+    // The title holds the whole path.
+    expect(names.map((p) => p.title)).toEqual([far, "/ws/src/a.ts", "/ws/build/", "/ws/*.log"]);
+    // The source tag stays beside the name, after it, so a narrow column cuts the tag before the name.
+    const order = (line: El): string[] =>
+      inside(line)
+        .filter((el) => hasClass(el, "files-ops__path") || hasClass(el, "files-src"))
+        .map((el) => (hasClass(el, "files-ops__path") ? "name" : "tag"));
+    expect(lines.map(order)).toEqual([
+      ["name", "tag"],
+      ["name", "tag"],
+      ["name", "tag"],
+      ["name", "tag"],
+    ]);
+    // The explorer keeps showing the path.
+    const all = run(props({ events }));
+    const explorer = only(
+      all.filter((el) => hasClass(el, "files-explorer")),
+      "explorer",
+    );
+    expect(textOf(explorer.props.children)).toContain("src/a.ts");
   });
 
   it("aLongCommandStaysOneLineWithTheWholeCommandInItsTitle", () => {
