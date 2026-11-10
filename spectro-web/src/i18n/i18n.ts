@@ -460,6 +460,11 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "{n} von {m} Werkzeugergebnis in dieser Datei hat keine Ausgabe festgehalten; es bleibt leer.",
     en: "{n} of {m} tool result in this file recorded no output; it stays empty.",
   },
+  // Card 605, task 12: a GitHub Copilot session folder.
+  "imp.copilot.recorded": {
+    de: "Aufgezeichnet von {client} am {date}.",
+    en: "Recorded by {client} on {date}.",
+  },
   "imp.err.read": {
     de: "Der Browser konnte „{name}“ nicht lesen. Liegt die Datei noch da, und darf er sie sehen?",
     en: "Could not read \u201C{name}\u201D. Is the file still there, and may the browser see it?",

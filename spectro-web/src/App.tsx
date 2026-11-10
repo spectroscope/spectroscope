@@ -1689,6 +1689,7 @@ export function App() {
         extra: note,
         found: foundNote,
         toolOutputs: source.toolOutputs,
+        copilot: source.copilot,
       }),
     });
   };

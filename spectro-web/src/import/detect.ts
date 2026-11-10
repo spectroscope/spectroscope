@@ -6,6 +6,7 @@
 
 import type { RunEvent } from "../events";
 import { claudeCodeWithOrigin } from "./claudeCode";
+import type { CopilotSide } from "./copilotFolder";
 import type { SubagentTranscript } from "./subagentFile";
 import { vscodeAgentWithOrigin, type ToolOutputCount } from "./vscodeAgent";
 
@@ -107,6 +108,10 @@ export interface ImportSource {
    *  results the record held no output for. The import dialog and the bar
    *  say the count; absent for the formats that say nothing of the kind. */
   toolOutputs?: ToolOutputCount;
+  /** A GitHub Copilot session only, recognised by its producer (card 605,
+   *  task 12): its session id, and what its folder added when the folder was
+   *  picked (import/copilotFolder.ts). Never written to any file. */
+  copilot?: CopilotSide;
 }
 
 /** The file, cut into lines, and which of them carry a record.
@@ -171,7 +176,11 @@ export function detectAndLoad(text: string): {
 
   if (opensAsCopilot(records[0])) {
     const { events, origin, toolOutputs } = vscodeAgentWithOrigin(records);
-    return { events, kind: "vscode-agent", source: { lines, origin: inFile(origin), toolOutputs } };
+    const sessionId = (records[0] as { data: { sessionId?: unknown } }).data.sessionId;
+    const copilot: CopilotSide = {
+      sessionId: typeof sessionId === "string" && sessionId !== "" ? sessionId : null,
+    };
+    return { events, kind: "vscode-agent", source: { lines, origin: inFile(origin), toolOutputs, copilot } };
   }
 
   // Real Claude Code transcripts open with metadata records (queue-operation,

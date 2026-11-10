@@ -9,6 +9,7 @@
 import type { RunEvent } from "../events";
 import { t, type Lang } from "../i18n/i18n";
 import type { ImportedRunSummary } from "../import/claudeCodeRun";
+import type { CopilotSide } from "../import/copilotFolder";
 import type { ImportKind } from "../import/detect";
 import type { SubagentTranscript } from "../import/subagentFile";
 import type { ToolOutputCount } from "../import/vscodeAgent";
@@ -210,11 +211,36 @@ export function toolOutputNote(lang: Lang, count: ToolOutputCount | null | undef
   return t(lang, key, { n: grouped(count.missing, lang), m: grouped(count.total, lang) });
 }
 
+/** The UTC date of an ISO time, or null when it does not parse. */
+function isoDate(time: string): string | null {
+  const ms = Date.parse(time);
+  return Number.isFinite(ms) ? new Date(ms).toISOString().slice(0, 10) : null;
+}
+
+/**
+ * What the bar says about a GitHub Copilot session (card 605, task 12): who
+ * recorded the folder and when, from its workspace.yaml.
+ *
+ * @param lang the chrome language
+ * @param side what the Copilot session carried beside its events
+ * @return the sentences, or null when there is nothing of the kind to say
+ */
+export function copilotNote(lang: Lang, side: CopilotSide | null | undefined): string | null {
+  if (!side) return null;
+  const parts: string[] = [];
+  const client = side.workspace?.client ?? null;
+  const date = side.workspace?.createdAt == null ? null : isoDate(side.workspace.createdAt);
+  // The client is filled last, so a client name that looks like a slot stays a name.
+  if (client !== null && date !== null) parts.push(t(lang, "imp.copilot.recorded", { date, client }));
+  return parts.length > 0 ? parts.join(" ") : null;
+}
+
 /**
  * The notes a special kind of file adds to the bar, in a fixed order.
  *
- * The tool output note counts the results a VS Code or Copilot file recorded
- * no output for (card 605, task 10); the subagent note is about what THIS file
+ * The Copilot note says what a Copilot session folder added (card 605, task
+ * 12); the tool output note counts the results a VS Code or Copilot file
+ * recorded no output for (card 605, task 10); the subagent note is about what THIS file
  * is (card 152); the children note is what a run import carried (card 291);
  * `extra` is a sentence the store owes the reader, such as a run that fell
  * back to its session file (card 318); `found` is what came with a
@@ -235,9 +261,12 @@ export function importBarNote(
     found?: string | null;
     /** Card 605, task 10: the importer's count of results without output. */
     toolOutputs?: ToolOutputCount | null;
+    /** Card 605, task 12: what a Copilot session carried beside its events. */
+    copilot?: CopilotSide | null;
   },
 ): string | null {
   const notes = [
+    copilotNote(lang, about.copilot),
     toolOutputNote(lang, about.toolOutputs),
     subagentNote(lang, about.subagent),
     childrenNote(lang, about.run),

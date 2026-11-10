@@ -25,9 +25,10 @@ describe("App shows the import bar card 440 describes", () => {
   // the bar cannot carry the subagent note and still call the file a session.
   it("builds the notes for special kinds of file in one place", () => {
     // Card 473 added the found sentence as its own field, in the same call, and
-    // card 605 (task 10) the count of tool results the file recorded no output for.
+    // card 605 (task 10) the count of tool results the file recorded no output for,
+    // and task 12 what a Copilot session folder carried beside its events.
     expect(openImport()).toMatch(
-      /\.\.\.importBarAbout\(lang, \{\s*kind,\s*subagent,\s*run,\s*extra: note,\s*found: foundNote,\s*toolOutputs: source\.toolOutputs,?\s*\}\),/,
+      /\.\.\.importBarAbout\(lang, \{\s*kind,\s*subagent,\s*run,\s*extra: note,\s*found: foundNote,\s*toolOutputs: source\.toolOutputs,\s*copilot: source\.copilot,?\s*\}\),/,
     );
     expect(openImport()).not.toContain("importBarNote(");
   });
